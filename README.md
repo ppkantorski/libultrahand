@@ -4,13 +4,13 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by WerW
 ![libultrahand Logo](.pics/libultrahand.png)
 
 ## Usage Examples
-[Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
+- [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
 
-[Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
+- [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
 
-[Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
+- [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
 
-[FPSLocker](https://github.com/ppkantorski/FPSLocker)
+- [FPSLocker](https://github.com/ppkantorski/FPSLocker)
 
 ## License
 
