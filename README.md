@@ -3,7 +3,7 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by WerW
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
-# Usage
+## Usage
 ### Overriding Themes and Wallpapers
 
 To customize the theme and wallpaper for your overlay, you can override the default settings by adding the following lines to your `initServices` function:
