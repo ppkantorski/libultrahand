@@ -3,7 +3,7 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by WerW
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
-## Compilation Examples
+## Examples
 - [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
 
 - [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
