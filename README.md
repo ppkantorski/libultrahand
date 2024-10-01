@@ -3,3 +3,7 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by WerW
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
+
+## License
+
+This project is licensed and distributed under [GPLv2](LICENSE) with a [custom library](libultra) utilizing [CC-BY-4.0](SUB_LICENSE).
