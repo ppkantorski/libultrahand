@@ -16,7 +16,7 @@ if (isFileOrDirectory("sdmc:/config/<OVERLAY_NAME>/wallpaper.rgba"))
 ```
 
 Replace `<OVERLAY_NAME>` with the name of your overlay directory. This allows you to specify custom theme and wallpaper files located in your SD card's `/config/<OVERLAY_NAME>/` directory.
-In addition, to initialize the theme variables and settings for your overlay, ensure you call the following functions:
+
 
 ### Initializing Settings
 
