@@ -1,4 +1,4 @@
-# libtesla (Ultrahand)
+# libtesla (expanded)
 
 <p align="center">
   <img src="https://i.imgur.com/fhwyjbd.png">
