@@ -15,7 +15,7 @@ if (isFileOrDirectory("sdmc:/config/<OVERLAY_NAME>/wallpaper.rgba"))
     WALLPAPER_PATH = "sdmc:/config/<OVERLAY_NAME>/wallpaper.rgba"; // Override wallpaper path (optional)
 ```
 
-Replace `<OVERLAY_NAME>` with the name of your overlay directory. This allows you to specify custom theme and wallpaper files located in your SD card's `/config/<OVERLAY_NAME>/` directory.
+Replace `<OVERLAY_NAME>` with the name of your overlay directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
 
 
 ### Initializing Settings
