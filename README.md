@@ -36,6 +36,20 @@ tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
 tsl::initializeUltrahandSettings(); // Set up for opaque screenshots and swipe-to-open functionality
 ```
 
+### Download Methods
+
+To utilize the `libultra` download methods in your project, you will need to add the following line to your `initServices` function:
+```cpp
+initializeCurl();
+```
+As well as the following line to your `exetServices` function:
+```cpp
+cleanupCurl();
+```
+
+These lines will ensure `curl` functions properly within the overlay.
+
+## Compiling
 ### Necessary Libraries
 Developers should include the following libararies in their `Makefile` if they want full `libultra` functionality in their projects.
 
