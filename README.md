@@ -36,6 +36,35 @@ tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
 tsl::initializeUltrahandSettings(); // Set up for opaque screenshots and swipe-to-open functionality
 ```
 
+### Necessary Libraries
+Developers should include the following libararies in their `Makefile` if they want full `libultra` functionality in their projects.
+
+```
+LIBS := -lcurl -lz -lzzip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+```
+
+### Optional Compilation Flags
+```
+-ffunction-sections -fdata-sections:
+```
+These options are present in both CFLAGS and CXXFLAGS. They instruct the compiler to place each function and data item in its own section, which allows the linker to more easily identify and remove unused code.
+
+```
+-Wl,--gc-sections:
+```
+Included in LDFLAGS. This linker flag instructs the linker to remove unused sections that were created by -ffunction-sections and -fdata-sections. This ensures that functions or data that are not used are removed from the final executable.
+
+```
+-flto (Link Time Optimization):
+```
+Present in CFLAGS, CXXFLAGS, and LDFLAGS. It enables link-time optimization, allowing the compiler to optimize across different translation units and remove any unused code during the linking phase. You also use -flto=6 to control the number of threads for parallel LTO, which helps speed up the process.
+
+```
+-fuse-linker-plugin:
+```
+This flag allows the compiler and linker to better collaborate when using LTO, which further helps in optimizing and eliminating unused code.
+Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, and -flto) ensure that any unused functions or data are stripped out during the build process, leading to a smaller and more optimized final binary.
+
 
 ## Examples
 - [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
