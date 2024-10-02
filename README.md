@@ -8,7 +8,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/ppkantorski/libultrahand)](https://github.com/ppkantorski/libultrahand/stargazers)
 
 
-Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by WerWolv) + **libultra** libraries for overlay development on the Nintendo Switch
+Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) + **libultra** libraries for overlay development on the Nintendo Switch
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
