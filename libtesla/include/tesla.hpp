@@ -5598,14 +5598,13 @@ namespace tsl {
                 //}
             }
 
-            if (currentGui) {
-                // Handle the rest of the input only if the game is not paused and not over
+            if (!isLauncher && currentFocus == nullptr) {
                 if (simulatedBack) {
                     keysDown |= KEY_B;
                     simulatedBack = false;
                 }
                 if (keysDown & KEY_B) {
-                    if (!currentGui->handleInput(KEY_B, 0,{},{},{}))
+                    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
                         this->goBack();
                     return;
                 }
