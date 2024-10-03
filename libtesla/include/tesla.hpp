@@ -2066,7 +2066,7 @@ namespace tsl {
             virtual ~Element() { }
             
             bool m_isTable = false;  // Default to false for non-table elements
-            bool m_isItem = false;
+            bool m_isItem = true;
             std::chrono::duration<long int, std::ratio<1, 1000000000>> t;
             //double timeCounter;
             u8 saturation;
@@ -2592,7 +2592,10 @@ namespace tsl {
              *
              * @param renderFunc Callback that will be called once every frame to draw this view
              */
-            CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
+            CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {
+                m_isItem = false;
+            }
+
             virtual ~CustomDrawer() {}
             
             virtual void draw(gfx::Renderer* renderer) override {
@@ -2618,6 +2621,7 @@ namespace tsl {
             TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
                 : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable) {
                     m_isTable = isScrollable;  // Mark this element as a table
+                    m_isItem = false;
                 }
             
             virtual ~TableDrawer() {}
@@ -2703,7 +2707,7 @@ namespace tsl {
                     }
                 }
 
-
+                m_isItem = false;
             }
 
             virtual ~OverlayFrame() {
@@ -3131,6 +3135,7 @@ namespace tsl {
                         loadWallpaperFile(WALLPAPER_PATH);
                     }
                 }
+                m_isItem = false;
 
             }
             virtual ~HeaderOverlayFrame() {
@@ -3258,7 +3263,9 @@ namespace tsl {
              *
              * @param color Color of the rectangle
              */
-            DebugRectangle(Color color) : Element(), m_color(color) {}
+            DebugRectangle(Color color) : Element(), m_color(color) {
+                m_isItem = false;
+            }
             virtual ~DebugRectangle() {}
             
             virtual void draw(gfx::Renderer *renderer) override {
@@ -3283,7 +3290,9 @@ namespace tsl {
              * @brief Constructor
              *
              */
-            List() : Element() {}
+            List() : Element() {
+                m_isItem = false;
+            }
             virtual ~List() {
                 for (auto& item : this->m_items)
                     delete item;
@@ -4434,6 +4443,7 @@ namespace tsl {
             
             CategoryHeader(const std::string &title, bool hasSeparator = true) : m_text(title), m_hasSeparator(hasSeparator) {
                 applyLangReplacements(m_text);
+                m_isItem = false;
             }
             virtual ~CategoryHeader() {}
             
@@ -4487,10 +4497,328 @@ namespace tsl {
         
 
         /**
-         * @brief A customizable analog trackbar going from minValue to maxValue
+         * @brief A customizable analog trackbar going from 0% to 100% (like the brightness slider)
          *
          */
         class TrackBar : public Element {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             */
+            TrackBar(const char icon[3]) : m_icon(icon) {
+                m_isItem = true;
+            }
+
+            virtual ~TrackBar() {}
+
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
+                return this;
+            }
+
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
+                    return true;
+
+                if (keysHeld & HidNpadButton_AnyLeft) {
+                    if (this->m_value > 0) {
+                        this->m_value--;
+                        this->m_valueChangedListener(this->m_value);
+                        return true;
+                    }
+                }
+
+                if (keysHeld & HidNpadButton_AnyRight) {
+                    if (this->m_value < 100) {
+                        this->m_value++;
+                        this->m_valueChangedListener(this->m_value);
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                if (event == TouchEvent::Release) {
+                    this->m_interactionLocked = false;
+                    return false;
+                }
+
+
+                if (!this->m_interactionLocked && this->inBounds(initialX, initialY)) {
+                    if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
+                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+
+                        if (newValue < 0) {
+                            newValue = 0;
+                        } else if (newValue > 100) {
+                            newValue = 100;
+                        }
+
+                        if (newValue != this->m_value) {
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                        }
+
+                        return true;
+                    }
+                }
+                else
+                    this->m_interactionLocked = true;
+
+                return false;
+            }
+
+            virtual void draw(gfx::Renderer *renderer) override {
+                renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+                renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+
+                renderer->drawString(this->m_icon, false, this->getX() + 15, this->getY() + 50, 23, a(tsl::style::color::ColorText));
+
+                u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
+                renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
+                renderer->drawCircle(this->getX() + 60 + this->getWidth() - 95, this->getY() + 42, 2, true, a(tsl::style::color::ColorFrame));
+                renderer->drawRect(this->getX() + 60 + handlePos, this->getY() + 40, this->getWidth() - 95 - handlePos, 5, a(tsl::style::color::ColorFrame));
+                renderer->drawRect(this->getX() + 60, this->getY() + 40, handlePos, 5, a(tsl::style::color::ColorHighlight));
+
+                renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, true, a(tsl::style::color::ColorHandle));
+                renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, false, a(tsl::style::color::ColorFrame));
+            }
+
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+                this->setBoundaries(this->getX(), this->getY(), this->getWidth(), tsl::style::TrackBarDefaultHeight);
+            }
+
+            virtual void drawFocusBackground(gfx::Renderer *renderer) {
+                // No background drawn here in HOS
+            }
+
+            virtual void drawHighlight(gfx::Renderer *renderer) override {
+                static float counter = 0;
+                const float progress = (std::sin(counter) + 1) / 2;
+                Color highlightColor = {   static_cast<u8>((0x2 - 0x8) * progress + 0x8),
+                                                static_cast<u8>((0x8 - 0xF) * progress + 0xF),
+                                                static_cast<u8>((0xC - 0xF) * progress + 0xF),
+                                                static_cast<u8>((0x6 - 0xD) * progress + 0xD) };
+
+                counter += 0.1F;
+
+                u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
+
+                s32 x = 0;
+                s32 y = 0;
+
+                if (Element::m_highlightShaking) {
+                    auto t = (std::chrono::steady_clock::now() - Element::m_highlightShakingStartTime);
+                    if (t >= 100ms)
+                        Element::m_highlightShaking = false;
+                    else {
+                        s32 amplitude = std::rand() % 5 + 5;
+
+                        switch (Element::m_highlightShakingDirection) {
+                            case FocusDirection::Up:
+                                y -= shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Down:
+                                y += shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Left:
+                                x -= shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Right:
+                                x += shakeAnimation(t, amplitude);
+                                break;
+                            default:
+                                break;
+                        }
+
+                        x = std::clamp(x, -amplitude, amplitude);
+                        y = std::clamp(y, -amplitude, amplitude);
+                    }
+                }
+
+                for (u8 i = 16; i <= 19; i++) {
+                    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y, i, false, a(highlightColor));
+                }
+            }
+
+            /**
+             * @brief Gets the current value of the trackbar
+             *
+             * @return State
+             */
+            virtual inline u8 getProgress() {
+                return this->m_value;
+            }
+
+            /**
+             * @brief Sets the current state of the toggle. Updates the Value
+             *
+             * @param state State
+             */
+            virtual void setProgress(u8 value) {
+                this->m_value = value;
+            }
+
+            /**
+             * @brief Adds a listener that gets called whenever the state of the toggle changes
+             *
+             * @param stateChangedListener Listener with the current state passed in as parameter
+             */
+            void setValueChangedListener(std::function<void(u8)> valueChangedListener) {
+                this->m_valueChangedListener = valueChangedListener;
+            }
+
+        protected:
+            const char *m_icon = nullptr;
+            s16 m_value = 0;
+            bool m_interactionLocked = false;
+
+            std::function<void(u8)> m_valueChangedListener = [](u8){};
+        };
+
+
+        /**
+         * @brief A customizable analog trackbar going from 0% to 100% but using discrete steps (Like the volume slider)
+         *
+         */
+        class StepTrackBar : public TrackBar {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             * @param numSteps Number of steps the track bar has
+             */
+            StepTrackBar(const char icon[3], size_t numSteps)
+                : TrackBar(icon), m_numSteps(numSteps) { }
+
+            virtual ~StepTrackBar() {}
+
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                static u32 tick = 0;
+
+                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
+                    tick = 0;
+                    return true;
+                }
+
+                if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                    if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
+                        if (keysHeld & HidNpadButton_AnyLeft && this->m_value > 0) {
+                            this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
+                        } else if (keysHeld & HidNpadButton_AnyRight && this->m_value < 100) {
+                            this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
+                        } else {
+                            return false;
+                        }
+                        this->m_valueChangedListener(this->getProgress());
+                    }
+                    tick++;
+                    return true;
+                } else {
+                    tick = 0;
+                }
+
+                return false;
+            }
+
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                if (this->inBounds(initialX, initialY)) {
+                    if (currY > this->getTopBound() && currY < this->getBottomBound()) {
+                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+
+                        if (newValue < 0) {
+                            newValue = 0;
+                        } else if (newValue > 100) {
+                            newValue = 100;
+                        } else {
+                            newValue = std::round(newValue / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                        }
+
+                        if (newValue != this->m_value) {
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                        }
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            /**
+             * @brief Gets the current value of the trackbar
+             *
+             * @return State
+             */
+            virtual inline u8 getProgress() override {
+                return this->m_value / (100 / (this->m_numSteps - 1));
+            }
+
+            /**
+             * @brief Sets the current state of the toggle. Updates the Value
+             *
+             * @param state State
+             */
+            virtual void setProgress(u8 value) override {
+                value = std::min(value, u8(this->m_numSteps - 1));
+                this->m_value = value * (100 / (this->m_numSteps - 1));
+            }
+
+        protected:
+            u8 m_numSteps = 1;
+        };
+
+
+        /**
+         * @brief A customizable trackbar with multiple discrete steps with specific names. Name gets displayed above the bar
+         *
+         */
+        class NamedStepTrackBar : public StepTrackBar {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             * @param stepDescriptions Step names displayed above the track bar
+             */
+            NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions)
+                : StepTrackBar(icon, stepDescriptions.size()), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) { }
+
+            virtual ~NamedStepTrackBar() {}
+
+            virtual void draw(gfx::Renderer *renderer) override {
+
+                u16 trackBarWidth = this->getWidth() - 95;
+                u16 stepWidth = trackBarWidth / (this->m_numSteps - 1);
+
+                for (u8 i = 0; i < this->m_numSteps; i++) {
+                    renderer->drawRect(this->getX() + 60 + stepWidth * i, this->getY() + 50, 1, 10, a(tsl::style::color::ColorFrame));
+                }
+
+                u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
+
+                auto [descWidth, descHeight] = renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, 0, 0, 15, tsl::style::color::ColorTransparent);
+                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
+
+                StepTrackBar::draw(renderer);
+            }
+
+        protected:
+            std::vector<std::string> m_stepDescriptions;
+        };
+
+
+
+        /**
+         * @brief A customizable analog trackbar going from minValue to maxValue
+         *
+         */
+        class TrackBarV2 : public Element {
         public:
             std::chrono::steady_clock::time_point lastUpdate;
             
@@ -4503,7 +4831,7 @@ namespace tsl {
             
             
             // Ensure the order of initialization matches the order of declaration
-            TrackBar(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
+            TrackBarV2(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
                      std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                      std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                      std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingStepTrackbar = false, bool usingNamedStepTrackbar = false, s16 numSteps = -1, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
@@ -4544,7 +4872,7 @@ namespace tsl {
                 lastUpdate = std::chrono::steady_clock::now();
             }
             
-            virtual ~TrackBar() {}
+            virtual ~TrackBarV2() {}
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
@@ -4925,7 +5253,7 @@ namespace tsl {
          * @brief A customizable analog trackbar going from 0% to 100% but using discrete steps (Like the volume slider)
          *
          */
-        class StepTrackBar : public TrackBar {
+        class StepTrackBarV2 : public TrackBarV2 {
         public:
 
             /**
@@ -4934,13 +5262,13 @@ namespace tsl {
              * @param icon Icon shown next to the track bar
              * @param numSteps Number of steps the track bar has
              */
-            StepTrackBar(std::string label, std::string packagePath, size_t numSteps, s16 minValue, s16 maxValue, std::string units,
+            StepTrackBarV2(std::string label, std::string packagePath, size_t numSteps, s16 minValue, s16 maxValue, std::string units,
                 std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingNamedStepTrackbar = false, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
-                : TrackBar(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
+                : TrackBarV2(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
             
-            virtual ~StepTrackBar() {}
+            virtual ~StepTrackBarV2() {}
             
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
@@ -5046,7 +5374,7 @@ namespace tsl {
          * @brief A customizable trackbar with multiple discrete steps with specific names. Name gets displayed above the bar
          *
          */
-        class NamedStepTrackBar : public StepTrackBar {
+        class NamedStepTrackBarV2 : public StepTrackBarV2 {
         public:
             u16 trackBarWidth, stepWidth, currentDescIndex;
             u32 descWidth, descHeight;
@@ -5057,19 +5385,19 @@ namespace tsl {
              * @param icon Icon shown next to the track bar
              * @param stepDescriptions Step names displayed above the track bar
              */
-            NamedStepTrackBar(std::string label, std::string packagePath, std::vector<std::string>& stepDescriptions,
+            NamedStepTrackBarV2(std::string label, std::string packagePath, std::vector<std::string>& stepDescriptions,
                 std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool unlockedTrackbar = false, bool executeOnEveryTick = false)
-                : StepTrackBar(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
+                : StepTrackBarV2(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
                     //usingNamedStepTrackbar = true;
                     //logMessage("on initialization");
                 }
             
-            virtual ~NamedStepTrackBar() {}
+            virtual ~NamedStepTrackBarV2() {}
                         
             virtual void draw(gfx::Renderer *renderer) override {
-                // TrackBar width excluding the handle areas
+                // TrackBarV2 width excluding the handle areas
                 u16 trackBarWidth = this->getWidth() - 95;
             
                 // Base X and Y coordinates
@@ -5105,7 +5433,7 @@ namespace tsl {
                 this->m_selection = this->m_stepDescriptions[currentDescIndex];
             
                 // Draw the parent trackbar
-                StepTrackBar::draw(renderer);
+                StepTrackBarV2::draw(renderer);
             }
 
             
