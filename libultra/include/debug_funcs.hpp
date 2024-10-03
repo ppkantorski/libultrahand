@@ -16,45 +16,30 @@
  ********************************************************************************/
 
 #pragma once
+#ifndef DEBUG_FUNCS_HPP
+#define DEBUG_FUNCS_HPP
+
 #include <fstream>
 #include <mutex>
+#include <string>
+#include <ctime>
 
-// Specify the log file path
-const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
+namespace ult {
+    // Specify the log file path
+    const std::string defaultLogFilePath;
+    
+    extern std::string logFilePath;  // Declare logFilePath as extern
+    extern bool disableLogging;        // Declare disableLogging as extern
+    
+    // Global mutex for thread-safe logging
+    extern std::mutex logMutex;        // Declare logMutex as extern
 
-static std::string logFilePath = defaultLogFilePath; 
-static bool disableLogging = true;
-
-// Global mutex for thread-safe logging
-std::mutex logMutex;
-
-/**
- * @brief Logs a message with a timestamp to a log file in a thread-safe manner.
- *
- * @param message The message to be logged.
- */
-void logMessage(const std::string& message) {
-    if (disableLogging)
-        return;
-    std::time_t currentTime = std::time(nullptr);
-    std::tm* timeInfo = std::localtime(&currentTime);
-    char buffer[30];
-    strftime(buffer, 30, "[%Y-%m-%d %H:%M:%S] ", timeInfo);
-    std::string timestamp(buffer);
-
-    //std::string logEntry = timestamp + message + "\n";
-
-    // Open the file with std::ofstream in append mode inside the lock
-    {
-        std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for the duration of this block
-
-        std::ofstream file(logFilePath.c_str(), std::ios::app);
-        if (file.is_open()) {
-            file << timestamp + message + "\n";
-        } else {
-            // Handle error when file opening fails, such as logging to an alternative output or retrying
-            //std::cerr << "Failed to open log file: " << logFilePath << std::endl;
-        }
-        file.close();
-    } // file closes automatically upon leaving this block
+    /**
+     * @brief Logs a message with a timestamp to a log file in a thread-safe manner.
+     *
+     * @param message The message to be logged.
+     */
+    void logMessage(const std::string& message);
 }
+
+#endif // DEBUG_FUNCS_HPP

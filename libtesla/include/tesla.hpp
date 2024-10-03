@@ -67,1348 +67,7 @@
 //uint64_t RAM_Used_system_u = 0;
 //uint64_t RAM_Total_system_u = 0;
 
-
-bool consoleIsDocked() {
-    Result rc;
-    ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
-
-    // Initialize the APM service
-    rc = apmInitialize();
-    if (R_FAILED(rc)) {
-        return false;  // Fail early if initialization fails
-    }
-
-    // Get the current performance mode
-    rc = apmGetPerformanceMode(&perfMode);
-    apmExit();  // Clean up the APM service
-
-    if (R_FAILED(rc)) {
-        return false;  // Fail early if performance mode check fails
-    }
-
-    // Check if the performance mode indicates docked state
-    if (perfMode == ApmPerformanceMode_Boost) {
-        return true;  // System is docked (boost mode active)
-    }
-
-    return false;  // Not docked (normal mode or handheld)
-}
-
-std::string getTitleIdAsString() {
-    Result rc;
-    u64 pid = 0;
-    u64 tid = 0;
-
-    // The Process Management service is initialized before (as per your setup)
-    // Get the current application process ID
-    rc = pmdmntGetApplicationProcessId(&pid);
-    if (R_FAILED(rc)) {
-        return NULL_STR;
-    }
-
-    rc = pminfoInitialize();
-    if (R_FAILED(rc)) {
-        return NULL_STR;
-    }
-
-    // Use pminfoGetProgramId to retrieve the Title ID (Program ID)
-    rc = pminfoGetProgramId(&tid, pid);
-    if (R_FAILED(rc)) {
-        pminfoExit();
-        return NULL_STR;
-    }
-    pminfoExit();
-
-    // Convert the Title ID to a string and return it
-    char titleIdStr[17];  // 16 characters for the Title ID + null terminator
-    snprintf(titleIdStr, sizeof(titleIdStr), "%016lX", tid);
-    return std::string(titleIdStr);
-}
-
-static bool isLauncher = false;
-static bool internalTouchReleased = true;
-static u32 layerEdge = 0;
-static bool useRightAlignment = false;
-static bool useSwipeToOpen = false;
-static bool noClickableItems = false;
-
-
-// Define the duration boundaries (for smooth scrolling)
-const auto initialInterval = std::chrono::milliseconds(67);  // Example initial interval
-const auto shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
-const auto transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
-
-// Function to interpolate between two durations
-std::chrono::milliseconds interpolateDuration(
-    std::chrono::milliseconds start,
-    std::chrono::milliseconds end,
-    float t
-) {
-    using namespace std::chrono;
-    auto interpolated = start.count() + static_cast<long long>((end.count() - start.count()) * t);
-    return milliseconds(interpolated);
-}
-
-
-
-//#include <filesystem> // Comment out filesystem
-
-// CUSTOM SECTION START
-float backWidth, selectWidth, nextPageWidth;
-static bool inMainMenu = false;
-static bool inOverlaysPage = false;
-static bool inPackagesPage = false;
-
-static bool firstBoot = true; // for detecting first boot
-
-//static std::unordered_map<std::string, std::string> hexSumCache;
-
-// Define an atomic bool for interpreter completion
-static std::atomic<bool> threadFailure(false);
-static std::atomic<bool> runningInterpreter(false);
-static std::atomic<bool> shakingProgress(true);
-
-static std::atomic<bool> isHidden(true);
-
-//bool progressAnimation = false;
-bool disableTransparency = false;
-//bool useCustomWallpaper = false;
-bool useMemoryExpansion = false;
-bool useOpaqueScreenshots = false;
-
-bool onTrackBar = false;
-bool allowSlide = false;
-bool unlockedSlide = false;
-
-/**
- * @brief Shutdown modes for the Ultrahand-Overlay project.
- *
- * These macros define the shutdown modes used in the Ultrahand-Overlay project:
- * - `SpsmShutdownMode_Normal`: Normal shutdown mode.
- * - `SpsmShutdownMode_Reboot`: Reboot mode.
- */
-#define SpsmShutdownMode_Normal 0
-#define SpsmShutdownMode_Reboot 1
-
-/**
- * @brief Key mapping macros for button keys.
- *
- * These macros define button keys for the Ultrahand-Overlay project to simplify key mappings.
- * For example, `KEY_A` represents the `HidNpadButton_A` key.
- */
-#define KEY_A HidNpadButton_A
-#define KEY_B HidNpadButton_B
-#define KEY_X HidNpadButton_X
-#define KEY_Y HidNpadButton_Y
-#define KEY_L HidNpadButton_L
-#define KEY_R HidNpadButton_R
-#define KEY_ZL HidNpadButton_ZL
-#define KEY_ZR HidNpadButton_ZR
-#define KEY_PLUS HidNpadButton_Plus
-#define KEY_MINUS HidNpadButton_Minus
-#define KEY_DUP HidNpadButton_Up
-#define KEY_DDOWN HidNpadButton_Down
-#define KEY_DLEFT HidNpadButton_Left
-#define KEY_DRIGHT HidNpadButton_Right
-#define KEY_SL HidNpadButton_AnySL
-#define KEY_SR HidNpadButton_AnySR
-#define KEY_LSTICK HidNpadButton_StickL
-#define KEY_RSTICK HidNpadButton_StickR
-#define KEY_UP HidNpadButton_AnyUp
-#define KEY_DOWN HidNpadButton_AnyDown
-#define KEY_LEFT HidNpadButton_AnyLeft
-#define KEY_RIGHT HidNpadButton_AnyRight
-
-
-// Define a mask with all possible key flags
-constexpr u64 ALL_KEYS_MASK = 
-    KEY_A | KEY_B | KEY_X | KEY_Y |
-    KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT |
-    KEY_L | KEY_R | KEY_ZL | KEY_ZR |
-    KEY_SL | KEY_SR |
-    KEY_LSTICK | KEY_RSTICK |
-    KEY_PLUS | KEY_MINUS;
-
-
-
-bool updateMenuCombos = false;
-
-/**
- * @brief Ultrahand-Overlay Input Macros
- *
- * This block of code defines macros for handling input in the Ultrahand-Overlay project.
- * These macros simplify the mapping of input events to corresponding button keys and
- * provide aliases for touch and joystick positions.
- *
- * The macros included in this block are:
- *
- * - `touchPosition`: An alias for a constant `HidTouchState` pointer.
- * - `touchInput`: An alias for `&touchPos`, representing touch input.
- * - `JoystickPosition`: An alias for `HidAnalogStickState`, representing joystick input.
- *
- * These macros are utilized within the Ultrahand-Overlay project to manage and interpret
- * user input, including touch and joystick events.
- */
-#define touchPosition const HidTouchState
-#define touchInput &touchPos
-#define JoystickPosition HidAnalogStickState
-
-void convertComboToUnicode(std::string& combo);
-
-
-
-
-// For improving the speed of hexing consecutively with the same file and asciiPattern.
-//static std::unordered_map<std::string, std::string> hexSumCache;
-
-//std::string highlightColor1Str = "#2288CC";;
-//std::string highlightColor2Str = "#88FFFF";;
-
-
-//std::chrono::milliseconds interpolateKeyEventInterval(std::chrono::milliseconds duration) {
-//    using namespace std::chrono;
-//
-//    const milliseconds threshold1 = milliseconds(2000);
-//    const milliseconds threshold2 = milliseconds(3000);
-//
-//    const milliseconds interval1 = milliseconds(80);
-//    const milliseconds interval2 = milliseconds(20);
-//    const milliseconds interval3 = milliseconds(10);
-//
-//    if (duration > threshold2) {
-//        return interval3;
-//    } else if (duration > threshold1) {
-//        double factor = double(duration.count() - threshold1.count()) / double(threshold2.count() - threshold1.count());
-//        return milliseconds(static_cast<int>(interval2.count() + factor * (interval3.count() - interval2.count())));
-//    } else {
-//        double factor = double(duration.count()) / double(threshold1.count());
-//        return milliseconds(static_cast<int>(interval1.count() + factor * (interval2.count() - interval1.count())));
-//    }
-//}
-
-//float customRound(float num) {
-//    if (num >= 0) {
-//        return floor(num + 0.5);
-//    } else {
-//        return ceil(num - 0.5);
-//    }
-//}
-
-// English string definitions
-
-const std::string whiteColor = "#FFFFFF";
-const std::string blackColor = "#000000";
-
-constexpr float M_PI = 3.14159265358979323846;
-constexpr float RAD_TO_DEG = 180.0f / M_PI;
-
-static std::string ENGLISH = "English";
-static std::string SPANISH = "Spanish";
-static std::string FRENCH = "French";
-static std::string GERMAN = "German";
-static std::string JAPANESE = "Japanese";
-static std::string KOREAN = "Korean";
-static std::string ITALIAN = "Italian";
-static std::string DUTCH = "Dutch";
-static std::string PORTUGUESE = "Portuguese";
-static std::string RUSSIAN = "Russian";
-static std::string POLISH = "Polish";
-static std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
-static std::string TRADITIONAL_CHINESE = "Traditional Chinese";
-static std::string DEFAULT_CHAR_WIDTH = "0.33";
-static std::string UNAVAILABLE_SELECTION = "Not available";
-static std::string OVERLAYS = "Overlays"; //defined in libTesla now
-static std::string OVERLAY = "Overlay";
-static std::string HIDDEN_OVERLAYS = "Hidden Overlays";
-static std::string PACKAGES = "Packages"; //defined in libTesla now
-static std::string PACKAGE = "Package";
-static std::string HIDDEN_PACKAGES = "Hidden Packages";
-static std::string HIDDEN = "Hidden";
-static std::string HIDE_OVERLAY = "Hide Overlay";
-static std::string HIDE_PACKAGE = "Hide Package";
-static std::string LAUNCH_ARGUMENTS = "Launch Arguments";
-static std::string BOOT_COMMANDS = "Boot Commands";
-static std::string EXIT_COMMANDS = "Exit Commands";
-static std::string ERROR_LOGGING = "Error Logging";
-static std::string COMMANDS = "Commands";
-static std::string SETTINGS = "Settings";
-static std::string MAIN_SETTINGS = "Main Settings";
-static std::string UI_SETTINGS = "UI Settings";
-static std::string WIDGET = "Widget";
-static std::string CLOCK = "Clock";
-static std::string BATTERY = "Battery";
-static std::string SOC_TEMPERATURE = "SOC Temperature";
-static std::string PCB_TEMPERATURE = "PCB Temperature";
-static std::string MISCELLANEOUS = "Miscellaneous";
-static std::string MENU_ITEMS = "Menu Items";
-static std::string USER_GUIDE = "User Guide";
-static std::string VERSION_LABELS = "Version Labels";
-static std::string KEY_COMBO = "Key Combo";
-static std::string LANGUAGE = "Language";
-static std::string OVERLAY_INFO = "Overlay Info";
-static std::string SOFTWARE_UPDATE = "Software Update";
-static std::string UPDATE_ULTRAHAND = "Update Ultrahand";
-static std::string UPDATE_LANGUAGES = "Update Languages";
-static std::string SYSTEM = "System";
-static std::string DEVICE_INFO = "Device Info";
-static std::string FIRMWARE = "Firmware";
-static std::string BOOTLOADER = "Bootloader";
-static std::string HARDWARE = "Hardware";
-static std::string MEMORY = "Memory";
-static std::string VENDOR = "Vendor";
-static std::string MODEL = "Model";
-static std::string STORAGE = "Storage";
-static std::string NOTICE = "Notice";
-static std::string UTILIZES = "Utilizes";
-static std::string FREE = "free";
-static std::string MEMORY_EXPANSION = "Memory Expansion";
-static std::string REBOOT_REQUIRED = "*Reboot required.";
-static std::string LOCAL_IP = "Local IP";
-static std::string WALLPAPER = "Wallpaper";
-static std::string THEME = "Theme";
-static std::string DEFAULT = "default";
-static std::string ROOT_PACKAGE = "Root Package";
-static std::string SORT_PRIORITY = "Sort Priority";
-static std::string FAILED_TO_OPEN = "Failed to open file";
-static std::string CLEAN_VERSIONS = "Clean Versions";
-static std::string OVERLAY_VERSIONS = "Overlay Versions";
-static std::string PACKAGE_VERSIONS = "Package Versions";
-static std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-static std::string ON = "On";
-static std::string OFF = "Off";
-static std::string PACKAGE_INFO = "Package Info";
-static std::string _TITLE = "Title";
-static std::string _VERSION= "Version";
-static std::string _CREATOR = "Creator(s)";
-static std::string _ABOUT = "About";
-static std::string _CREDITS = "Credits";
-static std::string OK = "OK";
-static std::string BACK = "Back";
-static std::string REBOOT_TO = "Reboot To";
-static std::string REBOOT = "Reboot";
-static std::string SHUTDOWN = "Shutdown";
-static std::string BOOT_ENTRY = "Boot Entry";
-static std::string GAP_1 = "     ";
-static std::string GAP_2 = "  ";
-static std::string USERGUIDE_OFFSET = "173";
-static std::string SETTINGS_MENU = "Settings Menu";
-static std::string SCRIPT_OVERLAY = "Script Overlay";
-static std::string STAR_FAVORITE = "Star/Favorite";
-static std::string APP_SETTINGS = "App Settings";
-static std::string ON_MAIN_MENU = "on Main Menu";
-static std::string ON_A_COMMAND = "on a command";
-static std::string ON_OVERLAY_PACKAGE = "on overlay/package";
-static std::string EFFECTS = "Effects";
-static std::string SWIPE_TO_OPEN = "Swipe to Open";
-static std::string RIGHT_SIDE_MODE = "Right-side Mode";
-static std::string PROGRESS_ANIMATION = "Progress Animation";
-static std::string EMPTY = "Empty";
-
-static std::string SUNDAY = "Sunday";
-static std::string MONDAY = "Monday";
-static std::string TUESDAY = "Tuesday";
-static std::string WEDNESDAY = "Wednesday";
-static std::string THURSDAY = "Thursday";
-static std::string FRIDAY = "Friday";
-static std::string SATURDAY = "Saturday";
-
-static std::string JANUARY = "January";
-static std::string FEBRUARY = "February";
-static std::string MARCH = "March";
-static std::string APRIL = "April";
-static std::string MAY = "May";
-static std::string JUNE = "June";
-static std::string JULY = "July";
-static std::string AUGUST = "August";
-static std::string SEPTEMBER = "September";
-static std::string OCTOBER = "October";
-static std::string NOVEMBER = "November";
-static std::string DECEMBER = "December";
-
-static std::string SUN = "Sun";
-static std::string MON = "Mon";
-static std::string TUE = "Tue";
-static std::string WED = "Wed";
-static std::string THU = "Thu";
-static std::string FRI = "Fri";
-static std::string SAT = "Sat";
-
-static std::string JAN = "Jan";
-static std::string FEB = "Feb";
-static std::string MAR = "Mar";
-static std::string APR = "Apr";
-static std::string MAY_ABBR = "May";
-static std::string JUN = "Jun";
-static std::string JUL = "Jul";
-static std::string AUG = "Aug";
-static std::string SEP = "Sep";
-static std::string OCT = "Oct";
-static std::string NOV = "Nov";
-static std::string DEC = "Dec";
-
-// Constant string definitions (English)
-void reinitializeLangVars() {
-    ENGLISH = "English";
-    SPANISH = "Spanish";
-    FRENCH = "French";
-    GERMAN = "German";
-    JAPANESE = "Japanese";
-    KOREAN = "Korean";
-    ITALIAN = "Italian";
-    DUTCH = "Dutch";
-    PORTUGUESE = "Portuguese";
-    RUSSIAN = "Russian";
-    POLISH = "Polish";
-    SIMPLIFIED_CHINESE = "Simplified Chinese";
-    TRADITIONAL_CHINESE = "Traditional Chinese";
-    DEFAULT_CHAR_WIDTH = "0.33";
-    UNAVAILABLE_SELECTION = "Not available";
-    OVERLAYS = "Overlays"; //defined in libTesla now
-    OVERLAY = "Overlay";
-    HIDDEN_OVERLAYS = "Hidden Overlays";
-    PACKAGES = "Packages"; //defined in libTesla now
-    PACKAGE = "Package";
-    HIDDEN_PACKAGES = "Hidden Packages";
-    HIDDEN = "Hidden";
-    HIDE_OVERLAY = "Hide Overlay";
-    HIDE_PACKAGE = "Hide Package";
-    LAUNCH_ARGUMENTS = "Launch Arguments";
-    BOOT_COMMANDS = "Boot Commands";
-    EXIT_COMMANDS = "Exit Commands";
-    ERROR_LOGGING = "Error Logging";
-    COMMANDS = "Commands";
-    SETTINGS = "Settings";
-    MAIN_SETTINGS = "Main Settings";
-    UI_SETTINGS = "UI Settings";
-    WIDGET = "Widget";
-    CLOCK = "Clock";
-    BATTERY = "Battery";
-    SOC_TEMPERATURE = "SOC Temperature";
-    PCB_TEMPERATURE = "PCB Temperature";
-    MISCELLANEOUS = "Miscellaneous";
-    MENU_ITEMS = "Menu Items";
-    USER_GUIDE = "User Guide";
-    VERSION_LABELS = "Version Labels";
-    KEY_COMBO = "Key Combo";
-    LANGUAGE = "Language";
-    OVERLAY_INFO = "Overlay Info";
-    SOFTWARE_UPDATE = "Software Update";
-    UPDATE_ULTRAHAND = "Update Ultrahand";
-    UPDATE_LANGUAGES = "Update Languages";
-    SYSTEM = "System";
-    DEVICE_INFO = "Device Info";
-    FIRMWARE = "Firmware";
-    BOOTLOADER = "Bootloader";
-    HARDWARE = "Hardware";
-    MEMORY = "Memory";
-    VENDOR = "Vendor";
-    MODEL = "Model";
-    STORAGE = "Storage";
-    NOTICE = "Notice";
-    UTILIZES = "Utilizes";
-    FREE = "free";
-    MEMORY_EXPANSION = "Memory Expansion";
-    REBOOT_REQUIRED = "*Reboot required.";
-    LOCAL_IP = "Local IP";
-    WALLPAPER = "Wallpaper";
-    THEME = "Theme";
-    DEFAULT = "default";
-    ROOT_PACKAGE = "Root Package";
-    SORT_PRIORITY = "Sort Priority";
-    FAILED_TO_OPEN = "Failed to open file";
-    CLEAN_VERSIONS = "Clean Versions";
-    OVERLAY_VERSIONS = "Overlay Versions";
-    PACKAGE_VERSIONS = "Package Versions";
-    OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-    ON = "On";
-    OFF = "Off";
-    PACKAGE_INFO = "Package Info";
-    _TITLE = "Title";
-    _VERSION= "Version";
-    _CREATOR = "Creator(s)";
-    _ABOUT = "About";
-    _CREDITS = "Credits";
-    OK = "OK";
-    BACK = "Back";
-    REBOOT_TO = "Reboot To";
-    REBOOT = "Reboot";
-    SHUTDOWN = "Shutdown";
-    BOOT_ENTRY = "Boot Entry";
-    GAP_1 = "     ";
-    GAP_2 = "  ";
-    USERGUIDE_OFFSET = "173";
-    SETTINGS_MENU = "Settings Menu";
-    SCRIPT_OVERLAY = "Script Overlay";
-    STAR_FAVORITE = "Star/Favorite";
-    APP_SETTINGS = "App Settings";
-    ON_MAIN_MENU = "on Main Menu";
-    ON_A_COMMAND = "on a command";
-    ON_OVERLAY_PACKAGE = "on overlay/package";
-    EFFECTS = "Effects";
-    SWIPE_TO_OPEN = "Swipe to Open";
-    RIGHT_SIDE_MODE = "Right-side Mode";
-    PROGRESS_ANIMATION = "Progress Animation";
-    EMPTY = "Empty";
-
-    SUNDAY = "Sunday";
-    MONDAY = "Monday";
-    TUESDAY = "Tuesday";
-    WEDNESDAY = "Wednesday";
-    THURSDAY = "Thursday";
-    FRIDAY = "Friday";
-    SATURDAY = "Saturday";
-    
-    JANUARY = "January";
-    FEBRUARY = "February";
-    MARCH = "March";
-    APRIL = "April";
-    MAY = "May";
-    JUNE = "June";
-    JULY = "July";
-    AUGUST = "August";
-    SEPTEMBER = "September";
-    OCTOBER = "October";
-    NOVEMBER = "November";
-    DECEMBER = "December";
-    
-    SUN = "Sun";
-    MON = "Mon";
-    TUE = "Tue";
-    WED = "Wed";
-    THU = "Thu";
-    FRI = "Fri";
-    SAT = "Sat";
-    
-    JAN = "Jan";
-    FEB = "Feb";
-    MAR = "Mar";
-    APR = "Apr";
-    MAY_ABBR = "May";
-    JUN = "Jun";
-    JUL = "Jul";
-    AUG = "Aug";
-    SEP = "Sep";
-    OCT = "Oct";
-    NOV = "Nov";
-    DEC = "Dec";
-}
-
-
-
-
-// Define the updateIfNotEmpty function
-void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData) {
-    std::string newValue = getStringFromJson(jsonData, jsonKey);
-    if (!newValue.empty()) {
-        constant = newValue;
-    }
-}
-
-void parseLanguage(const std::string langFile) {
-    json_t* langData = readJsonFromFile(langFile);
-    if (!langData)
-        return;
-    
-    std::unordered_map<std::string, std::string*> configMap = {
-        {"ENGLISH", &ENGLISH},
-        {"SPANISH", &SPANISH},
-        {"FRENCH", &FRENCH},
-        {"GERMAN", &GERMAN},
-        {"JAPANESE", &JAPANESE},
-        {"KOREAN", &KOREAN},
-        {"ITALIAN", &ITALIAN},
-        {"DUTCH", &DUTCH},
-        {"PORTUGUESE", &PORTUGUESE},
-        {"RUSSIAN", &RUSSIAN},
-        {"SIMPLIFIED_CHINESE", &SIMPLIFIED_CHINESE},
-        {"TRADITIONAL_CHINESE", &TRADITIONAL_CHINESE},
-        {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
-        {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
-        {"OVERLAYS", &OVERLAYS},
-        {"OVERLAY", &OVERLAY},
-        {"HIDDEN_OVERLAYS", &HIDDEN_OVERLAYS},
-        {"PACKAGES", &PACKAGES},
-        {"PACKAGE", &PACKAGE},
-        {"HIDDEN_PACKAGES", &HIDDEN_PACKAGES},
-        {"HIDDEN", &HIDDEN},
-        {"HIDE_PACKAGE", &HIDE_PACKAGE},
-        {"HIDE_OVERLAY", &HIDE_OVERLAY},
-        {"LAUNCH_ARGUMENTS", &LAUNCH_ARGUMENTS},
-        {"BOOT_COMMANDS", &BOOT_COMMANDS},
-        {"EXIT_COMMANDS", &EXIT_COMMANDS},
-        {"ERROR_LOGGING", &ERROR_LOGGING},
-        {"COMMANDS", &COMMANDS},
-        {"SETTINGS", &SETTINGS},
-        {"MAIN_SETTINGS", &MAIN_SETTINGS},
-        {"UI_SETTINGS", &UI_SETTINGS},
-        {"WIDGET", &WIDGET},
-        {"CLOCK", &CLOCK},
-        {"BATTERY", &BATTERY},
-        {"SOC_TEMPERATURE", &SOC_TEMPERATURE},
-        {"PCB_TEMPERATURE", &PCB_TEMPERATURE},
-        {"MISCELLANEOUS", &MISCELLANEOUS},
-        {"MENU_ITEMS", &MENU_ITEMS},
-        {"USER_GUIDE", &USER_GUIDE},
-        {"VERSION_LABELS", &VERSION_LABELS},
-        {"KEY_COMBO", &KEY_COMBO},
-        {"LANGUAGE", &LANGUAGE},
-        {"OVERLAY_INFO", &OVERLAY_INFO},
-        {"SOFTWARE_UPDATE", &SOFTWARE_UPDATE},
-        {"UPDATE_ULTRAHAND", &UPDATE_ULTRAHAND},
-        {"UPDATE_LANGUAGES", &UPDATE_LANGUAGES},
-        {"SYSTEM", &SYSTEM},
-        {"DEVICE_INFO", &DEVICE_INFO},
-        {"FIRMWARE", &FIRMWARE},
-        {"BOOTLOADER", &BOOTLOADER},
-        {"HARDWARE", &HARDWARE},
-        {"MEMORY", &MEMORY},
-        {"VENDOR", &VENDOR},
-        {"MODEL", &MODEL},
-        {"STORAGE", &STORAGE},
-        {"NOTICE", &NOTICE},
-        {"UTILIZES", &UTILIZES},
-        {"FREE", &FREE},
-        {"MEMORY_EXPANSION", &MEMORY_EXPANSION},
-        {"REBOOT_REQUIRED", &REBOOT_REQUIRED},
-        {"LOCAL_IP", &LOCAL_IP},
-        {"WALLPAPER", &WALLPAPER},
-        {"THEME", &THEME},
-        {"DEFAULT", &DEFAULT},
-        {"ROOT_PACKAGE", &ROOT_PACKAGE},
-        {"SORT_PRIORITY", &SORT_PRIORITY},
-        {"FAILED_TO_OPEN", &FAILED_TO_OPEN},
-        {"CLEAN_VERSIONS", &CLEAN_VERSIONS},
-        {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
-        {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
-        {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
-        {"ON", &ON},
-        {"OFF", &OFF},
-        {"PACKAGE_INFO", &PACKAGE_INFO},
-        {"_TITLE", &_TITLE},
-        {"_VERSION", &_VERSION},
-        {"_CREATOR", &_CREATOR},
-        {"_ABOUT", &_ABOUT},
-        {"_CREDITS", &_CREDITS},
-        {"OK", &OK},
-        {"BACK", &BACK},
-        {"REBOOT_TO", &REBOOT_TO},
-        {"REBOOT", &REBOOT},
-        {"SHUTDOWN", &SHUTDOWN},
-        {"BOOT_ENTRY", &BOOT_ENTRY},
-        {"GAP_1", &GAP_1},
-        {"GAP_2", &GAP_2},
-        {"USERGUIDE_OFFSET", &USERGUIDE_OFFSET},
-        {"SETTINGS_MENU", &SETTINGS_MENU},
-        {"SCRIPT_OVERLAY", &SCRIPT_OVERLAY},
-        {"STAR_FAVORITE", &STAR_FAVORITE},
-        {"APP_SETTINGS", &APP_SETTINGS},
-        {"ON_MAIN_MENU", &ON_MAIN_MENU},
-        {"ON_A_COMMAND", &ON_A_COMMAND},
-        {"ON_OVERLAY_PACKAGE", &ON_OVERLAY_PACKAGE},
-        {"EFFECTS", &EFFECTS},
-        {"SWIPE_TO_OPEN", &SWIPE_TO_OPEN},
-        {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
-        {"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
-        {"EMPTY", &EMPTY},
-        {"SUNDAY", &SUNDAY},
-        {"MONDAY", &MONDAY},
-        {"TUESDAY", &TUESDAY},
-        {"WEDNESDAY", &WEDNESDAY},
-        {"THURSDAY", &THURSDAY},
-        {"FRIDAY", &FRIDAY},
-        {"SATURDAY", &SATURDAY},
-        {"JANUARY", &JANUARY},
-        {"FEBRUARY", &FEBRUARY},
-        {"MARCH", &MARCH},
-        {"APRIL", &APRIL},
-        {"MAY", &MAY},
-        {"JUNE", &JUNE},
-        {"JULY", &JULY},
-        {"AUGUST", &AUGUST},
-        {"SEPTEMBER", &SEPTEMBER},
-        {"OCTOBER", &OCTOBER},
-        {"NOVEMBER", &NOVEMBER},
-        {"DECEMBER", &DECEMBER},
-        {"SUN", &SUN},
-        {"MON", &MON},
-        {"TUE", &TUE},
-        {"WED", &WED},
-        {"THU", &THU},
-        {"FRI", &FRI},
-        {"SAT", &SAT},
-        {"JAN", &JAN},
-        {"FEB", &FEB},
-        {"MAR", &MAR},
-        {"APR", &APR},
-        {"MAY_ABBR", &MAY_ABBR},
-        {"JUN", &JUN},
-        {"JUL", &JUL},
-        {"AUG", &AUG},
-        {"SEP", &SEP},
-        {"OCT", &OCT},
-        {"NOV", &NOV},
-        {"DEC", &DEC}
-    };
-
-    // Iterate over the map to update global variables
-    for (auto& kv : configMap) {
-        updateIfNotEmpty(*kv.second, kv.first.c_str(), langData);
-    }
-
-    // Free langData
-    if (langData != nullptr) {
-        json_decref(langData);
-        langData = nullptr;
-    }
-}
-
-
-// Helper function to apply replacements
-//static void applyTimeStrReplacements(std::string& str, const std::unordered_map<std::string, std::string>& mappings) {
-//    size_t pos;
-//    for (const auto& mapping : mappings) {
-//        pos = str.find(mapping.first);
-//        while (pos != std::string::npos) {
-//            str.replace(pos, mapping.first.length(), mapping.second);
-//            pos = str.find(mapping.first, pos + mapping.second.length());
-//        }
-//    }
-//}
-
-void localizeTimeStr(char* timeStr) {
-    // Define static unordered_map for day and month mappings
-    std::unordered_map<std::string, std::string> mappings = {
-        {"Sun", SUN},
-        {"Mon", MON},
-        {"Tue", TUE},
-        {"Wed", WED},
-        {"Thu", THU},
-        {"Fri", FRI},
-        {"Sat", SAT},
-        {"Sunday", SUNDAY},
-        {"Monday", MONDAY},
-        {"Tuesday", TUESDAY},
-        {"Wednesday", WEDNESDAY},
-        {"Thursday", THURSDAY},
-        {"Friday", FRIDAY},
-        {"Saturday", SATURDAY},
-        {"Jan", JAN},
-        {"Feb", FEB},
-        {"Mar", MAR},
-        {"Apr", APR},
-        {"May", MAY_ABBR},
-        {"Jun", JUN},
-        {"Jul", JUL},
-        {"Aug", AUG},
-        {"Sep", SEP},
-        {"Oct", OCT},
-        {"Nov", NOV},
-        {"Dec", DEC},
-        {"January", JANUARY},
-        {"February", FEBRUARY},
-        {"March", MARCH},
-        {"April", APRIL},
-        {"May", MAY},
-        {"June", JUNE},
-        {"July", JULY},
-        {"August", AUGUST},
-        {"September", SEPTEMBER},
-        {"October", OCTOBER},
-        {"November", NOVEMBER},
-        {"December", DECEMBER}
-    };
-
-    std::string timeStrCopy = timeStr; // Convert the char array to a string for processing
-
-    // Apply day and month replacements
-    //applyTimeStrReplacements(timeStrCopy, mappings);
-
-    size_t pos;
-    for (const auto& mapping : mappings) {
-        pos = timeStrCopy.find(mapping.first);
-        while (pos != std::string::npos) {
-            timeStrCopy.replace(pos, mapping.first.length(), mapping.second);
-            pos = timeStrCopy.find(mapping.first, pos + mapping.second.length());
-        }
-    }
-
-    // Copy the modified string back to the character array
-    strcpy(timeStr, timeStrCopy.c_str());
-}
-
-// Unified function to apply replacements
-static void applyLangReplacements(std::string& text, bool isValue = false) {
-    // Define the maps for replacements
-    std::unordered_map<std::string, std::string> replacements;
-
-    if (!isValue) {
-        replacements = {
-            {"Reboot To", REBOOT_TO},
-            {"Boot Entry", BOOT_ENTRY},
-            {"Reboot", REBOOT},
-            {"Shutdown", SHUTDOWN}
-        };
-    } else {
-        replacements = {
-            {"On", ON},
-            {"Off", OFF}
-        };
-    }
-
-    // Perform the direct replacement
-    auto it = replacements.find(text);
-    if (it != replacements.end()) {
-        text = it->second;
-    }
-}
-
-
-
-//// Map of character widths (pre-calibrated)
-static std::unordered_map<wchar_t, float> characterWidths = {
-    {L'<', 0.81},
-    {L'>', 0.81},
-    {L',', 0.25},
-    {L'/', 0.5},
-    {L'\\', 0.5},
-    {L'`', 0.25},
-    {L'\'', 0.186},
-    {L'↑', 1.0},
-    {L'~', 0.31},
-    {L'"', 0.31},
-    {L'!', 0.25},
-    {L'@', 0.87},
-    {L'#', 0.31},
-    {L'$', 0.56},
-    {L'^', 0.5},
-    {L'?', 0.5},
-    {L'°', 0.31},
-    {L'%', 0.87},
-    {L'*', 0.434},
-    {L'=', 0.750},
-    {L':', 0.25},
-    {L';', 0.25},
-    {L' ', 0.312},
-    {L'|', 0.26},
-    {L'.', 0.25},
-    {L'+', 0.75},
-    {L'-', 0.37},
-    {L'_', 0.50},
-    {L'&', 0.75},
-    {L'(', 0.31},
-    {L')', 0.31},
-    {L'[', 0.3635},
-    {L']', 0.3635},
-    {L'A', 0.745},
-    {L'B', 0.62},
-    {L'C', 0.745},
-    {L'D', 0.8082},
-    {L'E', 0.56},
-    {L'F', 0.56},
-    {L'G', 0.81},
-    {L'H', 0.685},
-    {L'I', 0.25},
-    {L'J', 0.50},
-    {L'K', 0.62},
-    {L'L', 0.435},
-    {L'M', 0.933},
-    {L'N', 0.81},
-    {L'O', 0.875},
-    {L'P', 0.56},
-    {L'Q', 0.875},
-    {L'R', 0.56},
-    {L'S', 0.56},
-    {L'T', 0.6198},
-    {L'U', 0.81},
-    {L'V', 0.75},
-    {L'W', 1.12},
-    {L'X', 0.625},
-    {L'Y', 0.625},
-    {L'Z', 0.745},
-    {L'a', 0.56},
-    {L'b', 0.62},
-    {L'c', 0.56},
-    {L'd', 0.625},
-    {L'e', 0.559},
-    {L'f', 0.25},
-    {L'g', 0.56},
-    {L'h', 0.56},
-    {L'i', 0.2485},
-    {L'j', 0.3748},
-    {L'k', 0.5588},
-    {L'l', 0.251},
-    {L'm', 0.935},
-    {L'n', 0.5573},
-    {L'o', 0.62},
-    {L'p', 0.62},
-    {L'q', 0.62},
-    {L'r', 0.3725},
-    {L's', 0.496},
-    {L't', 0.372},
-    {L'u', 0.561},
-    {L'v', 0.50},
-    {L'w', 0.87},
-    {L'x', 0.50},
-    {L'y', 0.50},
-    {L'z', 0.5},
-    {L'0', 0.62},
-    {L'1', 0.6199},
-    {L'2', 0.63},
-    {L'3', 0.62},
-    {L'4', 0.62},
-    {L'5', 0.62},
-    {L'6', 0.62},
-    {L'7', 0.62},
-    {L'8', 0.62},
-    {L'9', 0.62}
-};
-
-static float defaultNumericCharWidth = 0.66;
-
-
-
-// Predefined hexMap
-const std::array<int, 256> hexMap = [] {
-    std::array<int, 256> map = {0};
-    map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
-    map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
-    map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
-    map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
-    return map;
-}();
-
-
-// Prepare a map of default settings
-std::map<std::string, std::string> defaultThemeSettingsMap = {
-    {"default_package_color", "#00FF00"},
-    {"clock_color", whiteColor},
-    {"bg_alpha", "13"},
-    {"bg_color", blackColor},
-    {"separator_alpha", "15"},
-    {"separator_color", "#404040"},
-    {"battery_color", "#ffff45"},
-    {"text_color", whiteColor},
-    {"header_text_color", whiteColor},
-    {"header_separator_color", whiteColor},
-    {"star_color", whiteColor},
-    {"selection_star_color", whiteColor},
-    {"bottom_button_color", whiteColor},
-    {"bottom_text_color", whiteColor},
-    {"bottom_separator_color", whiteColor},
-    {"table_bg_color", "#303030"},
-    {"table_bg_alpha", "10"},
-    {"table_section_text_color", whiteColor},
-    {"table_info_text_color", "#00FFDD"},
-    {"warning_text_color", "#FF7777"},
-    {"trackbar_slider_color", "#606060"},
-    {"trackbar_slider_border_color", "#505050"},
-    {"trackbar_slider_malleable_color", "#A0A0A0"},
-    {"trackbar_full_color", "#00FFDD"},
-    {"trackbar_empty_color", "#404040"},
-    {"version_text_color", "#AAAAAA"},
-    {"on_text_color", "#00FFDD"},
-    {"off_text_color", "#AAAAAA"},
-    {"invalid_text_color", "#FF0000"},
-    {"inprogress_text_color", "#FFFF45"},
-    {"selection_text_color", whiteColor},
-    {"selection_bg_color", blackColor},
-    {"selection_bg_alpha", "13"},
-    {"trackbar_color", "#555555"},
-    {"highlight_color_1", "#2288CC"},
-    {"highlight_color_2", "#88FFFF"},
-    {"highlight_color_3", "#FFFF45"},
-    {"highlight_color_4", "#F7253E"},
-    {"click_text_color", whiteColor},
-    {"click_alpha", "7"},
-    {"click_color", "#3E25F7"},
-    {"progress_alpha", "7"},
-    {"progress_color", "#253EF7"},
-    {"invert_bg_click_color", FALSE_STR},
-    {"disable_selection_bg", FALSE_STR},
-    {"disable_colorful_logo", FALSE_STR},
-    {"logo_color_1", whiteColor},
-    {"logo_color_2", "#FF0000"},
-    {"dynamic_logo_color_1", "#00E669"},
-    {"dynamic_logo_color_2", "#8080EA"}
-};
-
-inline bool isNumericCharacter(char c) {
-    return std::isdigit(c);
-}
-
-inline bool isValidHexColor(const std::string& hexColor) {
-    // Check if the string is a valid hexadecimal color of the format "#RRGGBB"
-    if (hexColor.size() != 6) {
-        return false; // Must be exactly 6 characters long
-    }
-    
-    for (char c : hexColor) {
-        if (!isxdigit(c)) {
-            return false; // Must contain only hexadecimal digits (0-9, A-F, a-f)
-        }
-    }
-    
-    return true;
-}
-
-
-
-inline float calculateAmplitude(float x, float peakDurationFactor = 0.25f) {
-    const float phasePeriod = 360.0f * peakDurationFactor;  // One full phase period
-
-    // Convert x from radians to degrees and calculate phase within the period
-    int phase = static_cast<int>(x * RAD_TO_DEG) % static_cast<int>(phasePeriod);
-
-    // Check if the phase is odd using bitwise operation
-    if (phase & 1) {
-        return 1.0f;  // Flat amplitude (maximum positive)
-    } else {
-        // Calculate the sinusoidal amplitude for the remaining period
-        return (std::cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
-    }
-}
-        
-
-
-static std::atomic<bool> refreshWallpaper(false);
-static std::vector<u8> wallpaperData;
-static std::atomic<bool> inPlot(false);
-
-std::mutex wallpaperMutex;
-std::condition_variable cv;
-
-
-
-// Function to load the RGBA file into memory and modify wallpaperData directly
-void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720) {
-    // Calculate the size of the bitmap in bytes
-    size_t dataSize = width * height * 4; // 4 bytes per pixel (RGBA8888)
-    
-    // Resize the wallpaperData vector to the required size
-    wallpaperData.resize(dataSize);
-    
-    if (!isFileOrDirectory(filePath)) {
-        wallpaperData.clear(); // Clear wallpaperData if loading failed
-        return;
-    }
-
-    // Open the file in binary mode
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file) {
-        //std::cerr << "Failed to open file: " << filePath << std::endl;
-        wallpaperData.clear(); // Clear wallpaperData if loading failed
-        return;
-    }
-    
-    // Read the file content into the wallpaperData buffer
-    file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
-    if (!file) {
-        //std::cerr << "Failed to read file: " << filePath << std::endl;
-        wallpaperData.clear(); // Clear wallpaperData if reading failed
-        return;
-    }
-    
-    // Preprocess the bitmap data by shifting the color values
-    for (size_t i = 0; i < dataSize; i += 4) {
-        // Shift the color values to reduce precision (if needed)
-        wallpaperData[i] >>= 4;   // Red
-        wallpaperData[i + 1] >>= 4; // Green
-        wallpaperData[i + 2] >>= 4; // Blue
-        wallpaperData[i + 3] >>= 4; // Alpha
-    }
-}
-
-
-// Global variables for FPS calculation
-//double lastTimeCount = 0.0;
-//int frameCount = 0;
-//float fps = 0.0f;
-//double elapsedTime = 0.0;
-
-
-// Variables for touch commands
-static bool touchingBack = false;
-static bool touchingSelect = false;
-static bool touchingNextPage = false;
-static bool touchingMenu = false;
-static bool simulatedBack = false;
-static bool simulatedBackComplete = true;
-static bool simulatedSelect = false;
-static bool simulatedSelectComplete = true;
-static bool simulatedNextPage = false;
-static bool simulatedNextPageComplete = true;
-static bool simulatedMenu = false;
-static bool simulatedMenuComplete = true;
-static bool stillTouching = false;
-static bool interruptedTouch = false;
-static bool touchInBounds = false;
-
-
-// Command key defintitions
-const static auto SCRIPT_KEY = KEY_MINUS;
-const static auto SYSTEM_SETTINGS_KEY = KEY_PLUS;
-const static auto SETTINGS_KEY = KEY_Y;
-const static auto STAR_KEY = KEY_X;
-
-
-
-// Battery implementation
-static bool powerInitialized = false;
-static bool powerCacheInitialized;
-static uint32_t powerCacheCharge;
-//static float powerConsumption;
-static bool powerCacheIsCharging;
-static PsmSession powerSession;
-
-// Define variables to store previous battery charge and time
-static uint32_t prevBatteryCharge = 0;
-static s64 timeOut = 0;
-
-
-static uint32_t batteryCharge;
-static bool isCharging;
-//static bool validPower;
-
-constexpr auto min_delay = std::chrono::seconds(3); // Minimum delay between checks
-
-bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging) {
-    static auto last_call = std::chrono::steady_clock::now();
-
-    // Ensure power system is initialized
-    if (!powerInitialized) {
-        return false;
-    }
-
-    // Get the current time
-    auto now = std::chrono::steady_clock::now();
-
-    // Check if enough time has elapsed or if cache is not initialized
-    bool useCache = (now - last_call <= min_delay) && powerCacheInitialized;
-    if (!useCache) {
-        PsmChargerType charger = PsmChargerType_Unconnected;
-        Result rc = psmGetBatteryChargePercentage(batteryCharge);
-        bool hwReadsSucceeded = R_SUCCEEDED(rc);
-
-        if (hwReadsSucceeded) {
-            rc = psmGetChargerType(&charger);
-            hwReadsSucceeded &= R_SUCCEEDED(rc);
-            *isCharging = (charger != PsmChargerType_Unconnected);
-
-            if (hwReadsSucceeded) {
-                // Update cache
-                powerCacheCharge = *batteryCharge;
-                powerCacheIsCharging = *isCharging;
-                powerCacheInitialized = true;
-                last_call = now; // Update last call time after successful hardware read
-                return true;
-            }
-        }
-
-        // Use cached values if the hardware read fails
-        if (powerCacheInitialized) {
-            *batteryCharge = powerCacheCharge;
-            *isCharging = powerCacheIsCharging;
-            return hwReadsSucceeded; // Return false if hardware read failed but cache is valid
-        }
-
-        // Return false if cache is not initialized and hardware read failed
-        return false;
-    }
-
-    // Use cached values if not enough time has passed
-    *batteryCharge = powerCacheCharge;
-    *isCharging = powerCacheIsCharging;
-    return true; // Return true as cache is used
-}
-
-
-
-void powerInit(void) {
-    uint32_t charge = 0;
-    isCharging = 0;
-    
-    powerCacheInitialized = false;
-    powerCacheCharge = 0;
-    powerCacheIsCharging = false;
-    
-    if (!powerInitialized) {
-        Result rc = psmInitialize();
-        if (R_SUCCEEDED(rc)) {
-            rc = psmBindStateChangeEvent(&powerSession, 1, 1, 1);
-            
-            if (R_FAILED(rc)) psmExit();
-            if (R_SUCCEEDED(rc)) {
-                powerInitialized = true;
-                powerGetDetails(&charge, &isCharging);
-                
-                // Initialize prevBatteryCharge here with a non-zero value if needed.
-                prevBatteryCharge = charge;
-            }
-        }
-    }
-}
-
-void powerExit(void) {
-    if (powerInitialized) {
-        psmUnbindStateChangeEvent(&powerSession);
-        psmExit();
-        powerInitialized = false;
-        powerCacheInitialized = false;
-    }
-}
-
-
-// Temperature Implementation
-static float PCB_temperature, SOC_temperature;
-
-/*
-I2cReadRegHandler was taken from Switch-OC-Suite source code made by KazushiMe
-Original repository link (Deleted, last checked 15.04.2023): https://github.com/KazushiMe/Switch-OC-Suite
-*/
-
-Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out)
-{
-    struct readReg {
-        u8 send;
-        u8 sendLength;
-        u8 sendData;
-        u8 receive;
-        u8 receiveLength;
-    };
-
-    I2cSession _session;
-
-    Result res = i2cOpenSession(&_session, dev);
-    if (res)
-        return res;
-
-    u16 val;
-
-    struct readReg readRegister = {
-        .send = 0 | (I2cTransactionOption_Start << 6),
-        .sendLength = sizeof(reg),
-        .sendData = reg,
-        .receive = 1 | (I2cTransactionOption_All << 6),
-        .receiveLength = sizeof(val),
-    };
-
-    res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
-    if (res) {
-        i2csessionClose(&_session);
-        return res;
-    }
-
-    *out = val;
-    i2csessionClose(&_session);
-    return 0;
-}
-
-
-#define TMP451_SOC_TEMP_REG 0x01  // Register for SOC temperature integer part
-#define TMP451_SOC_TMP_DEC_REG 0x10  // Register for SOC temperature decimal part
-#define TMP451_PCB_TEMP_REG 0x00  // Register for PCB temperature integer part
-#define TMP451_PCB_TMP_DEC_REG 0x15  // Register for PCB temperature decimal part
-
-// Common helper function to read temperature (integer and fractional parts)
-Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly)
-{
-    u16 rawValue;
-    u8 val;
-    s32 integerPart = 0;
-    float fractionalPart = 0.0f;  // Change this to a float to retain fractional precision
-
-    // Read the integer part of the temperature
-    Result res = I2cReadRegHandler(integerReg, I2cDevice_Tmp451, &rawValue);
-    if (R_FAILED(res)) {
-        return res;  // Error during I2C read
-    }
-
-    val = (u8)rawValue;  // Cast the value to an 8-bit unsigned integer
-    integerPart = val;    // Integer part of temperature in Celsius
-
-    if (integerOnly)
-    {
-        *temperature = static_cast<float>(integerPart);  // Ensure it's treated as a float
-        return 0;  // Return only integer part if requested
-    }
-
-    // Read the fractional part of the temperature
-    res = I2cReadRegHandler(fractionalReg, I2cDevice_Tmp451, &rawValue);
-    if (R_FAILED(res)) {
-        return res;  // Error during I2C read
-    }
-
-    val = (u8)rawValue;  // Cast the value to an 8-bit unsigned integer
-    fractionalPart = static_cast<float>(val >> 4) * 0.0625f;  // Convert upper 4 bits into fractional part
-
-    // Combine integer and fractional parts
-    *temperature = static_cast<float>(integerPart) + fractionalPart;
-
-    return 0;
-}
-
-// Function to get the SOC temperature
-Result ReadSocTemperature(float *temperature, bool integerOnly = true)
-{
-    return ReadTemperature(temperature, TMP451_SOC_TEMP_REG, TMP451_SOC_TMP_DEC_REG, integerOnly);
-}
-
-// Function to get the PCB temperature
-Result ReadPcbTemperature(float *temperature, bool integerOnly = true)
-{
-    return ReadTemperature(temperature, TMP451_PCB_TEMP_REG, TMP451_PCB_TMP_DEC_REG, integerOnly);
-}
-
-
-
-// Time implementation
-struct timespec currentTime;
-static const std::string DEFAULT_DT_FORMAT = "'%a %T'";
-static std::string datetimeFormat = "%a %T";
-
-
-// Widget settings
-//static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-static bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-
-void reinitializeWidgetVars() {
-    hideClock = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_clock") != FALSE_STR);
-    hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
-    hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
-    hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
-}
-
-static bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
-
-static std::string loaderInfo = envGetLoaderInfo();
-static std::string loaderTitle = extractTitle(loaderInfo);
-static bool expandedMemory = (loaderTitle == "nx-ovlloader+");
-
-static std::string versionLabel;
-
-void reinitializeVersionLabels() {
-    cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
-    hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
-    hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
-    versionLabel = std::string(APP_VERSION) + "   (" + loaderTitle + " " + (cleanVersionLabels ? "" : "v") + cleanVersionLabel(loaderInfo) + ")";
-    //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
-}
-
-
-
-// Number of renderer threads to use
-const unsigned numThreads = expandedMemory ? 4 : 0;
-std::vector<std::thread> threads(numThreads);
-s32 bmpChunkSize = (720 + numThreads - 1) / numThreads;
-std::atomic<s32> currentRow;
-
-
-
-// Assuming numThreads is the number of threads you have
-std::barrier inPlotBarrier(numThreads, [](){
-    inPlot.store(false, std::memory_order_release);
-});
-
+using namespace ult;
 
 
 // CUSTOM SECTION END
@@ -1451,7 +110,7 @@ using namespace std::literals::chrono_literals;
 
 
 namespace tsl {
-    
+
     // Constants
     
     namespace cfg {
@@ -1665,7 +324,7 @@ namespace tsl {
     static Color trackBarFullColor = RGB888("#00FFDD");
     static Color trackBarEmptyColor = RGB888("#404040");
     
-    void initializeThemeVars() { // NOTE: This needs to be called once in your application.
+    static void initializeThemeVars() { // NOTE: This needs to be called once in your application.
         // Fetch all theme settings at once from the INI file
         auto themeData = getParsedDataFromIniFile(THEME_CONFIG_INI_PATH);
         if (themeData.count(THEME_STR) > 0) {
@@ -1702,7 +361,6 @@ namespace tsl {
             buttonColor = getColor("bottom_button_color");
             bottomTextColor = getColor("bottom_text_color");
             botttomSeparatorColor = getColor("bottom_separator_color");
-
             defaultPackageColor = getColor("default_package_color");
 
             clockColor = getColor("clock_color");
@@ -1757,7 +415,7 @@ namespace tsl {
         }
     }
     
-    void initializeUltrahandSettings() {
+    static void initializeUltrahandSettings() {
         // Set Ultrahand Globals
         useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
         useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
@@ -1815,31 +473,7 @@ namespace tsl {
             return static_cast<LaunchFlags>(u8(lhs) | u8(rhs));
         }
         
-        /**
-         * @brief Combo key mapping
-         */
-        struct KeyInfo {
-            u64 key;
-            const char* name;
-            const char* glyph;
-        };
         
-        /**
-         * @brief Combo key mappings
-         *
-         * Ordered as they should be displayed
-         */
-        constexpr std::array<KeyInfo, 18> KEYS_INFO = {{
-            { HidNpadButton_L, "L", "\uE0E4" }, { HidNpadButton_R, "R", "\uE0E5" },
-            { HidNpadButton_ZL, "ZL", "\uE0E6" }, { HidNpadButton_ZR, "ZR", "\uE0E7" },
-            { HidNpadButton_AnySL, "SL", "\uE0E8" }, { HidNpadButton_AnySR, "SR", "\uE0E9" },
-            { HidNpadButton_Left, "DLEFT", "\uE0ED" }, { HidNpadButton_Up, "DUP", "\uE0EB" },
-            { HidNpadButton_Right, "DRIGHT", "\uE0EE" }, { HidNpadButton_Down, "DDOWN", "\uE0EC" },
-            { HidNpadButton_A, "A", "\uE0E0" }, { HidNpadButton_B, "B", "\uE0E1" },
-            { HidNpadButton_X, "X", "\uE0E2" }, { HidNpadButton_Y, "Y", "\uE0E3" },
-            { HidNpadButton_StickL, "LS", "\uE08A" }, { HidNpadButton_StickR, "RS", "\uE08B" },
-            { HidNpadButton_Minus, "MINUS", "\uE0B6" }, { HidNpadButton_Plus, "PLUS", "\uE0B5" }
-        }};
         
     }
     
@@ -1855,7 +489,7 @@ namespace tsl {
     // Helpers
     
     namespace hlp {
-        
+
         /**
          * @brief Wrapper for service initialization
          *
@@ -2062,7 +696,7 @@ namespace tsl {
          * @return Key code
          */
         static u64 stringToKeyCode(const std::string& value) {
-            for (const auto& keyInfo : impl::KEYS_INFO) {
+            for (const auto& keyInfo : KEYS_INFO) {
                 if (strcasecmp(value.c_str(), keyInfo.name) == 0)
                     return keyInfo.key;
             }
@@ -2096,7 +730,7 @@ namespace tsl {
             std::string result;
             bool first = true;
         
-            for (const auto &keyInfo : impl::KEYS_INFO) {
+            for (const auto &keyInfo : KEYS_INFO) {
                 if (keys & keyInfo.key) {
                     if (!first) {
                         result += "+";
@@ -2640,7 +1274,7 @@ namespace tsl {
              * @param screenH Target screen height
              */
 
-            inline void drawBitmap(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
+            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
                 // Number of threads to use
                 //const unsigned numThreads = 3;
                 //std::vector<std::thread> threads(numThreads);
@@ -2661,6 +1295,43 @@ namespace tsl {
                 }
             }
 
+
+            inline void drawWallpaper() {
+                if (expandedMemory && !refreshWallpaper.load(std::memory_order_acquire)) {
+                    //inPlot = true;
+                    inPlot.store(true, std::memory_order_release);
+                    //std::lock_guard<std::mutex> lock(wallpaperMutex);
+                    if (!wallpaperData.empty()) {
+                        // Draw the bitmap at position (0, 0) on the screen
+                        if (!refreshWallpaper.load(std::memory_order_acquire))
+                            drawBitmapRGBA4444(0, 0, 448, 720, wallpaperData.data());
+                        else
+                            inPlot.store(false, std::memory_order_release);
+                    } else {
+                        inPlot.store(false, std::memory_order_release);
+                    }
+                    //inPlot = false;
+                }
+            }
+
+            /**
+             * @brief Draws a RGBA8888 bitmap from memory
+             *
+             * @param x X start position
+             * @param y Y start position
+             * @param w Bitmap width
+             * @param h Bitmap height
+             * @param bmp Pointer to bitmap data
+             */
+            void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
+                for (s32 y1 = 0; y1 < h; y1++) {
+                    for (s32 x1 = 0; x1 < w; x1++) {
+                        const Color color = { static_cast<u8>(bmp[0] >> 4), static_cast<u8>(bmp[1] >> 4), static_cast<u8>(bmp[2] >> 4), static_cast<u8>(bmp[3] >> 4) };
+                        setPixelBlendSrc(x + x1, y + y1, a(color));
+                        bmp += 4;
+                    }
+                }
+            }
             
             /**
              * @brief Fills the entire layer with a given color
@@ -3580,8 +2251,8 @@ namespace tsl {
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
                 
-                //half progress = half((std::sin(2.0 * M_PI * fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                progress = (std::sin(2.0 * M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0;
+                //half progress = half((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = (std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0;
                 
                 if (progress >= 0.5) {
                     clickColor1 = clickColor;
@@ -3676,7 +2347,7 @@ namespace tsl {
                     return;
                 
                 
-                progress = ((std::sin(2.0 * M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
                 if (runningInterpreter.load(std::memory_order_acquire)) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -3981,28 +2652,6 @@ namespace tsl {
             bool isScrollable = false;
         };
 
-
-        
-        // CUSTOM SECTION START
-        void drawWallpaper(gfx::Renderer *renderer) {
-            if (expandedMemory && !refreshWallpaper.load(std::memory_order_acquire)) {
-                //inPlot = true;
-                inPlot.store(true, std::memory_order_release);
-                //std::lock_guard<std::mutex> lock(wallpaperMutex);
-                if (!wallpaperData.empty()) {
-                    // Draw the bitmap at position (0, 0) on the screen
-                    if (!refreshWallpaper.load(std::memory_order_acquire))
-                        renderer->drawBitmap(0, 0, 448, 720, wallpaperData.data());
-                    else
-                        inPlot.store(false, std::memory_order_release);
-                } else {
-                    inPlot.store(false, std::memory_order_release);
-                }
-                //inPlot = false;
-            }
-        }
-        
-        // CUSTOM SECTION END
         
         /**
          * @brief The base frame which can contain another view
@@ -4083,7 +2732,7 @@ namespace tsl {
                     noClickableItems = m_noClickableItems;
                 renderer->fillScreen(a(defaultBackgroundColor));
                 
-                drawWallpaper(renderer);
+                renderer->drawWallpaper();
                 
 
                 y = 50;
@@ -4115,7 +2764,7 @@ namespace tsl {
                         auto currentTimeCount = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         float progress;
                         for (char letter : SPLIT_PROJECT_NAME_1) {
-                            counter = (2 * M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
+                            counter = (2 * _M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             progress = std::sin(counter); // -1 to 1
                             
                             highlightColor = {
@@ -4495,7 +3144,7 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 renderer->fillScreen(a(defaultBackgroundColor));
 
-                drawWallpaper(renderer);
+                renderer->drawWallpaper();
 
                 //renderer->fillScreen(tsl::style::color::ColorFrameBackground);
                 renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
@@ -6168,7 +4817,7 @@ namespace tsl {
             
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((std::sin(2.0 * M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
                 if (allowSlide || m_unlockedTrackbar) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -6949,7 +5598,7 @@ namespace tsl {
                 //}
             }
 
-            if (currentFocus == nullptr) {
+            if (currentGui) {
                 // Handle the rest of the input only if the game is not paused and not over
                 if (simulatedBack) {
                     keysDown |= KEY_B;
@@ -6969,6 +5618,7 @@ namespace tsl {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
                 }
+
             }
             static bool hasScrolled = false;
 
@@ -7069,7 +5719,7 @@ namespace tsl {
                             //shouldShake = currentGui->getFocusedElement() != currentFocus;
                         }
                     } else {
-                        // Handle the rest of the input only if the game is not paused and not over
+                        // Handle the rest of the input
                         if (simulatedBack) {
                             keysDown |= KEY_B;
                             simulatedBack = false;
@@ -7493,16 +6143,6 @@ namespace tsl {
                     }
                     
 
-                    if (updateMenuCombos) {  // CUSTOM MODIFICATION
-                        if ((shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) {
-                            tsl::cfg::launchCombo = tsl::cfg::launchCombo2;
-                            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
-                            setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, TESLA_COMBO_STR);
-                            eventFire(&shData->comboEvent);
-                            updateMenuCombos = false;
-                        }
-                    }
-                    
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                         if (updateMenuCombos) {
                             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
@@ -7518,6 +6158,14 @@ namespace tsl {
                             eventFire(&shData->comboEvent);
                         }
                     }
+                    else if (updateMenuCombos && (shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) {
+                        tsl::cfg::launchCombo = tsl::cfg::launchCombo2;
+                        setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
+                        setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, TESLA_COMBO_STR);
+                        eventFire(&shData->comboEvent);
+                        updateMenuCombos = false;
+                    }
+
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
@@ -7726,62 +6374,6 @@ namespace tsl {
 }
 
 
-std::unordered_map<std::string, std::string> createButtonCharMap() {
-    std::unordered_map<std::string, std::string> map;
-    for (const auto& keyInfo : tsl::impl::KEYS_INFO) {
-        map[keyInfo.name] = keyInfo.glyph;
-    }
-    return map;
-}
-
-std::unordered_map<std::string, std::string> buttonCharMap = createButtonCharMap();
-
-
-void convertComboToUnicode(std::string& combo) {
-    // Quick check to see if the string contains a '+'
-    if (combo.find('+') == std::string::npos) {
-        return;  // No '+' found, nothing to modify
-    }
-
-    std::string unicodeCombo;
-    bool modified = false;
-    size_t start = 0;
-    size_t length = combo.length();
-    size_t end = 0;  // Moved outside the loop
-    std::string token;  // Moved outside the loop
-    auto it = buttonCharMap.end();  // Initialize iterator once outside the loop
-
-    // Iterate through the combo string and split by '+'
-    for (size_t i = 0; i <= length; ++i) {
-        if (i == length || combo[i] == '+') {
-            // Get the current token (trimmed)
-            end = i;  // Reuse the end variable
-            while (start < end && std::isspace(combo[start])) start++;  // Trim leading spaces
-            while (end > start && std::isspace(combo[end - 1])) end--;  // Trim trailing spaces
-
-            token = combo.substr(start, end - start);  // Reuse the token variable
-            it = buttonCharMap.find(token);  // Reuse the iterator
-
-            if (it != buttonCharMap.end()) {
-                unicodeCombo += it->second;  // Append the mapped Unicode value
-                modified = true;
-            } else {
-                unicodeCombo += token;  // Append the original token if not found
-            }
-
-            if (i != length) {
-                unicodeCombo += "+";  // Only append '+' if we're not at the end
-            }
-
-            start = i + 1;  // Move to the next token
-        }
-    }
-
-    // If a modification was made, update the original combo
-    if (modified) {
-        combo = unicodeCombo;
-    }
-}
 
 
 
@@ -7813,6 +6405,7 @@ extern "C" {
      *
      */
     void __appInit(void) {
+
         tsl::hlp::doWithSmSession([]{
             
             ASSERT_FATAL(fsInitialize());
