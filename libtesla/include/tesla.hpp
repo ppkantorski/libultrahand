@@ -1314,6 +1314,88 @@ namespace tsl {
                 }
             }
 
+            // Method to draw clock, temperatures, and battery percentage
+            void drawWidget() {
+                // Draw clock if it's not hidden
+                static timespec currentTime;
+                static char timeStr[20]; // Allocate a buffer to store the time string
+                size_t y_offset = 45;
+        
+                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
+                    drawRect(245, 23, 1, 49, a(separatorColor));
+                }
+
+                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
+                    y_offset += 10;
+                }
+
+                clock_gettime(CLOCK_REALTIME, &currentTime);
+                if (!hideClock) {
+                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
+                    localizeTimeStr(timeStr);
+                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
+                    y_offset += 22;
+                }
+        
+                // Draw temperatures and battery percentage
+                static char PCB_temperatureStr[10];
+                static char SOC_temperatureStr[10];
+                static char chargeString[6];
+        
+                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
+                static size_t lastStatusChange = 0;
+                
+                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
+                    if (!hideSOCTemp) {
+                        ReadSocTemperature(&SOC_temperature);
+                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
+                    } else {
+                        strcpy(SOC_temperatureStr, "");
+                        SOC_temperature=0;
+                    }
+                    if (!hidePCBTemp) {
+                        ReadPcbTemperature(&PCB_temperature);
+                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
+                    } else {
+                        strcpy(PCB_temperatureStr, "");
+                        PCB_temperature=0;
+                    }
+                    if (!hideBattery) {
+                        powerGetDetails(&batteryCharge, &isCharging);
+                        batteryCharge = std::min(batteryCharge, 100U);
+                        sprintf(chargeString, "%d%%", batteryCharge);
+                    } else {
+                        strcpy(chargeString, "");
+                        batteryCharge=0;
+                    }
+                    timeOut = int(currentTime.tv_sec);
+                }
+                
+                lastStatusChange = statusChange;
+                
+                // Draw battery percentage
+                if (!hideBattery && batteryCharge > 0) {
+                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
+                }
+        
+                // Draw PCB and SOC temperatures
+                int offset = 0;
+                if (!hidePCBTemp && PCB_temperature > 0) {
+                    if (!hideBattery)
+                        offset -= 5;
+                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
+                }
+        
+                if (!hideSOCTemp && SOC_temperature > 0) {
+                    if (!hidePCBTemp || !hideBattery)
+                        offset -= 5;
+                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
+                }
+            }
+
+
             /**
              * @brief Draws a RGBA8888 bitmap from memory
              *
@@ -2693,7 +2775,7 @@ namespace tsl {
             
         OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
-                
+
                 // Load the bitmap file into memory
                 if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
                     // Lock the mutex for condition waiting
@@ -2732,6 +2814,11 @@ namespace tsl {
             
             // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
+                if (!themeIsInitialized) {
+                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                    themeIsInitialized = true;
+                }
+
                 if (m_noClickableItems != noClickableItems)
                     noClickableItems = m_noClickableItems;
                 renderer->fillScreen(a(defaultBackgroundColor));
@@ -2750,7 +2837,7 @@ namespace tsl {
                 if (isUltrahand) {
                     
                     // Call the extracted widget drawing method
-                    drawWidget(renderer);
+                    renderer->drawWidget();
 
 
                     if (touchingMenu && inMainMenu) {
@@ -2769,6 +2856,7 @@ namespace tsl {
                         //auto currentTime = std::chrono::steady_clock::now();
                         auto currentTimeCount = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         float progress;
+
                         for (char letter : SPLIT_PROJECT_NAME_1) {
                             counter = (2 * _M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             progress = std::sin(counter); // -1 to 1
@@ -2975,86 +3063,6 @@ namespace tsl {
             }
             // CUSTOM SECTION END
 
-            // Method to draw clock, temperatures, and battery percentage
-            void drawWidget(gfx::Renderer *renderer) {
-                // Draw clock if it's not hidden
-                static timespec currentTime;
-                static char timeStr[20]; // Allocate a buffer to store the time string
-                size_t y_offset = 45;
-        
-                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
-                    renderer->drawRect(245, 23, 1, 49, a(separatorColor));
-                }
-
-                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
-                    y_offset += 10;
-                }
-
-                clock_gettime(CLOCK_REALTIME, &currentTime);
-                if (!hideClock) {
-                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
-                    localizeTimeStr(timeStr);
-                    renderer->drawString(timeStr, false, tsl::cfg::FramebufferWidth - renderer->calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
-                    y_offset += 22;
-                }
-        
-                // Draw temperatures and battery percentage
-                static char PCB_temperatureStr[10];
-                static char SOC_temperatureStr[10];
-                static char chargeString[6];
-        
-                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
-                static size_t lastStatusChange = 0;
-                
-                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
-                    if (!hideSOCTemp) {
-                        ReadSocTemperature(&SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
-                    } else {
-                        strcpy(SOC_temperatureStr, "");
-                        SOC_temperature=0;
-                    }
-                    if (!hidePCBTemp) {
-                        ReadPcbTemperature(&PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
-                    } else {
-                        strcpy(PCB_temperatureStr, "");
-                        PCB_temperature=0;
-                    }
-                    if (!hideBattery) {
-                        powerGetDetails(&batteryCharge, &isCharging);
-                        batteryCharge = std::min(batteryCharge, 100U);
-                        sprintf(chargeString, "%d%%", batteryCharge);
-                    } else {
-                        strcpy(chargeString, "");
-                        batteryCharge=0;
-                    }
-                    timeOut = int(currentTime.tv_sec);
-                }
-                
-                lastStatusChange = statusChange;
-                
-                // Draw battery percentage
-                if (!hideBattery && batteryCharge > 0) {
-                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    renderer->drawString(chargeString, false, tsl::cfg::FramebufferWidth - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
-                }
-        
-                // Draw PCB and SOC temperatures
-                int offset = 0;
-                if (!hidePCBTemp && PCB_temperature > 0) {
-                    if (!hideBattery)
-                        offset -= 5;
-                    renderer->drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - renderer->calculateStringWidth(PCB_temperatureStr, 20, true) - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
-                }
-        
-                if (!hideSOCTemp && SOC_temperature > 0) {
-                    if (!hidePCBTemp || !hideBattery)
-                        offset -= 5;
-                    renderer->drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - renderer->calculateStringWidth(SOC_temperatureStr, 20, true) - renderer->calculateStringWidth(PCB_temperatureStr, 20, true) - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
-                }
-            }
             
             virtual inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
@@ -3155,6 +3163,11 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
+                if (!themeIsInitialized) {
+                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                    themeIsInitialized = true;
+                }
+
                 renderer->fillScreen(a(defaultBackgroundColor));
 
                 renderer->drawWallpaper();
@@ -5639,6 +5652,18 @@ namespace tsl {
         virtual ~Overlay() {}
         
         /**
+         * @brief Non-virtual method that ensures the base initialization always occurs
+         * This should be called instead of directly calling initServices().
+         */
+        void initialize() {
+            //initializeThemeVars(); // Initialize variables for ultrahand themes
+            #if IS_LAUNCHER
+            #else
+            initializeUltrahandSettings(); // Set up for opaque screenshots, swipe-to-open functionality, and more.
+            #endif
+        }
+
+        /**
          * @brief Initializes services
          * @note Called once at the start to initializes services. You have a sm session available during this call, no need to initialize sm yourself
          */
@@ -6636,7 +6661,11 @@ namespace tsl {
         overlay = new TOverlay();
         overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
         
-        tsl::hlp::doWithSmSession([&overlay]{ overlay->initServices(); });
+        
+        tsl::hlp::doWithSmSession([&overlay]{
+            overlay->initServices();
+            overlay->initialize();
+        });
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
 
@@ -6776,8 +6805,9 @@ extern "C" {
             //i2cInitialize();
             ASSERT_FATAL(socketInitializeDefault());
             ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-            ASSERT_FATAL(smInitialize());
+            //ASSERT_FATAL(smInitialize()); // might be unnecessary? needs investigating
         });
+        ASSERT_FATAL(smInitialize()); // might be unnecessary? needs investigating
     }
     
     /**
@@ -6789,7 +6819,7 @@ extern "C" {
         socketExit();
         nifmExit();
         //i2cExit();
-        smExit();
+        //smExit();
         spsmExit();
         splExit();
         fsdevUnmountAll();
@@ -6803,6 +6833,7 @@ extern "C" {
         pmdmntExit();
         hidsysExit();
         setsysExit();
+        smExit();
     }
 
 }

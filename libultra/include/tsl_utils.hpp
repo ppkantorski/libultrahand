@@ -392,6 +392,8 @@ namespace ult {
     //double elapsedTime = 0.0;
     
     
+    extern bool themeIsInitialized;
+
     // Variables for touch commands
     extern bool touchingBack;
     extern bool touchingSelect;

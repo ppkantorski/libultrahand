@@ -15,9 +15,10 @@ namespace ult {
     std::mutex logMutex;
 
     void logMessage(const std::string& message) {
+        #if IS_LAUNCHER
         if (disableLogging)
             return;
-        
+
         std::time_t currentTime = std::time(nullptr);
         std::tm* timeInfo = std::localtime(&currentTime);
         char buffer[30];
@@ -36,5 +37,6 @@ namespace ult {
                 // std::cerr << "Failed to open log file: " << logFilePath << std::endl;
             }
         } // file closes automatically upon leaving this block
+        #endif
     }
 }

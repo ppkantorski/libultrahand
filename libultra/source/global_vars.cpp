@@ -35,14 +35,14 @@ namespace ult {
     const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
     const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
     std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
-    const std::string DOWNLOADS_PATH = "sdmc:/config/ultrahand/downloads/";
-    const std::string EXPANSION_PATH = "sdmc:/config/ultrahand/expansion/";
 
     #if IS_LAUNCHER
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
 
+    const std::string DOWNLOADS_PATH = "sdmc:/config/ultrahand/downloads/";
+    const std::string EXPANSION_PATH = "sdmc:/config/ultrahand/expansion/";
     const std::string FUSE_DATA_INI_PATH = "sdmc:/config/ultrahand/fuse.ini";
     const std::string PACKAGE_PATH = "sdmc:/switch/.packages/";
     const std::string OVERLAY_PATH = "sdmc:/switch/.overlays/";
@@ -53,11 +53,19 @@ namespace ult {
     const std::string LATEST_RELEASE_INFO_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/RELEASE.ini";
     const std::string NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
+
+    const std::string LAUNCH_ARGS_STR = "launch_args";
+    const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";
+    const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
+    const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
+    const std::string USE_LOGGING_STR = "use_logging";
     #else
     const std::string BOOT_PACKAGE_FILENAME;
     const std::string EXIT_PACKAGE_FILENAME;
     const std::string PACKAGE_FILENAME;
 
+    const std::string DOWNLOADS_PATH;
+    const std::string EXPANSION_PATH;
     const std::string FUSE_DATA_INI_PATH;
     const std::string PACKAGE_PATH;
     const std::string OVERLAY_PATH;
@@ -68,6 +76,12 @@ namespace ult {
     const std::string LATEST_RELEASE_INFO_URL;
     const std::string NX_OVLLOADER_ZIP_URL;
     const std::string NX_OVLLOADER_PLUS_ZIP_URL;
+
+    const std::string LAUNCH_ARGS_STR;
+    const std::string USE_LAUNCH_ARGS_STR;
+    const std::string USE_BOOT_PACKAGE_STR;
+    const std::string USE_EXIT_PACKAGE_STR;
+    const std::string USE_LOGGING_STR;
 
     #endif
 
@@ -80,11 +94,8 @@ namespace ult {
     const std::string MARIKO_STR = "mariko";
     const std::string KEY_COMBO_STR = "key_combo";
     const std::string DEFAULT_LANG_STR = "default_lang";
-    const std::string LAUNCH_ARGS_STR = "launch_args";
-    const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";
-    const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
-    const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
-    const std::string USE_LOGGING_STR = "use_logging";
+
+
     const std::string LIST_STR = "list";
     const std::string LIST_FILE_STR = "list_file";
     const std::string JSON_STR = "json";

@@ -1075,6 +1075,7 @@ namespace ult {
     //float fps = 0.0f;
     //double elapsedTime = 0.0;
     
+    bool themeIsInitialized = false; // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     
     // Variables for touch commands
     bool touchingBack = false;
