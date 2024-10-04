@@ -2884,7 +2884,7 @@ namespace tsl {
                     
                 } else {
                     x = 20;
-                    y = 50;
+                    y = 52;
                     fontSize = 32;
                     if (this->m_subtitle.find("Ultrahand Package") != std::string::npos) {
                         const std::string& title = this->m_title;
@@ -2957,9 +2957,9 @@ namespace tsl {
                             drawTitle(titleColor); // Using the default titleColor
                         }
                     } else if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(this->m_title, false, 20, 50, 32, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
                     } else {
-                        renderer->drawString(this->m_title, false, 20, 50, 30, a(defaultTextColor));
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultTextColor));
                     }
 
                 }
@@ -2967,11 +2967,11 @@ namespace tsl {
                 if (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME) {
                     renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
                 } else
-                    renderer->drawString(this->m_subtitle, false, 20, y+20, 15, a(versionTextColor));
+                    renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
 
                 #else
-                renderer->drawString(this->m_title, false, 20, 50, 30, a(defaultTextColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+20, 15, a(versionTextColor));
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultTextColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
                 #endif
 
 
