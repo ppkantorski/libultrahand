@@ -2829,7 +2829,7 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
-                #if IS_LAUNCHER
+                #if IS_LAUNCHER_DIRECTIVE
                 bool isUltrahand = (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                     this->m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
@@ -4243,7 +4243,7 @@ namespace tsl {
                     
                     if (Element::getInputMode() == InputMode::Touch) {
                         
-                        #if IS_LAUNCHER
+                        #if IS_LAUNCHER_DIRECTIVE
                         // Calculate the touch duration
                         auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
                         auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
@@ -5657,7 +5657,7 @@ namespace tsl {
          */
         void initialize() {
             //initializeThemeVars(); // Initialize variables for ultrahand themes
-            #if IS_LAUNCHER
+            #if IS_LAUNCHER_DIRECTIVE
             #else
             initializeUltrahandSettings(); // Set up for opaque screenshots, swipe-to-open functionality, and more.
             #endif
@@ -5959,7 +5959,7 @@ namespace tsl {
                 //}
             }
 
-            #if IS_LAUNCHER
+            #if IS_LAUNCHER_DIRECTIVE
             #else
             if (currentFocus == nullptr) {
                 if (simulatedBack) {
@@ -6670,7 +6670,7 @@ namespace tsl {
         overlay->changeTo(overlay->loadInitialGui());
 
 
-        #if IS_LAUNCHER
+        #if IS_LAUNCHER_DIRECTIVE
         if (firstBoot) {
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
         }
@@ -6681,7 +6681,7 @@ namespace tsl {
             (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR)
         );
         if (inOverlay && skipCombo) {
-            #if IS_LAUNCHER
+            #if IS_LAUNCHER_DIRECTIVE
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
             #endif
             eventFire(&shData.comboEvent);
