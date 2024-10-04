@@ -6793,9 +6793,10 @@ extern "C" {
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
 
+            #if USING_WIDGET_DIRECTIVE
             powerInit();
-
             i2cInitialize();
+            #endif
 
             fsdevMountSdmc();
             splInitialize();
@@ -6819,9 +6820,11 @@ extern "C" {
         splExit();
         fsdevUnmountAll();
         
+        #if USING_WIDGET_DIRECTIVE
         i2cExit();
-        
         powerExit(); // CUSTOM MODIFICATION
+        #endif
+        
         fsExit();
         hidExit();
         plExit();
