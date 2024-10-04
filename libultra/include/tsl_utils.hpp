@@ -32,7 +32,7 @@ namespace ult {
     
     std::string getTitleIdAsString();
     
-    extern bool isLauncher;
+    //extern bool isLauncher;
     extern bool internalTouchReleased;
     extern u32 layerEdge;
     extern bool useRightAlignment;

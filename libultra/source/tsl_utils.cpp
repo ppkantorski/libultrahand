@@ -59,7 +59,10 @@ namespace ult {
         return std::string(titleIdStr);
     }
     
-    bool isLauncher = false;
+    //bool isLauncher = false;
+
+
+
     bool internalTouchReleased = true;
     u32 layerEdge = 0;
     bool useRightAlignment = false;
@@ -98,7 +101,7 @@ namespace ult {
     std::atomic<bool> runningInterpreter(false);
     std::atomic<bool> shakingProgress(true);
     
-    std::atomic<bool> isHidden(true);
+    std::atomic<bool> isHidden(false);
     
     //bool progressAnimation = false;
     bool disableTransparency = false;
@@ -110,70 +113,10 @@ namespace ult {
     bool allowSlide = false;
     bool unlockedSlide = false;
     
-    /**
-     * @brief Shutdown modes for the Ultrahand-Overlay project.
-     *
-     * These macros define the shutdown modes used in the Ultrahand-Overlay project:
-     * - `SpsmShutdownMode_Normal`: Normal shutdown mode.
-     * - `SpsmShutdownMode_Reboot`: Reboot mode.
-     */
-    #define SpsmShutdownMode_Normal 0
-    #define SpsmShutdownMode_Reboot 1
-    
-    /**
-     * @brief Key mapping macros for button keys.
-     *
-     * These macros define button keys for the Ultrahand-Overlay project to simplify key mappings.
-     * For example, `KEY_A` represents the `HidNpadButton_A` key.
-     */
-    #define KEY_A HidNpadButton_A
-    #define KEY_B HidNpadButton_B
-    #define KEY_X HidNpadButton_X
-    #define KEY_Y HidNpadButton_Y
-    #define KEY_L HidNpadButton_L
-    #define KEY_R HidNpadButton_R
-    #define KEY_ZL HidNpadButton_ZL
-    #define KEY_ZR HidNpadButton_ZR
-    #define KEY_PLUS HidNpadButton_Plus
-    #define KEY_MINUS HidNpadButton_Minus
-    #define KEY_DUP HidNpadButton_Up
-    #define KEY_DDOWN HidNpadButton_Down
-    #define KEY_DLEFT HidNpadButton_Left
-    #define KEY_DRIGHT HidNpadButton_Right
-    #define KEY_SL HidNpadButton_AnySL
-    #define KEY_SR HidNpadButton_AnySR
-    #define KEY_LSTICK HidNpadButton_StickL
-    #define KEY_RSTICK HidNpadButton_StickR
-    #define KEY_UP HidNpadButton_AnyUp
-    #define KEY_DOWN HidNpadButton_AnyDown
-    #define KEY_LEFT HidNpadButton_AnyLeft
-    #define KEY_RIGHT HidNpadButton_AnyRight
-    
-    
-    
     
     
     bool updateMenuCombos = false;
     
-    /**
-     * @brief Ultrahand-Overlay Input Macros
-     *
-     * This block of code defines macros for handling input in the Ultrahand-Overlay project.
-     * These macros simplify the mapping of input events to corresponding button keys and
-     * provide aliases for touch and joystick positions.
-     *
-     * The macros included in this block are:
-     *
-     * - `touchPosition`: An alias for a constant `HidTouchState` pointer.
-     * - `touchInput`: An alias for `&touchPos`, representing touch input.
-     * - `JoystickPosition`: An alias for `HidAnalogStickState`, representing joystick input.
-     *
-     * These macros are utilized within the Ultrahand-Overlay project to manage and interpret
-     * user input, including touch and joystick events.
-     */
-    #define touchPosition const HidTouchState
-    #define touchInput &touchPos
-    #define JoystickPosition HidAnalogStickState
     
     //void convertComboToUnicode(std::string& combo);
 
@@ -289,7 +232,7 @@ namespace ult {
     const std::string whiteColor = "#FFFFFF";
     const std::string blackColor = "#000000";
     
-    
+    #if IS_LAUNCHER
     std::string ENGLISH = "English";
     std::string SPANISH = "Spanish";
     std::string FRENCH = "French";
@@ -303,6 +246,23 @@ namespace ult {
     std::string POLISH = "Polish";
     std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
     std::string TRADITIONAL_CHINESE = "Traditional Chinese";
+    #else
+    std::string ENGLISH;
+    std::string SPANISH;
+    std::string FRENCH;
+    std::string GERMAN;
+    std::string JAPANESE;
+    std::string KOREAN;
+    std::string ITALIAN;
+    std::string DUTCH;
+    std::string PORTUGUESE;
+    std::string RUSSIAN;
+    std::string POLISH;
+    std::string SIMPLIFIED_CHINESE;
+    std::string TRADITIONAL_CHINESE;
+    #endif
+
+
     std::string DEFAULT_CHAR_WIDTH = "0.33";
     std::string UNAVAILABLE_SELECTION = "Not available";
     std::string OVERLAYS = "Overlays"; //defined in libTesla now
@@ -436,6 +396,7 @@ namespace ult {
     
     // Constant string definitions (English)
     void reinitializeLangVars() {
+        #if IS_LAUNCHER
         ENGLISH = "English";
         SPANISH = "Spanish";
         FRENCH = "French";
@@ -579,6 +540,7 @@ namespace ult {
         OCT = "Oct";
         NOV = "Nov";
         DEC = "Dec";
+        #endif
     }
     
     
@@ -1285,11 +1247,6 @@ namespace ult {
     }
     
     
-    #define TMP451_SOC_TEMP_REG 0x01  // Register for SOC temperature integer part
-    #define TMP451_SOC_TMP_DEC_REG 0x10  // Register for SOC temperature decimal part
-    #define TMP451_PCB_TEMP_REG 0x00  // Register for PCB temperature integer part
-    #define TMP451_PCB_TMP_DEC_REG 0x15  // Register for PCB temperature decimal part
-    
     // Common helper function to read temperature (integer and fractional parts)
     Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly)
     {
@@ -1366,11 +1323,15 @@ namespace ult {
     
     std::string versionLabel;
     
+    
+
     void reinitializeVersionLabels() {
         cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
         hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
         hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
+        #ifdef APP_VERSION
         versionLabel = std::string(APP_VERSION) + "   (" + loaderTitle + " " + (cleanVersionLabels ? "" : "v") + cleanVersionLabel(loaderInfo) + ")";
+        #endif
         //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
     }
     

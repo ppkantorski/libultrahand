@@ -2742,11 +2742,13 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
+                #if IS_LAUNCHER
                 bool isUltrahand = (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                     this->m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
                 if (isUltrahand) {
+                    
                     // Call the extracted widget drawing method
                     drawWidget(renderer);
 
@@ -2878,7 +2880,13 @@ namespace tsl {
                     renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
                 } else
                     renderer->drawString(this->m_subtitle, false, 20, y+20, 15, a(versionTextColor));
-                
+
+                #else
+                renderer->drawString(this->m_title, false, 20, 50, 30, a(defaultTextColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+20, 15, a(versionTextColor));
+                #endif
+
+
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
                 backWidth = renderer->calculateStringWidth(BACK, 23);
@@ -4221,16 +4229,16 @@ namespace tsl {
                     this->m_touched = false;
                     
                     if (Element::getInputMode() == InputMode::Touch) {
+                        
+                        #if IS_LAUNCHER
                         // Calculate the touch duration
                         auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
                         auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
-        
-                        // Check if the touch lasted for 3 seconds or more
-                        s64 keyToUse;
-                        if (isLauncher)
-                            keyToUse = (touchDurationInSeconds >= 1.0) ? STAR_KEY : ((touchDurationInSeconds >= 0.3) ? SETTINGS_KEY : KEY_A);
-                        else
-                            keyToUse = KEY_A;
+                        s64 keyToUse = (touchDurationInSeconds >= 1.0) ? STAR_KEY : ((touchDurationInSeconds >= 0.3) ? SETTINGS_KEY : KEY_A);
+                        #else
+                        s64 keyToUse = KEY_A;
+
+                        #endif
 
                         bool handled = this->onClick(keyToUse);
                         this->m_clickAnimationProgress = 0;
@@ -5926,7 +5934,9 @@ namespace tsl {
                 //}
             }
 
-            if (!isLauncher && currentFocus == nullptr) {
+            #if IS_LAUNCHER
+            #else
+            if (currentFocus == nullptr) {
                 if (simulatedBack) {
                     keysDown |= KEY_B;
                     simulatedBack = false;
@@ -5937,6 +5947,7 @@ namespace tsl {
                     return;
                 }
             }
+            #endif
             
             if (!currentFocus && !simulatedBack && simulatedBackComplete && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
@@ -6629,17 +6640,21 @@ namespace tsl {
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
 
-        if (isLauncher && firstBoot) {
+
+        #if IS_LAUNCHER
+        if (firstBoot) {
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
         }
+        #endif
         
         
         bool inOverlay = (
             (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR)
         );
         if (inOverlay && skipCombo) {
-            if (isLauncher)
-                setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            #if IS_LAUNCHER
+            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            #endif
             eventFire(&shData.comboEvent);
         }
 

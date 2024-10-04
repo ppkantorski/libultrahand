@@ -17,7 +17,7 @@ namespace ult {
     void logMessage(const std::string& message) {
         if (disableLogging)
             return;
-
+        
         std::time_t currentTime = std::time(nullptr);
         std::tm* timeInfo = std::localtime(&currentTime);
         char buffer[30];

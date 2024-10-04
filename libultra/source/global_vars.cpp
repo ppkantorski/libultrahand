@@ -19,10 +19,8 @@
 #include "global_vars.hpp"
 
 namespace ult {
-    const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
-    const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
-    const std::string PACKAGE_FILENAME = "package.ini";
     const std::string CONFIG_FILENAME = "config.ini";
+
     const std::string ULTRAHAND_PROJECT_NAME = "ultrahand";
     const std::string CAPITAL_ULTRAHAND_PROJECT_NAME = "Ultrahand";
     const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
@@ -32,7 +30,6 @@ namespace ult {
     const std::string SETTINGS_PATH = "sdmc:/config/ultrahand/";
     const std::string ULTRAHAND_CONFIG_INI_PATH = "sdmc:/config/ultrahand/config.ini";
     const std::string TESLA_CONFIG_INI_PATH = "sdmc:/config/tesla/config.ini";
-    const std::string FUSE_DATA_INI_PATH = "sdmc:/config/ultrahand/fuse.ini";
     const std::string LANG_PATH = "sdmc:/config/ultrahand/lang/";
     std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
     const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
@@ -40,6 +37,13 @@ namespace ult {
     std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
     const std::string DOWNLOADS_PATH = "sdmc:/config/ultrahand/downloads/";
     const std::string EXPANSION_PATH = "sdmc:/config/ultrahand/expansion/";
+
+    #if IS_LAUNCHER
+    const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
+    const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
+    const std::string PACKAGE_FILENAME = "package.ini";
+
+    const std::string FUSE_DATA_INI_PATH = "sdmc:/config/ultrahand/fuse.ini";
     const std::string PACKAGE_PATH = "sdmc:/switch/.packages/";
     const std::string OVERLAY_PATH = "sdmc:/switch/.overlays/";
     const std::string OVERLAYS_INI_FILEPATH = "sdmc:/config/ultrahand/overlays.ini";
@@ -49,7 +53,24 @@ namespace ult {
     const std::string LATEST_RELEASE_INFO_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/RELEASE.ini";
     const std::string NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
-    
+    #else
+    const std::string BOOT_PACKAGE_FILENAME;
+    const std::string EXIT_PACKAGE_FILENAME;
+    const std::string PACKAGE_FILENAME;
+
+    const std::string FUSE_DATA_INI_PATH;
+    const std::string PACKAGE_PATH;
+    const std::string OVERLAY_PATH;
+    const std::string OVERLAYS_INI_FILEPATH;
+    const std::string PACKAGES_INI_FILEPATH;
+    const std::string ULTRAHAND_REPO_URL;
+    const std::string INCLUDED_THEME_FOLDER_URL;
+    const std::string LATEST_RELEASE_INFO_URL;
+    const std::string NX_OVLLOADER_ZIP_URL;
+    const std::string NX_OVLLOADER_PLUS_ZIP_URL;
+
+    #endif
+
     const std::string TESLA_COMBO_STR = "L+DDOWN+RS";
     const std::string ULTRAHAND_COMBO_STR = "ZL+ZR+DDOWN";
     
