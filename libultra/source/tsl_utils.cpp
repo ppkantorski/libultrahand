@@ -232,7 +232,7 @@ namespace ult {
     const std::string whiteColor = "#FFFFFF";
     const std::string blackColor = "#000000";
     
-    #if IS_LAUNCHER
+    #if IS_LAUNCHER_DIRECTIVE
     std::string ENGLISH = "English";
     std::string SPANISH = "Spanish";
     std::string FRENCH = "French";
@@ -396,7 +396,7 @@ namespace ult {
     
     // Constant string definitions (English)
     void reinitializeLangVars() {
-        #if IS_LAUNCHER
+        #if IS_LAUNCHER_DIRECTIVE
         ENGLISH = "English";
         SPANISH = "Spanish";
         FRENCH = "French";
@@ -1116,6 +1116,7 @@ namespace ult {
     
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging) {
+        #if USING_WIDGET_DIRECTIVE
         static auto last_call = std::chrono::steady_clock::now();
     
         // Ensure power system is initialized
@@ -1162,12 +1163,14 @@ namespace ult {
         // Use cached values if not enough time has passed
         *batteryCharge = powerCacheCharge;
         *isCharging = powerCacheIsCharging;
+
+        #endif
         return true; // Return true as cache is used
     }
     
     
-    
     void powerInit(void) {
+        #if USING_WIDGET_DIRECTIVE
         uint32_t charge = 0;
         isCharging = 0;
         
@@ -1190,15 +1193,18 @@ namespace ult {
                 }
             }
         }
+        #endif
     }
     
     void powerExit(void) {
+        #if USING_WIDGET_DIRECTIVE
         if (powerInitialized) {
             psmUnbindStateChangeEvent(&powerSession);
             psmExit();
             powerInitialized = false;
             powerCacheInitialized = false;
         }
+        #endif
     }
     
     
@@ -1210,8 +1216,8 @@ namespace ult {
     Original repository link (Deleted, last checked 15.04.2023): https://github.com/KazushiMe/Switch-OC-Suite
     */
     
-    Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out)
-    {
+    Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out) {
+        #if USING_WIDGET_DIRECTIVE
         struct readReg {
             u8 send;
             u8 sendLength;
@@ -1244,13 +1250,14 @@ namespace ult {
     
         *out = val;
         i2csessionClose(&_session);
+        #endif
         return 0;
     }
     
     
     // Common helper function to read temperature (integer and fractional parts)
-    Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly)
-    {
+    Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly) {
+        #if USING_WIDGET_DIRECTIVE
         u16 rawValue;
         u8 val;
         s32 integerPart = 0;
@@ -1282,22 +1289,20 @@ namespace ult {
     
         // Combine integer and fractional parts
         *temperature = static_cast<float>(integerPart) + fractionalPart;
-    
+        
+        #endif
         return 0;
     }
     
     // Function to get the SOC temperature
-    Result ReadSocTemperature(float *temperature, bool integerOnly)
-    {
+    Result ReadSocTemperature(float *temperature, bool integerOnly) {
         return ReadTemperature(temperature, TMP451_SOC_TEMP_REG, TMP451_SOC_TMP_DEC_REG, integerOnly);
     }
     
     // Function to get the PCB temperature
-    Result ReadPcbTemperature(float *temperature, bool integerOnly)
-    {
+    Result ReadPcbTemperature(float *temperature, bool integerOnly) {
         return ReadTemperature(temperature, TMP451_PCB_TEMP_REG, TMP451_PCB_TMP_DEC_REG, integerOnly);
     }
-    
     
     
     // Time implementation
@@ -1310,10 +1315,12 @@ namespace ult {
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     
     void reinitializeWidgetVars() {
+        #if USING_WIDGET_DIRECTIVE
         hideClock = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_clock") != FALSE_STR);
         hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
         hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
         hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
+        #endif
     }
     
     bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
@@ -1323,7 +1330,6 @@ namespace ult {
     bool expandedMemory = (loaderTitle == "nx-ovlloader+");
     
     std::string versionLabel;
-    
     
 
     void reinitializeVersionLabels() {
@@ -1337,13 +1343,11 @@ namespace ult {
     }
     
     
-    
     // Number of renderer threads to use
     const unsigned numThreads = expandedMemory ? 4 : 0;
     std::vector<std::thread> threads(numThreads);
     s32 bmpChunkSize = (720 + numThreads - 1) / numThreads;
     std::atomic<s32> currentRow;
-    
     
     
 }
