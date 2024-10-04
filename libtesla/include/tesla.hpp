@@ -6747,8 +6747,6 @@ namespace tsl {
 
 
 
-
-
 #ifdef TESLA_INIT_IMPL
 
 namespace tsl::cfg {
@@ -6791,10 +6789,10 @@ extern "C" {
             ASSERT_FATAL(setsysInitialize());                       // Settings querying
             
 
-
             ASSERT_FATAL(timeInitialize()); // CUSTOM MODIFICATION
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
+
             powerInit();
 
             i2cInitialize();
@@ -6805,9 +6803,8 @@ extern "C" {
             //i2cInitialize();
             ASSERT_FATAL(socketInitializeDefault());
             ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-            //ASSERT_FATAL(smInitialize()); // might be unnecessary? needs investigating
         });
-        ASSERT_FATAL(smInitialize()); // might be unnecessary? needs investigating
+        ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
     }
     
     /**
@@ -6818,8 +6815,6 @@ extern "C" {
         
         socketExit();
         nifmExit();
-        //i2cExit();
-        //smExit();
         spsmExit();
         splExit();
         fsdevUnmountAll();
