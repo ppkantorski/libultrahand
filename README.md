@@ -29,11 +29,10 @@ Replace `<OVERLAY_NAME>` with the name of your overlay directory. This allows yo
 
 ### Initializing Settings
 
-To initialize / enable the Ultrahand Overlay theme variables and settings for your overlay, ensure you add the following lines to your `initServices` function:
+Ultrahand Overlay theme variables and settings for your overlay are read automatically.  However if you are breaking your project up into individual parts that modify Elements, you may still need to include this line somewhere for the theme to be applied to that element.
 
 ```cpp
 tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-tsl::initializeUltrahandSettings(); // Set up for opaque screenshots and swipe-to-open functionality
 ```
 
 ### Download Methods
