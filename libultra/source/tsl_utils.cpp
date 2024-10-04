@@ -1116,7 +1116,6 @@ namespace ult {
     
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging) {
-        #if USING_WIDGET_DIRECTIVE
         static auto last_call = std::chrono::steady_clock::now();
     
         // Ensure power system is initialized
@@ -1163,14 +1162,12 @@ namespace ult {
         // Use cached values if not enough time has passed
         *batteryCharge = powerCacheCharge;
         *isCharging = powerCacheIsCharging;
-
-        #endif
+        
         return true; // Return true as cache is used
     }
     
     
     void powerInit(void) {
-        #if USING_WIDGET_DIRECTIVE
         uint32_t charge = 0;
         isCharging = 0;
         
@@ -1193,18 +1190,15 @@ namespace ult {
                 }
             }
         }
-        #endif
     }
     
     void powerExit(void) {
-        #if USING_WIDGET_DIRECTIVE
         if (powerInitialized) {
             psmUnbindStateChangeEvent(&powerSession);
             psmExit();
             powerInitialized = false;
             powerCacheInitialized = false;
         }
-        #endif
     }
     
     
@@ -1217,7 +1211,6 @@ namespace ult {
     */
     
     Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out) {
-        #if USING_WIDGET_DIRECTIVE
         struct readReg {
             u8 send;
             u8 sendLength;
@@ -1250,14 +1243,12 @@ namespace ult {
     
         *out = val;
         i2csessionClose(&_session);
-        #endif
         return 0;
     }
     
     
     // Common helper function to read temperature (integer and fractional parts)
     Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly) {
-        #if USING_WIDGET_DIRECTIVE
         u16 rawValue;
         u8 val;
         s32 integerPart = 0;
@@ -1290,7 +1281,6 @@ namespace ult {
         // Combine integer and fractional parts
         *temperature = static_cast<float>(integerPart) + fractionalPart;
         
-        #endif
         return 0;
     }
     
