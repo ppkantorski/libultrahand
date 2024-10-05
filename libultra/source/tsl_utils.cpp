@@ -1,7 +1,8 @@
 #include <tsl_utils.hpp>
 
 namespace ult {
-    
+    u16 activeHeaderHeight = 97;
+
     bool consoleIsDocked() {
         Result rc;
         ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
