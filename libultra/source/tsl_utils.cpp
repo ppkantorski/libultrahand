@@ -338,7 +338,7 @@ namespace ult {
     std::string BOOT_ENTRY = "Boot Entry";
     std::string GAP_1 = "     ";
     std::string GAP_2 = "  ";
-    std::string USERGUIDE_OFFSET = "173";
+    std::string USERGUIDE_OFFSET = "175";
     std::string SETTINGS_MENU = "Settings Menu";
     std::string SCRIPT_OVERLAY = "Script Overlay";
     std::string STAR_FAVORITE = "Star/Favorite";
@@ -485,7 +485,7 @@ namespace ult {
         BOOT_ENTRY = "Boot Entry";
         GAP_1 = "     ";
         GAP_2 = "  ";
-        USERGUIDE_OFFSET = "173";
+        USERGUIDE_OFFSET = "175";
         SETTINGS_MENU = "Settings Menu";
         SCRIPT_OVERLAY = "Script Overlay";
         STAR_FAVORITE = "Star/Favorite";
@@ -1162,7 +1162,7 @@ namespace ult {
         // Use cached values if not enough time has passed
         *batteryCharge = powerCacheCharge;
         *isCharging = powerCacheIsCharging;
-        
+
         return true; // Return true as cache is used
     }
     
