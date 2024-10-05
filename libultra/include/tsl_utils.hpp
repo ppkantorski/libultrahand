@@ -27,6 +27,7 @@
 
 
 namespace ult {
+    extern u16 activeHeaderHeight;
     
     bool consoleIsDocked();
     
@@ -38,7 +39,8 @@ namespace ult {
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool noClickableItems;
-    
+
+
     
     // Define the duration boundaries (for smooth scrolling)
     extern const std::chrono::milliseconds initialInterval;  // Example initial interval
