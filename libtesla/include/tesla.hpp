@@ -2096,6 +2096,7 @@ namespace tsl {
         
     }
     
+    
     // Elements
     
     namespace elm {
@@ -2120,6 +2121,8 @@ namespace tsl {
             
             bool m_isTable = false;  // Default to false for non-table elements
             bool m_isItem = true;
+            
+
             std::chrono::duration<long int, std::ratio<1, 1000000000>> t;
             //double timeCounter;
             u8 saturation;
@@ -2222,7 +2225,7 @@ namespace tsl {
             void inline frame(gfx::Renderer *renderer) {
                 
                 if (this->m_focused) {
-                    renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-97);
+                    renderer->enableScissoring(0, activeHeaderHeight, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-activeHeaderHeight);
                     this->drawFocusBackground(renderer);
                     this->drawHighlight(renderer);
                     renderer->disableScissoring();
@@ -2746,7 +2749,7 @@ namespace tsl {
             
         OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
-
+                activeHeaderHeight = 97;
                 // Load the bitmap file into memory
                 if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
                     // Lock the mutex for condition waiting
@@ -3109,7 +3112,9 @@ namespace tsl {
         class HeaderOverlayFrame : public Element {
         public:
             
+
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
+                activeHeaderHeight = headerHeight;
                 // Load the bitmap file into memory
                 if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
                     // Lock the mutex for condition waiting
@@ -3176,7 +3181,7 @@ namespace tsl {
                 this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
                 
                 if (this->m_contentElement != nullptr) {
-                    this->m_contentElement->setBoundaries(parentX + 35, parentY + this->m_headerHeight, parentWidth - 85, parentHeight - 73 - this->m_headerHeight);
+                    this->m_contentElement->setBoundaries(parentX + 35, parentY + this->m_headerHeight, parentWidth - 85, parentHeight - 73 - this->m_headerHeight -8);
                     this->m_contentElement->invalidate();
                 }
                 
