@@ -51,26 +51,17 @@ namespace ult {
     // User agent string for curl requests
     extern const std::string userAgent;
 
-    // Custom deleter for CURL handle
+    // Custom deleters for CURL and ZZIP handles
     struct CurlDeleter {
         void operator()(CURL* curl) const;
     };
-
-    // Define a custom deleter for the unique_ptr to properly close the ZZIP_DIR handle
+    
     struct ZzipDirDeleter {
-        void operator()(ZZIP_DIR* dir) const {
-            if (dir) {
-                zzip_dir_close(dir);
-            }
-        }
+        void operator()(ZZIP_DIR* dir) const;
     };
     
     struct ZzipFileDeleter {
-        void operator()(ZZIP_FILE* file) const {
-            if (file) {
-                zzip_file_close(file);
-            }
-        }
+        void operator()(ZZIP_FILE* file) const;
     };
 
     // Function prototypes

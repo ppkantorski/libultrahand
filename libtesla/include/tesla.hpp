@@ -86,7 +86,7 @@ using namespace ult;
 
 #pragma GCC diagnostic pop
 
-#define ELEMENT_BOUNDS(elem) elem->getX()+4, elem->getY(), elem->getWidth()-8, elem->getHeight()
+#define ELEMENT_BOUNDS(elem) elem->getX(), elem->getY(), elem->getWidth(), elem->getHeight()
 #define ELEMENT_BOUNDS_2(elem) elem->getX()+4, elem->getY()+4, elem->getWidth(), elem->getHeight()+10
 
 #define ASSERT_EXIT(x) if (R_FAILED(x)) std::exit(1)
@@ -1171,61 +1171,32 @@ namespace tsl {
             
             
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
-                s32 radius = std::min(w, h) / 2;
+                // Radius is half of height to create perfect half circles on each side
+                s32 radius = h / 2;
                 s32 x_start = x + radius;
                 s32 x_end = x + w - radius;
-                s32 y_start = y + radius;
-                s32 y_end = y + h - radius;
             
                 // Draw the central rectangle excluding the corners
-                for (s32 y1 = y_start; y1 < y_end; ++y1) {
+                for (s32 y1 = y; y1 < y + h; ++y1) {
                     for (s32 x1 = x_start; x1 < x_end; ++x1) {
                         this->setPixelBlendDst(x1, y1, color);
                     }
                 }
             
-                // Draw the top and bottom rectangles excluding the corners
-                for (s32 y1 = y; y1 < y_start; ++y1) {
-                    for (s32 x1 = x_start; x1 < x_end; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-                for (s32 y1 = y_end; y1 < y + h; ++y1) {
-                    for (s32 x1 = x_start; x1 < x_end; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-            
-                // Draw the left and right rectangles excluding the corners
-                for (s32 y1 = y_start; y1 < y_end; ++y1) {
-                    for (s32 x1 = x; x1 < x_start; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                    for (s32 x1 = x_end; x1 < x + w; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-                
-                // Draw the rounded corners ensuring smooth arcs
-                s32 radiusSquared = radius * radius;
-                s32 cornerX = x + radius;
-                s32 cornerY = y + radius;
-            
+                // Draw the rounded corners using trigonometric functions for smoothness
                 for (s32 x1 = 0; x1 < radius; ++x1) {
-                    for (s32 y1 = 0; y1 < radius; ++y1) {
-                        if ((x1 * x1 + y1 * y1) <= radiusSquared) {
-                            // Top-left corner
-                            this->setPixelBlendDst(cornerX - x1, cornerY - y1, color);
-                            // Top-right corner
-                            this->setPixelBlendDst(x + w - radius + x1, cornerY - y1, color);
-                            // Bottom-left corner
-                            this->setPixelBlendDst(cornerX - x1, y + h - radius + y1, color);
-                            // Bottom-right corner
-                            this->setPixelBlendDst(x + w - radius + x1, y + h - radius + y1, color);
+                    for (s32 y1 = 0; y1 < h; ++y1) {
+                        s32 dy = y1 - radius; // Offset from center of the circle
+                        if (x1 * x1 + dy * dy <= radius * radius) {
+                            // Left half-circle
+                            this->setPixelBlendDst(x + radius - x1, y + y1, color);
+                            // Right half-circle
+                            this->setPixelBlendDst(x + w - radius + x1, y + y1, color);
                         }
                     }
                 }
             }
+
 
             
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, const s32 startRow, const s32 endRow) {
@@ -2386,7 +2357,7 @@ namespace tsl {
                 //renderer->drawRect(this->getX() + x + this->getWidth(), this->getY() + y, 4, this->getHeight(), highlightColor);
                 
                 
-                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth(), this->getHeight(), 5, 5, a(highlightColor));
+                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                     
                 //}
             }
@@ -2479,7 +2450,7 @@ namespace tsl {
                 //if ((disableSelectionBG && this->m_clickAnimationProgress == 0) || !disableSelectionBG) {
                 if (this->m_clickAnimationProgress == 0) {
                     if (!disableSelectionBG)
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
 
                     // Determine the active percentage to use
                     float activePercentage = 0.0f;
@@ -2491,13 +2462,13 @@ namespace tsl {
                         activePercentage = copyPercentage;
                     }
                     if (activePercentage > 0){
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
                         //if (copyPercentage == 100.0f) {
                         //    copyPercentage = -1;
                         //}
                     }
 
-                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth(), this->getHeight(), 5, 5, a(highlightColor));
+                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
                 //renderer->drawRect(ELEMENT_BOUNDS(this), a(0xF000)); // This has been moved here (needs to be toggleable)
                 onTrackBar = false;
@@ -3401,7 +3372,7 @@ namespace tsl {
                     this->updateScrollOffset();
                 }
             
-                renderer->enableScissoring(this->getLeftBound(), topBound, width + 4, height + 4);
+                renderer->enableScissoring(this->getLeftBound(), topBound, width + 4 +4, height + 4);
             
                 for (auto& entry : this->m_items) {
                     if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
@@ -4028,10 +3999,10 @@ namespace tsl {
                 scrollbarOffset += 8;
                 
                 //int offset = 11;
-                renderer->drawRect(this->getRightBound() + 21, this->getY() + scrollbarOffset, 5, scrollbarHeight, a(trackBarColor));
-                renderer->drawCircle(this->getRightBound() + 23, this->getY() + scrollbarOffset, 2, true, a(trackBarColor));
+                renderer->drawRect(this->getRightBound() + 21 +4, this->getY() + scrollbarOffset, 5, scrollbarHeight, a(trackBarColor));
+                renderer->drawCircle(this->getRightBound() + 23 +4, this->getY() + scrollbarOffset, 2, true, a(trackBarColor));
                 //renderer->drawCircle(this->getRightBound() + 12 + offset, (this->getY() + scrollbarOffset + scrollbarHeight) / 2, 2, true, a(trackBarColor));
-                renderer->drawCircle(this->getRightBound() + 23, this->getY() + scrollbarOffset + scrollbarHeight, 2, true, a(trackBarColor));
+                renderer->drawCircle(this->getRightBound() + 23 +4, this->getY() + scrollbarOffset + scrollbarHeight, 2, true, a(trackBarColor));
                 
             }
             
@@ -4096,6 +4067,9 @@ namespace tsl {
                 m_isItem = true;
                 applyLangReplacements(this->m_text);
                 applyLangReplacements(this->m_value, true);
+
+                convertComboToUnicode(this->m_text);
+                convertComboToUnicode(this->m_value);
             }
             virtual ~ListItem() {}
             
@@ -4104,15 +4078,15 @@ namespace tsl {
                 bool useClickTextColor = false;
                 if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
                     if (touchInBounds) {
-                        renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
+                        //renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
+                        renderer->drawRect( this->getX()+4, this->getY(), this->getWidth()-8, this->getHeight(), a(clickColor));
                         useClickTextColor = true;
                     }
                     //renderer->drawRect(ELEMENT_BOUNDS(this), tsl::style::color::ColorClickAnimation);
                 }
 
-                
-                convertComboToUnicode(this->m_text);
-                convertComboToUnicode(this->m_value);
+                //convertComboToUnicode(this->m_text);
+                //convertComboToUnicode(this->m_value);
 
                 // Calculate vertical offset to center the text
                 s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
@@ -4120,6 +4094,7 @@ namespace tsl {
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
                         std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
+
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
                         this->m_maxWidth = this->getWidth() - 40 -10;
@@ -4141,8 +4116,8 @@ namespace tsl {
                 }
                 
                 if (lastBottomBound !=  this->getTopBound())
-                    renderer->drawRect(this->getX()+4, this->getTopBound(), this->getWidth()+6, 1, a(separatorColor));
-                renderer->drawRect(this->getX()+4, this->getBottomBound(), this->getWidth()+6, 1, a(separatorColor));
+                    renderer->drawRect(this->getX()+4, this->getTopBound(), this->getWidth()+6 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX()+4, this->getBottomBound(), this->getWidth()+6 +4, 1, a(separatorColor));
 
                 lastBottomBound = this->getBottomBound();
                 
@@ -4150,9 +4125,9 @@ namespace tsl {
                 if (this->m_trunctuated) {
                     if (this->m_focused) {
                         if (this->m_value.length() > 0)
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4, tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4 , tsl::cfg::FramebufferHeight-73-97);
                         else
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6, tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6 , tsl::cfg::FramebufferHeight-73-97);
                         renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
                         renderer->disableScissoring();
                         //t = std::chrono::steady_clock::now() - this->timeIn;
@@ -4179,7 +4154,7 @@ namespace tsl {
                 
                 // CUSTOM SECTION START (modification for submenu footer color)
                 //const std::string& value = this->m_value;
-                s32 xPosition = this->getX() + this->m_maxWidth + 45 - 1;
+                s32 xPosition = this->getX() + this->m_maxWidth + 45 - 1 +4;
                 s32 yPosition = this->getY() + 45 - yOffset;
                 s32 fontSize = 20;
                 //bool isFaint = ;
@@ -5150,14 +5125,14 @@ namespace tsl {
                 renderer->drawString(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
                 
                 if (lastBottomBound != this->getTopBound())
-                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20, 1, a(separatorColor));
-                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 lastBottomBound = this->getBottomBound();
             }
 
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20, tsl::style::TrackBarDefaultHeight );
+                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20+4, tsl::style::TrackBarDefaultHeight );
             }
             
             virtual void drawFocusBackground(gfx::Renderer *renderer) {

@@ -15,7 +15,7 @@ namespace ult {
     std::mutex logMutex;
 
     void logMessage(const std::string& message) {
-        #if IS_LAUNCHER
+        #if IS_LAUNCHER_DIRECTIVE
         if (disableLogging)
             return;
 

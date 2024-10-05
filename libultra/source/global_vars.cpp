@@ -36,7 +36,7 @@ namespace ult {
     const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
     std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
 
-    #if IS_LAUNCHER
+    #if IS_LAUNCHER_DIRECTIVE
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
