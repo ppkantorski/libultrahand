@@ -1,3 +1,22 @@
+/********************************************************************************
+ * File: global_vars.hpp
+ * Author: ppkantorski
+ * Description: 
+ *   This header file provides the definitions of global constants and paths used 
+ *   throughout the Ultrahand Overlay project. These constants are essential for 
+ *   file management and configuration settings within the application.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository:
+ *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
+ *
+ *   Note: This notice is integral to the project's documentation and must not be 
+ *   altered or removed.
+ *
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
+
 #pragma once
 
 #include <string>
