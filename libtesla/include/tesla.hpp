@@ -4116,19 +4116,21 @@ namespace tsl {
 
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
-                        std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
-
+                        //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
+                        width = renderer->calculateStringWidth(this->m_value, 20);
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
-                        this->m_maxWidth = this->getWidth() - 40 -10;
+                        this->m_maxWidth = this->getWidth() - 40 -10 -12;
                     }
                     
-                    std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                    //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                    width = renderer->calculateStringWidth(this->m_text, 23);
                     this->m_trunctuated = width > this->m_maxWidth+20;
                     
                     if (this->m_trunctuated) {
                         this->m_scrollText = this->m_text + "        ";
-                        std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                        //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                        width = renderer->calculateStringWidth(this->m_scrollText, 23);
                         this->m_scrollText += this->m_text;
                         this->m_textWidth = width;
                         
@@ -4150,7 +4152,7 @@ namespace tsl {
                         if (this->m_value.length() > 0)
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4 , tsl::cfg::FramebufferHeight-73-97);
                         else
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6 , tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
                         renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
                         renderer->disableScissoring();
                         //t = std::chrono::steady_clock::now() - this->timeIn;
