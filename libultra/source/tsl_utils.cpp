@@ -1097,6 +1097,32 @@ namespace ult {
             wallpaperData[i + 3] >>= 4; // Alpha
         }
     }
+
+    void reloadWallpaper() {
+        // Signal that wallpaper is being refreshed
+        refreshWallpaper.store(true, std::memory_order_release);
+    
+        // Lock the mutex for condition waiting
+        std::unique_lock<std::mutex> lock(wallpaperMutex);
+    
+        // Wait for inPlot to be false before reloading the wallpaper
+        cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire); });
+    
+        // Clear the current wallpaper data
+        wallpaperData.clear();
+    
+        // Reload the wallpaper file
+        if (isFileOrDirectory(WALLPAPER_PATH)) {
+            loadWallpaperFile(WALLPAPER_PATH);
+        }
+    
+        // Signal that wallpaper has finished refreshing
+        refreshWallpaper.store(false, std::memory_order_release);
+        
+        // Notify any waiting threads
+        cv.notify_all();
+    }
+
     
     
     // Global variables for FPS calculation

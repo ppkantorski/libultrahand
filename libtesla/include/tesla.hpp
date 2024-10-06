@@ -142,6 +142,7 @@ namespace tsl {
         
     };
     
+    #if USING_WIDGET_DIRECTIVE
     inline Color GradientColor(float temperature) {
         // Ensure temperature is within the range [0, 100]
         temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
@@ -187,6 +188,7 @@ namespace tsl {
         
         return Color(r, g, b, a);
     }
+    #endif
 
 
     inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
@@ -255,8 +257,12 @@ namespace tsl {
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
+
+    #if IS_LAUNCHER_DIRECTIVE
     static Color logoColor1 = RGB888(whiteColor);
     static Color logoColor2 = RGB888("#F7253E");
+    #endif
+
     static size_t defaultBackgroundAlpha = 13;
     
     static Color defaultBackgroundColor = RGB888(blackColor, defaultBackgroundAlpha);
@@ -345,9 +351,11 @@ namespace tsl {
             
             disableColorfulLogo = (getValue("disable_colorful_logo") == TRUE_STR);
             
+            #if IS_LAUNCHER_DIRECTIVE
             logoColor1 = getColor("logo_color_1");
             logoColor2 = getColor("logo_color_2");
-            
+            #endif
+
             defaultBackgroundAlpha = getAlpha("bg_alpha");
             defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
             defaultTextColor = getColor("text_color");
@@ -6331,6 +6339,7 @@ namespace tsl {
             if (decodedKeys)
                 tsl::cfg::launchCombo = decodedKeys;
             
+            #if USING_WIDGET_DIRECTIVE
             datetimeFormat = parsedConfig[ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
             removeQuotes(datetimeFormat);
             if (datetimeFormat.empty()) {
@@ -6352,6 +6361,7 @@ namespace tsl {
             std::string hideSOCTempStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
             removeQuotes(hideSOCTempStr);
             hideSOCTemp = hideSOCTempStr != FALSE_STR;
+            #endif
             
         }
 
@@ -6683,7 +6693,7 @@ namespace tsl {
         #else
         bool inOverlay = true;
         #endif
-        
+
         if (inOverlay && skipCombo) {
             #if IS_LAUNCHER_DIRECTIVE
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
