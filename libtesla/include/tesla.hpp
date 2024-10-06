@@ -63,7 +63,6 @@
 #include <barrier>
 
 
-
 using namespace ult;
 
 
@@ -142,7 +141,7 @@ namespace tsl {
         
     };
     
-    #if USING_WIDGET_DIRECTIVE
+    
     inline Color GradientColor(float temperature) {
         // Ensure temperature is within the range [0, 100]
         temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
@@ -188,7 +187,7 @@ namespace tsl {
         
         return Color(r, g, b, a);
     }
-    #endif
+    
 
 
     inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
@@ -236,7 +235,7 @@ namespace tsl {
     
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
-        constexpr u32 MiniListItemDefaultHeight     = 40;       ///< Standard list item height
+        constexpr u32 MiniListItemDefaultHeight     = 40;       ///< Mini list item height
         constexpr u32 TrackBarDefaultHeight         = 84;       ///< Standard track bar height
         constexpr u8  ListItemHighlightSaturation   = 7;        ///< Maximum saturation of Listitem highlights
         constexpr u8  ListItemHighlightLength       = 22;       ///< Maximum length of Listitem highlights
