@@ -274,7 +274,8 @@ namespace tsl {
     static Color bottomTextColor = RGB888(whiteColor);
     static Color botttomSeparatorColor = RGB888(whiteColor);
 
-    static Color defaultPackageColor = RGB888("#00FF00");
+    static Color defaultOverlayColor = RGB888(whiteColor);
+    static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
     static Color clockColor = RGB888(whiteColor);
     static Color batteryColor = RGB888("#ffff45");
     static Color versionTextColor = RGB888("#AAAAAA");
@@ -365,6 +366,7 @@ namespace tsl {
             buttonColor = getColor("bottom_button_color");
             bottomTextColor = getColor("bottom_text_color");
             botttomSeparatorColor = getColor("bottom_separator_color");
+            defaultOverlayColor = getColor("default_overlay_color");
             defaultPackageColor = getColor("default_package_color");
 
             clockColor = getColor("clock_color");
@@ -421,7 +423,7 @@ namespace tsl {
     
     #if IS_LAUNCHER_DIRECTIVE
     #else
-    static void initializeUltrahandSettings() {
+    static void initializeUltrahandSettings() { // only needed for regular overlays
         // Set Ultrahand Globals
         useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
         useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
@@ -2805,12 +2807,6 @@ namespace tsl {
                 
                 renderer->drawWallpaper();
                 
-                #if USING_WIDGET_DIRECTIVE
-                // Call the extracted widget drawing method
-                renderer->drawWidget();
-                #endif
-
-
                 y = 50;
                 offset = 0;
                 
@@ -2820,6 +2816,11 @@ namespace tsl {
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
                 if (isUltrahand) {
+
+                    #if USING_WIDGET_DIRECTIVE
+                    // Call the extracted widget drawing method
+                    renderer->drawWidget();
+                    #endif
 
                     if (touchingMenu && inMainMenu) {
                         renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
@@ -2951,7 +2952,13 @@ namespace tsl {
                     renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
 
                 #else
-                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultTextColor));
+                {
+                    #if USING_WIDGET_DIRECTIVE
+                    // Call the extracted widget drawing method
+                    renderer->drawWidget();
+                    #endif
+                }
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
                 renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
                 #endif
 

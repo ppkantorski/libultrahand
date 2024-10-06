@@ -960,6 +960,7 @@ namespace ult {
     
     // Prepare a map of default settings
     std::map<std::string, std::string> defaultThemeSettingsMap = {
+        {"default_overlay_color", "#FFFFFF"},
         {"default_package_color", "#00FF00"},
         {"clock_color", whiteColor},
         {"bg_alpha", "13"},
