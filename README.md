@@ -30,7 +30,9 @@ Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 
 Ultrahand Overlay theme variables and settings for your overlay are read automatically upon initialization.  Themes loading implementation is currently set within `OverlayFrame` and `HeaderOverlayFrame`.  
 
-However if you are breaking your project up into individual parts that only import `tesla.hpp` and modify elements, you may still need to include this line somewhere for the theme to be applied to that element.
+However if you are breaking your project up into individual parts that only import `tesla.hpp` and modify elements, you may need to declare `/libultrahand/libultra/include` at the start of your `INCLUDES` in your make file.
+
+If that still is not working, then you may need to add this line somewhere for the theme to be applied to that element.
 
 ```cpp
 tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
