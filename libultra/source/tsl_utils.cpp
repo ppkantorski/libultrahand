@@ -264,11 +264,6 @@ namespace ult {
     std::string SETTINGS = "Settings";
     std::string MAIN_SETTINGS = "Main Settings";
     std::string UI_SETTINGS = "UI Settings";
-    #endif
-
-
-    std::string DEFAULT_CHAR_WIDTH = "0.33";
-    std::string UNAVAILABLE_SELECTION = "Not available";
 
     std::string WIDGET = "Widget";
     std::string CLOCK = "Clock";
@@ -310,22 +305,14 @@ namespace ult {
     std::string OVERLAY_VERSIONS = "Overlay Versions";
     std::string PACKAGE_VERSIONS = "Package Versions";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-    std::string ON = "On";
-    std::string OFF = "Off";
+
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
     std::string _VERSION= "Version";
     std::string _CREATOR = "Creator(s)";
     std::string _ABOUT = "About";
     std::string _CREDITS = "Credits";
-    std::string OK = "OK";
-    std::string BACK = "Back";
-    std::string REBOOT_TO = "Reboot To";
-    std::string REBOOT = "Reboot";
-    std::string SHUTDOWN = "Shutdown";
-    std::string BOOT_ENTRY = "Boot Entry";
-    std::string GAP_1 = "     ";
-    std::string GAP_2 = "  ";
+
     std::string USERGUIDE_OFFSET = "175";
     std::string SETTINGS_MENU = "Settings Menu";
     std::string SCRIPT_OVERLAY = "Script Overlay";
@@ -338,8 +325,31 @@ namespace ult {
     std::string SWIPE_TO_OPEN = "Swipe to Open";
     std::string RIGHT_SIDE_MODE = "Right-side Mode";
     std::string PROGRESS_ANIMATION = "Progress Animation";
+
+    std::string REBOOT_TO = "Reboot To";
+    std::string REBOOT = "Reboot";
+    std::string SHUTDOWN = "Shutdown";
+    std::string BOOT_ENTRY = "Boot Entry";
+    #endif
+
+
+    std::string DEFAULT_CHAR_WIDTH = "0.33";
+    std::string UNAVAILABLE_SELECTION = "Not available";
+
+
+    std::string ON = "On";
+    std::string OFF = "Off";
+
+    std::string OK = "OK";
+    std::string BACK = "Back";
+
+    std::string GAP_1 = "     ";
+    std::string GAP_2 = "  ";
+    
+
     std::string EMPTY = "Empty";
     
+    #if USING_WIDGET_DIRECTIVE
     std::string SUNDAY = "Sunday";
     std::string MONDAY = "Monday";
     std::string TUESDAY = "Tuesday";
@@ -381,6 +391,8 @@ namespace ult {
     std::string OCT = "Oct";
     std::string NOV = "Nov";
     std::string DEC = "Dec";
+    #endif
+
     
     // Constant string definitions (English)
     void reinitializeLangVars() {
@@ -473,6 +485,7 @@ namespace ult {
         BOOT_ENTRY = "Boot Entry";
         GAP_1 = "     ";
         GAP_2 = "  ";
+
         USERGUIDE_OFFSET = "175";
         SETTINGS_MENU = "Settings Menu";
         SCRIPT_OVERLAY = "Script Overlay";
@@ -547,7 +560,7 @@ namespace ult {
         if (!langData)
             return;
         
-        std::unordered_map<std::string, std::string*> configMap = {
+        static std::unordered_map<std::string, std::string*> configMap = {
             #if IS_LAUNCHER_DIRECTIVE
             {"ENGLISH", &ENGLISH},
             {"SPANISH", &SPANISH},
@@ -578,11 +591,6 @@ namespace ult {
             {"SETTINGS", &SETTINGS},
             {"MAIN_SETTINGS", &MAIN_SETTINGS},
             {"UI_SETTINGS", &UI_SETTINGS},
-            #endif
-
-
-            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
-            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
 
             {"WIDGET", &WIDGET},
             {"CLOCK", &CLOCK},
@@ -624,22 +632,14 @@ namespace ult {
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
             {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
-            {"ON", &ON},
-            {"OFF", &OFF},
+
             {"PACKAGE_INFO", &PACKAGE_INFO},
             {"TITLE", &_TITLE},
             {"VERSION", &_VERSION},
             {"CREATOR", &_CREATOR},
             {"ABOUT", &_ABOUT},
             {"CREDITS", &_CREDITS},
-            {"OK", &OK},
-            {"BACK", &BACK},
-            {"REBOOT_TO", &REBOOT_TO},
-            {"REBOOT", &REBOOT},
-            {"SHUTDOWN", &SHUTDOWN},
-            {"BOOT_ENTRY", &BOOT_ENTRY},
-            {"GAP_1", &GAP_1},
-            {"GAP_2", &GAP_2},
+
             {"USERGUIDE_OFFSET", &USERGUIDE_OFFSET},
             {"SETTINGS_MENU", &SETTINGS_MENU},
             {"SCRIPT_OVERLAY", &SCRIPT_OVERLAY},
@@ -652,7 +652,29 @@ namespace ult {
             {"SWIPE_TO_OPEN", &SWIPE_TO_OPEN},
             {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
             {"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
+
+            {"REBOOT_TO", &REBOOT_TO},
+            {"REBOOT", &REBOOT},
+            {"SHUTDOWN", &SHUTDOWN},
+            {"BOOT_ENTRY", &BOOT_ENTRY},
+            #endif
+
+
+            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
+            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
+
+            {"ON", &ON},
+            {"OFF", &OFF},
+
+            {"OK", &OK},
+            {"BACK", &BACK},
+
+            {"GAP_1", &GAP_1},
+            {"GAP_2", &GAP_2},
+
             {"EMPTY", &EMPTY},
+
+            #if USING_WIDGET_DIRECTIVE
             {"SUNDAY", &SUNDAY},
             {"MONDAY", &MONDAY},
             {"TUESDAY", &TUESDAY},
@@ -691,6 +713,7 @@ namespace ult {
             {"OCT", &OCT},
             {"NOV", &NOV},
             {"DEC", &DEC}
+            #endif
         };
     
         // Iterate over the map to update global variables
@@ -718,92 +741,106 @@ namespace ult {
     //    }
     //}
     
+    #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr) {
         // Define static unordered_map for day and month mappings
-        std::unordered_map<std::string, std::string> mappings = {
-            {"Sun", SUN},
-            {"Mon", MON},
-            {"Tue", TUE},
-            {"Wed", WED},
-            {"Thu", THU},
-            {"Fri", FRI},
-            {"Sat", SAT},
-            {"Sunday", SUNDAY},
-            {"Monday", MONDAY},
-            {"Tuesday", TUESDAY},
-            {"Wednesday", WEDNESDAY},
-            {"Thursday", THURSDAY},
-            {"Friday", FRIDAY},
-            {"Saturday", SATURDAY},
-            {"Jan", JAN},
-            {"Feb", FEB},
-            {"Mar", MAR},
-            {"Apr", APR},
-            {"May", MAY_ABBR},
-            {"Jun", JUN},
-            {"Jul", JUL},
-            {"Aug", AUG},
-            {"Sep", SEP},
-            {"Oct", OCT},
-            {"Nov", NOV},
-            {"Dec", DEC},
-            {"January", JANUARY},
-            {"February", FEBRUARY},
-            {"March", MARCH},
-            {"April", APRIL},
-            {"May", MAY},
-            {"June", JUNE},
-            {"July", JULY},
-            {"August", AUGUST},
-            {"September", SEPTEMBER},
-            {"October", OCTOBER},
-            {"November", NOVEMBER},
-            {"December", DECEMBER}
+        static std::unordered_map<std::string, std::string*> mappings = {
+            {"Sun", &SUN},
+            {"Mon", &MON},
+            {"Tue", &TUE},
+            {"Wed", &WED},
+            {"Thu", &THU},
+            {"Fri", &FRI},
+            {"Sat", &SAT},
+            {"Sunday", &SUNDAY},
+            {"Monday", &MONDAY},
+            {"Tuesday", &TUESDAY},
+            {"Wednesday", &WEDNESDAY},
+            {"Thursday", &THURSDAY},
+            {"Friday", &FRIDAY},
+            {"Saturday", &SATURDAY},
+            {"Jan", &JAN},
+            {"Feb", &FEB},
+            {"Mar", &MAR},
+            {"Apr", &APR},
+            {"May", &MAY_ABBR},
+            {"Jun", &JUN},
+            {"Jul", &JUL},
+            {"Aug", &AUG},
+            {"Sep", &SEP},
+            {"Oct", &OCT},
+            {"Nov", &NOV},
+            {"Dec", &DEC},
+            {"January", &JANUARY},
+            {"February", &FEBRUARY},
+            {"March", &MARCH},
+            {"April", &APRIL},
+            {"May", &MAY},
+            {"June", &JUNE},
+            {"July", &JULY},
+            {"August", &AUGUST},
+            {"September", &SEPTEMBER},
+            {"October", &OCTOBER},
+            {"November", &NOVEMBER},
+            {"December", &DECEMBER}
         };
     
         std::string timeStrCopy = timeStr; // Convert the char array to a string for processing
     
         // Apply day and month replacements
-        //applyTimeStrReplacements(timeStrCopy, mappings);
-    
         size_t pos;
         for (const auto& mapping : mappings) {
             pos = timeStrCopy.find(mapping.first);
             while (pos != std::string::npos) {
-                timeStrCopy.replace(pos, mapping.first.length(), mapping.second);
-                pos = timeStrCopy.find(mapping.first, pos + mapping.second.length());
+                timeStrCopy.replace(pos, mapping.first.length(), *(mapping.second));
+                pos = timeStrCopy.find(mapping.first, pos + mapping.second->length());
             }
         }
     
         // Copy the modified string back to the character array
         strcpy(timeStr, timeStrCopy.c_str());
     }
-    
+    #endif
+
     // Unified function to apply replacements
     void applyLangReplacements(std::string& text, bool isValue) {
-        // Define the maps for replacements
-        std::unordered_map<std::string, std::string> replacements;
+        // Static maps for replacements
+        #if IS_LAUNCHER_DIRECTIVE
+        static const std::unordered_map<std::string, std::string*> launcherReplacements = {
+            {"Reboot To", &REBOOT_TO},
+            {"Boot Entry", &BOOT_ENTRY},
+            {"Reboot", &REBOOT},
+            {"Shutdown", &SHUTDOWN}
+        };
+        #endif
+    
+        static const std::unordered_map<std::string, std::string*> valueReplacements = {
+            {"On", &ON},
+            {"Off", &OFF}
+        };
+    
+        // Determine which map to use
+        const std::unordered_map<std::string, std::string*>* replacements = nullptr;
     
         if (!isValue) {
-            replacements = {
-                {"Reboot To", REBOOT_TO},
-                {"Boot Entry", BOOT_ENTRY},
-                {"Reboot", REBOOT},
-                {"Shutdown", SHUTDOWN}
-            };
+            #if IS_LAUNCHER_DIRECTIVE
+            replacements = &launcherReplacements;
+            #else
+            return;
+            #endif
         } else {
-            replacements = {
-                {"On", ON},
-                {"Off", OFF}
-            };
+            replacements = &valueReplacements;
         }
     
         // Perform the direct replacement
-        auto it = replacements.find(text);
-        if (it != replacements.end()) {
-            text = it->second;
+        if (replacements) {
+            auto it = replacements->find(text);
+            if (it != replacements->end()) {
+                text = *(it->second);
+            }
         }
     }
+
     
     
     

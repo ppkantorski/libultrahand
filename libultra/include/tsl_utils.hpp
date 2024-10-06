@@ -218,10 +218,6 @@ namespace ult {
     extern std::string SETTINGS;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
-    #endif
-
-    extern std::string DEFAULT_CHAR_WIDTH;
-    extern std::string UNAVAILABLE_SELECTION;
 
     extern std::string WIDGET;
     extern std::string CLOCK;
@@ -263,22 +259,14 @@ namespace ult {
     extern std::string OVERLAY_VERSIONS;
     extern std::string PACKAGE_VERSIONS;
     extern std::string OPAQUE_SCREENSHOTS;
-    extern std::string ON;
-    extern std::string OFF;
+
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
     extern std::string _VERSION;
     extern std::string _CREATOR;
     extern std::string _ABOUT;
     extern std::string _CREDITS;
-    extern std::string OK;
-    extern std::string BACK;
-    extern std::string REBOOT_TO;
-    extern std::string REBOOT;
-    extern std::string SHUTDOWN;
-    extern std::string BOOT_ENTRY;
-    extern std::string GAP_1;
-    extern std::string GAP_2;
+
     extern std::string USERGUIDE_OFFSET;
     extern std::string SETTINGS_MENU;
     extern std::string SCRIPT_OVERLAY;
@@ -291,9 +279,29 @@ namespace ult {
     extern std::string SWIPE_TO_OPEN;
     extern std::string RIGHT_SIDE_MODE;
     extern std::string PROGRESS_ANIMATION;
+
+    extern std::string REBOOT_TO;
+    extern std::string REBOOT;
+    extern std::string SHUTDOWN;
+    extern std::string BOOT_ENTRY;
+    #endif
+
+    extern std::string DEFAULT_CHAR_WIDTH;
+    extern std::string UNAVAILABLE_SELECTION;
+
+    extern std::string ON;
+    extern std::string OFF;
+
+    extern std::string OK;
+    extern std::string BACK;
+
+    extern std::string GAP_1;
+    extern std::string GAP_2;
+    
+
     extern std::string EMPTY;
     
-    
+    #if USING_WIDGET_DIRECTIVE
     extern std::string SUNDAY;
     extern std::string MONDAY;
     extern std::string TUESDAY;
@@ -335,7 +343,7 @@ namespace ult {
     extern std::string OCT;
     extern std::string NOV;
     extern std::string DEC;
-
+    #endif
     
     // Constant string definitions (English)
     void reinitializeLangVars();
@@ -347,9 +355,10 @@ namespace ult {
     
     void parseLanguage(const std::string langFile);
     
-    
+    #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr);
-    
+    #endif
+
     // Unified function to apply replacements
     void applyLangReplacements(std::string& text, bool isValue = false);
     
