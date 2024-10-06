@@ -15,16 +15,15 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 ## Usage
 ### Overriding Themes and Wallpapers
 
-To customize the theme and wallpaper for your overlay, you can override the default settings by adding the following lines to your `initServices` function:
+To customize the theme and wallpaper for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
 
-```cpp
-if (isFileOrDirectory("sdmc:/config/<OVERLAY_NAME>/theme.ini"))
-    THEME_CONFIG_INI_PATH = "sdmc:/config/<OVERLAY_NAME>/theme.ini"; // Override theme path (optional)
-if (isFileOrDirectory("sdmc:/config/<OVERLAY_NAME>/wallpaper.rgba"))
-    WALLPAPER_PATH = "sdmc:/config/<OVERLAY_NAME>/wallpaper.rgba"; // Override wallpaper path (optional)
+```
+# Enable appearance overriding
+APPEARANCE_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
+CFLAGS += -DAPPEARANCE_OVERRIDE_PATH=$(APPEARANCE_OVERRIDE_PATH)
 ```
 
-Replace `<OVERLAY_NAME>` with the name of your overlay directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
+Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
 
 
 ### Initializing Settings
