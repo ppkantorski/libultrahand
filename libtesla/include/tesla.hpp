@@ -415,6 +415,8 @@ namespace tsl {
         }
     }
     
+    #if IS_LAUNCHER_DIRECTIVE
+    #else
     static void initializeUltrahandSettings() {
         // Set Ultrahand Globals
         useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
@@ -429,7 +431,7 @@ namespace tsl {
         else
             reinitializeLangVars();
     }
-
+    #endif
     
     
     // Declarations
@@ -5636,6 +5638,21 @@ namespace tsl {
          * This should be called instead of directly calling initServices().
          */
         void initialize() {
+            #ifdef OVERRIDE_APPEARANCE_PATH
+
+            std::string APPEARANCE_PATH = OVERRIDE_APPEARANCE_PATH;
+            preprocessPath(APPEARANCE_PATH);
+
+            const std::string NEW_THEME_CONFIG_INI_PATH = APPEARANCE_PATH+"theme.ini";
+            const std::string NEW_WALLPAPER_PATH = APPEARANCE_PATH+"wallpaper.rgba";
+
+
+            if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
+                THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
+            if (isFileOrDirectory(NEW_WALLPAPER_PATH))
+                WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+            #endif
+
             //initializeThemeVars(); // Initialize variables for ultrahand themes
             #if IS_LAUNCHER_DIRECTIVE
             #else
