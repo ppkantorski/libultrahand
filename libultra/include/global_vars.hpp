@@ -20,9 +20,9 @@ namespace ult {
     extern const std::string TESLA_CONFIG_INI_PATH;
     extern const std::string FUSE_DATA_INI_PATH;
     extern const std::string LANG_PATH;
-    extern std::string THEME_CONFIG_INI_PATH;
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
+    extern std::string THEME_CONFIG_INI_PATH;
     extern std::string WALLPAPER_PATH;
     extern const std::string DOWNLOADS_PATH;
     extern const std::string EXPANSION_PATH;
