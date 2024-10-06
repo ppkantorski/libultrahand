@@ -247,25 +247,6 @@ namespace ult {
     std::string POLISH = "Polish";
     std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
     std::string TRADITIONAL_CHINESE = "Traditional Chinese";
-    #else
-    std::string ENGLISH;
-    std::string SPANISH;
-    std::string FRENCH;
-    std::string GERMAN;
-    std::string JAPANESE;
-    std::string KOREAN;
-    std::string ITALIAN;
-    std::string DUTCH;
-    std::string PORTUGUESE;
-    std::string RUSSIAN;
-    std::string POLISH;
-    std::string SIMPLIFIED_CHINESE;
-    std::string TRADITIONAL_CHINESE;
-    #endif
-
-
-    std::string DEFAULT_CHAR_WIDTH = "0.33";
-    std::string UNAVAILABLE_SELECTION = "Not available";
     std::string OVERLAYS = "Overlays"; //defined in libTesla now
     std::string OVERLAY = "Overlay";
     std::string HIDDEN_OVERLAYS = "Hidden Overlays";
@@ -283,6 +264,12 @@ namespace ult {
     std::string SETTINGS = "Settings";
     std::string MAIN_SETTINGS = "Main Settings";
     std::string UI_SETTINGS = "UI Settings";
+    #endif
+
+
+    std::string DEFAULT_CHAR_WIDTH = "0.33";
+    std::string UNAVAILABLE_SELECTION = "Not available";
+
     std::string WIDGET = "Widget";
     std::string CLOCK = "Clock";
     std::string BATTERY = "Battery";
@@ -561,6 +548,7 @@ namespace ult {
             return;
         
         std::unordered_map<std::string, std::string*> configMap = {
+            #if IS_LAUNCHER_DIRECTIVE
             {"ENGLISH", &ENGLISH},
             {"SPANISH", &SPANISH},
             {"FRENCH", &FRENCH},
@@ -573,8 +561,6 @@ namespace ult {
             {"RUSSIAN", &RUSSIAN},
             {"SIMPLIFIED_CHINESE", &SIMPLIFIED_CHINESE},
             {"TRADITIONAL_CHINESE", &TRADITIONAL_CHINESE},
-            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
-            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
             {"OVERLAYS", &OVERLAYS},
             {"OVERLAY", &OVERLAY},
             {"HIDDEN_OVERLAYS", &HIDDEN_OVERLAYS},
@@ -592,6 +578,12 @@ namespace ult {
             {"SETTINGS", &SETTINGS},
             {"MAIN_SETTINGS", &MAIN_SETTINGS},
             {"UI_SETTINGS", &UI_SETTINGS},
+            #endif
+
+
+            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
+            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
+
             {"WIDGET", &WIDGET},
             {"CLOCK", &CLOCK},
             {"BATTERY", &BATTERY},
@@ -635,11 +627,11 @@ namespace ult {
             {"ON", &ON},
             {"OFF", &OFF},
             {"PACKAGE_INFO", &PACKAGE_INFO},
-            {"_TITLE", &_TITLE},
-            {"_VERSION", &_VERSION},
-            {"_CREATOR", &_CREATOR},
-            {"_ABOUT", &_ABOUT},
-            {"_CREDITS", &_CREDITS},
+            {"TITLE", &_TITLE},
+            {"VERSION", &_VERSION},
+            {"CREATOR", &_CREATOR},
+            {"ABOUT", &_ABOUT},
+            {"CREDITS", &_CREDITS},
             {"OK", &OK},
             {"BACK", &BACK},
             {"REBOOT_TO", &REBOOT_TO},

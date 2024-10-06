@@ -238,6 +238,7 @@ namespace tsl {
     
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
+        constexpr u32 MiniListItemDefaultHeight     = 40;       ///< Standard list item height
         constexpr u32 TrackBarDefaultHeight         = 84;       ///< Standard track bar height
         constexpr u8  ListItemHighlightSaturation   = 7;        ///< Maximum saturation of Listitem highlights
         constexpr u8  ListItemHighlightLength       = 22;       ///< Maximum length of Listitem highlights
@@ -2969,11 +2970,13 @@ namespace tsl {
                     nextPageWidth = renderer->calculateStringWidth(this->m_pageLeftName, 23);
                 else if (!(this->m_pageRightName).empty())
                     nextPageWidth = renderer->calculateStringWidth(this->m_pageRightName, 23);
+                #if IS_LAUNCHER_DIRECTIVE
                 else if (inMainMenu)
                     if (inOverlaysPage)
                         nextPageWidth = renderer->calculateStringWidth(PACKAGES,23);
                     else if (inPackagesPage)
                         nextPageWidth = renderer->calculateStringWidth(OVERLAYS,23);
+                #endif
 
                 if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
                     if (touchingNextPage) {
@@ -2988,11 +2991,13 @@ namespace tsl {
                 else
                     menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
 
+                #if IS_LAUNCHER_DIRECTIVE
                 if (this->m_menuMode == "packages") {
                     menuBottomLine += "\uE0ED"+GAP_2+OVERLAYS;
                 } else if (this->m_menuMode == "overlays") {
                     menuBottomLine += "\uE0EE"+GAP_2+PACKAGES;
                 }
+                #endif
                 
                 if (!(this->m_pageLeftName).empty()) {
                     menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;

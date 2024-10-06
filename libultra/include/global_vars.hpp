@@ -5,27 +5,34 @@
 #include <atomic>
 
 namespace ult {
-    extern const std::string BOOT_PACKAGE_FILENAME;
-    extern const std::string EXIT_PACKAGE_FILENAME;
-    extern const std::string PACKAGE_FILENAME;
     extern const std::string CONFIG_FILENAME;
+
     extern const std::string ULTRAHAND_PROJECT_NAME;
     extern const std::string CAPITAL_ULTRAHAND_PROJECT_NAME;
-    extern const std::string SPLIT_PROJECT_NAME_1;
-    extern const std::string SPLIT_PROJECT_NAME_2;
-
+    
     extern const std::string ROOT_PATH;
     extern const std::string SETTINGS_PATH;
     extern const std::string ULTRAHAND_CONFIG_INI_PATH;
     extern const std::string TESLA_CONFIG_INI_PATH;
-    extern const std::string FUSE_DATA_INI_PATH;
     extern const std::string LANG_PATH;
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
+    
+    // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
     extern std::string THEME_CONFIG_INI_PATH;
     extern std::string WALLPAPER_PATH;
+
+
+    #if IS_LAUNCHER_DIRECTIVE
+    extern const std::string SPLIT_PROJECT_NAME_1;
+    extern const std::string SPLIT_PROJECT_NAME_2;
+    extern const std::string BOOT_PACKAGE_FILENAME;
+    extern const std::string EXIT_PACKAGE_FILENAME;
+    extern const std::string PACKAGE_FILENAME;
+    
     extern const std::string DOWNLOADS_PATH;
     extern const std::string EXPANSION_PATH;
+    extern const std::string FUSE_DATA_INI_PATH;
     extern const std::string PACKAGE_PATH;
     extern const std::string OVERLAY_PATH;
     extern const std::string OVERLAYS_INI_FILEPATH;
@@ -35,21 +42,26 @@ namespace ult {
     extern const std::string LATEST_RELEASE_INFO_URL;
     extern const std::string NX_OVLLOADER_ZIP_URL;
     extern const std::string NX_OVLLOADER_PLUS_ZIP_URL;
+    
+    extern const std::string LAUNCH_ARGS_STR;
+    extern const std::string USE_LAUNCH_ARGS_STR;
+    extern const std::string USE_BOOT_PACKAGE_STR;
+    extern const std::string USE_EXIT_PACKAGE_STR;
+    extern const std::string USE_LOGGING_STR;
+
+    #endif
 
     extern const std::string TESLA_COMBO_STR;
     extern const std::string ULTRAHAND_COMBO_STR;
-
+    
     extern const std::string FUSE_STR;
     extern const std::string TESLA_STR;
     extern const std::string ERISTA_STR;
     extern const std::string MARIKO_STR;
     extern const std::string KEY_COMBO_STR;
     extern const std::string DEFAULT_LANG_STR;
-    extern const std::string LAUNCH_ARGS_STR;
-    extern const std::string USE_LAUNCH_ARGS_STR;
-    extern const std::string USE_BOOT_PACKAGE_STR;
-    extern const std::string USE_EXIT_PACKAGE_STR;
-    extern const std::string USE_LOGGING_STR;
+
+
     extern const std::string LIST_STR;
     extern const std::string LIST_FILE_STR;
     extern const std::string JSON_STR;

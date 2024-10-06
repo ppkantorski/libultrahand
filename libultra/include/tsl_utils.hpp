@@ -28,7 +28,7 @@
 
 namespace ult {
     extern u16 activeHeaderHeight;
-    
+
     bool consoleIsDocked();
     
     std::string getTitleIdAsString();
@@ -186,6 +186,7 @@ namespace ult {
     constexpr float _M_PI = 3.14159265358979323846;
     constexpr float RAD_TO_DEG = 180.0f / _M_PI;
     
+    #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;
     extern std::string SPANISH;
     extern std::string FRENCH;
@@ -199,8 +200,7 @@ namespace ult {
     extern std::string POLISH;
     extern std::string SIMPLIFIED_CHINESE;
     extern std::string TRADITIONAL_CHINESE;
-    extern std::string DEFAULT_CHAR_WIDTH;
-    extern std::string UNAVAILABLE_SELECTION;
+
     extern std::string OVERLAYS; //defined in libTesla now
     extern std::string OVERLAY;
     extern std::string HIDDEN_OVERLAYS;
@@ -218,6 +218,11 @@ namespace ult {
     extern std::string SETTINGS;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
+    #endif
+
+    extern std::string DEFAULT_CHAR_WIDTH;
+    extern std::string UNAVAILABLE_SELECTION;
+
     extern std::string WIDGET;
     extern std::string CLOCK;
     extern std::string BATTERY;

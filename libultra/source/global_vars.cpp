@@ -23,8 +23,6 @@ namespace ult {
 
     const std::string ULTRAHAND_PROJECT_NAME = "ultrahand";
     const std::string CAPITAL_ULTRAHAND_PROJECT_NAME = "Ultrahand";
-    const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
-    const std::string SPLIT_PROJECT_NAME_2 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(5);
     
     const std::string ROOT_PATH = "sdmc:/";
     const std::string SETTINGS_PATH = "sdmc:/config/ultrahand/";
@@ -40,6 +38,8 @@ namespace ult {
 
 
     #if IS_LAUNCHER_DIRECTIVE
+    const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
+    const std::string SPLIT_PROJECT_NAME_2 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(5);
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
@@ -62,30 +62,6 @@ namespace ult {
     const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
     const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
     const std::string USE_LOGGING_STR = "use_logging";
-    #else
-    const std::string BOOT_PACKAGE_FILENAME;
-    const std::string EXIT_PACKAGE_FILENAME;
-    const std::string PACKAGE_FILENAME;
-
-    const std::string DOWNLOADS_PATH;
-    const std::string EXPANSION_PATH;
-    const std::string FUSE_DATA_INI_PATH;
-    const std::string PACKAGE_PATH;
-    const std::string OVERLAY_PATH;
-    const std::string OVERLAYS_INI_FILEPATH;
-    const std::string PACKAGES_INI_FILEPATH;
-    const std::string ULTRAHAND_REPO_URL;
-    const std::string INCLUDED_THEME_FOLDER_URL;
-    const std::string LATEST_RELEASE_INFO_URL;
-    const std::string NX_OVLLOADER_ZIP_URL;
-    const std::string NX_OVLLOADER_PLUS_ZIP_URL;
-
-    const std::string LAUNCH_ARGS_STR;
-    const std::string USE_LAUNCH_ARGS_STR;
-    const std::string USE_BOOT_PACKAGE_STR;
-    const std::string USE_EXIT_PACKAGE_STR;
-    const std::string USE_LOGGING_STR;
-
     #endif
 
     const std::string TESLA_COMBO_STR = "L+DDOWN+RS";
@@ -162,5 +138,4 @@ namespace ult {
         unzipPercentage.store(-1, std::memory_order_release);
         copyPercentage.store(-1, std::memory_order_release);
     }
-
 }
