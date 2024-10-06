@@ -32,7 +32,7 @@ namespace ult {
     const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
     const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
     
-    // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
+    // Can be overriden with UI_OVERRIDE_PATH directive
     std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
     std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
 
