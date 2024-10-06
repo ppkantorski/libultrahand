@@ -5658,7 +5658,7 @@ namespace tsl {
         void initialize() {
             #ifdef UI_OVERRIDE_PATH
 
-            std::string APPEARANCE_PATH = OVERRIDE_APPEARANCE_PATH;
+            std::string APPEARANCE_PATH = UI_OVERRIDE_PATH;
             preprocessPath(APPEARANCE_PATH);
 
             const std::string NEW_THEME_CONFIG_INI_PATH = APPEARANCE_PATH+"theme.ini";
