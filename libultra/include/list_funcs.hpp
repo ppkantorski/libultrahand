@@ -23,8 +23,12 @@
 #ifndef LIST_FUNCS_HPP
 #define LIST_FUNCS_HPP
 
-#include <vector>
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
 #include <fstream>
+#endif
+
+#include <vector>
 #include <string>
 #include <unordered_set>
 #include "debug_funcs.hpp"

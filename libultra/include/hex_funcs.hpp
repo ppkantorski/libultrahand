@@ -21,12 +21,16 @@
 #ifndef HEX_FUNCS_HPP
 #define HEX_FUNCS_HPP
 
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
+#include <fstream>
+#endif
+
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <functional>
 //#include <cstdio> // Added for FILE and fopen
-#include <fstream>
 #include <cstring> // Added for std::memcmp
 
 #include <global_vars.hpp>

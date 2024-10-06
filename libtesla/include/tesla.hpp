@@ -62,10 +62,7 @@
 #include <map>
 #include <barrier>
 
-//static bool debugFPS = true;
 
-//uint64_t RAM_Used_system_u = 0;
-//uint64_t RAM_Total_system_u = 0;
 
 using namespace ult;
 
@@ -87,7 +84,6 @@ using namespace ult;
 #pragma GCC diagnostic pop
 
 #define ELEMENT_BOUNDS(elem) elem->getX(), elem->getY(), elem->getWidth(), elem->getHeight()
-#define ELEMENT_BOUNDS_2(elem) elem->getX()+4, elem->getY()+4, elem->getWidth(), elem->getHeight()+10
 
 #define ASSERT_EXIT(x) if (R_FAILED(x)) std::exit(1)
 #define ASSERT_FATAL(x) if (Result res = x; R_FAILED(res)) fatalThrow(res)
@@ -429,8 +425,6 @@ namespace tsl {
         std::string langFile = LANG_PATH+defaultLang+".json";
         if (isFileOrDirectory(langFile))
             parseLanguage(langFile);
-        else
-            reinitializeLangVars();
     }
     #endif
     
@@ -1288,6 +1282,7 @@ namespace tsl {
                 }
             }
 
+            #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
             void drawWidget() {
                 // Draw clock if it's not hidden
@@ -1368,6 +1363,7 @@ namespace tsl {
                     drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
                 }
             }
+            #endif
 
 
             /**
@@ -2802,6 +2798,11 @@ namespace tsl {
                 
                 renderer->drawWallpaper();
                 
+                #if USING_WIDGET_DIRECTIVE
+                // Call the extracted widget drawing method
+                renderer->drawWidget();
+                #endif
+
 
                 y = 50;
                 offset = 0;
@@ -2812,10 +2813,6 @@ namespace tsl {
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
                 if (isUltrahand) {
-                    
-                    // Call the extracted widget drawing method
-                    renderer->drawWidget();
-
 
                     if (touchingMenu && inMainMenu) {
                         renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
@@ -6509,11 +6506,13 @@ namespace tsl {
                     
 
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
+                        #if IS_LAUNCHER_DIRECTIVE
                         if (updateMenuCombos) {
                             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
                             setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
                             updateMenuCombos = false;
                         }
+                        #endif
                         
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
@@ -6523,6 +6522,7 @@ namespace tsl {
                             eventFire(&shData->comboEvent);
                         }
                     }
+                    #if IS_LAUNCHER_DIRECTIVE
                     else if (updateMenuCombos && (shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) {
                         tsl::cfg::launchCombo = tsl::cfg::launchCombo2;
                         setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
@@ -6530,7 +6530,7 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         updateMenuCombos = false;
                     }
-
+                    #endif
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
@@ -6678,10 +6678,12 @@ namespace tsl {
         }
         #endif
         
+        #if IS_LAUNCHER_DIRECTIVE
+        bool inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
+        #else
+        bool inOverlay = true;
+        #endif
         
-        bool inOverlay = (
-            (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR)
-        );
         if (inOverlay && skipCombo) {
             #if IS_LAUNCHER_DIRECTIVE
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);

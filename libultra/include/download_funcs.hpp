@@ -20,7 +20,10 @@
 #ifndef DOWNLOAD_FUNCS_HPP
 #define DOWNLOAD_FUNCS_HPP
 
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
 #include <fstream>
+#endif
 #include <curl/curl.h>
 #include <zlib.h>
 #include <zzip/zzip.h>

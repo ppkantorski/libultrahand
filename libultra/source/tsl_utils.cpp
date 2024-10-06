@@ -394,9 +394,9 @@ namespace ult {
     #endif
 
     
+    #if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars() {
-        #if IS_LAUNCHER_DIRECTIVE
         ENGLISH = "English";
         SPANISH = "Spanish";
         FRENCH = "French";
@@ -541,8 +541,8 @@ namespace ult {
         OCT = "Oct";
         NOV = "Nov";
         DEC = "Dec";
-        #endif
     }
+    #endif
     
     
     
@@ -1125,7 +1125,7 @@ namespace ult {
     bool touchInBounds = false;
     
     
-    
+    #if USING_WIDGET_DIRECTIVE
     // Battery implementation
     bool powerInitialized = false;
     bool powerCacheInitialized;
@@ -1230,6 +1230,7 @@ namespace ult {
             powerCacheInitialized = false;
         }
     }
+    #endif
     
     
     // Temperature Implementation
@@ -1351,7 +1352,7 @@ namespace ult {
     
     std::string versionLabel;
     
-
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeVersionLabels() {
         cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
         hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
@@ -1361,6 +1362,7 @@ namespace ult {
         #endif
         //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
     }
+    #endif
     
     
     // Number of renderer threads to use

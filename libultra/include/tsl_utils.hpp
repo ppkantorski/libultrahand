@@ -345,9 +345,10 @@ namespace ult {
     extern std::string DEC;
     #endif
     
+    #if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars();
-    
+    #endif
     
     
     // Define the updateIfNotEmpty function
@@ -428,7 +429,7 @@ namespace ult {
     extern bool touchInBounds;
     
     
-    
+    #if USING_WIDGET_DIRECTIVE
     // Battery implementation
     extern bool powerInitialized;
     extern bool powerCacheInitialized;
@@ -453,7 +454,7 @@ namespace ult {
     void powerInit(void);
     
     void powerExit(void);
-    
+    #endif
     
     // Temperature Implementation
     extern float PCB_temperature, SOC_temperature;
@@ -502,8 +503,9 @@ namespace ult {
     
     extern std::string versionLabel;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeVersionLabels();
-    
+    #endif
     
     
     // Number of renderer threads to use

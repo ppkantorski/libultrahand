@@ -23,7 +23,10 @@
 #define GET_FUNCS_HPP
 
 //#include <sys/stat.h>
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
 #include <fstream>
+#endif
 #include <cstring>
 #include <dirent.h>
 #include <fnmatch.h>

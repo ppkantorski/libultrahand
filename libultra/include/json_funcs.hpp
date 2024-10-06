@@ -19,8 +19,12 @@
 #ifndef JSON_FUNCS_HPP
 #define JSON_FUNCS_HPP
 
-#include <string>
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
 #include <fstream>
+#endif
+
+#include <string>
 #include <jansson.h>
 #include "string_funcs.hpp"
 

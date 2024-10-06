@@ -22,7 +22,11 @@
 #ifndef PATH_FUNCS_HPP
 #define PATH_FUNCS_HPP
 
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#else
 #include <fstream>
+#endif
+
 #include <dirent.h>
 #include <sys/stat.h>
 #include "global_vars.hpp"
