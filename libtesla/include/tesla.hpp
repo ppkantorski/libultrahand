@@ -5656,7 +5656,7 @@ namespace tsl {
          * This should be called instead of directly calling initServices().
          */
         void initialize() {
-            #ifdef OVERRIDE_APPEARANCE_PATH
+            #ifdef UI_OVERRIDE_PATH
 
             std::string APPEARANCE_PATH = OVERRIDE_APPEARANCE_PATH;
             preprocessPath(APPEARANCE_PATH);
