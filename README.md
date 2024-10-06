@@ -19,8 +19,8 @@ To customize the theme and wallpaper for your overlay, you can override the defa
 
 ```
 # Enable appearance overriding
-APPEARANCE_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
-CFLAGS += -DAPPEARANCE_OVERRIDE_PATH=$(APPEARANCE_OVERRIDE_PATH)
+UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
+CFLAGS += -DUI_OVERRIDE_PATH=$(UI_OVERRIDE_PATH)
 ```
 
 Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
