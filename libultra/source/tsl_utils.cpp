@@ -1,3 +1,23 @@
+/********************************************************************************
+ * File: tsl_utils.cpp
+ * Author: ppkantorski
+ * Description: 
+ *   'tsl_utils.cpp' provides the implementation of various utility functions
+ *   defined in 'tsl_utils.hpp' for the Ultrahand Overlay project. This source file
+ *   includes functionality for system checks, input handling, time-based interpolation,
+ *   and other application-specific features essential for operating custom overlays
+ *   on the Nintendo Switch.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository:
+ *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
+ *
+ *   Note: This notice is integral to the project's documentation and must not be 
+ *   altered or removed.
+ *
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
 #include <tsl_utils.hpp>
 
 namespace ult {
