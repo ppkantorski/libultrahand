@@ -31,10 +31,13 @@ namespace ult {
     const std::string ULTRAHAND_CONFIG_INI_PATH = "sdmc:/config/ultrahand/config.ini";
     const std::string TESLA_CONFIG_INI_PATH = "sdmc:/config/tesla/config.ini";
     const std::string LANG_PATH = "sdmc:/config/ultrahand/lang/";
-    std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
     const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
     const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
+    
+    // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
+    std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
     std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
+
 
     #if IS_LAUNCHER_DIRECTIVE
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
