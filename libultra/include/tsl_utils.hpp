@@ -1,3 +1,27 @@
+/********************************************************************************
+ * File: tsl_utils.hpp
+ * Author: ppkantorski
+ * Description: 
+ *   'tsl_utils.hpp' is a central utility header for the Ultrahand Overlay project,
+ *   containing a variety of functions and definitions related to system status,
+ *   input handling, and application-specific behavior on the Nintendo Switch.
+ *   This header provides essential utilities for interacting with the system,
+ *   managing key input, and enhancing overlay functionality.
+ *
+ *   The utilities defined here are designed to operate independently, facilitating
+ *   robust system interaction capabilities required for custom overlays.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository:
+ *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
+ *
+ *   Note: This notice is integral to the project's documentation and must not be 
+ *   altered or removed.
+ *
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
+
 #pragma once
 #ifndef TSL_UTILS_HPP
 #define TSL_UTILS_HPP
