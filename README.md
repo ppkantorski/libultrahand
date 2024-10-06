@@ -26,6 +26,17 @@ CFLAGS += -DAPPEARANCE_OVERRIDE_PATH=$(APPEARANCE_OVERRIDE_PATH)
 Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
 
 
+### Ultrahand Overlay Widget
+
+To add the Ultrahand Overlay widget to your `OverlayFrame`'s, add the following directive to your `Makefile`:
+
+```
+# Enable Widget
+USING_WIDGET_DIRECTIVE := 1 
+CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
+```
+
+
 ### Initializing Settings
 
 Ultrahand Overlay theme variables and settings for your overlay are read automatically upon initialization.  Themes loading implementation is currently set within `OverlayFrame` and `HeaderOverlayFrame`.  
