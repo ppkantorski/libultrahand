@@ -1640,17 +1640,31 @@ namespace tsl {
              * @param fontSize Size of the font
              * @param maxLength Maximum length of the string in terms of width
              */
-            inline std::string limitStringLength(const std::string& string, const bool monospace, const s32 fontSize, const s32 maxLength) {
-                if (string.size() < 2) {
-                    return string;
+            inline std::string limitStringLength(const std::string& originalString, const bool monospace, const s32 fontSize, const s32 maxLength) {
+                #ifdef UI_OVERRIDE_PATH
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+            
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
                 }
-                
+                const std::string* stringPtr = &translatedString;
+                #else
+                const std::string* stringPtr = &originalString;
+                #endif
+            
+                if (stringPtr->size() < 2) {
+                    return *stringPtr;
+                }
+            
                 s32 currX = 0;
                 ssize_t strPos = 0;
                 ssize_t codepointWidth;
                 u32 ellipsisCharacter = 0x2026;  // Unicode code point for '…'
                 s32 ellipsisWidth;
-                
+            
                 // Calculate the width of the ellipsis
                 stbtt_fontinfo* ellipsisFont = &this->m_stdFont;
                 if (stbtt_FindGlyphIndex(&this->m_extFont, ellipsisCharacter)) {
@@ -1662,31 +1676,31 @@ namespace tsl {
                 int ellipsisXAdvance = 0, ellipsisYAdvance = 0;
                 stbtt_GetCodepointHMetrics(ellipsisFont, ellipsisCharacter, &ellipsisXAdvance, &ellipsisYAdvance);
                 ellipsisWidth = static_cast<s32>(ellipsisXAdvance * ellipsisFontSize);
-
+            
                 u32 currCharacter;
                 std::string substr;
-
-                while (static_cast<std::string::size_type>(strPos) < string.size() && currX + ellipsisWidth < maxLength) {
-                    
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&string[strPos]));
-                    
+            
+                while (static_cast<std::string::size_type>(strPos) < stringPtr->size() && currX + ellipsisWidth < maxLength) {
+                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*stringPtr)[strPos]));
+            
                     if (codepointWidth <= 0) {
                         break;
                     }
-                    
+            
                     // Calculate the width of the current substring plus the ellipsis
-                    substr = string.substr(0, strPos + codepointWidth);
+                    substr = stringPtr->substr(0, strPos + codepointWidth);
                     currX = calculateStringWidth(substr, fontSize, monospace);
-                    
+            
                     if (currX + ellipsisWidth >= maxLength) {
                         return substr + "…";
                     }
-                    
+            
                     strPos += codepointWidth;
                 }
-                
-                return string;
+            
+                return *stringPtr;
             }
+
 
             #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
