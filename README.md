@@ -25,9 +25,9 @@ CFLAGS += -DUI_OVERRIDE_PATH=$(UI_OVERRIDE_PATH)
 
 Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 
-Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` / `{UI_OVERRIDE_PATH}` directory.
+Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` or `{UI_OVERRIDE_PATH}` directory.
 
-Language translations are done direction on the `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` / `{UI_OVERRIDE_PATH}/lang/`.
+Language translations are done direction on the `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
 
 Jsons will need to be named ISO 639-1 format (en, de, fr, es, etc...) and will only be used in accordance with the current language set in the Ultrahand Overlay `/config/ultrahand/config.ini`.
 
