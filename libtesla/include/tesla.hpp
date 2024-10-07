@@ -778,6 +778,7 @@ namespace tsl {
             
             friend class tsl::Overlay;
             
+
             /**
              * @brief Handles opacity of drawn colors for fadeout. Pass all colors through this function in order to apply opacity properly
              *
@@ -1295,89 +1296,6 @@ namespace tsl {
                 }
             }
 
-            #if USING_WIDGET_DIRECTIVE
-            // Method to draw clock, temperatures, and battery percentage
-            void drawWidget() {
-                // Draw clock if it's not hidden
-                static timespec currentTime;
-                static char timeStr[20]; // Allocate a buffer to store the time string
-                size_t y_offset = 45;
-        
-                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
-                    drawRect(245, 23, 1, 49, a(separatorColor));
-                }
-
-                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
-                    y_offset += 10;
-                }
-
-                clock_gettime(CLOCK_REALTIME, &currentTime);
-                if (!hideClock) {
-                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
-                    localizeTimeStr(timeStr);
-                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
-                    y_offset += 22;
-                }
-        
-                // Draw temperatures and battery percentage
-                static char PCB_temperatureStr[10];
-                static char SOC_temperatureStr[10];
-                static char chargeString[6];
-        
-                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
-                static size_t lastStatusChange = 0;
-                
-                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
-                    if (!hideSOCTemp) {
-                        ReadSocTemperature(&SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
-                    } else {
-                        strcpy(SOC_temperatureStr, "");
-                        SOC_temperature=0;
-                    }
-                    if (!hidePCBTemp) {
-                        ReadPcbTemperature(&PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
-                    } else {
-                        strcpy(PCB_temperatureStr, "");
-                        PCB_temperature=0;
-                    }
-                    if (!hideBattery) {
-                        powerGetDetails(&batteryCharge, &isCharging);
-                        batteryCharge = std::min(batteryCharge, 100U);
-                        sprintf(chargeString, "%d%%", batteryCharge);
-                    } else {
-                        strcpy(chargeString, "");
-                        batteryCharge=0;
-                    }
-                    timeOut = int(currentTime.tv_sec);
-                }
-                
-                lastStatusChange = statusChange;
-                
-                // Draw battery percentage
-                if (!hideBattery && batteryCharge > 0) {
-                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
-                }
-        
-                // Draw PCB and SOC temperatures
-                int offset = 0;
-                if (!hidePCBTemp && PCB_temperature > 0) {
-                    if (!hideBattery)
-                        offset -= 5;
-                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
-                }
-        
-                if (!hideSOCTemp && SOC_temperature > 0) {
-                    if (!hidePCBTemp || !hideBattery)
-                        offset -= 5;
-                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
-                }
-            }
-            #endif
-
 
             /**
              * @brief Draws a RGBA8888 bitmap from memory
@@ -1425,49 +1343,71 @@ namespace tsl {
             };
             
             
-            inline float calculateStringWidth(const std::string& str, const s32 fontSize, const bool fixedWidthNumbers = false) {
-                if (str.empty()) {
+            inline float calculateStringWidth(const std::string& originalString, const s32 fontSize, const bool fixedWidthNumbers = false) {
+                if (originalString.empty()) {
                     return 0.0f;
                 }
-            
+
+                #ifdef UI_OVERRIDE_PATH
+                
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                const std::string& translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+                
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                }
+                
+                // Use a pointer to iterate over the translated string
+                const std::string* stringPtr = &translatedString;
+
+                #else
+
+                const std::string* stringPtr = &originalString;
+
+                #endif
+
                 float totalWidth = 0.0f;
-                std::string::size_type strPos = 0;
+
                 ssize_t codepointWidth;
                 u32 prevCharacter = 0;
                 u32 currCharacter = 0;
             
                 static std::unordered_map<u64, Glyph> s_glyphCache;
             
+                auto itStrEnd = stringPtr->cend();
+                auto itStr = stringPtr->cbegin();
+            
                 u64 key = 0;
                 Glyph* glyph = nullptr;
                 auto it = s_glyphCache.end();
-                
-                while (strPos < str.size()) {
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&str[strPos]));
+            
+                while (itStr != itStrEnd) {
+                    // Decode UTF-8 codepoint
+                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
                     if (codepointWidth <= 0) {
                         break;
                     }
-                    
-                    strPos += codepointWidth;
-                    
+            
+                    // Move the iterator forward by the width of the current codepoint
+                    itStr += codepointWidth;
+            
                     if (currCharacter == '\n') {
                         continue;
                     }
-
-                    // Check if the current character has a predefined width
-                    //if (characterWidths.find(currCharacter) != characterWidths.end()) {
-                    //    totalWidth += characterWidths[currCharacter] * fontSize; // Use the predefined width
-                    //    prevCharacter = currCharacter;
-                    //    continue;
-                    //}
-                    
+            
+                    // Calculate glyph key
                     key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-                    
+            
+                    // Check cache for the glyph
                     it = s_glyphCache.find(key);
-                    
+            
+                    // If glyph not found, create and cache it
                     if (it == s_glyphCache.end()) {
                         glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
             
+                        // Determine the appropriate font for the character
                         if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
                             glyph->currFont = &this->m_extFont;
                         } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
@@ -1475,7 +1415,7 @@ namespace tsl {
                         } else {
                             glyph->currFont = &this->m_stdFont;
                         }
-                        
+            
                         glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
                         stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
                     } else {
@@ -1484,44 +1424,46 @@ namespace tsl {
             
                     if (prevCharacter) {
                         float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
-                        totalWidth += kernAdvance * glyph->currFontSize; // Updated line
+                        totalWidth += kernAdvance * glyph->currFontSize;
                     }
             
-                    totalWidth += int(glyph->xAdvance * glyph->currFontSize); // Updated line
+                    totalWidth += int(glyph->xAdvance * glyph->currFontSize);
             
                     prevCharacter = currCharacter;
                 }
             
                 return totalWidth;
             }
+            
 
 
 
 
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+                
+                #ifdef UI_OVERRIDE_PATH
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                }
+                const std::string* stringPtr = &translatedString;
+
+                #else
+                const std::string* stringPtr = &originalString;
+                #endif
+
+
                 float maxX = x;
                 float currX = x;
                 float currY = y;
                 
                 
                 // Avoid copying the original string
-                const std::string* stringPtr = &originalString;
-                
-                // Check if the string is the INPROGRESS_SYMBOL and replace with throbber symbol without copying
-                //if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
-                //    // Static counter for the throbber symbols
-                //    static size_t throbberCounter = 0;
-                //    
-                //    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                //    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
-                //    
-                //    throbberCounter++;
-                //    
-                //    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
-                //    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
-                //        throbberCounter = 0;
-                //    }
-                //}
+                //const std::string* stringPtr = &originalString;
                 
                 // Cache the end iterator for efficiency
                 auto itStrEnd = stringPtr->cend();
@@ -1628,150 +1570,7 @@ namespace tsl {
                 return { static_cast<u32>(maxX - x), static_cast<u32>(currY - y) };
             }
             
-
-
-            /**
-             * @brief Draws a string
-             *
-             * @param string String to draw
-             * @param monospace Draw string in monospace font
-             * @param x X pos
-             * @param y Y pos
-             * @param fontSize Height of the text drawn in pixels
-             * @param color Text color. Use transparent color to skip drawing and only get the string's dimensions
-             * @return Dimensions of drawn string
-             */
-
-            inline void drawStringV2(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
-                //float maxX = x;
-                float currX = x;
-                float currY = y;
-                
-                
-                // Avoid copying the original string
-                const std::string* stringPtr = &originalString;
-                
-                // Check if the string is the INPROGRESS_SYMBOL and replace with throbber symbol without copying
-                //if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
-                //    // Static counter for the throbber symbols
-                //    static size_t throbberCounter = 0;
-                //    
-                //    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                //    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
-                //    
-                //    throbberCounter++;
-                //    
-                //    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
-                //    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
-                //        throbberCounter = 0;
-                //    }
-                //}
-                
-                // Cache the end iterator for efficiency
-                auto itStrEnd = stringPtr->cend();
-                auto itStr = stringPtr->cbegin();
-                
-                // Move variable declarations outside of the loop
-                u32 currCharacter = 0;
-                ssize_t codepointWidth = 0;
-                u64 key = 0;
-                Glyph* glyph = nullptr;
-                
-                float xPos = 0;
-                float yPos = 0;
-                u32 rowOffset = 0;
-                uint8_t bmpColor = 0;
-                Color tmpColor(0);
-                
-                // Static glyph cache
-                static std::unordered_map<u64, Glyph> s_glyphCache; // may cause leak? will investigate later.
-                auto it = s_glyphCache.end();
-
-                float scaledFontSize;
-
-                // Loop through each character in the string
-                while (itStr != itStrEnd) {
-                    if (maxWidth > 0 && (currX - x) >= maxWidth)
-                        break;
             
-                    // Decode UTF-8 codepoint
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                    if (codepointWidth <= 0)
-                        break;
-            
-                    // Move the iterator forward by the width of the current codepoint
-                    itStr += codepointWidth;
-            
-                    if (currCharacter == '\n') {
-                        //maxX = std::max(currX, maxX);
-                        currX = x;
-                        currY += fontSize;
-                        continue;
-                    }
-            
-                    // Calculate glyph key
-                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-            
-                    // Check cache for the glyph
-                    it = s_glyphCache.find(key);
-            
-                    // If glyph not found, create and cache it
-                    if (it == s_glyphCache.end()) {
-                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-            
-                        // Determine the appropriate font for the character
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                        glyph->currFontSize = scaledFontSize;
-            
-                        // Get glyph bitmap and metrics
-                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
-                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            
-                        s32 yAdvance = 0;
-                        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
-            
-                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
-                    } else {
-                        glyph = &it->second;
-                    }
-            
-                    if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && color.a != 0x0) {
-                        xPos = currX + glyph->bounds[0];
-                        yPos = currY + glyph->bounds[1];
-            
-                        // Optimized pixel processing
-                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
-                            rowOffset = bmpY * glyph->width;
-                            for (s32 bmpX = 0; bmpX < glyph->width; ++bmpX) {
-                                bmpColor = glyph->glyphBmp[rowOffset + bmpX] >> 4;
-                                if (bmpColor == 0xF) {
-                                    // Direct pixel manipulation
-                                    this->setPixel(xPos + bmpX, yPos + bmpY, color, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
-                                } else if (bmpColor != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
-                                }
-                            }
-                        }
-                    }
-            
-                    // Advance the cursor for the next glyph
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                }
-            }
-            
-
-            
-
             
             
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
@@ -1891,6 +1690,89 @@ namespace tsl {
                 
                 return string;
             }
+
+            #if USING_WIDGET_DIRECTIVE
+            // Method to draw clock, temperatures, and battery percentage
+            void drawWidget() {
+                // Draw clock if it's not hidden
+                static timespec currentTime;
+                static char timeStr[20]; // Allocate a buffer to store the time string
+                size_t y_offset = 45;
+        
+                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
+                    drawRect(245, 23, 1, 49, a(separatorColor));
+                }
+
+                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
+                    y_offset += 10;
+                }
+
+                clock_gettime(CLOCK_REALTIME, &currentTime);
+                if (!hideClock) {
+                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
+                    localizeTimeStr(timeStr);
+                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
+                    y_offset += 22;
+                }
+        
+                // Draw temperatures and battery percentage
+                static char PCB_temperatureStr[10];
+                static char SOC_temperatureStr[10];
+                static char chargeString[6];
+        
+                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
+                static size_t lastStatusChange = 0;
+                
+                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
+                    if (!hideSOCTemp) {
+                        ReadSocTemperature(&SOC_temperature);
+                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
+                    } else {
+                        strcpy(SOC_temperatureStr, "");
+                        SOC_temperature=0;
+                    }
+                    if (!hidePCBTemp) {
+                        ReadPcbTemperature(&PCB_temperature);
+                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
+                    } else {
+                        strcpy(PCB_temperatureStr, "");
+                        PCB_temperature=0;
+                    }
+                    if (!hideBattery) {
+                        powerGetDetails(&batteryCharge, &isCharging);
+                        batteryCharge = std::min(batteryCharge, 100U);
+                        sprintf(chargeString, "%d%%", batteryCharge);
+                    } else {
+                        strcpy(chargeString, "");
+                        batteryCharge=0;
+                    }
+                    timeOut = int(currentTime.tv_sec);
+                }
+                
+                lastStatusChange = statusChange;
+                
+                // Draw battery percentage
+                if (!hideBattery && batteryCharge > 0) {
+                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
+                }
+        
+                // Draw PCB and SOC temperatures
+                int offset = 0;
+                if (!hidePCBTemp && PCB_temperature > 0) {
+                    if (!hideBattery)
+                        offset -= 5;
+                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
+                }
+        
+                if (!hideSOCTemp && SOC_temperature > 0) {
+                    if (!hidePCBTemp || !hideBattery)
+                        offset -= 5;
+                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
+                }
+            }
+            #endif
 
             
         private:
@@ -4322,10 +4204,10 @@ namespace tsl {
                 s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
-                
-                
+
+
                 static bool lastRunningInterpreter = runningInterpreter.load(std::memory_order_acquire);
-                
+
                 // Determine text color
                 auto textColor = offTextColor;
                 if (this->m_value == DROPDOWN_SYMBOL || this->m_value == OPTION_SYMBOL) {
@@ -4337,14 +4219,14 @@ namespace tsl {
                      this->m_value.find(UNZIP_SYMBOL) != std::string::npos ||
                      this->m_value.find(COPY_SYMBOL) != std::string::npos ||
                      this->m_value == INPROGRESS_SYMBOL)) {
-                    
+
                     textColor = this->m_faint ? offTextColor : a(inprogressTextColor);
                 } else if (this->m_value == CROSSMARK_SYMBOL) {
                     textColor = this->m_faint ? offTextColor : a(invalidTextColor);
                 } else {
                     textColor = this->m_faint ? offTextColor : a(onTextColor);
                 }
-                
+
                 if (this->m_value != INPROGRESS_SYMBOL) {
                     // Draw the string with the determined text color
                     renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
@@ -4354,12 +4236,12 @@ namespace tsl {
                     static size_t throbberCounter = 0;
                     // Avoid copying the original string
                     const std::string* stringPtr = &this->m_value;
-                    
+
                     //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
                     stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
                     
                     throbberCounter++;
-                    
+
                     // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
                     if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
                         throbberCounter = 0;
@@ -5819,17 +5701,23 @@ namespace tsl {
         void initialize() {
             #ifdef UI_OVERRIDE_PATH
 
-            std::string APPEARANCE_PATH = UI_OVERRIDE_PATH;
-            preprocessPath(APPEARANCE_PATH);
+            std::string UI_PATH = UI_OVERRIDE_PATH;
+            preprocessPath(UI_PATH);
 
-            const std::string NEW_THEME_CONFIG_INI_PATH = APPEARANCE_PATH+"theme.ini";
-            const std::string NEW_WALLPAPER_PATH = APPEARANCE_PATH+"wallpaper.rgba";
+            const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
+            const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
 
+            std::string defaultLang = parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, DEFAULT_LANG_STR);
+            defaultLang = defaultLang.empty() ? "en" : defaultLang;
+                      
+            const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
 
             if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
                 THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
             if (isFileOrDirectory(NEW_WALLPAPER_PATH))
                 WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+            if (isFileOrDirectory(TRANSLATION_JSON_PATH))
+                loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
             #endif
 
             //initializeThemeVars(); // Initialize variables for ultrahand themes

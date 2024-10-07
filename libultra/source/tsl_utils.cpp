@@ -21,6 +21,37 @@
 #include <tsl_utils.hpp>
 
 namespace ult {
+    
+    std::unordered_map<std::string, std::string> translationCache;
+    
+    // Function to load translations from a JSON file into the translation cache
+    bool loadTranslationsFromJSON(const std::string& filePath) {
+        // Read the JSON data from the file using the existing utility function
+        json_t* root = readJsonFromFile(filePath);
+        if (!root || !json_is_object(root)) {
+            if (root) {
+                json_decref(root);
+            }
+            return false;
+        }
+    
+        // Iterate over the JSON object
+        const char* key;
+        json_t* value;
+        json_object_foreach(root, key, value) {
+            if (json_is_string(value)) {
+                translationCache[key] = json_string_value(value);
+            }
+        }
+    
+        // Decrease reference count to free the memory
+        json_decref(root);
+        return true;
+    }
+    
+    
+    
+    
     u16 activeHeaderHeight = 97;
 
     bool consoleIsDocked() {

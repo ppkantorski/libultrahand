@@ -51,6 +51,9 @@
 
 
 namespace ult {
+    extern std::unordered_map<std::string, std::string> translationCache;
+    bool loadTranslationsFromJSON(const std::string& filePath);
+
     extern u16 activeHeaderHeight;
 
     bool consoleIsDocked();
