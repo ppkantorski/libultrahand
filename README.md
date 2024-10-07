@@ -13,9 +13,9 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 ![libultrahand Logo](.pics/libultrahand.png)
 
 ## Usage
-### Overriding Themes and Wallpapers
+### Overriding Themes, Wallpapers and  Languages
 
-To customize the theme and wallpaper for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
+To customize theme, wallpaper and / or allow direct language translations for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
 
 ```
 # Enable appearance overriding
@@ -23,8 +23,20 @@ UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
 CFLAGS += -DUI_OVERRIDE_PATH=$(UI_OVERRIDE_PATH)
 ```
 
-Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory. This allows you to specify custom Ultrahand theme and wallpaper files for your overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` directory.
+Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 
+Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` / `{UI_OVERRIDE_PATH}` directory.
+
+Language translations are done direction on the `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` / `{UI_OVERRIDE_PATH}/lang/`.
+Jsons will need to be named ISO 639-1 format (en, de, fr, es, etc...) and will only be used in accordance with the current language set in the Ultrahand Overlay `/config/ultrahand/config.ini`.
+
+The format for language jsons is as follows.
+```json
+{
+  "English String": "Translated String",
+  ...
+}
+```
 
 ### Ultrahand Overlay Widget
 
