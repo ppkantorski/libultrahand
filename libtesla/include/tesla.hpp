@@ -1435,10 +1435,7 @@ namespace tsl {
                 return totalWidth;
             }
             
-
-
-
-
+            
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
                 #ifdef UI_OVERRIDE_PATH
