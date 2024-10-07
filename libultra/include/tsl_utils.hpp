@@ -390,9 +390,9 @@ namespace ult {
     
     
     //// Map of character widths (pre-calibrated)
-    extern std::unordered_map<wchar_t, float> characterWidths;
+    //extern std::unordered_map<wchar_t, float> characterWidths;
     
-    extern float defaultNumericCharWidth;
+    //extern float defaultNumericCharWidth;
     
     
     

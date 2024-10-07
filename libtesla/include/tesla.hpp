@@ -282,8 +282,10 @@ namespace tsl {
     static Color onTextColor = RGB888("#00FFDD");
     static Color offTextColor = RGB888("#AAAAAA");
     
+    #if IS_LAUNCHER_DIRECTIVE
     static std::tuple<float,float,float> dynamicLogoRGB1 = hexToRGB444Floats("#00E669");
     static std::tuple<float,float,float> dynamicLogoRGB2 = hexToRGB444Floats("#8080EA");
+    #endif
 
     static bool disableSelectionBG = false;
     static bool invertBGClickColor = false;
@@ -376,9 +378,11 @@ namespace tsl {
             onTextColor = getColor("on_text_color");
             offTextColor = getColor("off_text_color");
             
+            #if IS_LAUNCHER_DIRECTIVE
             dynamicLogoRGB1 = hexToRGB444Floats(getValue("dynamic_logo_color_1"));
             dynamicLogoRGB2 = hexToRGB444Floats(getValue("dynamic_logo_color_2"));
-            
+            #endif
+
             disableSelectionBG = (getValue("disable_selection_bg") == TRUE_STR);
             invertBGClickColor = (getValue("invert_bg_click_color") == TRUE_STR);
 
@@ -1311,7 +1315,7 @@ namespace tsl {
                 if (!hideClock) {
                     strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
                     localizeTimeStr(timeStr);
-                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
+                    drawStringV2(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
         
@@ -1355,7 +1359,7 @@ namespace tsl {
                 if (!hideBattery && batteryCharge > 0) {
                     Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
                                             (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
+                    drawStringV2(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
                 }
         
                 // Draw PCB and SOC temperatures
@@ -1363,13 +1367,13 @@ namespace tsl {
                 if (!hidePCBTemp && PCB_temperature > 0) {
                     if (!hideBattery)
                         offset -= 5;
-                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
+                    drawStringV2(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
                 }
         
                 if (!hideSOCTemp && SOC_temperature > 0) {
                     if (!hidePCBTemp || !hideBattery)
                         offset -= 5;
-                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
+                    drawStringV2(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
                 }
             }
             #endif
@@ -1420,6 +1424,7 @@ namespace tsl {
                 int width, height;
             };
             
+            
             inline float calculateStringWidth(const std::string& str, const s32 fontSize, const bool fixedWidthNumbers = false) {
                 if (str.empty()) {
                     return 0.0f;
@@ -1430,55 +1435,60 @@ namespace tsl {
                 ssize_t codepointWidth;
                 u32 prevCharacter = 0;
                 u32 currCharacter = 0;
-                float currFontSize;
-                int xAdvance = 0, leftBearing = 0, kernAdvance = 0;
             
-                // Cache default width for numeric characters if fixedWidthNumbers is true
-                float numericCharWidth = fixedWidthNumbers ? defaultNumericCharWidth * fontSize : 0.0f;
+                static std::unordered_map<u64, Glyph> s_glyphCache;
             
-                // Prepare the font information ahead of time if possible
-                stbtt_fontinfo* currentFont = nullptr;
-            
-                // Use an iterator for characterWidths map lookup
-                auto it = characterWidths.end();
-            
+                u64 key = 0;
+                Glyph* glyph = nullptr;
+                auto it = s_glyphCache.end();
+                
                 while (strPos < str.size()) {
                     codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&str[strPos]));
                     if (codepointWidth <= 0) {
                         break;
                     }
+                    
+                    strPos += codepointWidth;
+                    
+                    if (currCharacter == '\n') {
+                        continue;
+                    }
+
+                    // Check if the current character has a predefined width
+                    //if (characterWidths.find(currCharacter) != characterWidths.end()) {
+                    //    totalWidth += characterWidths[currCharacter] * fontSize; // Use the predefined width
+                    //    prevCharacter = currCharacter;
+                    //    continue;
+                    //}
+                    
+                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+                    
+                    it = s_glyphCache.find(key);
+                    
+                    if (it == s_glyphCache.end()) {
+                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
             
-                    if (fixedWidthNumbers && std::isdigit(currCharacter)) {
-                        totalWidth += numericCharWidth;
-                    } else {
-                        // Check if the character is found in the cache
-                        it = characterWidths.find(static_cast<wchar_t>(currCharacter));
-                        if (it != characterWidths.end()) {
-                            totalWidth += it->second * fontSize;
+                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                            glyph->currFont = &this->m_extFont;
+                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                            glyph->currFont = &this->m_localFont;
                         } else {
-                            if (!currentFont || !stbtt_FindGlyphIndex(currentFont, currCharacter)) {
-                                if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                                    currentFont = &this->m_extFont;
-                                } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                                    currentFont = &this->m_localFont;
-                                } else {
-                                    currentFont = &this->m_stdFont;
-                                }
-                            }
-            
-                            currFontSize = stbtt_ScaleForPixelHeight(currentFont, fontSize);
-                            stbtt_GetCodepointHMetrics(currentFont, currCharacter, &xAdvance, &leftBearing);
-            
-                            if (prevCharacter) {
-                                kernAdvance = stbtt_GetCodepointKernAdvance(currentFont, prevCharacter, currCharacter);
-                                totalWidth += kernAdvance * currFontSize;
-                            }
-            
-                            totalWidth += xAdvance * currFontSize;
+                            glyph->currFont = &this->m_stdFont;
                         }
+                        
+                        glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
+                        stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
+                    } else {
+                        glyph = &it->second;
                     }
             
-                    strPos += codepointWidth;
+                    if (prevCharacter) {
+                        float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
+                        totalWidth += kernAdvance * glyph->currFontSize; // Updated line
+                    }
+            
+                    totalWidth += int(glyph->xAdvance * glyph->currFontSize); // Updated line
+            
                     prevCharacter = currCharacter;
                 }
             
@@ -1488,19 +1498,6 @@ namespace tsl {
 
 
 
-
-
-            /**
-             * @brief Draws a string
-             *
-             * @param string String to draw
-             * @param monospace Draw string in monospace font
-             * @param x X pos
-             * @param y Y pos
-             * @param fontSize Height of the text drawn in pixels
-             * @param color Text color. Use transparent color to skip drawing and only get the string's dimensions
-             * @return Dimensions of drawn string
-             */
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 float maxX = x;
                 float currX = x;
@@ -1511,21 +1508,21 @@ namespace tsl {
                 const std::string* stringPtr = &originalString;
                 
                 // Check if the string is the INPROGRESS_SYMBOL and replace with throbber symbol without copying
-                if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
-                    // Static counter for the throbber symbols
-                    static size_t throbberCounter = 0;
-
-                    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
-                    
-                    throbberCounter++;
-
-                    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
-                    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
-                        throbberCounter = 0;
-                    }
-                }
-            
+                //if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
+                //    // Static counter for the throbber symbols
+                //    static size_t throbberCounter = 0;
+                //    
+                //    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
+                //    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+                //    
+                //    throbberCounter++;
+                //    
+                //    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
+                //    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
+                //        throbberCounter = 0;
+                //    }
+                //}
+                
                 // Cache the end iterator for efficiency
                 auto itStrEnd = stringPtr->cend();
                 auto itStr = stringPtr->cbegin();
@@ -1632,6 +1629,147 @@ namespace tsl {
             }
             
 
+
+            /**
+             * @brief Draws a string
+             *
+             * @param string String to draw
+             * @param monospace Draw string in monospace font
+             * @param x X pos
+             * @param y Y pos
+             * @param fontSize Height of the text drawn in pixels
+             * @param color Text color. Use transparent color to skip drawing and only get the string's dimensions
+             * @return Dimensions of drawn string
+             */
+
+            inline void drawStringV2(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+                //float maxX = x;
+                float currX = x;
+                float currY = y;
+                
+                
+                // Avoid copying the original string
+                const std::string* stringPtr = &originalString;
+                
+                // Check if the string is the INPROGRESS_SYMBOL and replace with throbber symbol without copying
+                //if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
+                //    // Static counter for the throbber symbols
+                //    static size_t throbberCounter = 0;
+                //    
+                //    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
+                //    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+                //    
+                //    throbberCounter++;
+                //    
+                //    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
+                //    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
+                //        throbberCounter = 0;
+                //    }
+                //}
+                
+                // Cache the end iterator for efficiency
+                auto itStrEnd = stringPtr->cend();
+                auto itStr = stringPtr->cbegin();
+                
+                // Move variable declarations outside of the loop
+                u32 currCharacter = 0;
+                ssize_t codepointWidth = 0;
+                u64 key = 0;
+                Glyph* glyph = nullptr;
+                
+                float xPos = 0;
+                float yPos = 0;
+                u32 rowOffset = 0;
+                uint8_t bmpColor = 0;
+                Color tmpColor(0);
+                
+                // Static glyph cache
+                static std::unordered_map<u64, Glyph> s_glyphCache; // may cause leak? will investigate later.
+                auto it = s_glyphCache.end();
+
+                float scaledFontSize;
+
+                // Loop through each character in the string
+                while (itStr != itStrEnd) {
+                    if (maxWidth > 0 && (currX - x) >= maxWidth)
+                        break;
+            
+                    // Decode UTF-8 codepoint
+                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+                    if (codepointWidth <= 0)
+                        break;
+            
+                    // Move the iterator forward by the width of the current codepoint
+                    itStr += codepointWidth;
+            
+                    if (currCharacter == '\n') {
+                        //maxX = std::max(currX, maxX);
+                        currX = x;
+                        currY += fontSize;
+                        continue;
+                    }
+            
+                    // Calculate glyph key
+                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+            
+                    // Check cache for the glyph
+                    it = s_glyphCache.find(key);
+            
+                    // If glyph not found, create and cache it
+                    if (it == s_glyphCache.end()) {
+                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
+            
+                        // Determine the appropriate font for the character
+                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                            glyph->currFont = &this->m_extFont;
+                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                            glyph->currFont = &this->m_localFont;
+                        } else {
+                            glyph->currFont = &this->m_stdFont;
+                        }
+            
+                        scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
+                        glyph->currFontSize = scaledFontSize;
+            
+                        // Get glyph bitmap and metrics
+                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
+                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
+            
+                        s32 yAdvance = 0;
+                        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
+            
+                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
+                    } else {
+                        glyph = &it->second;
+                    }
+            
+                    if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && color.a != 0x0) {
+                        xPos = currX + glyph->bounds[0];
+                        yPos = currY + glyph->bounds[1];
+            
+                        // Optimized pixel processing
+                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
+                            rowOffset = bmpY * glyph->width;
+                            for (s32 bmpX = 0; bmpX < glyph->width; ++bmpX) {
+                                bmpColor = glyph->glyphBmp[rowOffset + bmpX] >> 4;
+                                if (bmpColor == 0xF) {
+                                    // Direct pixel manipulation
+                                    this->setPixel(xPos + bmpX, yPos + bmpY, color, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
+                                } else if (bmpColor != 0x0) {
+                                    tmpColor = color;
+                                    tmpColor.a = bmpColor;
+                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
+                                }
+                            }
+                        }
+                    }
+            
+                    // Advance the cursor for the next glyph
+                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                }
+            }
+            
+
             
 
             
@@ -1669,7 +1807,7 @@ namespace tsl {
             
                     // If no special symbol is found, draw the rest of the text
                     if (specialPos == std::string::npos) {
-                        drawString(text.substr(startPos), false, x, y, fontSize, defaultColor);
+                        drawStringV2(text.substr(startPos), false, x, y, fontSize, defaultColor);
                         break;
                     }
             
@@ -1693,7 +1831,7 @@ namespace tsl {
             
                 // Draw any remaining text after the last special symbol
                 if (startPos < textLength) {
-                    drawString(text.substr(startPos), false, x, y, fontSize, defaultColor);
+                    drawStringV2(text.substr(startPos), false, x, y, fontSize, defaultColor);
                 }
             }
 
@@ -2850,19 +2988,19 @@ namespace tsl {
                                 15
                             };
                             
-                            renderer->drawString(std::string(1, letter), false, x, y + offset, fontSize, a(highlightColor));
+                            renderer->drawStringV2(std::string(1, letter), false, x, y + offset, fontSize, a(highlightColor));
                             x += renderer->calculateStringWidth(std::string(1, letter), fontSize);
                             countOffset -= 0.2F;
                         }
                     } else {
                         for (char letter : SPLIT_PROJECT_NAME_1) {
-                            renderer->drawString(std::string(1, letter), false, x, y + offset, fontSize, a(logoColor1));
+                            renderer->drawStringV2(std::string(1, letter), false, x, y + offset, fontSize, a(logoColor1));
                             x += renderer->calculateStringWidth(std::string(1, letter), fontSize);
                             countOffset -= 0.2F;
                         }
                     }
                     
-                    renderer->drawString(SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
+                    renderer->drawStringV2(SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
                     
                 } else {
                     x = 20;
@@ -2874,7 +3012,7 @@ namespace tsl {
                         
                         // Function to draw the title
                         auto drawTitle = [&](const Color& color) {
-                            renderer->drawString(title, false, x, y, fontSize, a(color));
+                            renderer->drawStringV2(title, false, x, y, fontSize, a(color));
                         };
                         
                         if (this->m_colorSelection == "green") {
@@ -2915,7 +3053,7 @@ namespace tsl {
                                 };
                                 
                                 // Draw each character with its corresponding highlight color
-                                renderer->drawString(std::string(1, letter).c_str(), false, x, y, fontSize, a(highlightColor));
+                                renderer->drawStringV2(std::string(1, letter).c_str(), false, x, y, fontSize, a(highlightColor));
                                 
                                 // Manually calculate the width of the current letter
                                 letterWidth = renderer->calculateStringWidth(std::string(1, letter), fontSize);
@@ -2939,17 +3077,17 @@ namespace tsl {
                             drawTitle(titleColor); // Using the default titleColor
                         }
                     } else if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
+                        renderer->drawStringV2(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
                     } else {
-                        renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultTextColor));
+                        renderer->drawStringV2(this->m_title, false, x, y, fontSize, a(defaultTextColor));
                     }
 
                 }
                 
                 if (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
+                    renderer->drawStringV2(versionLabel, false, 20, y+25, 15, a(versionTextColor));
                 } else
-                    renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                    renderer->drawStringV2(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
 
                 #else
                 {
@@ -2958,8 +3096,8 @@ namespace tsl {
                     renderer->drawWidget();
                     #endif
                 }
-                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                renderer->drawStringV2(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
+                renderer->drawStringV2(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
                 #endif
 
 
@@ -4153,7 +4291,7 @@ namespace tsl {
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4 , tsl::cfg::FramebufferHeight-73-97);
                         else
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
-                        renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
+                        renderer->drawStringV2(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
                         renderer->disableScissoring();
                         //t = std::chrono::steady_clock::now() - this->timeIn;
                         if (std::chrono::steady_clock::now() - this->timeIn >= 2000ms) {
@@ -4166,7 +4304,7 @@ namespace tsl {
                             }
                         } // CUSTOM MODIFICATION END
                     } else {
-                        renderer->drawString(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, a(!useClickTextColor ? defaultTextColor : clickTextColor));
+                        renderer->drawStringV2(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, a(!useClickTextColor ? defaultTextColor : clickTextColor));
                     }
                 } else {
                     // Render the text with special character handling
@@ -4204,9 +4342,27 @@ namespace tsl {
                     textColor = this->m_faint ? offTextColor : a(onTextColor);
                 }
 
-                // Draw the string with the determined text color
-                renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
-                // CUSTOM SECTION END 
+                if (this->m_value != INPROGRESS_SYMBOL) {
+                    // Draw the string with the determined text color
+                    renderer->drawStringV2(this->m_value, false, xPosition, yPosition, fontSize, textColor);
+                    // CUSTOM SECTION END 
+                } else {
+                    // Static counter for the throbber symbols
+                    static size_t throbberCounter = 0;
+                    // Avoid copying the original string
+                    const std::string* stringPtr = &this->m_value;
+
+                    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
+                    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+                    
+                    throbberCounter++;
+
+                    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
+                    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
+                        throbberCounter = 0;
+                    }
+                    renderer->drawStringV2(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
+                }
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -4471,9 +4627,9 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 if (this->m_hasSeparator) {
                     renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29, 4, 22, a(headerSeparatorColor));
-                    renderer->drawString(this->m_text, false, this->getX() + 15+1, this->getBottomBound() - 12, 16, a(headerTextColor));
+                    renderer->drawStringV2(this->m_text, false, this->getX() + 15+1, this->getBottomBound() - 12, 16, a(headerTextColor));
                 } else {
-                    renderer->drawString(this->m_text, false, this->getX(), this->getBottomBound() - 12, 16, a(headerTextColor));
+                    renderer->drawStringV2(this->m_text, false, this->getX(), this->getBottomBound() - 12, 16, a(headerTextColor));
                 }
                 //if (this->m_hasSeparator)
                 //    renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, tsl::style::color::ColorFrame); // CUSTOM MODIFICATION
@@ -4596,7 +4752,7 @@ namespace tsl {
                 renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
                 renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
 
-                renderer->drawString(this->m_icon, false, this->getX() + 15, this->getY() + 50, 23, a(tsl::style::color::ColorText));
+                renderer->drawStringV2(this->m_icon, false, this->getX() + 15, this->getY() + 50, 23, a(tsl::style::color::ColorText));
 
                 u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
                 renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
@@ -4824,7 +4980,7 @@ namespace tsl {
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
 
                 auto [descWidth, descHeight] = renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, 0, 0, 15, tsl::style::color::ColorTransparent);
-                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
+                renderer->drawStringV2(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
 
                 StepTrackBar::draw(renderer);
             }
@@ -5139,15 +5295,16 @@ namespace tsl {
                 else
                     valuePart = this->m_selection;
                 std::string combinedString = labelPart + valuePart;
-                std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                //std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                descWidth = renderer->calculateStringWidth(combinedString, 16, true);
                 
                 size_t combinedX = (xPos + width / 2) - (descWidth / 2);
                 size_t labelWidth;
-                std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
-                
+                //std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                labelWidth = renderer->calculateStringWidth(labelPart, 16, true);
 
-                renderer->drawString(labelPart, false, combinedX, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
-                renderer->drawString(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+                renderer->drawStringV2(labelPart, false, combinedX, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
+                renderer->drawStringV2(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
                 
                 if (lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
