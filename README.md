@@ -20,7 +20,7 @@ To customize theme, wallpaper and / or allow direct language translations for yo
 ```
 # Enable appearance overriding
 UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
-CFLAGS += -DUI_OVERRIDE_PATH=$(UI_OVERRIDE_PATH)
+CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 ```
 
 Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
