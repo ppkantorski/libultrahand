@@ -6751,15 +6751,18 @@ namespace tsl {
 
 
         #if IS_LAUNCHER_DIRECTIVE
+        bool inOverlay;
+        const std::string settings = SETTINGS_PATH;
         if ("xirh?4htsknl4zqywfmfsi4" !=
-            eString(SETTINGS_PATH)
+            eString(settings)
         )
             return 0;
-        else if (firstBoot) {
-            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+        else {
+            if (firstBoot)
+                setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
         }
 
-        bool inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
         #else
         bool inOverlay = true;
         #endif
