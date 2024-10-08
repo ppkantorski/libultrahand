@@ -361,12 +361,11 @@ namespace ult {
     }
 
     std::string eString(const std::string& input) {
-        std::string enc;
+        std::string e;
         for (char c : input) {
-            // Simple example: Shift each character by 5
-            enc += (c + 5);
+            e += (c + 5);
         }
-        return enc;
+        return e;
     }
     
 }
