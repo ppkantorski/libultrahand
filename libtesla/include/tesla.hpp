@@ -4615,13 +4615,23 @@ namespace tsl {
             }
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                u16 trackBarWidth = this->getWidth() - 95;
+                u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
+                s32 circleCenterX = this->getX() + 59 + handlePos;
+                s32 circleCenterY = this->getY() + 40 + 16 - 1;
+                s32 circleRadius = 16;
+                
+                bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                
+
                 if (event == TouchEvent::Release) {
                     this->m_interactionLocked = false;
+                    touchInSliderBounds = false;
                     return false;
                 }
 
-
-                if (!this->m_interactionLocked && this->inBounds(initialX, initialY)) {
+                if (!this->m_interactionLocked && (touchInCircle || touchInSliderBounds)) {
+                    touchInSliderBounds = true;
                     if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
                         s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
 
@@ -4645,24 +4655,65 @@ namespace tsl {
                 return false;
             }
 
+
+            // Define drawBar function outside the draw method
+            void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
+                if (isRounded) {
+                    renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
+                } else {
+                    renderer->drawRect(x, y, width, 7, a(color));
+                }
+            }
+
             virtual void draw(gfx::Renderer *renderer) override {
-                renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
-                renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+                static float lastBottomBound;
+                u16 handlePos = (this->getWidth() - 95) * (this->m_value) / (100);
+                s32 xPos = this->getX() + 59;
+                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 width = this->getWidth() - 95;
+
+                if (!m_usingNamedStepTrackbar) {
+                    yPos -= 11;
+                }
+                // Draw track bar background
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+
+                if (!this->m_focused) {
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                } else {
+                    touchInSliderBounds = false;
+                    unlockedSlide = m_unlockedTrackbar;
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                }
+
+
+                //renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
 
                 renderer->drawString(this->m_icon, false, this->getX() + 15, this->getY() + 50, 23, a(tsl::style::color::ColorText));
 
-                u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
-                renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
-                renderer->drawCircle(this->getX() + 60 + this->getWidth() - 95, this->getY() + 42, 2, true, a(tsl::style::color::ColorFrame));
-                renderer->drawRect(this->getX() + 60 + handlePos, this->getY() + 40, this->getWidth() - 95 - handlePos, 5, a(tsl::style::color::ColorFrame));
-                renderer->drawRect(this->getX() + 60, this->getY() + 40, handlePos, 5, a(tsl::style::color::ColorHighlight));
+                //u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
+                //renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
+                //renderer->drawCircle(this->getX() + 60 + this->getWidth() - 95, this->getY() + 42, 2, true, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX() + 60 + handlePos, this->getY() + 40, this->getWidth() - 95 - handlePos, 5, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX() + 60, this->getY() + 40, handlePos, 5, a(tsl::style::color::ColorHighlight));
+                //
+                //renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, true, a(tsl::style::color::ColorHandle));
+                //renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, false, a(tsl::style::color::ColorFrame));
 
-                renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, true, a(tsl::style::color::ColorHandle));
-                renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, false, a(tsl::style::color::ColorFrame));
+
+                if (lastBottomBound != this->getTopBound())
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                lastBottomBound = this->getBottomBound();
             }
 
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                this->setBoundaries(this->getX(), this->getY(), this->getWidth(), tsl::style::TrackBarDefaultHeight);
+                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20+4, tsl::style::TrackBarDefaultHeight );
             }
 
             virtual void drawFocusBackground(gfx::Renderer *renderer) {
@@ -4774,6 +4825,10 @@ namespace tsl {
             bool m_interactionLocked = false;
 
             std::function<void(u8)> m_valueChangedListener = [](u8){};
+
+            bool m_usingNamedStepTrackbar = false;
+            bool m_unlockedTrackbar = true;
+            bool touchInSliderBounds = false;
         };
 
 
@@ -4884,29 +4939,74 @@ namespace tsl {
              * @param stepDescriptions Step names displayed above the track bar
              */
             NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions)
-                : StepTrackBar(icon, stepDescriptions.size()), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) { }
+                : StepTrackBar(icon, stepDescriptions.size()), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
+                    this->m_usingNamedStepTrackbar = true;
+                }
 
             virtual ~NamedStepTrackBar() {}
 
             virtual void draw(gfx::Renderer *renderer) override {
-
+                // TrackBarV2 width excluding the handle areas
                 u16 trackBarWidth = this->getWidth() - 95;
-                u16 stepWidth = trackBarWidth / (this->m_numSteps - 1);
+            
+                // Base X and Y coordinates
+                u16 baseX = this->getX() + 59;
+                u16 baseY = this->getY() + 44; // 50 - 3
+            
+                // Calculate the spacing between each step
+                float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
+                
+                // Calculate the halfway point index
+                u8 halfNumSteps = (this->m_numSteps - 1) / 2;
 
+                // Draw step rectangles
+                //u16 stepX;
                 for (u8 i = 0; i < this->m_numSteps; i++) {
-                    renderer->drawRect(this->getX() + 60 + stepWidth * i, this->getY() + 50, 1, 10, a(tsl::style::color::ColorFrame));
-                }
+                    u16 stepX = baseX + std::round(i * stepSpacing);
+                    
+                    // Subtract 1 from the X position for steps on the right side of the center
+                    if (i > halfNumSteps) {
+                        stepX -= 1;
+                    }
 
+                    // Adjust the last step to avoid overshooting
+                    if (i == this->m_numSteps - 1) {
+                        stepX = baseX + trackBarWidth -1;
+                    }
+            
+                    renderer->drawRect(stepX, baseY, 1, 8, a(trackBarEmptyColor));
+                }
+                
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
 
-                auto [descWidth, descHeight] = renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, 0, 0, 15, tsl::style::color::ColorTransparent);
-                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
-
+                auto descWidth = renderer->calculateStringWidth(this->m_stepDescriptions[currentDescIndex].c_str(), 15);
+                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                
+                // Draw the parent trackbar
                 StepTrackBar::draw(renderer);
+
+
+
+
+
+                //u16 trackBarWidth = this->getWidth() - 95;
+                //u16 stepWidth = trackBarWidth / (this->m_numSteps - 1);
+                //
+                //for (u8 i = 0; i < this->m_numSteps; i++) {
+                //    renderer->drawRect(this->getX() + 60 + stepWidth * i, this->getY() + 50, 1, 10, a(tsl::style::color::ColorFrame));
+                //}
+                //
+                //u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
+                //
+                //auto [descWidth, descHeight] = renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, 0, 0, 15, tsl::style::color::ColorTransparent);
+                //renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
+                //
+                //StepTrackBar::draw(renderer);
             }
 
         protected:
             std::vector<std::string> m_stepDescriptions;
+
         };
 
 
