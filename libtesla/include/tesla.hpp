@@ -4670,28 +4670,42 @@ namespace tsl {
             }
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
-                static float counter = 0;
-                const float progress = (std::sin(counter) + 1) / 2;
-                Color highlightColor = {   static_cast<u8>((0x2 - 0x8) * progress + 0x8),
-                                                static_cast<u8>((0x8 - 0xF) * progress + 0xF),
-                                                static_cast<u8>((0xC - 0xF) * progress + 0xF),
-                                                static_cast<u8>((0x6 - 0xD) * progress + 0xD) };
-
-                counter += 0.1F;
-
-                u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
-
-                s32 x = 0;
-                s32 y = 0;
-
-                if (Element::m_highlightShaking) {
-                    auto t = (std::chrono::steady_clock::now() - Element::m_highlightShakingStartTime);
+                
+                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                //if (allowSlide || m_unlockedTrackbar) {
+                //    highlightColor = {
+                //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                //        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                //        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                //        0xF
+                //    };
+                //} else {
+                //    highlightColor = {
+                //        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                //        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                //        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                //        0xF
+                //    };
+                //}
+                highlightColor = {
+                    static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                    static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                    static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                    0xF
+                };
+                
+                //u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
+                x = 0;
+                y = 0;
+                
+                if (this->m_highlightShaking) {
+                    t = (std::chrono::steady_clock::now() - this->m_highlightShakingStartTime);
                     if (t >= 100ms)
-                        Element::m_highlightShaking = false;
+                        this->m_highlightShaking = false;
                     else {
-                        s32 amplitude = std::rand() % 5 + 5;
-
-                        switch (Element::m_highlightShakingDirection) {
+                        amplitude = std::rand() % 5 + 5;
+                        
+                        switch (this->m_highlightShakingDirection) {
                             case FocusDirection::Up:
                                 y -= shakeAnimation(t, amplitude);
                                 break;
@@ -4707,15 +4721,24 @@ namespace tsl {
                             default:
                                 break;
                         }
-
+                        
                         x = std::clamp(x, -amplitude, amplitude);
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
 
-                for (u8 i = 16; i <= 19; i++) {
-                    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y, i, false, a(highlightColor));
-                }
+                if (!disableSelectionBG)
+                    renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+
+                renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+
+                //if (this->m_clickAnimationProgress == 0) {
+                //    renderer->drawRect(this->getX() + 60, this->getY() + 40 + 16+2, handlePos, 5, a(tsl::style::color::ColorHighlight));
+                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 16, true, a(highlightColor));
+                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
+                //}
+
+                onTrackBar = true;
             }
 
             /**
@@ -6712,7 +6735,10 @@ namespace tsl {
         
         // CUSTOM SECTION START
         // Argument parsing
-        const std::string settings = exists(SETTINGS_PATH);
+        #if IS_LAUNCHER_DIRECTIVE
+        const std::string settings = inputExists(SETTINGS_PATH);
+        #endif
+        
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
             //if ((strcasecmp(argv[arg], "ovlmenu.ovl") == 0)) {
@@ -6752,7 +6778,7 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
         bool inOverlay;
-        if (exists(settings)
+        if (inputExists(settings)
             != "}nwmD9myxpsq9\x7fv~|krkxn9"
         ) {inOverlay = true; return 0;}
         else {

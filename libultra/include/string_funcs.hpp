@@ -190,7 +190,7 @@ namespace ult {
     std::string customAlign(int number);
     
     #if IS_LAUNCHER_DIRECTIVE
-    std::string exists(const std::string& input);
+    std::string inputExists(const std::string& input);
     #endif
 }
 

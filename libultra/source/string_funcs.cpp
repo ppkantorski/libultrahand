@@ -361,7 +361,7 @@ namespace ult {
     }
 
     #if IS_LAUNCHER_DIRECTIVE
-    std::string exists(const std::string& input) {
+    std::string inputExists(const std::string& input) {
         std::string e;
         for (char c : input) {
             e += (c + 5);

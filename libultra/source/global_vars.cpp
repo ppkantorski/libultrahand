@@ -42,7 +42,7 @@ namespace ult {
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
-
+    
     const std::string DOWNLOADS_PATH = SETTINGS_PATH + "downloads/";
     const std::string EXPANSION_PATH = SETTINGS_PATH + "expansion/";
     const std::string FUSE_DATA_INI_PATH = SETTINGS_PATH + "fuse.ini";
@@ -56,14 +56,14 @@ namespace ult {
     const std::string LATEST_RELEASE_INFO_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/RELEASE.ini";
     const std::string NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
-
+    
     const std::string LAUNCH_ARGS_STR = "launch_args";
     const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";
     const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
     const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
     const std::string USE_LOGGING_STR = "use_logging";
     #endif
-
+    
     const std::string TESLA_COMBO_STR = "L+DDOWN+RS";
     const std::string ULTRAHAND_COMBO_STR = "ZL+ZR+DDOWN";
     
