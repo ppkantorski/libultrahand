@@ -25,18 +25,17 @@ namespace ult {
     const std::string CAPITAL_ULTRAHAND_PROJECT_NAME = "Ultrahand";
     
     const std::string ROOT_PATH = "sdmc:/";
-    const std::string SETTINGS_PATH = "sdmc:/config/ultrahand/";
-    const std::string ULTRAHAND_CONFIG_INI_PATH = "sdmc:/config/ultrahand/config.ini";
-    const std::string TESLA_CONFIG_INI_PATH = "sdmc:/config/tesla/config.ini";
-    const std::string LANG_PATH = "sdmc:/config/ultrahand/lang/";
-    const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
-    const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
+    const std::string SETTINGS_PATH = ROOT_PATH + "config/ultrahand/";
+    const std::string ULTRAHAND_CONFIG_INI_PATH = SETTINGS_PATH + "config.ini";
+    const std::string TESLA_CONFIG_INI_PATH = ROOT_PATH + "config/tesla/config.ini";
+    const std::string LANG_PATH = SETTINGS_PATH + "lang/";
+    const std::string THEMES_PATH = SETTINGS_PATH + "themes/";
+    const std::string WALLPAPERS_PATH = SETTINGS_PATH + "wallpapers/";
     
-    // Can be overriden with UI_OVERRIDE_PATH directive
-    std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
-    std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
-
-
+    std::string THEME_CONFIG_INI_PATH = SETTINGS_PATH + "theme.ini";
+    std::string WALLPAPER_PATH = SETTINGS_PATH + "wallpaper.rgba";
+    
+    
     #if IS_LAUNCHER_DIRECTIVE
     const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
     const std::string SPLIT_PROJECT_NAME_2 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(5);
@@ -44,13 +43,14 @@ namespace ult {
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
 
-    const std::string DOWNLOADS_PATH = "sdmc:/config/ultrahand/downloads/";
-    const std::string EXPANSION_PATH = "sdmc:/config/ultrahand/expansion/";
-    const std::string FUSE_DATA_INI_PATH = "sdmc:/config/ultrahand/fuse.ini";
-    const std::string PACKAGE_PATH = "sdmc:/switch/.packages/";
-    const std::string OVERLAY_PATH = "sdmc:/switch/.overlays/";
-    const std::string OVERLAYS_INI_FILEPATH = "sdmc:/config/ultrahand/overlays.ini";
-    const std::string PACKAGES_INI_FILEPATH = "sdmc:/config/ultrahand/packages.ini";
+    const std::string DOWNLOADS_PATH = SETTINGS_PATH + "downloads/";
+    const std::string EXPANSION_PATH = SETTINGS_PATH + "expansion/";
+    const std::string FUSE_DATA_INI_PATH = SETTINGS_PATH + "fuse.ini";
+    const std::string PACKAGE_PATH = ROOT_PATH + "switch/.packages/";
+    const std::string OVERLAY_PATH = ROOT_PATH + "switch/.overlays/";
+    const std::string OVERLAYS_INI_FILEPATH = SETTINGS_PATH + "overlays.ini";
+    const std::string PACKAGES_INI_FILEPATH = SETTINGS_PATH + "packages.ini";
+    
     const std::string ULTRAHAND_REPO_URL = "https://github.com/ppkantorski/Ultrahand-Overlay/";
     const std::string INCLUDED_THEME_FOLDER_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/themes/";
     const std::string LATEST_RELEASE_INFO_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/RELEASE.ini";
