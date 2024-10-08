@@ -6712,7 +6712,7 @@ namespace tsl {
         
         // CUSTOM SECTION START
         // Argument parsing
-        
+        const std::string settings = SETTINGS_PATH;
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
             //if ((strcasecmp(argv[arg], "ovlmenu.ovl") == 0)) {
@@ -6752,9 +6752,8 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
         bool inOverlay;
-        const std::string settings = SETTINGS_PATH;
         if ("xirh?4htsknl4zqywfmfsi4" !=
-            eString(settings)
+            exists(settings)
         )
             return 0;
         else {

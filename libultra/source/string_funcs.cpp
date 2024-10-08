@@ -360,12 +360,13 @@ namespace ult {
         return std::string(missingDigits * 2, ' ') + numStr;
     }
 
-    std::string eString(const std::string& input) {
+    #if IS_LAUNCHER_DIRECTIVE
+    std::string exists(const std::string& input) {
         std::string e;
         for (char c : input) {
             e += (c + 5);
         }
         return e;
     }
-    
+    #endif
 }
