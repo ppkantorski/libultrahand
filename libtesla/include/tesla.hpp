@@ -5552,11 +5552,11 @@ namespace tsl {
     class Gui {
     public:
         Gui() {
-            if (!themeIsInitialized) {
+            if (!themeIsInitialized) { // added to handle more boundary cases where themes are not loaded
                 tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
                 //themeIsInitialized = true;
             }
-            
+
             // Load the bitmap file into memory
             if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
                 // Lock the mutex for condition waiting
