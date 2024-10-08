@@ -24,9 +24,11 @@
 
 //#include <sys/stat.h>
 #if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <stdio.h>
 #else
 #include <fstream>
 #endif
+
 #include <cstring>
 #include <dirent.h>
 #include <fnmatch.h>

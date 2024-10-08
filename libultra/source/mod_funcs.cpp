@@ -34,18 +34,42 @@ namespace ult {
      * @param newCheat The new cheat to check.
      * @return True if the cheat exists, otherwise false.
      */
-    bool cheatExists(const std::string &cheatFilePath, const std::string &newCheat) {
+    bool cheatExists(const std::string& cheatFilePath, const std::string& newCheat) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* cheatFile = fopen(cheatFilePath.c_str(), "r");  // Open the cheat file in read mode
+        if (!cheatFile) {
+            return false;  // Return false if the file cannot be opened
+        }
+    
+        char buffer[1024];  // Buffer to store each line
+        while (fgets(buffer, sizeof(buffer), cheatFile)) {
+            // Remove newline character, if present
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            if (newCheat == buffer) {
+                fclose(cheatFile);  // Close the file before returning
+                return true;  // Cheat exists
+            }
+        }
+    
+        fclose(cheatFile);  // Close the file after processing
+        return false;  // Cheat does not exist
+    #else
         std::ifstream cheatFile(cheatFilePath);
         if (!cheatFile) {
-            return false;
+            return false;  // Return false if the file cannot be opened
         }
+    
         std::string line;
         while (std::getline(cheatFile, line)) {
             if (line == newCheat) {
-                return true;
+                return true;  // Cheat exists
             }
         }
-        return false;
+        return false;  // Cheat does not exist
+    #endif
     }
     
     /**
@@ -53,10 +77,27 @@ namespace ult {
      * @param cheatFilePath The path to the cheat file.
      * @param newCheat The new cheat to append.
      */
-    void appendCheatToFile(const std::string &cheatFilePath, const std::string &newCheat) {
+    void appendCheatToFile(const std::string& cheatFilePath, const std::string& newCheat) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* cheatFile = fopen(cheatFilePath.c_str(), "a");  // Open the cheat file in append mode
+        if (!cheatFile) {
+            logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            return;  // Handle the error accordingly
+        }
+    
+        fprintf(cheatFile, "%s\n", newCheat.c_str());  // Write the new cheat followed by a newline
+        fclose(cheatFile);  // Close the file
+    #else
         std::ofstream cheatFile(cheatFilePath, std::ios::app);
-        cheatFile << newCheat << std::endl;
+        if (!cheatFile) {
+            logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            return;  // Handle the error accordingly
+        }
+    
+        cheatFile << newCheat << std::endl;  // Write the new cheat
+    #endif
     }
+    
     
     /**
      * @brief Extracts the cheat name from the given file path.
@@ -123,22 +164,30 @@ namespace ult {
     bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName, std::string outCheatPath) {
         logMessage("Starting pchtxt2cheat with pchtxtPath: " + pchtxtPath);
     
+    #ifdef NO_FSTREAM_DIRECTIVE
+        FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
+        if (!pchtxtFile) {
+            logMessage("Error: Unable to open file " + pchtxtPath);
+            return false;
+        }
+    
+        // Read the entire file into a string
+        std::string pchtxt;
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), pchtxtFile)) {
+            pchtxt += buffer;
+        }
+        fclose(pchtxtFile);
+    #else
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
             logMessage("Error: Unable to open file " + pchtxtPath);
             return false;
         }
     
-        if (cheatName.empty()) {
-            cheatName = extractCheatName(pchtxtPath);
-            if (cheatName.empty()) {
-                logMessage("Error: Unable to extract cheat name from path " + pchtxtPath);
-                return false;
-            }
-        }
-        //-logMessage("Cheat name determined: " + cheatName);
-    
         std::string pchtxt((std::istreambuf_iterator<char>(pchtxtFile)), std::istreambuf_iterator<char>());
+    #endif
+    
         size_t nsobidPos = pchtxt.find("@nsobid-");
         if (nsobidPos == std::string::npos) {
             logMessage("Error: Could not find bid in pchtxt file, the file is likely invalid.");
@@ -147,14 +196,12 @@ namespace ult {
     
         std::string bid = pchtxt.substr(nsobidPos + 8, 40);
         std::string bidShort = bid.substr(0, 16);
-        //logMessage("BID extracted: " + bidShort);
     
         std::string tid = findTitleID(pchtxt);
         if (tid.empty()) {
             logMessage("Error: Could not find TID in pchtxt file, the file is likely invalid.");
             return false;
         }
-        //logMessage("TID extracted: " + tid);
     
         std::string cheatFilePath;
     
@@ -165,8 +212,21 @@ namespace ult {
         } else {
             cheatFilePath = outCheatPath;
         }
-        //logMessage("Cheat file path: " + cheatFilePath);
     
+    #ifdef NO_FSTREAM_DIRECTIVE
+        FILE* existingCheatFile = fopen(cheatFilePath.c_str(), "r");
+        bool cheatNameExists = false;
+        if (existingCheatFile) {
+            char line[256];
+            while (fgets(line, sizeof(line), existingCheatFile)) {
+                if (std::string(line) == "[" + cheatName + "]\n") {
+                    cheatNameExists = true;
+                    break;
+                }
+            }
+            fclose(existingCheatFile);
+        }
+    #else
         std::ifstream existingCheatFile(cheatFilePath);
         bool cheatNameExists = false;
         if (existingCheatFile) {
@@ -179,17 +239,29 @@ namespace ult {
             }
         }
         existingCheatFile.close();
+    #endif
     
+        // Open output cheat file
+    #ifdef NO_FSTREAM_DIRECTIVE
+        FILE* outCheatFile = fopen(cheatFilePath.c_str(), "a");
+        if (!outCheatFile) {
+            logMessage("Error: Unable to create cheat file " + cheatFilePath);
+            return false;
+        }
+    #else
         std::ofstream outCheatFile(cheatFilePath, std::ios::app);
         if (!outCheatFile) {
             logMessage("Error: Unable to create cheat file " + cheatFilePath);
             return false;
         }
-    
-        //logMessage("Writing to " + cheatFilePath);
+    #endif
     
         if (!cheatNameExists) {
+    #ifdef NO_FSTREAM_DIRECTIVE
+            fprintf(outCheatFile, "[%s]\n", cheatName.c_str());
+    #else
             outCheatFile << "[" << cheatName << "]\n";
+    #endif
         }
     
         int offset = 0;
@@ -204,23 +276,19 @@ namespace ult {
             if (line.find("@flag offset_shift ") == 0) {
                 std::string offsetStr = line.substr(19);
                 offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10)) - 0x100;
-                //logMessage("Offset shift found: " + std::to_string(offset));
                 continue;
             }
     
             if (line.find("@enabled") == 0) {
-                //logMessage("Found @enabled, starting cheat processing");
                 continue;
             }
     
             if (line.find("@stop") == 0) {
-                //logMessage("Found @stop, ending cheat processing");
                 break;
             }
     
             size_t spacePos = line.find(' ');
             if (spacePos == std::string::npos) {
-                //logMessage("Skipping malformed line: " + line);
                 continue;
             }
     
@@ -228,7 +296,6 @@ namespace ult {
             std::string valStr = line.substr(spacePos + 1);
     
             if (addrStr.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos || valStr.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
-                //logMessage("Skipping invalid line: " + line);
                 continue;
             }
     
@@ -236,18 +303,41 @@ namespace ult {
             char buffer[9];
             snprintf(buffer, sizeof(buffer), "%08X", codeOffset);
             std::string cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(buffer);
+            
+    #ifdef NO_FSTREAM_DIRECTIVE
+            // Check if cheat already exists
+            FILE* checkFile = fopen(cheatFilePath.c_str(), "r");
+            bool exists = false;
+            if (checkFile) {
+                char checkLine[256];
+                while (fgets(checkLine, sizeof(checkLine), checkFile)) {
+                    if (std::string(checkLine) == cheatLine + "\n") {
+                        exists = true;
+                        break;
+                    }
+                }
+                fclose(checkFile);
+            }
+    
+            if (!exists) {
+                fprintf(outCheatFile, "%s\n", cheatLine.c_str());
+            }
+    #else
             if (!cheatExists(cheatFilePath, cheatLine)) {
                 outCheatFile << cheatLine << "\n";
-                //logMessage("Cheat line added: " + cheatLine);
-            } else {
-                //logMessage("Cheat already exists: " + cheatLine);
             }
+    #endif
         }
     
+    #ifdef NO_FSTREAM_DIRECTIVE
+        fclose(outCheatFile);
+    #else
         outCheatFile.close();
-        //logMessage("Finished writing cheat file.");
+    #endif
+    
         return true;
     }
+    
     
     // Corrected helper function to convert values to big-endian format
     uint32_t toBigEndian(uint32_t value) {
@@ -273,6 +363,7 @@ namespace ult {
     }
     
     
+    
     /**
      * @brief Converts a .pchtxt file to an IPS file using fstream.
      *
@@ -284,6 +375,75 @@ namespace ult {
      * @return True if the conversion was successful, false otherwise.
      */
     bool pchtxt2ips(const std::string& pchtxtPath, const std::string& outputFolder) {
+    #if NO_FSTREAM_DIRECTIVE
+        // Use FILE* for reading
+        FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
+        if (!pchtxtFile) {
+            logMessage("Error: Unable to open file " + pchtxtPath);
+            return false;
+        }
+    
+        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> patches;
+        std::string line;
+        uint32_t lineNum = 0;
+        std::string nsobid;
+        int offset = 0; // Default offset
+    
+        uint32_t address;
+        uint8_t byte;
+        std::vector<uint8_t> valueBytes;
+    
+        while (fgets(&line[0], line.size(), pchtxtFile) != nullptr) {
+            ++lineNum;
+            if (line.empty() || line.front() == '@') {
+                if (line.find("@nsobid-") == 0) {
+                    nsobid = line.substr(8);
+                }
+                if (line.find("@flag offset_shift ") == 0) {
+                    std::string offsetStr = line.substr(19);
+                    offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10));
+                }
+                if (line.find("@stop") == 0) {
+                    break;
+                }
+                continue;  // Skip empty lines and lines starting with '@'
+            }
+    
+            std::istringstream iss(line);
+            std::string addressStr, valueStr;
+    
+            if (!(iss >> addressStr >> valueStr)) {
+                continue;
+            }
+    
+            char* endPtr;
+            address = std::strtoul(addressStr.c_str(), &endPtr, 16) + offset; // Adjust address by offset
+            if (*endPtr != '\0') {
+                continue;
+            }
+    
+            for (size_t i = 0; i < valueStr.length(); i += 2) {
+                byte = std::stoi(valueStr.substr(i, 2), nullptr, 16);
+                valueBytes.push_back(byte);
+            }
+    
+            if (valueBytes.empty()) {
+                continue;
+            }
+    
+            patches.push_back(std::make_pair(address, valueBytes));
+            valueBytes.clear();
+        }
+    
+        if (nsobid.empty()) {
+            nsobid = pchtxtPath.substr(pchtxtPath.find_last_of("/\\") + 1);
+            nsobid = nsobid.substr(0, nsobid.find_last_of("."));
+        }
+    
+        fclose(pchtxtFile);
+    
+    #else
+        // Use fstream for reading
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
             logMessage("Error: Unable to open file " + pchtxtPath);
@@ -300,10 +460,6 @@ namespace ult {
         uint8_t byte;
         std::vector<uint8_t> valueBytes;
     
-        std::string addressStr, valueStr;
-        
-        std::istringstream iss;
-    
         while (std::getline(pchtxtFile, line)) {
             ++lineNum;
             if (line.empty() || line.front() == '@') {
@@ -315,17 +471,14 @@ namespace ult {
                     offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10));
                 }
                 if (line.find("@stop") == 0) {
-                    //logMessage("Found @stop, ending pchtxt processing");
                     break;
                 }
                 continue;  // Skip empty lines and lines starting with '@'
             }
     
-            iss.clear();
-            iss.str(line);
-            
-            addressStr = "";
-            valueStr = "";
+            std::istringstream iss(line);
+            std::string addressStr, valueStr;
+    
             if (!(iss >> addressStr >> valueStr)) {
                 continue;
             }
@@ -340,7 +493,7 @@ namespace ult {
                 byte = std::stoi(valueStr.substr(i, 2), nullptr, 16);
                 valueBytes.push_back(byte);
             }
-            
+    
             if (valueBytes.empty()) {
                 continue;
             }
@@ -355,6 +508,7 @@ namespace ult {
         }
     
         pchtxtFile.close();
+    #endif
     
         // Trim any newline characters from nsobid
         trim(nsobid);
@@ -363,6 +517,31 @@ namespace ult {
         std::string ipsFileName = nsobid + ".ips";
         std::string ipsFilePath = outputFolder + ipsFileName;
     
+    #if NO_FSTREAM_DIRECTIVE
+        // Use FILE* for writing
+        FILE* ipsFile = fopen(ipsFilePath.c_str(), "wb");
+        if (!ipsFile) {
+            logMessage("Error: Unable to create IPS file " + ipsFilePath);
+            return false;
+        }
+    
+        fwrite(IPS32_HEAD_MAGIC, sizeof(char), std::strlen(IPS32_HEAD_MAGIC), ipsFile);
+    
+        uint16_t valueLength;
+        for (const auto& patch : patches) {
+            uint32_t bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
+            fwrite(&bigEndianAddress, sizeof(bigEndianAddress), 1, ipsFile);  // Write address
+    
+            valueLength = toBigEndian(static_cast<uint16_t>(patch.second.size()));  // Convert length to big-endian
+            fwrite(&valueLength, sizeof(valueLength), 1, ipsFile);  // Write length of value
+    
+            fwrite(patch.second.data(), sizeof(uint8_t), patch.second.size(), ipsFile);  // Write value
+        }
+    
+        fwrite(IPS32_FOOT_MAGIC, sizeof(char), std::strlen(IPS32_FOOT_MAGIC), ipsFile);
+        fclose(ipsFile);
+    #else
+        // Use fstream for writing
         std::ofstream ipsFile(ipsFilePath, std::ios::binary);
         if (!ipsFile) {
             logMessage("Error: Unable to create IPS file " + ipsFilePath);
@@ -374,20 +553,19 @@ namespace ult {
         uint16_t valueLength;
         for (const auto& patch : patches) {
             uint32_t bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
-            //logMessage("Writing address: " + std::to_string(patch.first) + " as big-endian: " + std::to_string(bigEndianAddress)); // Log the address
             ipsFile.write(reinterpret_cast<const char*>(&bigEndianAddress), sizeof(bigEndianAddress));  // Write address
     
             valueLength = toBigEndian(static_cast<uint16_t>(patch.second.size()));  // Convert length to big-endian
-            //logMessage("Writing length: " + std::to_string(patch.second.size()) + " as big-endian: " + std::to_string(valueLength)); // Log the length
             ipsFile.write(reinterpret_cast<const char*>(&valueLength), sizeof(valueLength));  // Write length of value
     
             ipsFile.write(reinterpret_cast<const char*>(patch.second.data()), patch.second.size());  // Write value
-            //logMessage("Writing value: " + hexToString(patch.second)); // Log the value
         }
     
         ipsFile.write(IPS32_FOOT_MAGIC, std::strlen(IPS32_FOOT_MAGIC));
         ipsFile.close();
+    #endif
     
         return true;
     }
+
 }

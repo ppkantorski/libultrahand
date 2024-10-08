@@ -24,6 +24,7 @@
 #define LIST_FUNCS_HPP
 
 #if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <stdio.h>
 #else
 #include <fstream>
 #endif

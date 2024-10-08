@@ -1124,10 +1124,27 @@ namespace ult {
             return;
         }
     
-        // Open the file in binary mode
+    #if NO_FSTREAM_DIRECTIVE
+        // Open the file using FILE*
+        FILE* file = fopen(filePath.c_str(), "rb");
+        if (!file) {
+            wallpaperData.clear(); // Clear wallpaperData if loading failed
+            return;
+        }
+        
+        // Read the file content into the wallpaperData buffer
+        size_t bytesRead = fread(wallpaperData.data(), 1, dataSize, file);
+        if (bytesRead != dataSize) {
+            wallpaperData.clear(); // Clear wallpaperData if reading failed
+            fclose(file);
+            return;
+        }
+        
+        fclose(file);
+    #else
+        // Open the file in binary mode using std::ifstream
         std::ifstream file(filePath, std::ios::binary);
         if (!file) {
-            //std::cerr << "Failed to open file: " << filePath << std::endl;
             wallpaperData.clear(); // Clear wallpaperData if loading failed
             return;
         }
@@ -1135,21 +1152,22 @@ namespace ult {
         // Read the file content into the wallpaperData buffer
         file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
         if (!file) {
-            //std::cerr << "Failed to read file: " << filePath << std::endl;
             wallpaperData.clear(); // Clear wallpaperData if reading failed
             return;
         }
-        
+    #endif
+    
         // Preprocess the bitmap data by shifting the color values
         for (size_t i = 0; i < dataSize; i += 4) {
             // Shift the color values to reduce precision (if needed)
-            wallpaperData[i] >>= 4;   // Red
+            wallpaperData[i] >>= 4;     // Red
             wallpaperData[i + 1] >>= 4; // Green
             wallpaperData[i + 2] >>= 4; // Blue
             wallpaperData[i + 3] >>= 4; // Alpha
         }
     }
-
+    
+    
     void reloadWallpaper() {
         // Signal that wallpaper is being refreshed
         refreshWallpaper.store(true, std::memory_order_release);

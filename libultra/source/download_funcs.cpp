@@ -40,12 +40,23 @@ void ZzipFileDeleter::operator()(ZZIP_FILE* file) const {
 }
 
 // Callback function to write received data to a file.
+#if NO_FSTREAM_DIRECTIVE
+// Using stdio.h functions (FILE*, fwrite)
+size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    size_t totalBytes = size * nmemb;
+    size_t writtenBytes = fwrite(ptr, 1, totalBytes, stream);
+    return writtenBytes;
+}
+#else
+// Using std::ofstream for writing
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
     auto& file = *static_cast<std::ofstream*>(stream);
     size_t totalBytes = size * nmemb;
     file.write(static_cast<const char*>(ptr), totalBytes);
     return totalBytes;
 }
+#endif
+
 
 
 
@@ -81,6 +92,7 @@ void cleanupCurl() {
     curl_global_cleanup();
 }
 
+
 /**
  * @brief Downloads a file from a URL to a specified destination.
  *
@@ -88,7 +100,6 @@ void cleanupCurl() {
  * @param toDestination The destination path where the file should be saved.
  * @return True if the download was successful, false otherwise.
  */
-// Your downloadFile function
 bool downloadFile(const std::string& url, const std::string& toDestination) {
     abortDownload.store(false);
 
@@ -111,22 +122,32 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         createDirectory(destination.substr(0, destination.find_last_of('/')));
     }
 
-    //if (!isDirectory(DOWNLOADS_PATH)) {
-    //    createDirectory(DOWNLOADS_PATH);
-    //}
-    
     std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
 
+#ifndef NO_FSTREAM_DIRECTIVE
+    // Use ofstream if NO_FSTREAM_DIRECTIVE is not defined
     std::ofstream file(tempFilePath, std::ios::binary);
     if (!file.is_open()) {
         logMessage("Error opening file: " + tempFilePath);
         return false;
     }
+#else
+    // Alternative method of opening file (depending on your platform, like using POSIX open())
+    int file = open(tempFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (file < 0) {
+        logMessage("Error opening file: " + tempFilePath);
+        return false;
+    }
+#endif
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         logMessage("Error initializing curl.");
+#ifndef NO_FSTREAM_DIRECTIVE
         file.close();
+#else
+        close(file);
+#endif
         return false;
     }
 
@@ -134,7 +155,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
+#ifndef NO_FSTREAM_DIRECTIVE
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
+#else
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, reinterpret_cast<void*>(file));
+#endif
     curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
     curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
@@ -142,15 +167,16 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
 
-    // Disable SSL verification for testing purposes
-    //curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 0L);
-    //curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYHOST, 0L);
-
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_BUFFER_SIZE); // Increase buffer size
 
     CURLcode result = curl_easy_perform(curl.get());
+
+#ifndef NO_FSTREAM_DIRECTIVE
     file.close();
+#else
+    close(file);
+#endif
 
     if (result != CURLE_OK) {
         logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
@@ -159,6 +185,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
+#ifndef NO_FSTREAM_DIRECTIVE
     std::ifstream checkFile(tempFilePath);
     if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
         logMessage("Error downloading file: Empty file");
@@ -168,13 +195,23 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
     checkFile.close();
+#else
+    // Alternative method for checking if the file is empty (POSIX example)
+    struct stat fileStat;
+    if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
+        logMessage("Error downloading file: Empty file");
+        deleteFileOrDirectory(tempFilePath);
+        downloadPercentage.store(-1, std::memory_order_release);
+        return false;
+    }
+#endif
 
     downloadPercentage.store(100, std::memory_order_release);
     moveFile(tempFilePath, destination);
 
-    //logMessage("Download Complete!");
     return true;
 }
+
 
 
 // Define a custom deleter for the unique_ptr to properly close the ZZIP_DIR handle
@@ -193,6 +230,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 //        }
 //    }
 //};
+
 
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
@@ -238,7 +276,13 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     unzipPercentage.store(0, std::memory_order_release); // Initialize percentage
 
     std::unique_ptr<ZZIP_FILE, ZzipFileDeleter> file;
+    
+    // Declare file pointer for use with fopen and fwrite when NO_FSTREAM_DIRECTIVE is enabled
+    #if NO_FSTREAM_DIRECTIVE
+    FILE* outputFile = nullptr;
+    #else
     std::ofstream outputFile;
+    #endif
 
     auto it = extractedFilePath.end();
     // Second pass: Extract files and update progress
@@ -267,22 +311,43 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             continue;
         }
 
+        #if NO_FSTREAM_DIRECTIVE
+        outputFile = fopen(extractedFilePath.c_str(), "wb");
+        if (!outputFile) {
+            logMessage("Error opening output file: " + extractedFilePath);
+            success = false;
+            continue;
+        }
+        #else
         outputFile.open(extractedFilePath, std::ios::binary);
         if (!outputFile.is_open()) {
             logMessage("Error opening output file: " + extractedFilePath);
             success = false;
             continue;
         }
+        #endif
 
         while ((bytesRead = zzip_file_read(file.get(), buffer, UNZIP_BUFFER_SIZE)) > 0) {
             if (abortUnzip.load(std::memory_order_acquire)) {
                 logMessage("Aborting unzip operation during file extraction.");
-                outputFile.close();
+                
+                #if NO_FSTREAM_DIRECTIVE
+                fclose(outputFile); // Close file handle for FILE*
+                #else
+                outputFile.close(); // Close ofstream
+                #endif
+                
                 deleteFileOrDirectory(extractedFilePath); // Cleanup partial file
                 success = false;
                 break;
             }
-            outputFile.write(buffer, bytesRead);
+
+            #if NO_FSTREAM_DIRECTIVE
+            fwrite(buffer, 1, bytesRead, outputFile); // Write to FILE* stream
+            #else
+            outputFile.write(buffer, bytesRead); // Write to std::ofstream
+            #endif
+
             logMessage("Extracted: " + extractedFilePath);
 
             currentUncompressedSize += bytesRead;
@@ -291,7 +356,12 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                 static_cast<int>(100.0 * std::min(1.0, static_cast<double>(currentUncompressedSize) / static_cast<double>(totalUncompressedSize))) : 0,
                 std::memory_order_release);
         }
-        outputFile.close();
+
+        #if NO_FSTREAM_DIRECTIVE
+        fclose(outputFile); // Close FILE* stream
+        #else
+        outputFile.close(); // Close std::ofstream
+        #endif
 
         if (!success) break; // Exit the outer loop if interrupted during extraction
     }
@@ -305,4 +375,5 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     return success;
 }
+
 }

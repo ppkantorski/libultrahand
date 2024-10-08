@@ -26,6 +26,12 @@
 #ifndef TSL_UTILS_HPP
 #define TSL_UTILS_HPP
 
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <stdio.h>
+#else
+#include <fstream>
+#endif
+
 #include <ultra.hpp>
 #include <switch.h>
 #include <arm_neon.h>

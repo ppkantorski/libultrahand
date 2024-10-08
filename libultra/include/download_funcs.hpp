@@ -21,9 +21,11 @@
 #define DOWNLOAD_FUNCS_HPP
 
 #if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <cstdio>
 #else
 #include <fstream>
 #endif
+
 #include <curl/curl.h>
 #include <zlib.h>
 #include <zzip/zzip.h>
@@ -66,9 +68,14 @@ namespace ult {
     struct ZzipFileDeleter {
         void operator()(ZZIP_FILE* file) const;
     };
-
-    // Function prototypes
+    
+    // Callback function to write received data to a file. Handles both FILE* and std::ofstream based on NO_FSTREAM_DIRECTIVE
+    #if NO_FSTREAM_DIRECTIVE
+    size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
+    #else
     size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
+    #endif
+
     extern "C" int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
     void initializeCurl();
     void cleanupCurl();
