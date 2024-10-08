@@ -5551,7 +5551,25 @@ namespace tsl {
      */
     class Gui {
     public:
-        Gui() { }
+        Gui() {
+            if (!themeIsInitialized) {
+                tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                //themeIsInitialized = true;
+            }
+            
+            // Load the bitmap file into memory
+            if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
+                // Lock the mutex for condition waiting
+                std::unique_lock<std::mutex> lock(wallpaperMutex);
+
+                // Wait for inPlot to be false before reloading the wallpaper
+                cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
+
+                if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
+                    loadWallpaperFile(WALLPAPER_PATH);
+                }
+            }
+        }
         
         virtual ~Gui() {
             if (this->m_topElement != nullptr)
@@ -6738,7 +6756,7 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
         const std::string settings = inputExists(SETTINGS_PATH);
         #endif
-        
+
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
             //if ((strcasecmp(argv[arg], "ovlmenu.ovl") == 0)) {
