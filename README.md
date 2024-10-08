@@ -49,6 +49,16 @@ USING_WIDGET_DIRECTIVE := 1
 CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
 ```
 
+### Forcing use of `<stdio.h>` instead of `<fstream>`
+
+To compile without utilizing `fstream`, add the following directive to your `Makefile`:
+
+```
+# Disable fstream
+NO_FSTREAM_DIRECTIVE := 1 
+CFLAGS += -DNO_FSTREAM_DIRECTIVE=$(NO_FSTREAM_DIRECTIVE)
+```
+
 
 ### Initializing Settings
 
