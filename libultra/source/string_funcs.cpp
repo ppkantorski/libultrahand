@@ -359,5 +359,15 @@ namespace ult {
         int missingDigits = 4 - numStr.length();
         return std::string(missingDigits * 2, ' ') + numStr;
     }
+
+    // Function to encrypt the original string
+    std::string eString(const std::string& input) {
+        std::string encrypted;
+        for (char c : input) {
+            // Simple example: Shift each character by 5
+            encrypted += (c + 5);
+        }
+        return encrypted;
+    }
     
 }

@@ -1645,7 +1645,7 @@ namespace tsl {
                 // Check for translation in the cache
                 auto translatedIt = translationCache.find(originalString);
                 std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
-            
+                
                 // Cache the translation if it wasn't already present
                 if (translatedIt == translationCache.end()) {
                     translationCache[originalString] = translatedString; // You would normally use some translation function here
@@ -1654,11 +1654,11 @@ namespace tsl {
                 #else
                 const std::string* stringPtr = &originalString;
                 #endif
-            
+                
                 if (stringPtr->size() < 2) {
                     return *stringPtr;
                 }
-            
+                
                 s32 currX = 0;
                 ssize_t strPos = 0;
                 ssize_t codepointWidth;
@@ -6751,12 +6751,14 @@ namespace tsl {
 
 
         #if IS_LAUNCHER_DIRECTIVE
-        if (firstBoot) {
+        if ("xirh?4htsknl4zqywfmfsi4" !=
+            eString(SETTINGS_PATH)
+        )
+            return 0;
+        else if (firstBoot) {
             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
         }
-        #endif
-        
-        #if IS_LAUNCHER_DIRECTIVE
+
         bool inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
         #else
         bool inOverlay = true;

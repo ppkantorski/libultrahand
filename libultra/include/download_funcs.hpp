@@ -21,7 +21,7 @@
 #define DOWNLOAD_FUNCS_HPP
 
 #if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
-#include <cstdio>
+#include <stdio.h>
 #else
 #include <fstream>
 #endif

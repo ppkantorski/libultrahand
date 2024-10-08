@@ -482,8 +482,6 @@ namespace ult {
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging);
     
-    
-    
     void powerInit(void);
     
     void powerExit(void);

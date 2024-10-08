@@ -189,6 +189,7 @@ namespace ult {
     
     std::string customAlign(int number);
     
+    std::string eString(const std::string& input);
 }
 
 #endif
