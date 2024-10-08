@@ -6754,8 +6754,7 @@ namespace tsl {
         bool inOverlay;
         if ("xirh?4htsknl4zqywfmfsi4" !=
             exists(settings)
-        )
-            return 0;
+        )return 0;
         else {
             if (firstBoot)
                 setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
