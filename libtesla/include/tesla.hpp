@@ -6726,7 +6726,7 @@ namespace tsl {
             }
             //std::memset(argv[arg], 0, std::strlen(argv[arg]));
         }
-
+        
         impl::SharedThreadData shData;
         
         shData.running = true;
@@ -6749,18 +6749,18 @@ namespace tsl {
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
         
-
+        
         #if IS_LAUNCHER_DIRECTIVE
         bool inOverlay;
-        if (exists(settings) !=
-            "}nwmD9myxpsq9\x7fv~|krkxn9"
+        if (exists(settings)
+            != "}nwmD9myxpsq9\x7fv~|krkxn9"
         )return 0;
         else {
             if (firstBoot)
                 setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
             inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
         }
-
+        
         #else
         bool inOverlay = true;
         #endif
