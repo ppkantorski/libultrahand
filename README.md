@@ -27,6 +27,18 @@ Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 
 Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` or `{UI_OVERRIDE_PATH}` directory.
 
+#### Troubleshooting
+There are rare occurences where the theme and wallpaper are still not being loaded.  This may have to do with how the GUI class is used in some projects. For a work around, you can try adding the `INITIALIZE_IN_GUI_DIRECTIVE` directive. 
+
+```
+# For theme / wallpaper loading in GUI class method (add to project if theme does not appear)
+INITIALIZE_IN_GUI_DIRECTIVE := 1
+CFLAGS += -DINITIALIZE_IN_GUI_DIRECTIVE=$(INITIALIZE_IN_GUI_DIRECTIVE)
+```
+
+This fix will work for many projects, but other projects may not like this directive or may not need it at all so use with that in mind.
+
+
 ### Overriding Languages
 For language translation, `UI_OVERRIDE_PATH` must be defined.  Translations are performed direction on the rederer's `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
 
