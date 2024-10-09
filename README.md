@@ -13,7 +13,7 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 ![libultrahand Logo](.pics/libultrahand.png)
 
 ## Usage
-### Overriding Themes, Wallpapers and  Languages
+### Overriding Themes and Wallpapers
 
 To customize theme, wallpaper and / or allow direct language translations for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
 
@@ -27,7 +27,8 @@ Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 
 Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` or `{UI_OVERRIDE_PATH}` directory.
 
-Language translations are done direction on the `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
+### Overriding Languages
+For language translation, `UI_OVERRIDE_PATH` must be defined.  Translations are performed direction on the rederer's `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
 
 Jsons will need to be named ISO 639-1 format (en, de, fr, es, etc...) and will only be used in accordance with the current language set in the Ultrahand Overlay `/config/ultrahand/config.ini`.
 
