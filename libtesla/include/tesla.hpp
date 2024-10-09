@@ -5680,20 +5680,28 @@ namespace tsl {
             //    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
             //    //themeIsInitialized = true;
             //}
-            tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
 
-            // Load the bitmap file into memory
-            if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                // Lock the mutex for condition waiting
-                std::unique_lock<std::mutex> lock(wallpaperMutex);
-
-                // Wait for inPlot to be false before reloading the wallpaper
-                cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-                if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                    loadWallpaperFile(WALLPAPER_PATH);
+            #if IS_LAUNCHER_DIRECTIVE
+            #else
+            {
+                #if INITIALIZE_IN_GUI_DIRECTIVE
+                tsl::initializeThemeVars();
+                
+                // Load the bitmap file into memory
+                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
+                    // Lock the mutex for condition waiting
+                    std::unique_lock<std::mutex> lock(wallpaperMutex);
+                    
+                    // Wait for inPlot to be false before reloading the wallpaper
+                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
+                    
+                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
+                        loadWallpaperFile(WALLPAPER_PATH);
+                    }
                 }
+                #endif
             }
+            #endif
         }
         
         virtual ~Gui() {
