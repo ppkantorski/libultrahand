@@ -2017,9 +2017,12 @@ namespace tsl {
 
                     if (horizontalUnderscanPixels == 0) {
                         s32 layerZ = 0;
-                        if (R_SUCCEEDED(viGetZOrderCountMax(&this->m_display, &layerZ)) && layerZ > 0)
+                        if (R_SUCCEEDED(viGetZOrderCountMax(&this->m_display, &layerZ)) && layerZ > 0) {
                             ASSERT_FATAL(viSetLayerZ(&this->m_layer, layerZ));
-                        else ASSERT_FATAL(viSetLayerZ(&this->m_layer, 255)); // max value 255 as fallback
+                        }
+                        else {
+                            ASSERT_FATAL(viSetLayerZ(&this->m_layer, 255)); // max value 255 as fallback
+                        }
                     } else {
                         ASSERT_FATAL(viSetLayerZ(&this->m_layer, 34)); // 34 is the edge for underscanning
                     }
