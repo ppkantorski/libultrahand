@@ -4688,16 +4688,16 @@ namespace tsl {
                 }
 
                 // Draw track bar background
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingStepTrackbar);
 
                 if (!this->m_focused) {
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingStepTrackbar);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     unlockedSlide = m_unlockedTrackbar;
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
