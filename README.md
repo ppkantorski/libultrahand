@@ -125,6 +125,8 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [FPSLocker](https://github.com/ppkantorski/FPSLocker)
 
+- [QuickNTP](https://github.com/ppkantorski/QuickNTP)
+
 ## Contributing
 
 Contributions are welcome! If you have any ideas, suggestions, or bug reports, please raise an [issue](https://github.com/ppkantorski/libultrahand/issues/new/choose), submit a [pull request](https://github.com/ppkantorski/libultrahand/compare) or reach out to me directly on [GBATemp](https://gbatemp.net/threads/ultrahand-overlay-the-fully-craft-able-overlay-executor.633560/).
