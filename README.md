@@ -41,6 +41,8 @@ This fix will work for many projects, but other projects may not like this direc
 **Notice:** Makefile directives also must be added to `CXXFLAGS`.
 You can do this by adding the directives before `CXXFLAGS := $(CFLAGS)` gets defined, or include `CXXFLAGS += ...`.
 
+---
+
 ### Overriding Languages
 For language translation, `UI_OVERRIDE_PATH` must be defined.  Translations are performed direction on the rederer's `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
 
@@ -54,6 +56,8 @@ The format for language jsons is as follows.
 }
 ```
 
+---
+
 ### Ultrahand Overlay Widget
 
 To add the Ultrahand Overlay widget to your `OverlayFrame`'s, add the following directive to your `Makefile`:
@@ -63,6 +67,8 @@ To add the Ultrahand Overlay widget to your `OverlayFrame`'s, add the following 
 USING_WIDGET_DIRECTIVE := 1 
 CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
 ```
+
+---
 
 ### Forcing use of `<stdio.h>` instead of `<fstream>`
 
@@ -74,6 +80,7 @@ NO_FSTREAM_DIRECTIVE := 1
 CFLAGS += -DNO_FSTREAM_DIRECTIVE=$(NO_FSTREAM_DIRECTIVE)
 ```
 
+---
 
 ### Initializing Settings
 
