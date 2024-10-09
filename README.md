@@ -28,6 +28,10 @@ Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
 Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` or `{UI_OVERRIDE_PATH}` directory.
 
 #### **Troubleshooting**
+**Notice:** Makefile directives also must be added to `CXXFLAGS`.
+You can do this by adding the directives before `CXXFLAGS := $(CFLAGS)` gets defined, or include `CXXFLAGS += ...`.
+
+
 There are rare occurences where the theme and wallpaper are still not being loaded.  This may have to do with how the GUI class is used in some projects. For a work around, you can try adding the `INITIALIZE_IN_GUI_DIRECTIVE` directive. 
 
 ```
@@ -37,9 +41,6 @@ CFLAGS += -DINITIALIZE_IN_GUI_DIRECTIVE=$(INITIALIZE_IN_GUI_DIRECTIVE)
 ```
 
 This fix will work for many projects, but other projects may not like this directive or may not need it at all so use with that in mind.
-
-**Notice:** Makefile directives also must be added to `CXXFLAGS`.
-You can do this by adding the directives before `CXXFLAGS := $(CFLAGS)` gets defined, or include `CXXFLAGS += ...`.
 
 ---
 
