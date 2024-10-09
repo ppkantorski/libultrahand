@@ -4667,14 +4667,26 @@ namespace tsl {
 
             virtual void draw(gfx::Renderer *renderer) override {
                 static float lastBottomBound;
-                u16 handlePos = (this->getWidth() - 95) * (this->m_value) / (100);
+                
                 s32 xPos = this->getX() + 59;
                 s32 yPos = this->getY() + 40 + 16 - 1;
                 s32 width = this->getWidth() - 95;
+                u16 handlePos = width * (this->m_value) / (100);
 
                 if (!m_usingNamedStepTrackbar) {
                     yPos -= 11;
                 }
+
+                s32 iconOffset;
+
+                if (m_icon[0] != '\0') {
+                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    iconOffset = 14 + iconWidth;
+                    xPos += iconOffset;
+                    width -= iconOffset;
+                    handlePos = (width) * (this->m_value) / (100);
+                }
+
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
 
@@ -4693,8 +4705,8 @@ namespace tsl {
 
                 //renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
                 //renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
-
-                renderer->drawString(this->m_icon, false, this->getX() + 15, this->getY() + 50, 23, a(tsl::style::color::ColorText));
+                if (m_icon[0] != '\0')
+                    renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
 
                 //u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
                 //renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
@@ -5652,10 +5664,11 @@ namespace tsl {
     class Gui {
     public:
         Gui() {
-            if (!themeIsInitialized) { // added to handle more boundary cases where themes are not loaded
-                tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                //themeIsInitialized = true;
-            }
+            //if (!themeIsInitialized) { // added to handle more boundary cases where themes are not loaded
+            //    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+            //    //themeIsInitialized = true;
+            //}
+            tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
 
             // Load the bitmap file into memory
             if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
