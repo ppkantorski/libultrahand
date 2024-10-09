@@ -93,6 +93,19 @@ Developers should include the following libararies in their `Makefile` if they w
 LIBS := -lcurl -lz -lzzip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
 ```
 
+### Active Services
+Service conflictions can occur, so if you are already using the following libnx services, you may want to remove them from your project.
+```cpp
+    i2cInitialize();
+    fsdevMountSdmc();
+    splInitialize();
+    spsmInitialize();
+    ASSERT_FATAL(socketInitializeDefault());
+    ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
+    ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
+```
+Service `i2cInitialize` however is only utilized in accordance with `USING_WIDGET_DIRECTIVE`.
+
 ### Optional Compilation Flags
 ```
 -ffunction-sections -fdata-sections
