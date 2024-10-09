@@ -4751,9 +4751,9 @@ namespace tsl {
                 //    };
                 //}
                 highlightColor = {
-                    static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                    static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                    static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                    static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                    static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                    static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
                     0xF
                 };
                 
@@ -5370,16 +5370,16 @@ namespace tsl {
                 progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
                 if (allowSlide || m_unlockedTrackbar) {
                     highlightColor = {
-                        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
                         0xF
                     };
                 } else {
                     highlightColor = {
-                        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
                         0xF
                     };
                 }
