@@ -116,7 +116,7 @@ This flag allows the compiler and linker to better collaborate when using LTO, w
 Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, and -flto) ensure that any unused functions or data are stripped out during the build process, leading to a smaller and more optimized final binary.
 
 
-## Examples
+## Build Examples
 - [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
 
 - [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
