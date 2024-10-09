@@ -5676,11 +5676,6 @@ namespace tsl {
     class Gui {
     public:
         Gui() {
-            //if (!themeIsInitialized) { // added to handle more boundary cases where themes are not loaded
-            //    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-            //    //themeIsInitialized = true;
-            //}
-
             #if IS_LAUNCHER_DIRECTIVE
             #else
             {
@@ -5707,7 +5702,7 @@ namespace tsl {
         virtual ~Gui() {
             if (this->m_topElement != nullptr)
                 delete this->m_topElement;
-
+            
             if (this->m_bottomElement != nullptr)
                 delete this->m_bottomElement;
         }
