@@ -53,6 +53,7 @@ The format for language jsons is as follows.
 ```json
 {
   "English String": "Translated String",
+  "Another String": "Another Translation",
   ...
 }
 ```
