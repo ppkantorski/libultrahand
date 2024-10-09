@@ -4581,7 +4581,7 @@ namespace tsl {
              *
              * @param icon Icon shown next to the track bar
              */
-            TrackBar(const char icon[3]) : m_icon(icon) {
+            TrackBar(const char icon[3], bool usingStepTrackbar=false, bool usingNamedStepTrackbar = false) : m_icon(icon), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar) {
                 m_isItem = true;
             }
 
@@ -4838,6 +4838,7 @@ namespace tsl {
 
             std::function<void(u8)> m_valueChangedListener = [](u8){};
 
+            bool m_usingStepTrackbar = false;
             bool m_usingNamedStepTrackbar = false;
             bool m_unlockedTrackbar = true;
             bool touchInSliderBounds = false;
@@ -4856,8 +4857,8 @@ namespace tsl {
              * @param icon Icon shown next to the track bar
              * @param numSteps Number of steps the track bar has
              */
-            StepTrackBar(const char icon[3], size_t numSteps)
-                : TrackBar(icon), m_numSteps(numSteps) { }
+            StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false)
+                : TrackBar(icon, true, usingNamedStepTrackbar), m_numSteps(numSteps) { }
 
             virtual ~StepTrackBar() {}
 
@@ -4951,7 +4952,7 @@ namespace tsl {
              * @param stepDescriptions Step names displayed above the track bar
              */
             NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions)
-                : StepTrackBar(icon, stepDescriptions.size()), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
+                : StepTrackBar(icon, stepDescriptions.size(), true), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
                     this->m_usingNamedStepTrackbar = true;
                 }
 
@@ -4960,11 +4961,22 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 // TrackBarV2 width excluding the handle areas
                 u16 trackBarWidth = this->getWidth() - 95;
-            
+                
                 // Base X and Y coordinates
                 u16 baseX = this->getX() + 59;
                 u16 baseY = this->getY() + 44; // 50 - 3
-            
+                
+                s32 iconOffset;
+                
+                if (m_icon[0] != '\0') {
+                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    iconOffset = 14 + iconWidth;
+                    baseX += iconOffset;
+                    trackBarWidth -= iconOffset;
+                }
+
+
+
                 // Calculate the spacing between each step
                 float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
                 
@@ -4992,7 +5004,7 @@ namespace tsl {
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
 
                 auto descWidth = renderer->calculateStringWidth(this->m_stepDescriptions[currentDescIndex].c_str(), 15);
-                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
                 
                 // Draw the parent trackbar
                 StepTrackBar::draw(renderer);
