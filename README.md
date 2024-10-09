@@ -142,6 +142,8 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [QuickNTP](https://github.com/ppkantorski/QuickNTP)
 
+- [Fizeau](https://github.com/ppkantorski/Fizeau)
+
 - [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
 
 ## Contributing
