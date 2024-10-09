@@ -38,7 +38,8 @@ CFLAGS += -DINITIALIZE_IN_GUI_DIRECTIVE=$(INITIALIZE_IN_GUI_DIRECTIVE)
 
 This fix will work for many projects, but other projects may not like this directive or may not need it at all so use with that in mind.
 
-**Notice:** Makefile directives also must be added to `CXXFLAGS`.  You can do this by adding the directives before `CXXFLAGS	:= $(CFLAGS)` gets defined, or include `CXXFLAGS += ...`.
+**Notice:** Makefile directives also must be added to `CXXFLAGS`.
+You can do this by adding the directives before `CXXFLAGS	:= $(CFLAGS)` gets defined, or include `CXXFLAGS += ...` below the `CFLAGS += ...` definition.
 
 ### Overriding Languages
 For language translation, `UI_OVERRIDE_PATH` must be defined.  Translations are performed direction on the rederer's `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
