@@ -94,13 +94,8 @@ namespace ult {
     
     // Function to load translations from a JSON-like file into the translation cache
     bool loadTranslationsFromJSON(const std::string& filePath) {
-        
         return parseJsonToMap(filePath, translationCache);
     }
-    
-
-    
-    
     
     
     u16 activeHeaderHeight = 97;
@@ -905,110 +900,6 @@ namespace ult {
             }
         }
     }
-
-    
-    
-    
-    //// Map of character widths (pre-calibrated)
-    //std::unordered_map<wchar_t, float> characterWidths = {
-    //    {L'<', 0.81},
-    //    {L'>', 0.81},
-    //    {L',', 0.25},
-    //    {L'/', 0.5},
-    //    {L'\\', 0.5},
-    //    {L'`', 0.25},
-    //    {L'\'', 0.186},
-    //    {L'↑', 1.0},
-    //    {L'~', 0.31},
-    //    {L'"', 0.31},
-    //    {L'!', 0.25},
-    //    {L'@', 0.87},
-    //    {L'#', 0.31},
-    //    {L'$', 0.56},
-    //    {L'^', 0.5},
-    //    {L'?', 0.5},
-    //    {L'°', 0.31},
-    //    {L'%', 0.87},
-    //    {L'*', 0.434},
-    //    {L'=', 0.750},
-    //    {L':', 0.25},
-    //    {L';', 0.25},
-    //    {L' ', 0.312},
-    //    {L'|', 0.26},
-    //    {L'.', 0.25},
-    //    {L'+', 0.75},
-    //    {L'-', 0.37},
-    //    {L'_', 0.50},
-    //    {L'&', 0.75},
-    //    {L'(', 0.31},
-    //    {L')', 0.31},
-    //    {L'[', 0.3635},
-    //    {L']', 0.3635},
-    //    {L'A', 0.745},
-    //    {L'B', 0.62},
-    //    {L'C', 0.745},
-    //    {L'D', 0.8082},
-    //    {L'E', 0.56},
-    //    {L'F', 0.56},
-    //    {L'G', 0.81},
-    //    {L'H', 0.685},
-    //    {L'I', 0.25},
-    //    {L'J', 0.50},
-    //    {L'K', 0.62},
-    //    {L'L', 0.435},
-    //    {L'M', 0.933},
-    //    {L'N', 0.81},
-    //    {L'O', 0.875},
-    //    {L'P', 0.56},
-    //    {L'Q', 0.875},
-    //    {L'R', 0.56},
-    //    {L'S', 0.56},
-    //    {L'T', 0.6198},
-    //    {L'U', 0.81},
-    //    {L'V', 0.75},
-    //    {L'W', 1.12},
-    //    {L'X', 0.625},
-    //    {L'Y', 0.625},
-    //    {L'Z', 0.745},
-    //    {L'a', 0.56},
-    //    {L'b', 0.62},
-    //    {L'c', 0.56},
-    //    {L'd', 0.625},
-    //    {L'e', 0.559},
-    //    {L'f', 0.25},
-    //    {L'g', 0.56},
-    //    {L'h', 0.56},
-    //    {L'i', 0.2485},
-    //    {L'j', 0.3748},
-    //    {L'k', 0.5588},
-    //    {L'l', 0.251},
-    //    {L'm', 0.935},
-    //    {L'n', 0.5573},
-    //    {L'o', 0.62},
-    //    {L'p', 0.62},
-    //    {L'q', 0.62},
-    //    {L'r', 0.3725},
-    //    {L's', 0.496},
-    //    {L't', 0.372},
-    //    {L'u', 0.561},
-    //    {L'v', 0.50},
-    //    {L'w', 0.87},
-    //    {L'x', 0.50},
-    //    {L'y', 0.50},
-    //    {L'z', 0.5},
-    //    {L'0', 0.62},
-    //    {L'1', 0.6199},
-    //    {L'2', 0.63},
-    //    {L'3', 0.62},
-    //    {L'4', 0.62},
-    //    {L'5', 0.62},
-    //    {L'6', 0.62},
-    //    {L'7', 0.62},
-    //    {L'8', 0.62},
-    //    {L'9', 0.62}
-    //};
-    
-    //float defaultNumericCharWidth = 0.66;
     
     
     
@@ -1457,14 +1348,16 @@ namespace ult {
     //std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
-        #if USING_WIDGET_DIRECTIVE
+        
         hideClock = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_clock") != FALSE_STR);
         hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
         hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
         hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
-        #endif
+        
     }
+    #endif
     
     bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
     

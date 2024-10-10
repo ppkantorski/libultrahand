@@ -528,7 +528,9 @@ namespace ult {
     //static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars();
+    #endif
     
     extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
     
