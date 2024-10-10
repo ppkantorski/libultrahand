@@ -447,7 +447,7 @@ namespace tsl {
             WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
         if (isFileOrDirectory(TRANSLATION_JSON_PATH))
             loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
-        
+
         #endif
         // Set Ultrahand Globals
         useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
@@ -4963,7 +4963,7 @@ namespace tsl {
             virtual ~NamedStepTrackBar() {}
 
             virtual void draw(gfx::Renderer *renderer) override {
-                // TrackBarV2 width excluding the handle areas
+                // TrackBar width excluding the handle areas
                 u16 trackBarWidth = this->getWidth() - 95;
                 
                 // Base X and Y coordinates
@@ -5164,8 +5164,8 @@ namespace tsl {
                 u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
                 
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
+                //auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - lastUpdate);
                 
                 if (simulatedSelect && !simulatedSelectComplete) {
                     keysDown |= KEY_A;
@@ -5183,24 +5183,56 @@ namespace tsl {
 
                 // Allow sliding only if KEY_A has been pressed
                 if (allowSlide || m_unlockedTrackbar) {
+
                     if ((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) {
                         //if (!m_executeOnEveryTick)
                         updateAndExecute();
+                        lastUpdate = std::chrono::steady_clock::now(); // Adjust lastUpdate to account for the time taken by updateAndExecute()
+
                         holding = false;
                         return true;
                     }
                     
+                    if ((keysDown & HidNpadButton_AnyLeft) || (keysDown & HidNpadButton_AnyRight))  {
+                        if (keysHeld & HidNpadButton_AnyLeft) {
+                            if (this->m_value > m_minValue) {
+                                this->m_index--;
+                                this->m_value--;
+                                this->m_valueChangedListener(this->m_value);
+                                if (m_executeOnEveryTick) {
+                                    updateAndExecute(false);
+                                }
+                                lastUpdate = std::chrono::steady_clock::now();
+                                return true;
+                            }
+                        }
+                        
+                        if (keysHeld & HidNpadButton_AnyRight) {
+                            if (this->m_value < m_maxValue) {
+                                this->m_index++;
+                                this->m_value++;
+                                this->m_valueChangedListener(this->m_value);
+                                if (m_executeOnEveryTick) {
+                                    updateAndExecute(false);
+                                }
+                                lastUpdate = std::chrono::steady_clock::now();
+                                return true;
+                            }
+                        }
+                    }
+
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
                         return true;
                     
                     // Check if the button is being held down
                     if ((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)) {
+                        
                         if (!holding) {
                             holding = true;
-                            holdStartTime = now;
+                            holdStartTime = std::chrono::steady_clock::now();
                         }
                         
-                        auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - holdStartTime);
+                        auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - holdStartTime);
 
                         // Define the duration boundaries
                         //const auto initialInterval = std::chrono::milliseconds(67);  // Example initial interval
@@ -5222,7 +5254,7 @@ namespace tsl {
                                     if (m_executeOnEveryTick) {
                                         updateAndExecute(false);
                                     }
-                                    lastUpdate = now;
+                                    lastUpdate = std::chrono::steady_clock::now();
                                     return true;
                                 }
                             }
@@ -5235,7 +5267,7 @@ namespace tsl {
                                     if (m_executeOnEveryTick) {
                                         updateAndExecute(false);
                                     }
-                                    lastUpdate = now;
+                                    lastUpdate = std::chrono::steady_clock::now();
                                     return true;
                                 }
                             }
