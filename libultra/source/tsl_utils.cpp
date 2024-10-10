@@ -1018,68 +1018,65 @@ namespace ult {
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
+        size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
+        size_t compressedDataSize = originalDataSize / 2; // Half the size because we store two 4-bit values per byte
         
-        // Load the bitmap file into memory
+        wallpaperData.resize(compressedDataSize);
+        
+        if (!isFileOrDirectory(filePath)) {
+            wallpaperData.clear(); // Clear wallpaperData if loading failed
+            return;
+        }
+
+        #if NO_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "rb");
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+            
+            std::vector<uint8_t> tempData(originalDataSize);
+            size_t bytesRead = fread(tempData.data(), 1, originalDataSize, file);
+            fclose(file);
+            
+            if (bytesRead != originalDataSize) {
+                wallpaperData.clear();
+                return;
+            }
+        #else
+            std::ifstream file(filePath, std::ios::binary);
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+            
+            std::vector<uint8_t> tempData(originalDataSize);
+            file.read(reinterpret_cast<char*>(tempData.data()), originalDataSize);
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+        #endif
+        
+        // Compress the RGBA data by combining two 4-bit values into each byte
+        for (size_t i = 0, j = 0; i < originalDataSize; i += 4, j++) {
+            uint8_t red = tempData[i] >> 4;        // Take the upper 4 bits
+            uint8_t green = tempData[i + 1] >> 4;  // Take the upper 4 bits
+            uint8_t blue = tempData[i + 2] >> 4;   // Take the upper 4 bits
+            uint8_t alpha = tempData[i + 3] >> 4;  // Take the upper 4 bits
+            
+            // Store two 4-bit values in each byte
+            wallpaperData[j * 2] = (red << 4) | green; // High nibble is red, low nibble is green
+            wallpaperData[j * 2 + 1] = (blue << 4) | alpha; // High nibble is blue, low nibble is alpha
+        }
+    }
+
+    void loadWallpaperFileWhenSafe() {
         if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-            // Lock the mutex for condition waiting
             std::unique_lock<std::mutex> lock(wallpaperMutex);
-
-            // Wait for inPlot to be false before reloading the wallpaper
-            cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-            if (wallpaperData.empty() && isFileOrDirectory(filePath)) {
-                // Calculate the size of the bitmap in bytes
-                size_t dataSize = width * height * 4; // 4 bytes per pixel (RGBA8888)
-                
-                // Resize the wallpaperData vector to the required size
-                wallpaperData.resize(dataSize);
-                
-                if (!isFileOrDirectory(filePath)) {
-                    wallpaperData.clear(); // Clear wallpaperData if loading failed
-                    return;
-                }
-            
-            #if NO_FSTREAM_DIRECTIVE
-                // Open the file using FILE*
-                FILE* file = fopen(filePath.c_str(), "rb");
-                if (!file) {
-                    wallpaperData.clear(); // Clear wallpaperData if loading failed
-                    return;
-                }
-                
-                // Read the file content into the wallpaperData buffer
-                size_t bytesRead = fread(wallpaperData.data(), 1, dataSize, file);
-                if (bytesRead != dataSize) {
-                    wallpaperData.clear(); // Clear wallpaperData if reading failed
-                    fclose(file);
-                    return;
-                }
-                
-                fclose(file);
-            #else
-                // Open the file in binary mode using std::ifstream
-                std::ifstream file(filePath, std::ios::binary);
-                if (!file) {
-                    wallpaperData.clear(); // Clear wallpaperData if loading failed
-                    return;
-                }
-                
-                // Read the file content into the wallpaperData buffer
-                file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
-                if (!file) {
-                    wallpaperData.clear(); // Clear wallpaperData if reading failed
-                    return;
-                }
-            #endif
-            
-                // Preprocess the bitmap data by shifting the color values
-                for (size_t i = 0; i < dataSize; i += 4) {
-                    // Shift the color values to reduce precision (if needed)
-                    wallpaperData[i] >>= 4;     // Red
-                    wallpaperData[i + 1] >>= 4; // Green
-                    wallpaperData[i + 2] >>= 4; // Blue
-                    wallpaperData[i + 3] >>= 4; // Alpha
-                }
+            cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire); });
+            if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
+                loadWallpaperFile(WALLPAPER_PATH);
             }
         }
     }

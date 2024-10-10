@@ -1226,40 +1226,70 @@ namespace tsl {
                 }
             }
 
-
             
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, const s32 startRow, const s32 endRow) {
-                s32 bytesPerRow = screenW * 4;
+                s32 bytesPerRow = screenW * 2; // 2 bytes per pixel row due to RGBA4444
                 const s32 endX = screenW - 16;
                 
+                alignas(16) u8 redArray[16], greenArray[16], blueArray[16], alphaArray[16];
+
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
                     const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
                     s32 x1 = 0;
-                    
+            
                     // Process in chunks of 16 pixels using SIMD
                     for (; x1 <= endX; x1 += 16) {
-                        uint8x16x4_t pixelData = vld4q_u8(rowPtr + (x1 * 4));
-                        
-                        // Unroll the loop to reduce the number of operations
+                        // Load 32 bytes for 16 pixels (2 bytes per pixel)
+                        uint8x16x2_t packed = vld2q_u8(rowPtr + (x1 * 2));
+            
+                        // Unpack high and low 4-bit nibbles
+                        uint8x16_t red = vshrq_n_u8(packed.val[0], 4);
+                        uint8x16_t green = vandq_u8(packed.val[0], vdupq_n_u8(0x0F));
+                        uint8x16_t blue = vshrq_n_u8(packed.val[1], 4);
+                        uint8x16_t alpha = vandq_u8(packed.val[1], vdupq_n_u8(0x0F));
+            
+                        // Scale 4-bit values to 8-bit by multiplying by 17
+                        uint8x16_t scale = vdupq_n_u8(17);
+                        red = vmulq_u8(red, scale);
+                        green = vmulq_u8(green, scale);
+                        blue = vmulq_u8(blue, scale);
+                        alpha = vmulq_u8(alpha, scale);
+            
+                        vst1q_u8(redArray, red);
+                        vst1q_u8(greenArray, green);
+                        vst1q_u8(blueArray, blue);
+                        vst1q_u8(alphaArray, alpha);
+            
                         for (s32 i = 0; i < 16; ++i) {
                             setPixelBlendSrc(x + x1 + i, y + y1, {
-                                pixelData.val[0][i],
-                                pixelData.val[1][i],
-                                pixelData.val[2][i],
-                                pixelData.val[3][i]
+                                redArray[i],
+                                greenArray[i],
+                                blueArray[i],
+                                alphaArray[i]
                             });
                         }
                     }
+
             
                     // Handle the remaining pixels (less than 16)
                     for (s32 xRem = x1; xRem < screenW; ++xRem) {
-                        const u8 *p = rowPtr + (xRem * 4);
-                        setPixelBlendSrc(x + xRem, y + y1, {p[0], p[1], p[2], p[3]});
+                        u8 packedValue1 = rowPtr[xRem * 2];
+                        u8 packedValue2 = rowPtr[xRem * 2 + 1];
+            
+                        // Unpack and scale
+                        u8 red = ((packedValue1 >> 4) & 0x0F) * 17;
+                        u8 green = (packedValue1 & 0x0F) * 17;
+                        u8 blue = ((packedValue2 >> 4) & 0x0F) * 17;
+                        u8 alpha = (packedValue2 & 0x0F) * 17;
+            
+                        setPixelBlendSrc(x + xRem, y + y1, {red, green, blue, alpha});
                     }
                 }
-                //inPlot.store(false, std::memory_order_release);
+            
                 inPlotBarrier.arrive_and_wait(); // Wait for all threads to reach this point
             }
+            
+
 
 
             /**
@@ -1275,9 +1305,6 @@ namespace tsl {
              */
 
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
-                // Number of threads to use
-                //const unsigned numThreads = 3;
-                //std::vector<std::thread> threads(numThreads);
 
                 // Divide rows among threads
                 //s32 chunkSize = (screenH + numThreads - 1) / numThreads;
@@ -2810,7 +2837,7 @@ namespace tsl {
         OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
                 activeHeaderHeight = 97;
-                loadWallpaperFile(WALLPAPER_PATH);
+                loadWallpaperFileWhenSafe();
 
                 m_isItem = false;
             }
@@ -3175,7 +3202,7 @@ namespace tsl {
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
                 activeHeaderHeight = headerHeight;
                 // Load the bitmap file into memory
-                loadWallpaperFile(WALLPAPER_PATH);
+                loadWallpaperFileWhenSafe();
                 m_isItem = false;
 
             }
@@ -5195,10 +5222,10 @@ namespace tsl {
                     
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
                         return true;
-                    
+
                     if (keysDown & HidNpadButton_AnyLeft && keysDown & HidNpadButton_AnyRight)
                         return true;
-                    
+
                     if (keysDown & HidNpadButton_AnyLeft) {
                         if (this->m_value > m_minValue) {
                             this->m_index--;
@@ -5720,7 +5747,7 @@ namespace tsl {
                 tsl::initializeThemeVars();
                 
                 // Load the bitmap file into memory
-                loadWallpaperFile(WALLPAPER_PATH);
+                loadWallpaperFileWhenSafe();
                 #endif
             }
             #endif
