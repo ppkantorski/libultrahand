@@ -427,12 +427,31 @@ namespace tsl {
     #if IS_LAUNCHER_DIRECTIVE
     #else
     static void initializeUltrahandSettings() { // only needed for regular overlays
-        // Set Ultrahand Globals
-        useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
-        useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
 
         std::string defaultLang = parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, DEFAULT_LANG_STR);
         defaultLang = defaultLang.empty() ? "en" : defaultLang;
+
+        #ifdef UI_OVERRIDE_PATH
+        
+        std::string UI_PATH = UI_OVERRIDE_PATH;
+        preprocessPath(UI_PATH);
+
+        const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
+        const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
+                  
+        const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
+
+        if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
+            THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
+        if (isFileOrDirectory(NEW_WALLPAPER_PATH))
+            WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+        if (isFileOrDirectory(TRANSLATION_JSON_PATH))
+            loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
+        
+        #endif
+        // Set Ultrahand Globals
+        useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
+        useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
 
         std::string langFile = LANG_PATH+defaultLang+".json";
         if (isFileOrDirectory(langFile))
@@ -5849,38 +5868,6 @@ namespace tsl {
          */
         virtual ~Overlay() {}
         
-        /**
-         * @brief Non-virtual method that ensures the base initialization always occurs
-         * This should be called instead of directly calling initServices().
-         */
-        void initialize() {
-        #ifdef UI_OVERRIDE_PATH
-
-            std::string UI_PATH = UI_OVERRIDE_PATH;
-            preprocessPath(UI_PATH);
-
-            const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
-            const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
-
-            std::string defaultLang = parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, DEFAULT_LANG_STR);
-            defaultLang = defaultLang.empty() ? "en" : defaultLang;
-                      
-            const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
-
-            if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
-                THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
-            if (isFileOrDirectory(NEW_WALLPAPER_PATH))
-                WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
-            if (isFileOrDirectory(TRANSLATION_JSON_PATH))
-                loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
-        #endif
-
-            //initializeThemeVars(); // Initialize variables for ultrahand themes
-            #if IS_LAUNCHER_DIRECTIVE
-            #else
-            initializeUltrahandSettings(); // Set up for opaque screenshots, swipe-to-open functionality, and more.
-            #endif
-        }
 
         /**
          * @brief Initializes services
@@ -6891,8 +6878,11 @@ namespace tsl {
         
         tsl::hlp::doWithSmSession([&overlay]{
             overlay->initServices();
-            overlay->initialize();
         });
+        #if IS_LAUNCHER_DIRECTIVE
+        #else
+        tsl::initializeUltrahandSettings(); // for initializing settings
+        #endif
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
 
