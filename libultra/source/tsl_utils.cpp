@@ -1008,68 +1008,80 @@ namespace ult {
     
     
     std::atomic<bool> refreshWallpaper(false);
-    std::vector<u8> wallpaperData;
+    std::vector<u8> wallpaperData; 
     std::atomic<bool> inPlot(false);
     
     std::mutex wallpaperMutex;
     std::condition_variable cv;
     
     
-    
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
         size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
-        size_t compressedDataSize = originalDataSize / 2; // Half the size because we store two 4-bit values per byte
+        size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
         
         wallpaperData.resize(compressedDataSize);
-        
+    
         if (!isFileOrDirectory(filePath)) {
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
+            wallpaperData.clear();
             return;
         }
-
+    
         #if NO_FSTREAM_DIRECTIVE
             FILE* file = fopen(filePath.c_str(), "rb");
             if (!file) {
                 wallpaperData.clear();
                 return;
             }
-            
-            std::vector<uint8_t> tempData(originalDataSize);
-            size_t bytesRead = fread(tempData.data(), 1, originalDataSize, file);
+    
+            std::vector<uint8_t> buffer(originalDataSize);
+            size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
             fclose(file);
-            
+    
             if (bytesRead != originalDataSize) {
                 wallpaperData.clear();
                 return;
             }
+    
         #else
             std::ifstream file(filePath, std::ios::binary);
             if (!file) {
                 wallpaperData.clear();
                 return;
             }
-            
-            std::vector<uint8_t> tempData(originalDataSize);
-            file.read(reinterpret_cast<char*>(tempData.data()), originalDataSize);
+    
+            std::vector<uint8_t> buffer(originalDataSize);
+            file.read(reinterpret_cast<char*>(buffer.data()), originalDataSize);
             if (!file) {
                 wallpaperData.clear();
                 return;
             }
         #endif
-        
-        // Compress the RGBA data by combining two 4-bit values into each byte
-        for (size_t i = 0, j = 0; i < originalDataSize; i += 4, j++) {
-            uint8_t red = tempData[i] >> 4;        // Take the upper 4 bits
-            uint8_t green = tempData[i + 1] >> 4;  // Take the upper 4 bits
-            uint8_t blue = tempData[i + 2] >> 4;   // Take the upper 4 bits
-            uint8_t alpha = tempData[i + 3] >> 4;  // Take the upper 4 bits
-            
-            // Store two 4-bit values in each byte
-            wallpaperData[j * 2] = (red << 4) | green; // High nibble is red, low nibble is green
-            wallpaperData[j * 2 + 1] = (blue << 4) | alpha; // High nibble is blue, low nibble is alpha
+    
+        // Compress RGBA8888 to RGBA4444
+        uint8_t* input = buffer.data();
+        uint8_t* output = wallpaperData.data();
+    
+        for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
+            // Read 2 RGBA pixels (8 bytes)
+            uint8_t r1 = input[i] >> 4;
+            uint8_t g1 = input[i + 1] >> 4;
+            uint8_t b1 = input[i + 2] >> 4;
+            uint8_t a1 = input[i + 3] >> 4;
+    
+            uint8_t r2 = input[i + 4] >> 4;
+            uint8_t g2 = input[i + 5] >> 4;
+            uint8_t b2 = input[i + 6] >> 4;
+            uint8_t a2 = input[i + 7] >> 4;
+    
+            // Pack them into 4 bytes (2 bytes per pixel)
+            output[j] = (r1 << 4) | g1;
+            output[j + 1] = (b1 << 4) | a1;
+            output[j + 2] = (r2 << 4) | g2;
+            output[j + 3] = (b2 << 4) | a2;
         }
     }
+
 
     void loadWallpaperFileWhenSafe() {
         if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
@@ -1110,10 +1122,10 @@ namespace ult {
     
     
     // Global variables for FPS calculation
-    //double lastTimeCount = 0.0;
-    //int frameCount = 0;
-    //float fps = 0.0f;
-    //double elapsedTime = 0.0;
+    double lastTimeCount = 0.0;
+    int frameCount = 0;
+    float fps = 0.0f;
+    double elapsedTime = 0.0;
     
     bool themeIsInitialized = false; // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     
