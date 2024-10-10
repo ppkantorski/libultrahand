@@ -58,6 +58,10 @@
 
 namespace ult {
     extern std::unordered_map<std::string, std::string> translationCache;
+    bool readFileContent(const std::string& filePath, std::string& content);
+    void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result);
+    bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result);
+
     bool loadTranslationsFromJSON(const std::string& filePath);
 
     extern u16 activeHeaderHeight;
@@ -387,7 +391,7 @@ namespace ult {
     // Define the updateIfNotEmpty function
     void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
     
-    void parseLanguage(const std::string langFile);
+    void parseLanguage(const std::string& langFile);
     
     #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr);

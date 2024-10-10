@@ -460,13 +460,17 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return;
         }
     
         FILE* outputFile = fopen(tempPath.c_str(), "w");
         if (!outputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the output file: " + tempPath);
+            #endif
             fclose(inputFile);
             return;
         }
@@ -492,13 +496,17 @@ namespace ult {
     #else
         std::ifstream inputFile(filePath);
         if (!inputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return;
         }
     
         std::ofstream outputFile(tempPath);
         if (!outputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the output file: " + tempPath);
+            #endif
             return;
         }
     
@@ -735,14 +743,18 @@ namespace ult {
         // Use C-style file handling if NO_FSTREAM_DIRECTIVE is defined
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Failed to open INI file for reading.");
+            #endif
             return;
         }
     
         std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Failed to create a temporary file.");
+            #endif
             fclose(inputFile);
             return;
         }
@@ -777,14 +789,18 @@ namespace ult {
         // Use C++ streams if NO_FSTREAM_DIRECTIVE is not defined
         std::ifstream inputFile(filePath);
         if (!inputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Failed to open INI file for reading.");
+            #endif
             return;
         }
     
         std::string tempPath = filePath + ".tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Failed to create a temporary file.");
+            #endif
             return;
         }
     
@@ -813,12 +829,16 @@ namespace ult {
     
         // Replace the original file with the temp file
         if (std::remove(filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file.");
+            #endif
             return;
         }
     
         if (std::rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file.");
+            #endif
         }
     }
     
@@ -838,14 +858,18 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return;
         }
     
         std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             fclose(configFile);
             return;
         }
@@ -869,14 +893,18 @@ namespace ult {
     #else
         std::ifstream configFile(filePath);
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return;
         }
     
         std::string tempPath = filePath + ".tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             return;
         }
     
@@ -897,12 +925,16 @@ namespace ult {
     
         // Replace the original file with the modified temporary file
         if (remove(filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file: " + filePath);
+            #endif
             return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file: " + tempPath);
+            #endif
         }
     }
 
@@ -922,14 +954,18 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             fclose(configFile);
             return; // Handle the error accordingly
         }
@@ -957,14 +993,18 @@ namespace ult {
     #else
         std::ifstream configFile(filePath);
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         std::string tempPath = filePath + ".tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             return; // Handle the error accordingly
         }
     
@@ -990,12 +1030,16 @@ namespace ult {
     
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file: " + tempPath);
+            #endif
             // Handle the error accordingly
         }
     }
@@ -1007,14 +1051,18 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             fclose(configFile);
             return; // Handle the error accordingly
         }
@@ -1044,14 +1092,18 @@ namespace ult {
     #else
         std::ifstream configFile(filePath);
         if (!configFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         std::string tempPath = filePath + ".tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
+            #endif
             return; // Handle the error accordingly
         }
     
@@ -1079,12 +1131,16 @@ namespace ult {
     
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file: " + filePath);
+            #endif
             return; // Handle the error accordingly
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file: " + tempPath);
+            #endif
             // Handle the error accordingly
         }
     }

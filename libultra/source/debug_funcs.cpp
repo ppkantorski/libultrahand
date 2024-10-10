@@ -9,6 +9,7 @@
 #include "debug_funcs.hpp"
 
 namespace ult {
+    #if USING_LOGGING_DIRECTIVE
     // Define static variables
     std::string logFilePath = defaultLogFilePath; 
     bool disableLogging = true;
@@ -54,4 +55,5 @@ namespace ult {
         }
         #endif
     }
+    #endif
 }

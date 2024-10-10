@@ -98,8 +98,11 @@ namespace ult {
     void createDirectory(const std::string& directoryPath);
     
     
+    #if NO_FSTREAM_DIRECTIVE
+    void writeLog(FILE* logFile, const std::string& line);
+    #else
     void writeLog(std::ofstream& logFile, const std::string& line);
-    
+    #endif
     
     /**
      * @brief Creates a text file with the specified content.

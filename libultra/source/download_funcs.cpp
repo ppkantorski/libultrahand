@@ -82,7 +82,9 @@ extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_
 void initializeCurl() {
     CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
     if (res != CURLE_OK) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
+        #endif
         // Handle error appropriately, possibly exit the program
     }
 }
@@ -104,7 +106,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     abortDownload.store(false);
 
     if (url.find_first_of("{}") != std::string::npos) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Invalid URL: " + url);
+        #endif
         return false;
     }
 
@@ -115,7 +119,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         if (lastSlash != std::string::npos) {
             destination += url.substr(lastSlash + 1);
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Invalid URL: " + url);
+            #endif
             return false;
         }
     } else {
@@ -128,21 +134,27 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     // Use ofstream if NO_FSTREAM_DIRECTIVE is not defined
     std::ofstream file(tempFilePath, std::ios::binary);
     if (!file.is_open()) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
+        #endif
         return false;
     }
 #else
     // Alternative method of opening file (depending on your platform, like using POSIX open())
     int file = open(tempFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     if (file < 0) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
+        #endif
         return false;
     }
 #endif
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error initializing curl.");
+        #endif
 #ifndef NO_FSTREAM_DIRECTIVE
         file.close();
 #else
@@ -153,6 +165,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     downloadPercentage.store(0, std::memory_order_release);
 
+    
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
 #ifndef NO_FSTREAM_DIRECTIVE
@@ -179,7 +192,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #endif
 
     if (result != CURLE_OK) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
         return false;
@@ -188,7 +203,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
     std::ifstream checkFile(tempFilePath);
     if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error downloading file: Empty file");
+        #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
         checkFile.close();
@@ -199,7 +216,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     // Alternative method for checking if the file is empty (POSIX example)
     struct stat fileStat;
     if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error downloading file: Empty file");
+        #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
         return false;
@@ -244,7 +263,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     std::unique_ptr<ZZIP_DIR, ZzipDirDeleter> dir(zzip_dir_open(zipFilePath.c_str(), nullptr));
     if (!dir) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening zip file: " + zipFilePath);
+        #endif
         return false;
     }
 
@@ -261,7 +282,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // Close and reopen the directory for extraction
     dir.reset(zzip_dir_open(zipFilePath.c_str(), nullptr));
     if (!dir) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Failed to reopen zip file: " + zipFilePath);
+        #endif
         return false;
     }
 
@@ -306,7 +329,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         // Reset the unique_ptr before opening a new file
         file.reset(zzip_file_open(dir.get(), entry.d_name, 0));
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error opening file in zip: " + fileName);
+            #endif
             success = false;
             continue;
         }
@@ -314,14 +339,18 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         #if NO_FSTREAM_DIRECTIVE
         outputFile = fopen(extractedFilePath.c_str(), "wb");
         if (!outputFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error opening output file: " + extractedFilePath);
+            #endif
             success = false;
             continue;
         }
         #else
         outputFile.open(extractedFilePath, std::ios::binary);
         if (!outputFile.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error opening output file: " + extractedFilePath);
+            #endif
             success = false;
             continue;
         }
@@ -329,8 +358,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
         while ((bytesRead = zzip_file_read(file.get(), buffer, UNZIP_BUFFER_SIZE)) > 0) {
             if (abortUnzip.load(std::memory_order_acquire)) {
+                #if USING_LOGGING_DIRECTIVE
                 logMessage("Aborting unzip operation during file extraction.");
-                
+                #endif
+
                 #if NO_FSTREAM_DIRECTIVE
                 fclose(outputFile); // Close file handle for FILE*
                 #else
@@ -348,7 +379,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             outputFile.write(buffer, bytesRead); // Write to std::ofstream
             #endif
 
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Extracted: " + extractedFilePath);
+            #endif
 
             currentUncompressedSize += bytesRead;
 

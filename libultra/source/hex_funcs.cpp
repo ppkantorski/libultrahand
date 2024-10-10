@@ -279,7 +279,9 @@ namespace ult {
         // Open the file for both reading and writing in binary mode
         FILE* file = fopen(filePath.c_str(), "rb+");
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
+            #endif
             return;
         }
     
@@ -289,7 +291,9 @@ namespace ult {
         fseek(file, 0, SEEK_SET);
     
         if (offset >= fileSize) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Offset exceeds file size.");
+            #endif
             fclose(file);
             return;
         }
@@ -306,7 +310,9 @@ namespace ult {
         fseek(file, offset, SEEK_SET);
         size_t bytesWritten = fwrite(binaryData.data(), sizeof(unsigned char), binaryData.size(), file);
         if (bytesWritten != binaryData.size()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to write data to the file.");
+            #endif
             fclose(file);
             return;
         }
@@ -316,7 +322,9 @@ namespace ult {
         // Open the file for both reading and writing in binary mode
         std::fstream file(filePath, std::ios::binary | std::ios::in | std::ios::out);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
+            #endif
             return;
         }
     
@@ -326,7 +334,9 @@ namespace ult {
         file.seekg(0, std::ios::beg);
     
         if (offset >= fileSize) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Offset exceeds file size.");
+            #endif
             return;
         }
     
@@ -342,7 +352,9 @@ namespace ult {
         file.seekp(offset);
         file.write(reinterpret_cast<const char*>(binaryData.data()), binaryData.size());
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to write data to the file.");
+            #endif
             return;
         }
     
@@ -397,7 +409,9 @@ namespace ult {
                 // Convert 'hexSum' to a string and add it to the cache
                 hexSumCache[cacheKey] = std::to_string(hexSum);
             } else {
+                #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
+                #endif
                 return;
             }
         }
@@ -408,7 +422,9 @@ namespace ult {
             //int sum = hexSum + std::stoi(offsetStr);
             hexEditByOffset(filePath, std::to_string(hexSum + std::stoi(offsetStr)), hexDataReplacement);
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to find " + customAsciiPattern + ".");
+            #endif
         }
     }
     
@@ -443,7 +459,9 @@ namespace ult {
                     hexEditByOffset(filePath, offsetStrs[occurrence - 1], hexDataReplacement);
                 } else {
                     // Invalid occurrence/index specified
+                    #if USING_LOGGING_DIRECTIVE
                     logMessage("Invalid hex occurrence/index specified.");
+                    #endif
                 }
             }
             //std::cout << "Hex data replaced successfully." << std::endl;
@@ -476,7 +494,9 @@ namespace ult {
                 hexSum = std::stoi(offsets[occurrence]);
                 hexSumCache[cacheKey] = std::to_string(hexSum);
             } else {
+                #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
+                #endif
                 return "";
             }
         }
@@ -489,13 +509,17 @@ namespace ult {
         // Open the file for reading in binary mode
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
+            #endif
             return "";
         }
     
         // Move to the total offset
         if (fseek(file, totalOffset, SEEK_SET) != 0) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error seeking to offset.");
+            #endif
             fclose(file);
             return "";
         }
@@ -509,7 +533,9 @@ namespace ult {
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
             }
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error reading data from file or end of file reached.");
+            #endif
             fclose(file);
             return "";
         }
@@ -519,14 +545,18 @@ namespace ult {
         // Open the file for reading in binary mode
         std::ifstream file(filePath, std::ios::binary);
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
+            #endif
             return "";
         }
     
         // Move to the total offset
         file.seekg(totalOffset);
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error seeking to offset.");
+            #endif
             return "";
         }
     
@@ -539,7 +569,9 @@ namespace ult {
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
             }
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error reading data from file or end of file reached.");
+            #endif
             return "";
         }
     

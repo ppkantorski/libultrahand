@@ -58,7 +58,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return lines; // Return empty vector
         }
     
@@ -73,7 +75,9 @@ namespace ult {
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return lines; // Return empty vector
         }
     
@@ -94,7 +98,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(listPath.c_str(), "r");  // Open the file in text mode
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + listPath);
+            #endif
             return ""; // Return an empty string if the file cannot be opened
         }
     
@@ -113,7 +119,9 @@ namespace ult {
     #else
         std::ifstream file(listPath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + listPath);
+            #endif
             return ""; // Return an empty string if the file cannot be opened
         }
     
@@ -170,7 +178,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return lines; // Return empty set if the file cannot be opened
         }
     
@@ -185,7 +195,9 @@ namespace ult {
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return lines; // Return empty set if the file cannot be opened
         }
     
@@ -206,7 +218,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");  // Open the file in write mode
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
+            #endif
             return;  // Exit if the file cannot be opened
         }
     
@@ -223,7 +237,9 @@ namespace ult {
             }
             file.close();  // Close the file after writing
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
+            #endif
         }
     #endif
     }
@@ -252,7 +268,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");  // Open the file in read mode
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return;  // Exit if the file cannot be opened
         }
     
@@ -270,7 +288,9 @@ namespace ult {
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
             return;  // Exit if the file cannot be opened
         }
     

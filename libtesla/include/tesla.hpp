@@ -44,7 +44,6 @@
 #include <switch.h>
 #include <arm_neon.h>
 
-#include <stdlib.h>
 #include <strings.h>
 #include <math.h>
 
@@ -785,7 +784,7 @@ namespace tsl {
              * @param c Original color
              * @return Color with applied opacity
              */
-            inline static Color a(const Color& c) {
+            static Color a(const Color& c) {
                 u8 alpha = (disableTransparency && useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
                 return (c.rgba & 0x0FFF) | (alpha << 12);
             }
@@ -1306,7 +1305,7 @@ namespace tsl {
              * @param h Bitmap height
              * @param bmp Pointer to bitmap data
              */
-            void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
+            inline void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
                 for (s32 y1 = 0; y1 < h; y1++) {
                     for (s32 x1 = 0; x1 < w; x1++) {
                         const Color color = { static_cast<u8>(bmp[0] >> 4), static_cast<u8>(bmp[1] >> 4), static_cast<u8>(bmp[2] >> 4), static_cast<u8>(bmp[3] >> 4) };
@@ -1704,7 +1703,7 @@ namespace tsl {
 
             #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
-            void drawWidget() {
+            inline void drawWidget() {
                 // Draw clock if it's not hidden
                 static timespec currentTime;
                 static char timeStr[20]; // Allocate a buffer to store the time string
@@ -2792,18 +2791,7 @@ namespace tsl {
         OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
                 activeHeaderHeight = 97;
-                // Load the bitmap file into memory
-                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    // Lock the mutex for condition waiting
-                    std::unique_lock<std::mutex> lock(wallpaperMutex);
-
-                    // Wait for inPlot to be false before reloading the wallpaper
-                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                        loadWallpaperFile(WALLPAPER_PATH);
-                    }
-                }
+                loadWallpaperFile(WALLPAPER_PATH);
 
                 m_isItem = false;
             }
@@ -3168,17 +3156,7 @@ namespace tsl {
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
                 activeHeaderHeight = headerHeight;
                 // Load the bitmap file into memory
-                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    // Lock the mutex for condition waiting
-                    std::unique_lock<std::mutex> lock(wallpaperMutex);
-
-                    // Wait for inPlot to be false before reloading the wallpaper
-                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                        loadWallpaperFile(WALLPAPER_PATH);
-                    }
-                }
+                loadWallpaperFile(WALLPAPER_PATH);
                 m_isItem = false;
 
             }
@@ -4119,9 +4097,13 @@ namespace tsl {
              *
              * @param text Initial description text
              */
-            ListItem(const std::string& text, const std::string& value = "", const u32& listItemHeight = tsl::style::ListItemDefaultHeight)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(listItemHeight) {
+            ListItem(const std::string& text, const std::string& value = "", const bool isMini = false)
+                : Element(), m_text(text), m_value(value) {
                 m_isItem = true;
+                if (isMini) {
+                    m_listItemHeight = style::MiniListItemDefaultHeight;
+                }
+
                 applyLangReplacements(this->m_text);
                 applyLangReplacements(this->m_value, true);
 
@@ -4378,7 +4360,7 @@ namespace tsl {
             std::string m_value = "";
             std::string m_scrollText = "";
             std::string m_ellipsisText = "";
-            u32 m_listItemHeight;
+            u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
 
             bool m_scroll = false;
             bool m_trunctuated = false;
@@ -5686,17 +5668,7 @@ namespace tsl {
                 tsl::initializeThemeVars();
                 
                 // Load the bitmap file into memory
-                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    // Lock the mutex for condition waiting
-                    std::unique_lock<std::mutex> lock(wallpaperMutex);
-                    
-                    // Wait for inPlot to be false before reloading the wallpaper
-                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-                    
-                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                        loadWallpaperFile(WALLPAPER_PATH);
-                    }
-                }
+                loadWallpaperFile(WALLPAPER_PATH);
                 #endif
             }
             #endif
@@ -5882,7 +5854,7 @@ namespace tsl {
          * This should be called instead of directly calling initServices().
          */
         void initialize() {
-            #ifdef UI_OVERRIDE_PATH
+        #ifdef UI_OVERRIDE_PATH
 
             std::string UI_PATH = UI_OVERRIDE_PATH;
             preprocessPath(UI_PATH);
@@ -5901,7 +5873,7 @@ namespace tsl {
                 WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
             if (isFileOrDirectory(TRANSLATION_JSON_PATH))
                 loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
-            #endif
+        #endif
 
             //initializeThemeVars(); // Initialize variables for ultrahand themes
             #if IS_LAUNCHER_DIRECTIVE
@@ -7062,8 +7034,8 @@ extern "C" {
             splInitialize();
             spsmInitialize();
             //i2cInitialize();
-            ASSERT_FATAL(socketInitializeDefault());
-            ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
+            //ASSERT_FATAL(socketInitializeDefault());
+            //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
         });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
     }
@@ -7074,8 +7046,8 @@ extern "C" {
      */
     void __appExit(void) {
         
-        socketExit();
-        nifmExit();
+        //socketExit();
+        //nifmExit();
         spsmExit();
         splExit();
         fsdevUnmountAll();

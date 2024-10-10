@@ -81,7 +81,9 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* cheatFile = fopen(cheatFilePath.c_str(), "a");  // Open the cheat file in append mode
         if (!cheatFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            #endif
             return;  // Handle the error accordingly
         }
     
@@ -90,7 +92,9 @@ namespace ult {
     #else
         std::ofstream cheatFile(cheatFilePath, std::ios::app);
         if (!cheatFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            #endif
             return;  // Handle the error accordingly
         }
     
@@ -162,12 +166,16 @@ namespace ult {
      * @return True if the conversion was successful, false otherwise.
      */
     bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName, std::string outCheatPath) {
+        #if USING_LOGGING_DIRECTIVE
         logMessage("Starting pchtxt2cheat with pchtxtPath: " + pchtxtPath);
+        #endif
     
     #ifdef NO_FSTREAM_DIRECTIVE
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
             return false;
         }
     
@@ -181,7 +189,9 @@ namespace ult {
     #else
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
             return false;
         }
     
@@ -190,7 +200,9 @@ namespace ult {
     
         size_t nsobidPos = pchtxt.find("@nsobid-");
         if (nsobidPos == std::string::npos) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Could not find bid in pchtxt file, the file is likely invalid.");
+            #endif
             return false;
         }
     
@@ -199,7 +211,9 @@ namespace ult {
     
         std::string tid = findTitleID(pchtxt);
         if (tid.empty()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Could not find TID in pchtxt file, the file is likely invalid.");
+            #endif
             return false;
         }
     
@@ -245,13 +259,17 @@ namespace ult {
     #ifdef NO_FSTREAM_DIRECTIVE
         FILE* outCheatFile = fopen(cheatFilePath.c_str(), "a");
         if (!outCheatFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to create cheat file " + cheatFilePath);
+            #endif
             return false;
         }
     #else
         std::ofstream outCheatFile(cheatFilePath, std::ios::app);
         if (!outCheatFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to create cheat file " + cheatFilePath);
+            #endif
             return false;
         }
     #endif
@@ -379,7 +397,9 @@ namespace ult {
         // Use FILE* for reading
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
             return false;
         }
     
@@ -446,7 +466,9 @@ namespace ult {
         // Use fstream for reading
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
             return false;
         }
     
@@ -521,7 +543,9 @@ namespace ult {
         // Use FILE* for writing
         FILE* ipsFile = fopen(ipsFilePath.c_str(), "wb");
         if (!ipsFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to create IPS file " + ipsFilePath);
+            #endif
             return false;
         }
     
@@ -544,7 +568,9 @@ namespace ult {
         // Use fstream for writing
         std::ofstream ipsFile(ipsFilePath, std::ios::binary);
         if (!ipsFile) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to create IPS file " + ipsFilePath);
+            #endif
             return false;
         }
     

@@ -24,30 +24,81 @@ namespace ult {
     
     std::unordered_map<std::string, std::string> translationCache;
     
-    // Function to load translations from a JSON file into the translation cache
-    bool loadTranslationsFromJSON(const std::string& filePath) {
-        // Read the JSON data from the file using the existing utility function
-        json_t* root = readJsonFromFile(filePath);
-        if (!root || !json_is_object(root)) {
-            if (root) {
-                json_decref(root);
+
+    // Helper function to read file content into a string
+    bool readFileContent(const std::string& filePath, std::string& content) {
+        #if NO_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "r");
+            if (!file) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Failed to open JSON file: " + filePath);
+                #endif
+                return false;
             }
+            char buffer[256];
+            while (fgets(buffer, sizeof(buffer), file) != nullptr) {
+                content += buffer;
+            }
+            fclose(file);
+        #else
+            std::ifstream file(filePath);
+            if (!file.is_open()) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Failed to open JSON file: " + filePath);
+                #endif
+                return false;
+            }
+            content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            file.close();
+        #endif
+    
+        return true;
+    }
+    
+    // Helper function to parse JSON-like content into a map
+    void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result) {
+        size_t pos = 0;
+        size_t keyStart, keyEnd, colonPos, valueStart, valueEnd;
+        std::string key, value;
+    
+        while ((pos = content.find('"', pos)) != std::string::npos) {
+            keyStart = pos + 1;
+            keyEnd = content.find('"', keyStart);
+            if (keyEnd == std::string::npos) break;
+    
+            key = content.substr(keyStart, keyEnd - keyStart);
+            colonPos = content.find(':', keyEnd);
+            if (colonPos == std::string::npos) break;
+    
+            valueStart = content.find('"', colonPos);
+            valueEnd = content.find('"', valueStart + 1);
+            if (valueStart == std::string::npos || valueEnd == std::string::npos) break;
+    
+            value = content.substr(valueStart + 1, valueEnd - valueStart - 1);
+            result[key] = value;
+    
+            pos = valueEnd + 1; // Move to the next key-value pair
+        }
+    }
+    
+    // Function to parse JSON key-value pairs into a map
+    bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result) {
+        std::string content;
+        if (!readFileContent(filePath, content)) {
             return false;
         }
     
-        // Iterate over the JSON object
-        const char* key;
-        json_t* value;
-        json_object_foreach(root, key, value) {
-            if (json_is_string(value)) {
-                translationCache[key] = json_string_value(value);
-            }
-        }
-    
-        // Decrease reference count to free the memory
-        json_decref(root);
+        parseJsonContent(content, result);
         return true;
     }
+    
+    // Function to load translations from a JSON-like file into the translation cache
+    bool loadTranslationsFromJSON(const std::string& filePath) {
+        
+        return parseJsonToMap(filePath, translationCache);
+    }
+    
+
     
     
     
@@ -242,44 +293,6 @@ namespace ult {
         }
     }
     
-    
-    // For improving the speed of hexing consecutively with the same file and asciiPattern.
-    //std::unordered_map<std::string, std::string> hexSumCache;
-    
-    //std::string highlightColor1Str = "#2288CC";;
-    //std::string highlightColor2Str = "#88FFFF";;
-    
-    
-    //std::chrono::milliseconds interpolateKeyEventInterval(std::chrono::milliseconds duration) {
-    //    using namespace std::chrono;
-    //
-    //    const milliseconds threshold1 = milliseconds(2000);
-    //    const milliseconds threshold2 = milliseconds(3000);
-    //
-    //    const milliseconds interval1 = milliseconds(80);
-    //    const milliseconds interval2 = milliseconds(20);
-    //    const milliseconds interval3 = milliseconds(10);
-    //
-    //    if (duration > threshold2) {
-    //        return interval3;
-    //    } else if (duration > threshold1) {
-    //        double factor = double(duration.count() - threshold1.count()) / double(threshold2.count() - threshold1.count());
-    //        return milliseconds(static_cast<int>(interval2.count() + factor * (interval3.count() - interval2.count())));
-    //    } else {
-    //        double factor = double(duration.count()) / double(threshold1.count());
-    //        return milliseconds(static_cast<int>(interval1.count() + factor * (interval2.count() - interval1.count())));
-    //    }
-    //}
-    
-    //float customRound(float num) {
-    //    if (num >= 0) {
-    //        return floor(num + 0.5);
-    //    } else {
-    //        return ceil(num - 0.5);
-    //    }
-    //}
-    
-    // English string definitions
     
     const std::string whiteColor = "#FFFFFF";
     const std::string blackColor = "#000000";
@@ -597,19 +610,23 @@ namespace ult {
     
     
     
-    
-    // Define the updateIfNotEmpty function
-    void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData) {
-        std::string newValue = getStringFromJson(jsonData, jsonKey);
+    // Function to update a constant if the new value from JSON is not empty
+    void updateIfNotEmpty(std::string& constant, const std::string& newValue) {
         if (!newValue.empty()) {
             constant = newValue;
         }
     }
-    
-    void parseLanguage(const std::string langFile) {
-        json_t* langData = readJsonFromFile(langFile);
-        if (!langData)
+
+    void parseLanguage(const std::string& langFile) {
+        // Map to store parsed JSON data
+        std::unordered_map<std::string, std::string> jsonMap;
+        if (!parseJsonToMap(langFile, jsonMap)) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to parse language file: " + langFile);
+            #endif
             return;
+        }
+
         
         static std::unordered_map<std::string, std::string*> configMap = {
             #if IS_LAUNCHER_DIRECTIVE
@@ -769,13 +786,10 @@ namespace ult {
     
         // Iterate over the map to update global variables
         for (auto& kv : configMap) {
-            updateIfNotEmpty(*kv.second, kv.first.c_str(), langData);
-        }
-    
-        // Free langData
-        if (langData != nullptr) {
-            json_decref(langData);
-            langData = nullptr;
+            auto it = jsonMap.find(kv.first);
+            if (it != jsonMap.end()) {
+                updateIfNotEmpty(*kv.second, it->second);
+            }
         }
     }
     
@@ -1113,61 +1127,73 @@ namespace ult {
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        // Calculate the size of the bitmap in bytes
-        size_t dataSize = width * height * 4; // 4 bytes per pixel (RGBA8888)
         
-        // Resize the wallpaperData vector to the required size
-        wallpaperData.resize(dataSize);
-        
-        if (!isFileOrDirectory(filePath)) {
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
-            return;
-        }
-    
-    #if NO_FSTREAM_DIRECTIVE
-        // Open the file using FILE*
-        FILE* file = fopen(filePath.c_str(), "rb");
-        if (!file) {
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
-            return;
-        }
-        
-        // Read the file content into the wallpaperData buffer
-        size_t bytesRead = fread(wallpaperData.data(), 1, dataSize, file);
-        if (bytesRead != dataSize) {
-            wallpaperData.clear(); // Clear wallpaperData if reading failed
-            fclose(file);
-            return;
-        }
-        
-        fclose(file);
-    #else
-        // Open the file in binary mode using std::ifstream
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file) {
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
-            return;
-        }
-        
-        // Read the file content into the wallpaperData buffer
-        file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
-        if (!file) {
-            wallpaperData.clear(); // Clear wallpaperData if reading failed
-            return;
-        }
-    #endif
-    
-        // Preprocess the bitmap data by shifting the color values
-        for (size_t i = 0; i < dataSize; i += 4) {
-            // Shift the color values to reduce precision (if needed)
-            wallpaperData[i] >>= 4;     // Red
-            wallpaperData[i + 1] >>= 4; // Green
-            wallpaperData[i + 2] >>= 4; // Blue
-            wallpaperData[i + 3] >>= 4; // Alpha
+        // Load the bitmap file into memory
+        if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
+            // Lock the mutex for condition waiting
+            std::unique_lock<std::mutex> lock(wallpaperMutex);
+
+            // Wait for inPlot to be false before reloading the wallpaper
+            cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
+
+            if (wallpaperData.empty() && isFileOrDirectory(filePath)) {
+                // Calculate the size of the bitmap in bytes
+                size_t dataSize = width * height * 4; // 4 bytes per pixel (RGBA8888)
+                
+                // Resize the wallpaperData vector to the required size
+                wallpaperData.resize(dataSize);
+                
+                if (!isFileOrDirectory(filePath)) {
+                    wallpaperData.clear(); // Clear wallpaperData if loading failed
+                    return;
+                }
+            
+            #if NO_FSTREAM_DIRECTIVE
+                // Open the file using FILE*
+                FILE* file = fopen(filePath.c_str(), "rb");
+                if (!file) {
+                    wallpaperData.clear(); // Clear wallpaperData if loading failed
+                    return;
+                }
+                
+                // Read the file content into the wallpaperData buffer
+                size_t bytesRead = fread(wallpaperData.data(), 1, dataSize, file);
+                if (bytesRead != dataSize) {
+                    wallpaperData.clear(); // Clear wallpaperData if reading failed
+                    fclose(file);
+                    return;
+                }
+                
+                fclose(file);
+            #else
+                // Open the file in binary mode using std::ifstream
+                std::ifstream file(filePath, std::ios::binary);
+                if (!file) {
+                    wallpaperData.clear(); // Clear wallpaperData if loading failed
+                    return;
+                }
+                
+                // Read the file content into the wallpaperData buffer
+                file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
+                if (!file) {
+                    wallpaperData.clear(); // Clear wallpaperData if reading failed
+                    return;
+                }
+            #endif
+            
+                // Preprocess the bitmap data by shifting the color values
+                for (size_t i = 0; i < dataSize; i += 4) {
+                    // Shift the color values to reduce precision (if needed)
+                    wallpaperData[i] >>= 4;     // Red
+                    wallpaperData[i + 1] >>= 4; // Green
+                    wallpaperData[i + 2] >>= 4; // Blue
+                    wallpaperData[i + 3] >>= 4; // Alpha
+                }
+            }
         }
     }
-    
-    
+
+
     void reloadWallpaper() {
         // Signal that wallpaper is being refreshed
         refreshWallpaper.store(true, std::memory_order_release);

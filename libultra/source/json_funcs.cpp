@@ -101,7 +101,9 @@ namespace ult {
         json_t* jsonObj = json_loads(input.c_str(), 0, &error);
     
         if (!jsonObj) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + std::to_string(error.line));
+            #endif
             return nullptr; // Return nullptr to indicate failure clearly
         }
     
@@ -137,7 +139,9 @@ namespace ult {
         // Load JSON from file using a smart pointer
         std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
         if (!root) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to load JSON file from path: " + filePath);
+            #endif
             return "";
         }
     
@@ -149,7 +153,9 @@ namespace ult {
         if (value) {
             return std::string(value);
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Key not found or not a string in JSON: " + key);
+            #endif
             return "";
         }
     }

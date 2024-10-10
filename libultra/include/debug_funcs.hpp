@@ -29,6 +29,8 @@
 #include <ctime>
 
 namespace ult {
+    #if USING_LOGGING_DIRECTIVE
+
     // Specify the log file path
     const std::string defaultLogFilePath;
     
@@ -44,6 +46,7 @@ namespace ult {
      * @param message The message to be logged.
      */
     void logMessage(const std::string& message);
+    #endif
 }
 
 #endif // DEBUG_FUNCS_HPP
