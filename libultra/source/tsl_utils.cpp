@@ -1122,10 +1122,10 @@ namespace ult {
     
     
     // Global variables for FPS calculation
-    double lastTimeCount = 0.0;
-    int frameCount = 0;
-    float fps = 0.0f;
-    double elapsedTime = 0.0;
+    //double lastTimeCount = 0.0;
+    //int frameCount = 0;
+    //float fps = 0.0f;
+    //double elapsedTime = 0.0;
     
     bool themeIsInitialized = false; // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     

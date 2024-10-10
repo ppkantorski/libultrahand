@@ -442,10 +442,10 @@ namespace ult {
     void reloadWallpaper();
     
     // Global variables for FPS calculation
-    extern double lastTimeCount;
-    extern int frameCount;
-    extern float fps;
-    extern double elapsedTime;
+    //extern double lastTimeCount;
+    //extern int frameCount;
+    //extern float fps;
+    //extern double elapsedTime;
     
     
     extern bool themeIsInitialized;

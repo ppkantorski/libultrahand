@@ -2851,18 +2851,18 @@ namespace tsl {
 
             
             // Function to calculate FPS
-            void updateFPS(double currentTimeCount) {
-                static double lastUpdateTime = currentTimeCount;
-            
-                frameCount++;
-                elapsedTime = currentTimeCount - lastUpdateTime;
-            
-                if (elapsedTime >= 1.0) { // Update FPS every second
-                    fps = frameCount / static_cast<float>(elapsedTime);
-                    lastUpdateTime = currentTimeCount;
-                    frameCount = 0;
-                }
-            }
+            //void updateFPS(double currentTimeCount) {
+            //    static double lastUpdateTime = currentTimeCount;
+            //
+            //    frameCount++;
+            //    elapsedTime = currentTimeCount - lastUpdateTime;
+            //
+            //    if (elapsedTime >= 1.0) { // Update FPS every second
+            //        fps = frameCount / static_cast<float>(elapsedTime);
+            //        lastUpdateTime = currentTimeCount;
+            //        frameCount = 0;
+            //    }
+            //}
             
             // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
@@ -3090,33 +3090,33 @@ namespace tsl {
                 // Render the text with special character handling
                 renderer->drawStringWithColoredSections(menuBottomLine, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
                 
-                if (true) {
-                    // Update FPS
-                    updateFPS(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
-                
-                    // Convert FPS to string
-                    std::ostringstream fpsStream;
-                    fpsStream << std::fixed << std::setprecision(2) << "FPS: " << fps;
-                    std::string fpsString = fpsStream.str();
-                    
-                    // Draw FPS string at the bottom left corner
-                    renderer->drawString(fpsString, false, 20, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF))); // Adjust position and color as needed
-                    
-                    //svcGetSystemInfo(&RAM_Used_system_u, 1, INVALID_HANDLE, 2);
-                    //svcGetSystemInfo(&RAM_Total_system_u, 0, INVALID_HANDLE, 2);
-                    //
-                    //float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-                    //float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-                    //
-                    //// Convert RAM usage to strings
-                    //std::ostringstream ramStream;
-                    //ramStream << std::fixed << std::setprecision(2)
-                    //          << RAM_Total_system_f - RAM_Used_system_f - 8.0 << " MB free (8 MB reserved)";
-                    //std::string ramString = ramStream.str();
-                    //
-                    //
-                    //renderer->drawString(ramString.c_str(), false, 130, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF))); // Adjust position and color as needed
-                }
+                //if (true) {
+                //    // Update FPS
+                //    updateFPS(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+                //
+                //    // Convert FPS to string
+                //    std::ostringstream fpsStream;
+                //    fpsStream << std::fixed << std::setprecision(2) << "FPS: " << fps;
+                //    std::string fpsString = fpsStream.str();
+                //    
+                //    // Draw FPS string at the bottom left corner
+                //    renderer->drawString(fpsString, false, 20, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF))); // Adjust position and color as needed
+                //    
+                //    //svcGetSystemInfo(&RAM_Used_system_u, 1, INVALID_HANDLE, 2);
+                //    //svcGetSystemInfo(&RAM_Total_system_u, 0, INVALID_HANDLE, 2);
+                //    //
+                //    //float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
+                //    //float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
+                //    //
+                //    //// Convert RAM usage to strings
+                //    //std::ostringstream ramStream;
+                //    //ramStream << std::fixed << std::setprecision(2)
+                //    //          << RAM_Total_system_f - RAM_Used_system_f - 8.0 << " MB free (8 MB reserved)";
+                //    //std::string ramString = ramStream.str();
+                //    //
+                //    //
+                //    //renderer->drawString(ramString.c_str(), false, 130, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF))); // Adjust position and color as needed
+                //}
 
                 
                 if (this->m_contentElement != nullptr)
