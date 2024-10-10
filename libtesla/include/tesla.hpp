@@ -5193,36 +5193,37 @@ namespace tsl {
                         return true;
                     }
                     
-                    if ((keysDown & HidNpadButton_AnyLeft) || (keysDown & HidNpadButton_AnyRight))  {
-                        if (keysHeld & HidNpadButton_AnyLeft) {
-                            if (this->m_value > m_minValue) {
-                                this->m_index--;
-                                this->m_value--;
-                                this->m_valueChangedListener(this->m_value);
-                                if (m_executeOnEveryTick) {
-                                    updateAndExecute(false);
-                                }
-                                lastUpdate = std::chrono::steady_clock::now();
-                                return true;
-                            }
-                        }
-                        
-                        if (keysHeld & HidNpadButton_AnyRight) {
-                            if (this->m_value < m_maxValue) {
-                                this->m_index++;
-                                this->m_value++;
-                                this->m_valueChangedListener(this->m_value);
-                                if (m_executeOnEveryTick) {
-                                    updateAndExecute(false);
-                                }
-                                lastUpdate = std::chrono::steady_clock::now();
-                                return true;
-                            }
-                        }
-                    }
-
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
                         return true;
+                    
+                    if (keysDown & HidNpadButton_AnyLeft && keysDown & HidNpadButton_AnyRight)
+                        return true;
+                    
+                    if (keysDown & HidNpadButton_AnyLeft) {
+                        if (this->m_value > m_minValue) {
+                            this->m_index--;
+                            this->m_value--;
+                            this->m_valueChangedListener(this->m_value);
+                            if (m_executeOnEveryTick) {
+                                updateAndExecute(false);
+                            }
+                            lastUpdate = std::chrono::steady_clock::now();
+                            return true;
+                        }
+                    }
+                    
+                    if (keysDown & HidNpadButton_AnyRight) {
+                        if (this->m_value < m_maxValue) {
+                            this->m_index++;
+                            this->m_value++;
+                            this->m_valueChangedListener(this->m_value);
+                            if (m_executeOnEveryTick) {
+                                updateAndExecute(false);
+                            }
+                            lastUpdate = std::chrono::steady_clock::now();
+                            return true;
+                        }
+                    }
                     
                     // Check if the button is being held down
                     if ((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)) {
