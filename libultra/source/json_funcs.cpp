@@ -27,6 +27,31 @@ namespace ult {
      * @return A `json_t` object representing the parsed JSON data. Returns `nullptr` on error.
      */
     json_t* readJsonFromFile(const std::string& filePath) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "rb");  // Open the file in binary mode
+        if (!file) {
+            // Optionally log: Failed to open file
+            return nullptr;
+        }
+    
+        // Move to the end of the file to determine its size
+        fseek(file, 0, SEEK_END);
+        size_t fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);  // Move back to the start of the file
+    
+        std::string content;
+        content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
+    
+        // Read the file into the string's buffer
+        size_t bytesRead = fread(&content[0], 1, fileSize, file);
+        if (bytesRead != fileSize) {
+            // Optionally log: Failed to read file
+            fclose(file);  // Close the file before returning
+            return nullptr;
+        }
+    
+        fclose(file);  // Close the file after reading
+    #else
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open()) {
             // Optionally log: Failed to open file
@@ -47,6 +72,7 @@ namespace ult {
         }
     
         file.close();  // Close the file after reading
+    #endif
     
         // Parse the JSON content
         json_error_t error;
@@ -59,7 +85,7 @@ namespace ult {
         // Optionally log: JSON file successfully parsed
         return root;
     }
-    
+
     
     /**
      * @brief Parses a JSON string into a json_t object.
@@ -75,7 +101,9 @@ namespace ult {
         json_t* jsonObj = json_loads(input.c_str(), 0, &error);
     
         if (!jsonObj) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + std::to_string(error.line));
+            #endif
             return nullptr; // Return nullptr to indicate failure clearly
         }
     
@@ -111,7 +139,9 @@ namespace ult {
         // Load JSON from file using a smart pointer
         std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
         if (!root) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to load JSON file from path: " + filePath);
+            #endif
             return "";
         }
     
@@ -123,7 +153,9 @@ namespace ult {
         if (value) {
             return std::string(value);
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Key not found or not a string in JSON: " + key);
+            #endif
             return "";
         }
     }

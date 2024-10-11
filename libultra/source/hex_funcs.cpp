@@ -175,7 +175,47 @@ namespace ult {
     std::vector<std::string> findHexDataOffsets(const std::string& filePath, const std::string& hexData) {
         std::vector<std::string> offsets;
     
+    #if NO_FSTREAM_DIRECTIVE
         // Open the file for reading in binary mode
+        FILE* file = fopen(filePath.c_str(), "rb");
+        if (!file) {
+            return offsets; // Return empty vector if file cannot be opened
+        }
+    
+        // Get the file size
+        fseek(file, 0, SEEK_END);
+        size_t fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
+    
+        // Convert the hex data string to binary data
+        std::vector<unsigned char> binaryData;
+        if (hexData.length() % 2 != 0) {
+            fclose(file);
+            return offsets; // Ensure hexData has an even length
+        }
+        
+        for (size_t i = 0; i < hexData.length(); i += 2) {
+            std::string byteString = hexData.substr(i, 2);
+            binaryData.push_back(static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
+        }
+    
+        // Read the file in chunks to find the offsets where the hex data is located
+        std::vector<unsigned char> buffer(HEX_BUFFER_SIZE);
+        size_t bytesRead = 0;
+        size_t offset = 0;
+    
+        while ((bytesRead = fread(buffer.data(), 1, HEX_BUFFER_SIZE, file)) > 0) {
+            for (size_t i = 0; i < bytesRead; ++i) {
+                if (offset + i + binaryData.size() <= fileSize && 
+                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
+                    offsets.push_back(std::to_string(offset + i));
+                }
+            }
+            offset += bytesRead;
+        }
+    
+        fclose(file);
+    #else
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open()) {
             return offsets; // Return empty vector if file cannot be opened
@@ -192,15 +232,13 @@ namespace ult {
             file.close();
             return offsets; // Ensure hexData has an even length
         }
-        std::string byteString;
+    
         for (size_t i = 0; i < hexData.length(); i += 2) {
-            byteString = hexData.substr(i, 2);
-            //unsigned char byte = static_cast<unsigned char>(std::stoi(byteString, nullptr, 16));
+            std::string byteString = hexData.substr(i, 2);
             binaryData.push_back(static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
         }
     
         // Read the file in chunks to find the offsets where the hex data is located
-        //constexpr size_t hexBufferSize = 4096*4; // Arbitrary buffer size, can be adjusted
         std::vector<unsigned char> buffer(HEX_BUFFER_SIZE);
         size_t bytesRead = 0;
         size_t offset = 0;
@@ -208,7 +246,8 @@ namespace ult {
         while (file.read(reinterpret_cast<char*>(buffer.data()), HEX_BUFFER_SIZE)) {
             bytesRead = file.gcount();
             for (size_t i = 0; i < bytesRead; ++i) {
-                if (offset + i + binaryData.size() <= fileSize && std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
+                if (offset + i + binaryData.size() <= fileSize && 
+                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
                     offsets.push_back(std::to_string(offset + i));
                 }
             }
@@ -216,9 +255,11 @@ namespace ult {
         }
     
         file.close();
+    #endif
+    
         return offsets;
     }
-    
+
     
     
     /**
@@ -228,26 +269,32 @@ namespace ult {
      * the data at that offset with the provided hexadecimal data.
      *
      * @param filePath The path to the binary file.
-     * @param offsetStr The offset in the file to performthe edit.
+     * @param offsetStr The offset in the file to perform the edit.
      * @param hexData The hexadecimal data to replace at the offset.
      */
     void hexEditByOffset(const std::string& filePath, const std::string& offsetStr, const std::string& hexData) {
         std::streampos offset = std::stoll(offsetStr);
     
+    #if NO_FSTREAM_DIRECTIVE
         // Open the file for both reading and writing in binary mode
-        std::fstream file(filePath, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file.is_open()) {
+        FILE* file = fopen(filePath.c_str(), "rb+");
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
+            #endif
             return;
         }
     
         // Retrieve the file size
-        file.seekg(0, std::ios::end);
-        std::streampos fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
+        fseek(file, 0, SEEK_END);
+        std::streampos fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
     
         if (offset >= fileSize) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Offset exceeds file size.");
+            #endif
+            fclose(file);
             return;
         }
     
@@ -259,17 +306,62 @@ namespace ult {
             binaryData[j] = static_cast<unsigned char>(std::stoi(byteString, nullptr, 16));
         }
     
-        // Move to the specified offset
-        file.seekg(offset);
+        // Move to the specified offset and write the binary data directly to the file
+        fseek(file, offset, SEEK_SET);
+        size_t bytesWritten = fwrite(binaryData.data(), sizeof(unsigned char), binaryData.size(), file);
+        if (bytesWritten != binaryData.size()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to write data to the file.");
+            #endif
+            fclose(file);
+            return;
+        }
     
-        // Write the binary data directly to the file at the offset
+        fclose(file);
+    #else
+        // Open the file for both reading and writing in binary mode
+        std::fstream file(filePath, std::ios::binary | std::ios::in | std::ios::out);
+        if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open the file.");
+            #endif
+            return;
+        }
+    
+        // Retrieve the file size
+        file.seekg(0, std::ios::end);
+        std::streampos fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+    
+        if (offset >= fileSize) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Offset exceeds file size.");
+            #endif
+            return;
+        }
+    
+        // Convert the hex string to binary data
+        std::vector<unsigned char> binaryData(hexData.length() / 2);
+        std::string byteString;
+        for (size_t i = 0, j = 0; i < hexData.length(); i += 2, ++j) {
+            byteString = hexData.substr(i, 2);
+            binaryData[j] = static_cast<unsigned char>(std::stoi(byteString, nullptr, 16));
+        }
+    
+        // Move to the specified offset and write the binary data directly to the file
         file.seekp(offset);
         file.write(reinterpret_cast<const char*>(binaryData.data()), binaryData.size());
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to write data to the file.");
+            #endif
             return;
         }
+    
+        file.close();
+    #endif
     }
+    
     
     /**
      * @brief Edits a specific offset in a file with custom hexadecimal data.
@@ -317,7 +409,9 @@ namespace ult {
                 // Convert 'hexSum' to a string and add it to the cache
                 hexSumCache[cacheKey] = std::to_string(hexSum);
             } else {
+                #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
+                #endif
                 return;
             }
         }
@@ -328,7 +422,9 @@ namespace ult {
             //int sum = hexSum + std::stoi(offsetStr);
             hexEditByOffset(filePath, std::to_string(hexSum + std::stoi(offsetStr)), hexDataReplacement);
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to find " + customAsciiPattern + ".");
+            #endif
         }
     }
     
@@ -363,7 +459,9 @@ namespace ult {
                     hexEditByOffset(filePath, offsetStrs[occurrence - 1], hexDataReplacement);
                 } else {
                     // Invalid occurrence/index specified
+                    #if USING_LOGGING_DIRECTIVE
                     logMessage("Invalid hex occurrence/index specified.");
+                    #endif
                 }
             }
             //std::cout << "Hex data replaced successfully." << std::endl;
@@ -391,32 +489,78 @@ namespace ult {
         } else {
             std::string customHexPattern = asciiToHex(customAsciiPattern); // Function should cache its results if expensive
             std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern); // Consider optimizing this search
-            
+    
             if (!offsets.empty() && offsets.size() > occurrence) {
                 hexSum = std::stoi(offsets[occurrence]);
                 hexSumCache[cacheKey] = std::to_string(hexSum);
             } else {
+                #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
+                #endif
                 return "";
             }
         }
-        
+    
         std::streampos totalOffset = hexSum + std::stoll(offsetStr);
         std::vector<char> hexBuffer(length);
         std::vector<char> hexStream(length * 2);
     
-        std::ifstream file(filePath, std::ios::binary);
+    #if NO_FSTREAM_DIRECTIVE
+        // Open the file for reading in binary mode
+        FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the file.");
-            return "";
-        }
-        
-        file.seekg(totalOffset);
-        if (!file) {
-            logMessage("Error seeking to offset.");
+            #endif
             return "";
         }
     
+        // Move to the total offset
+        if (fseek(file, totalOffset, SEEK_SET) != 0) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error seeking to offset.");
+            #endif
+            fclose(file);
+            return "";
+        }
+    
+        // Read the data into hexBuffer
+        size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
+        if (bytesRead == length) {
+            const char hexDigits[] = "0123456789ABCDEF";
+            for (size_t i = 0; i < length; ++i) {
+                hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
+                hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
+            }
+        } else {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error reading data from file or end of file reached.");
+            #endif
+            fclose(file);
+            return "";
+        }
+    
+        fclose(file);
+    #else
+        // Open the file for reading in binary mode
+        std::ifstream file(filePath, std::ios::binary);
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open the file.");
+            #endif
+            return "";
+        }
+    
+        // Move to the total offset
+        file.seekg(totalOffset);
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error seeking to offset.");
+            #endif
+            return "";
+        }
+    
+        // Read the data into hexBuffer
         file.read(hexBuffer.data(), length);
         if (file.gcount() == static_cast<std::streamsize>(length)) {
             const char hexDigits[] = "0123456789ABCDEF";
@@ -425,11 +569,15 @@ namespace ult {
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
             }
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Error reading data from file or end of file reached.");
+            #endif
             return "";
         }
     
         file.close();
+    #endif
+    
         std::string result(hexStream.begin(), hexStream.end());
         std::transform(result.begin(), result.end(), result.begin(), ::toupper);
     
@@ -494,12 +642,42 @@ namespace ult {
     }
     
     
-    
+        
+    /**
+     * @brief Extracts the version string from a binary file.
+     *
+     * This function reads a binary file and searches for a version pattern
+     * in the format "v#.#.#" (e.g., "v1.2.3").
+     *
+     * @param filePath The path to the binary file.
+     * @return The version string if found; otherwise, an empty string.
+     */
     std::string extractVersionFromBinary(const std::string &filePath) {
+    #if NO_FSTREAM_DIRECTIVE
+        // Step 1: Open the binary file
+        FILE* file = fopen(filePath.c_str(), "rb");
+        if (!file) {
+            return ""; // Return empty string if file cannot be opened
+        }
+    
+        // Get the file size
+        fseek(file, 0, SEEK_END);
+        std::streamsize size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+    
+        // Read the entire file into a buffer
+        std::vector<uint8_t> buffer(size);
+        size_t bytesRead = fread(buffer.data(), sizeof(uint8_t), size, file);
+        fclose(file); // Close the file after reading
+    
+        if (bytesRead != static_cast<size_t>(size)) {
+            return ""; // Return empty string if reading fails
+        }
+    #else
         // Step 1: Read the entire binary file into a vector
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
-            return "";
+            return ""; // Return empty string if file cannot be opened
         }
     
         std::streamsize size = file.tellg();
@@ -507,8 +685,9 @@ namespace ult {
     
         std::vector<uint8_t> buffer(size);
         if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-            return "";
+            return ""; // Return empty string if reading fails
         }
+    #endif
     
         // Step 2: Search for the pattern "v#.#.#"
         const char* data = reinterpret_cast<const char*>(buffer.data());
@@ -519,8 +698,7 @@ namespace ult {
                 std::isdigit(data[i + 5])) {
     
                 // Extract the version string
-                //std::string version(data + i, 6);
-                return std::string(data + i, 6);
+                return std::string(data + i, 6); // Return the version string
             }
         }
     

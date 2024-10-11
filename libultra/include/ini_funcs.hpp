@@ -21,7 +21,12 @@
 #ifndef INI_FUNCS_HPP
 #define INI_FUNCS_HPP
 
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <stdio.h>
+#else
 #include <fstream>
+#endif
+
 #include <cstring>  // For std::string, strlen(), etc.
 #include <string>   // For std::string
 #include <vector>   // For std::vector

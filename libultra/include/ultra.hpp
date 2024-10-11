@@ -23,10 +23,11 @@
  ********************************************************************************/
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 #ifndef ULTRA_HPP
 #define ULTRA_HPP
-#include <string>
-#include <vector>
 
 // Include all functional headers used in the libUltra library
 #include "global_vars.hpp"

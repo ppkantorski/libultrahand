@@ -1,6 +1,36 @@
+/********************************************************************************
+ * File: tsl_utils.hpp
+ * Author: ppkantorski
+ * Description: 
+ *   'tsl_utils.hpp' is a central utility header for the Ultrahand Overlay project,
+ *   containing a variety of functions and definitions related to system status,
+ *   input handling, and application-specific behavior on the Nintendo Switch.
+ *   This header provides essential utilities for interacting with the system,
+ *   managing key input, and enhancing overlay functionality.
+ *
+ *   The utilities defined here are designed to operate independently, facilitating
+ *   robust system interaction capabilities required for custom overlays.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository:
+ *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
+ *
+ *   Note: This notice is integral to the project's documentation and must not be 
+ *   altered or removed.
+ *
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
+
 #pragma once
 #ifndef TSL_UTILS_HPP
 #define TSL_UTILS_HPP
+
+#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
+#include <stdio.h>
+#else
+#include <fstream>
+#endif
 
 #include <ultra.hpp>
 #include <switch.h>
@@ -27,18 +57,27 @@
 
 
 namespace ult {
-    
+    extern std::unordered_map<std::string, std::string> translationCache;
+    bool readFileContent(const std::string& filePath, std::string& content);
+    void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result);
+    bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result);
+
+    bool loadTranslationsFromJSON(const std::string& filePath);
+
+    extern u16 activeHeaderHeight;
+
     bool consoleIsDocked();
     
     std::string getTitleIdAsString();
     
-    extern bool isLauncher;
+    //extern bool isLauncher;
     extern bool internalTouchReleased;
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool noClickableItems;
-    
+
+
     
     // Define the duration boundaries (for smooth scrolling)
     extern const std::chrono::milliseconds initialInterval;  // Example initial interval
@@ -184,6 +223,7 @@ namespace ult {
     constexpr float _M_PI = 3.14159265358979323846;
     constexpr float RAD_TO_DEG = 180.0f / _M_PI;
     
+    #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;
     extern std::string SPANISH;
     extern std::string FRENCH;
@@ -197,8 +237,7 @@ namespace ult {
     extern std::string POLISH;
     extern std::string SIMPLIFIED_CHINESE;
     extern std::string TRADITIONAL_CHINESE;
-    extern std::string DEFAULT_CHAR_WIDTH;
-    extern std::string UNAVAILABLE_SELECTION;
+
     extern std::string OVERLAYS; //defined in libTesla now
     extern std::string OVERLAY;
     extern std::string HIDDEN_OVERLAYS;
@@ -216,6 +255,7 @@ namespace ult {
     extern std::string SETTINGS;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
+
     extern std::string WIDGET;
     extern std::string CLOCK;
     extern std::string BATTERY;
@@ -256,22 +296,14 @@ namespace ult {
     extern std::string OVERLAY_VERSIONS;
     extern std::string PACKAGE_VERSIONS;
     extern std::string OPAQUE_SCREENSHOTS;
-    extern std::string ON;
-    extern std::string OFF;
+
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
     extern std::string _VERSION;
     extern std::string _CREATOR;
     extern std::string _ABOUT;
     extern std::string _CREDITS;
-    extern std::string OK;
-    extern std::string BACK;
-    extern std::string REBOOT_TO;
-    extern std::string REBOOT;
-    extern std::string SHUTDOWN;
-    extern std::string BOOT_ENTRY;
-    extern std::string GAP_1;
-    extern std::string GAP_2;
+
     extern std::string USERGUIDE_OFFSET;
     extern std::string SETTINGS_MENU;
     extern std::string SCRIPT_OVERLAY;
@@ -284,9 +316,29 @@ namespace ult {
     extern std::string SWIPE_TO_OPEN;
     extern std::string RIGHT_SIDE_MODE;
     extern std::string PROGRESS_ANIMATION;
+
+    extern std::string REBOOT_TO;
+    extern std::string REBOOT;
+    extern std::string SHUTDOWN;
+    extern std::string BOOT_ENTRY;
+    #endif
+
+    extern std::string DEFAULT_CHAR_WIDTH;
+    extern std::string UNAVAILABLE_SELECTION;
+
+    extern std::string ON;
+    extern std::string OFF;
+
+    extern std::string OK;
+    extern std::string BACK;
+
+    extern std::string GAP_1;
+    extern std::string GAP_2;
+    
+
     extern std::string EMPTY;
     
-    
+    #if USING_WIDGET_DIRECTIVE
     extern std::string SUNDAY;
     extern std::string MONDAY;
     extern std::string TUESDAY;
@@ -328,30 +380,32 @@ namespace ult {
     extern std::string OCT;
     extern std::string NOV;
     extern std::string DEC;
-
+    #endif
     
+    #if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars();
-    
+    #endif
     
     
     // Define the updateIfNotEmpty function
     void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
     
-    void parseLanguage(const std::string langFile);
+    void parseLanguage(const std::string& langFile);
     
-    
+    #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr);
-    
+    #endif
+
     // Unified function to apply replacements
     void applyLangReplacements(std::string& text, bool isValue = false);
     
     
     
     //// Map of character widths (pre-calibrated)
-    extern std::unordered_map<wchar_t, float> characterWidths;
+    //extern std::unordered_map<wchar_t, float> characterWidths;
     
-    extern float defaultNumericCharWidth;
+    //extern float defaultNumericCharWidth;
     
     
     
@@ -383,15 +437,19 @@ namespace ult {
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
-    
+    void loadWallpaperFileWhenSafe();
+
+    void reloadWallpaper();
     
     // Global variables for FPS calculation
-    //double lastTimeCount = 0.0;
-    //int frameCount = 0;
-    //float fps = 0.0f;
-    //double elapsedTime = 0.0;
+    //extern double lastTimeCount;
+    //extern int frameCount;
+    //extern float fps;
+    //extern double elapsedTime;
     
     
+    extern bool themeIsInitialized;
+
     // Variables for touch commands
     extern bool touchingBack;
     extern bool touchingSelect;
@@ -410,7 +468,7 @@ namespace ult {
     extern bool touchInBounds;
     
     
-    
+    #if USING_WIDGET_DIRECTIVE
     // Battery implementation
     extern bool powerInitialized;
     extern bool powerCacheInitialized;
@@ -430,12 +488,10 @@ namespace ult {
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging);
     
-    
-    
     void powerInit(void);
     
     void powerExit(void);
-    
+    #endif
     
     // Temperature Implementation
     extern float PCB_temperature, SOC_temperature;
@@ -474,7 +530,9 @@ namespace ult {
     //static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars();
+    #endif
     
     extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
     
@@ -484,8 +542,9 @@ namespace ult {
     
     extern std::string versionLabel;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeVersionLabels();
-    
+    #endif
     
     
     // Number of renderer threads to use

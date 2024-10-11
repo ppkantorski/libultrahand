@@ -44,7 +44,6 @@
 #include <switch.h>
 #include <arm_neon.h>
 
-#include <stdlib.h>
 #include <strings.h>
 #include <math.h>
 
@@ -62,10 +61,6 @@
 #include <map>
 #include <barrier>
 
-//static bool debugFPS = true;
-
-//uint64_t RAM_Used_system_u = 0;
-//uint64_t RAM_Total_system_u = 0;
 
 using namespace ult;
 
@@ -86,8 +81,7 @@ using namespace ult;
 
 #pragma GCC diagnostic pop
 
-#define ELEMENT_BOUNDS(elem) elem->getX()+4, elem->getY(), elem->getWidth()-8, elem->getHeight()
-#define ELEMENT_BOUNDS_2(elem) elem->getX()+4, elem->getY()+4, elem->getWidth(), elem->getHeight()+10
+#define ELEMENT_BOUNDS(elem) elem->getX(), elem->getY(), elem->getWidth(), elem->getHeight()
 
 #define ASSERT_EXIT(x) if (R_FAILED(x)) std::exit(1)
 #define ASSERT_FATAL(x) if (Result res = x; R_FAILED(res)) fatalThrow(res)
@@ -146,6 +140,7 @@ namespace tsl {
         
     };
     
+    
     inline Color GradientColor(float temperature) {
         // Ensure temperature is within the range [0, 100]
         temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
@@ -191,6 +186,7 @@ namespace tsl {
         
         return Color(r, g, b, a);
     }
+    
 
 
     inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
@@ -238,6 +234,7 @@ namespace tsl {
     
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
+        constexpr u32 MiniListItemDefaultHeight     = 40;       ///< Mini list item height
         constexpr u32 TrackBarDefaultHeight         = 84;       ///< Standard track bar height
         constexpr u8  ListItemHighlightSaturation   = 7;        ///< Maximum saturation of Listitem highlights
         constexpr u8  ListItemHighlightLength       = 22;       ///< Maximum length of Listitem highlights
@@ -258,8 +255,12 @@ namespace tsl {
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
+
+    #if IS_LAUNCHER_DIRECTIVE
     static Color logoColor1 = RGB888(whiteColor);
     static Color logoColor2 = RGB888("#F7253E");
+    #endif
+
     static size_t defaultBackgroundAlpha = 13;
     
     static Color defaultBackgroundColor = RGB888(blackColor, defaultBackgroundAlpha);
@@ -272,15 +273,18 @@ namespace tsl {
     static Color bottomTextColor = RGB888(whiteColor);
     static Color botttomSeparatorColor = RGB888(whiteColor);
 
-    static Color defaultPackageColor = RGB888("#00FF00");
+    static Color defaultOverlayColor = RGB888(whiteColor);
+    static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
     static Color clockColor = RGB888(whiteColor);
     static Color batteryColor = RGB888("#ffff45");
     static Color versionTextColor = RGB888("#AAAAAA");
     static Color onTextColor = RGB888("#00FFDD");
     static Color offTextColor = RGB888("#AAAAAA");
     
+    #if IS_LAUNCHER_DIRECTIVE
     static std::tuple<float,float,float> dynamicLogoRGB1 = hexToRGB444Floats("#00E669");
     static std::tuple<float,float,float> dynamicLogoRGB2 = hexToRGB444Floats("#8080EA");
+    #endif
 
     static bool disableSelectionBG = false;
     static bool invertBGClickColor = false;
@@ -348,9 +352,11 @@ namespace tsl {
             
             disableColorfulLogo = (getValue("disable_colorful_logo") == TRUE_STR);
             
+            #if IS_LAUNCHER_DIRECTIVE
             logoColor1 = getColor("logo_color_1");
             logoColor2 = getColor("logo_color_2");
-            
+            #endif
+
             defaultBackgroundAlpha = getAlpha("bg_alpha");
             defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
             defaultTextColor = getColor("text_color");
@@ -361,6 +367,7 @@ namespace tsl {
             buttonColor = getColor("bottom_button_color");
             bottomTextColor = getColor("bottom_text_color");
             botttomSeparatorColor = getColor("bottom_separator_color");
+            defaultOverlayColor = getColor("default_overlay_color");
             defaultPackageColor = getColor("default_package_color");
 
             clockColor = getColor("clock_color");
@@ -370,9 +377,11 @@ namespace tsl {
             onTextColor = getColor("on_text_color");
             offTextColor = getColor("off_text_color");
             
+            #if IS_LAUNCHER_DIRECTIVE
             dynamicLogoRGB1 = hexToRGB444Floats(getValue("dynamic_logo_color_1"));
             dynamicLogoRGB2 = hexToRGB444Floats(getValue("dynamic_logo_color_2"));
-            
+            #endif
+
             disableSelectionBG = (getValue("disable_selection_bg") == TRUE_STR);
             invertBGClickColor = (getValue("invert_bg_click_color") == TRUE_STR);
 
@@ -415,21 +424,40 @@ namespace tsl {
         }
     }
     
-    static void initializeUltrahandSettings() {
-        // Set Ultrahand Globals
-        useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
-        useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
+    #if IS_LAUNCHER_DIRECTIVE
+    #else
+    static void initializeUltrahandSettings() { // only needed for regular overlays
 
         std::string defaultLang = parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, DEFAULT_LANG_STR);
         defaultLang = defaultLang.empty() ? "en" : defaultLang;
 
+        #ifdef UI_OVERRIDE_PATH
+        
+        std::string UI_PATH = UI_OVERRIDE_PATH;
+        preprocessPath(UI_PATH);
+
+        const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
+        const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
+                  
+        const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
+
+        if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
+            THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
+        if (isFileOrDirectory(NEW_WALLPAPER_PATH))
+            WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+        if (isFileOrDirectory(TRANSLATION_JSON_PATH))
+            loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
+
+        #endif
+        // Set Ultrahand Globals
+        useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
+        useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
+
         std::string langFile = LANG_PATH+defaultLang+".json";
         if (isFileOrDirectory(langFile))
             parseLanguage(langFile);
-        else
-            reinitializeLangVars();
     }
-
+    #endif
     
     
     // Declarations
@@ -768,13 +796,14 @@ namespace tsl {
             
             friend class tsl::Overlay;
             
+
             /**
              * @brief Handles opacity of drawn colors for fadeout. Pass all colors through this function in order to apply opacity properly
              *
              * @param c Original color
              * @return Color with applied opacity
              */
-            inline static Color a(const Color& c) {
+            static Color a(const Color& c) {
                 u8 alpha = (disableTransparency && useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
                 return (c.rgba & 0x0FFF) | (alpha << 12);
             }
@@ -1171,57 +1200,27 @@ namespace tsl {
             
             
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
-                s32 radius = std::min(w, h) / 2;
+                // Radius is half of height to create perfect half circles on each side
+                s32 radius = h / 2;
                 s32 x_start = x + radius;
                 s32 x_end = x + w - radius;
-                s32 y_start = y + radius;
-                s32 y_end = y + h - radius;
             
                 // Draw the central rectangle excluding the corners
-                for (s32 y1 = y_start; y1 < y_end; ++y1) {
+                for (s32 y1 = y; y1 < y + h; ++y1) {
                     for (s32 x1 = x_start; x1 < x_end; ++x1) {
                         this->setPixelBlendDst(x1, y1, color);
                     }
                 }
             
-                // Draw the top and bottom rectangles excluding the corners
-                for (s32 y1 = y; y1 < y_start; ++y1) {
-                    for (s32 x1 = x_start; x1 < x_end; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-                for (s32 y1 = y_end; y1 < y + h; ++y1) {
-                    for (s32 x1 = x_start; x1 < x_end; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-            
-                // Draw the left and right rectangles excluding the corners
-                for (s32 y1 = y_start; y1 < y_end; ++y1) {
-                    for (s32 x1 = x; x1 < x_start; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                    for (s32 x1 = x_end; x1 < x + w; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
-                
-                // Draw the rounded corners ensuring smooth arcs
-                s32 radiusSquared = radius * radius;
-                s32 cornerX = x + radius;
-                s32 cornerY = y + radius;
-            
+                // Draw the rounded corners using trigonometric functions for smoothness
                 for (s32 x1 = 0; x1 < radius; ++x1) {
-                    for (s32 y1 = 0; y1 < radius; ++y1) {
-                        if ((x1 * x1 + y1 * y1) <= radiusSquared) {
-                            // Top-left corner
-                            this->setPixelBlendDst(cornerX - x1, cornerY - y1, color);
-                            // Top-right corner
-                            this->setPixelBlendDst(x + w - radius + x1, cornerY - y1, color);
-                            // Bottom-left corner
-                            this->setPixelBlendDst(cornerX - x1, y + h - radius + y1, color);
-                            // Bottom-right corner
-                            this->setPixelBlendDst(x + w - radius + x1, y + h - radius + y1, color);
+                    for (s32 y1 = 0; y1 < h; ++y1) {
+                        s32 dy = y1 - radius; // Offset from center of the circle
+                        if (x1 * x1 + dy * dy <= radius * radius) {
+                            // Left half-circle
+                            this->setPixelBlendDst(x + radius - x1, y + y1, color);
+                            // Right half-circle
+                            this->setPixelBlendDst(x + w - radius + x1, y + y1, color);
                         }
                     }
                 }
@@ -1229,37 +1228,70 @@ namespace tsl {
 
             
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, const s32 startRow, const s32 endRow) {
-                s32 bytesPerRow = screenW * 4;
+                s32 bytesPerRow = screenW * 2; // 2 bytes per pixel row due to RGBA4444
                 const s32 endX = screenW - 16;
                 
+                alignas(16) u8 redArray[16], greenArray[16], blueArray[16], alphaArray[16];
+
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
                     const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
                     s32 x1 = 0;
-                    
+            
                     // Process in chunks of 16 pixels using SIMD
                     for (; x1 <= endX; x1 += 16) {
-                        uint8x16x4_t pixelData = vld4q_u8(rowPtr + (x1 * 4));
-                        
-                        // Unroll the loop to reduce the number of operations
+                        // Load 32 bytes for 16 pixels (2 bytes per pixel)
+                        uint8x16x2_t packed = vld2q_u8(rowPtr + (x1 * 2));
+            
+                        // Unpack high and low 4-bit nibbles
+                        uint8x16_t red = vshrq_n_u8(packed.val[0], 4);
+                        uint8x16_t green = vandq_u8(packed.val[0], vdupq_n_u8(0x0F));
+                        uint8x16_t blue = vshrq_n_u8(packed.val[1], 4);
+                        uint8x16_t alpha = vandq_u8(packed.val[1], vdupq_n_u8(0x0F));
+            
+                        // Scale 4-bit values to 8-bit by multiplying by 17
+                        uint8x16_t scale = vdupq_n_u8(17);
+                        red = vmulq_u8(red, scale);
+                        green = vmulq_u8(green, scale);
+                        blue = vmulq_u8(blue, scale);
+                        alpha = vmulq_u8(alpha, scale);
+            
+                        vst1q_u8(redArray, red);
+                        vst1q_u8(greenArray, green);
+                        vst1q_u8(blueArray, blue);
+                        vst1q_u8(alphaArray, alpha);
+            
                         for (s32 i = 0; i < 16; ++i) {
                             setPixelBlendSrc(x + x1 + i, y + y1, {
-                                pixelData.val[0][i],
-                                pixelData.val[1][i],
-                                pixelData.val[2][i],
-                                pixelData.val[3][i]
+                                redArray[i],
+                                greenArray[i],
+                                blueArray[i],
+                                alphaArray[i]
                             });
                         }
                     }
+
             
                     // Handle the remaining pixels (less than 16)
                     for (s32 xRem = x1; xRem < screenW; ++xRem) {
-                        const u8 *p = rowPtr + (xRem * 4);
-                        setPixelBlendSrc(x + xRem, y + y1, {p[0], p[1], p[2], p[3]});
+                        u8 packedValue1 = rowPtr[xRem * 2];
+                        u8 packedValue2 = rowPtr[xRem * 2 + 1];
+            
+                        // Unpack and scale
+                        u8 red = ((packedValue1 >> 4) & 0x0F) * 17;
+                        u8 green = (packedValue1 & 0x0F) * 17;
+                        u8 blue = ((packedValue2 >> 4) & 0x0F) * 17;
+                        u8 alpha = (packedValue2 & 0x0F) * 17;
+            
+                        setPixelBlendSrc(x + xRem, y + y1, {red, green, blue, alpha});
                     }
                 }
-                //inPlot.store(false, std::memory_order_release);
+            
                 inPlotBarrier.arrive_and_wait(); // Wait for all threads to reach this point
             }
+            
+            
+            
+
 
 
             /**
@@ -1275,9 +1307,6 @@ namespace tsl {
              */
 
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
-                // Number of threads to use
-                //const unsigned numThreads = 3;
-                //std::vector<std::thread> threads(numThreads);
 
                 // Divide rows among threads
                 //s32 chunkSize = (screenH + numThreads - 1) / numThreads;
@@ -1314,6 +1343,7 @@ namespace tsl {
                 }
             }
 
+
             /**
              * @brief Draws a RGBA8888 bitmap from memory
              *
@@ -1323,7 +1353,7 @@ namespace tsl {
              * @param h Bitmap height
              * @param bmp Pointer to bitmap data
              */
-            void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
+            inline void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
                 for (s32 y1 = 0; y1 < h; y1++) {
                     for (s32 x1 = 0; x1 < w; x1++) {
                         const Color color = { static_cast<u8>(bmp[0] >> 4), static_cast<u8>(bmp[1] >> 4), static_cast<u8>(bmp[2] >> 4), static_cast<u8>(bmp[3] >> 4) };
@@ -1359,112 +1389,126 @@ namespace tsl {
                 int width, height;
             };
             
-            inline float calculateStringWidth(const std::string& str, const s32 fontSize, const bool fixedWidthNumbers = false) {
-                if (str.empty()) {
+            
+            inline float calculateStringWidth(const std::string& originalString, const s32 fontSize, const bool fixedWidthNumbers = false) {
+                if (originalString.empty()) {
                     return 0.0f;
                 }
-            
+
+                #ifdef UI_OVERRIDE_PATH
+                
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                const std::string& translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+                
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                }
+                
+                // Use a pointer to iterate over the translated string
+                const std::string* stringPtr = &translatedString;
+
+                #else
+
+                const std::string* stringPtr = &originalString;
+
+                #endif
+
                 float totalWidth = 0.0f;
-                std::string::size_type strPos = 0;
+
                 ssize_t codepointWidth;
                 u32 prevCharacter = 0;
                 u32 currCharacter = 0;
-                float currFontSize;
-                int xAdvance = 0, leftBearing = 0, kernAdvance = 0;
             
-                // Cache default width for numeric characters if fixedWidthNumbers is true
-                float numericCharWidth = fixedWidthNumbers ? defaultNumericCharWidth * fontSize : 0.0f;
+                static std::unordered_map<u64, Glyph> s_glyphCache;
             
-                // Prepare the font information ahead of time if possible
-                stbtt_fontinfo* currentFont = nullptr;
+                auto itStrEnd = stringPtr->cend();
+                auto itStr = stringPtr->cbegin();
             
-                // Use an iterator for characterWidths map lookup
-                auto it = characterWidths.end();
+                u64 key = 0;
+                Glyph* glyph = nullptr;
+                auto it = s_glyphCache.end();
             
-                while (strPos < str.size()) {
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&str[strPos]));
+                while (itStr != itStrEnd) {
+                    // Decode UTF-8 codepoint
+                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
                     if (codepointWidth <= 0) {
                         break;
                     }
             
-                    if (fixedWidthNumbers && std::isdigit(currCharacter)) {
-                        totalWidth += numericCharWidth;
-                    } else {
-                        // Check if the character is found in the cache
-                        it = characterWidths.find(static_cast<wchar_t>(currCharacter));
-                        if (it != characterWidths.end()) {
-                            totalWidth += it->second * fontSize;
-                        } else {
-                            if (!currentFont || !stbtt_FindGlyphIndex(currentFont, currCharacter)) {
-                                if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                                    currentFont = &this->m_extFont;
-                                } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                                    currentFont = &this->m_localFont;
-                                } else {
-                                    currentFont = &this->m_stdFont;
-                                }
-                            }
+                    // Move the iterator forward by the width of the current codepoint
+                    itStr += codepointWidth;
             
-                            currFontSize = stbtt_ScaleForPixelHeight(currentFont, fontSize);
-                            stbtt_GetCodepointHMetrics(currentFont, currCharacter, &xAdvance, &leftBearing);
-            
-                            if (prevCharacter) {
-                                kernAdvance = stbtt_GetCodepointKernAdvance(currentFont, prevCharacter, currCharacter);
-                                totalWidth += kernAdvance * currFontSize;
-                            }
-            
-                            totalWidth += xAdvance * currFontSize;
-                        }
+                    if (currCharacter == '\n') {
+                        continue;
                     }
             
-                    strPos += codepointWidth;
+                    // Calculate glyph key
+                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+            
+                    // Check cache for the glyph
+                    it = s_glyphCache.find(key);
+            
+                    // If glyph not found, create and cache it
+                    if (it == s_glyphCache.end()) {
+                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
+            
+                        // Determine the appropriate font for the character
+                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                            glyph->currFont = &this->m_extFont;
+                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                            glyph->currFont = &this->m_localFont;
+                        } else {
+                            glyph->currFont = &this->m_stdFont;
+                        }
+            
+                        glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
+                        stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
+                    } else {
+                        glyph = &it->second;
+                    }
+            
+                    if (prevCharacter) {
+                        float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
+                        totalWidth += kernAdvance * glyph->currFontSize;
+                    }
+            
+                    totalWidth += int(glyph->xAdvance * glyph->currFontSize);
+            
                     prevCharacter = currCharacter;
                 }
             
                 return totalWidth;
             }
-
-
-
-
-
-
-            /**
-             * @brief Draws a string
-             *
-             * @param string String to draw
-             * @param monospace Draw string in monospace font
-             * @param x X pos
-             * @param y Y pos
-             * @param fontSize Height of the text drawn in pixels
-             * @param color Text color. Use transparent color to skip drawing and only get the string's dimensions
-             * @return Dimensions of drawn string
-             */
+            
+            
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+                
+                #ifdef UI_OVERRIDE_PATH
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                }
+                const std::string* stringPtr = &translatedString;
+
+                #else
+                const std::string* stringPtr = &originalString;
+                #endif
+
+
                 float maxX = x;
                 float currX = x;
                 float currY = y;
                 
                 
                 // Avoid copying the original string
-                const std::string* stringPtr = &originalString;
+                //const std::string* stringPtr = &originalString;
                 
-                // Check if the string is the INPROGRESS_SYMBOL and replace with throbber symbol without copying
-                if (originalString.size() == INPROGRESS_SYMBOL.size() && originalString == INPROGRESS_SYMBOL) {
-                    // Static counter for the throbber symbols
-                    static size_t throbberCounter = 0;
-
-                    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
-                    
-                    throbberCounter++;
-
-                    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
-                    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
-                        throbberCounter = 0;
-                    }
-                }
-            
                 // Cache the end iterator for efficiency
                 auto itStrEnd = stringPtr->cend();
                 auto itStr = stringPtr->cbegin();
@@ -1570,9 +1614,7 @@ namespace tsl {
                 return { static_cast<u32>(maxX - x), static_cast<u32>(currY - y) };
             }
             
-
             
-
             
             
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
@@ -1645,9 +1687,23 @@ namespace tsl {
              * @param fontSize Size of the font
              * @param maxLength Maximum length of the string in terms of width
              */
-            inline std::string limitStringLength(const std::string& string, const bool monospace, const s32 fontSize, const s32 maxLength) {
-                if (string.size() < 2) {
-                    return string;
+            inline std::string limitStringLength(const std::string& originalString, const bool monospace, const s32 fontSize, const s32 maxLength) {
+                #ifdef UI_OVERRIDE_PATH
+                // Check for translation in the cache
+                auto translatedIt = translationCache.find(originalString);
+                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+                
+                // Cache the translation if it wasn't already present
+                if (translatedIt == translationCache.end()) {
+                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                }
+                const std::string* stringPtr = &translatedString;
+                #else
+                const std::string* stringPtr = &originalString;
+                #endif
+                
+                if (stringPtr->size() < 2) {
+                    return *stringPtr;
                 }
                 
                 s32 currX = 0;
@@ -1655,7 +1711,7 @@ namespace tsl {
                 ssize_t codepointWidth;
                 u32 ellipsisCharacter = 0x2026;  // Unicode code point for '…'
                 s32 ellipsisWidth;
-                
+            
                 // Calculate the width of the ellipsis
                 stbtt_fontinfo* ellipsisFont = &this->m_stdFont;
                 if (stbtt_FindGlyphIndex(&this->m_extFont, ellipsisCharacter)) {
@@ -1667,31 +1723,114 @@ namespace tsl {
                 int ellipsisXAdvance = 0, ellipsisYAdvance = 0;
                 stbtt_GetCodepointHMetrics(ellipsisFont, ellipsisCharacter, &ellipsisXAdvance, &ellipsisYAdvance);
                 ellipsisWidth = static_cast<s32>(ellipsisXAdvance * ellipsisFontSize);
-
+            
                 u32 currCharacter;
                 std::string substr;
-
-                while (static_cast<std::string::size_type>(strPos) < string.size() && currX + ellipsisWidth < maxLength) {
-                    
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&string[strPos]));
-                    
+            
+                while (static_cast<std::string::size_type>(strPos) < stringPtr->size() && currX + ellipsisWidth < maxLength) {
+                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*stringPtr)[strPos]));
+            
                     if (codepointWidth <= 0) {
                         break;
                     }
-                    
+            
                     // Calculate the width of the current substring plus the ellipsis
-                    substr = string.substr(0, strPos + codepointWidth);
+                    substr = stringPtr->substr(0, strPos + codepointWidth);
                     currX = calculateStringWidth(substr, fontSize, monospace);
-                    
+            
                     if (currX + ellipsisWidth >= maxLength) {
                         return substr + "…";
                     }
-                    
+            
                     strPos += codepointWidth;
                 }
-                
-                return string;
+            
+                return *stringPtr;
             }
+
+
+            #if USING_WIDGET_DIRECTIVE
+            // Method to draw clock, temperatures, and battery percentage
+            inline void drawWidget() {
+                // Draw clock if it's not hidden
+                static timespec currentTime;
+                static char timeStr[20]; // Allocate a buffer to store the time string
+                size_t y_offset = 45;
+        
+                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
+                    drawRect(245, 23, 1, 49, a(separatorColor));
+                }
+
+                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
+                    y_offset += 10;
+                }
+
+                clock_gettime(CLOCK_REALTIME, &currentTime);
+                if (!hideClock) {
+                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
+                    localizeTimeStr(timeStr);
+                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
+                    y_offset += 22;
+                }
+        
+                // Draw temperatures and battery percentage
+                static char PCB_temperatureStr[10];
+                static char SOC_temperatureStr[10];
+                static char chargeString[6];
+        
+                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
+                static size_t lastStatusChange = 0;
+                
+                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
+                    if (!hideSOCTemp) {
+                        ReadSocTemperature(&SOC_temperature);
+                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
+                    } else {
+                        strcpy(SOC_temperatureStr, "");
+                        SOC_temperature=0;
+                    }
+                    if (!hidePCBTemp) {
+                        ReadPcbTemperature(&PCB_temperature);
+                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
+                    } else {
+                        strcpy(PCB_temperatureStr, "");
+                        PCB_temperature=0;
+                    }
+                    if (!hideBattery) {
+                        powerGetDetails(&batteryCharge, &isCharging);
+                        batteryCharge = std::min(batteryCharge, 100U);
+                        sprintf(chargeString, "%d%%", batteryCharge);
+                    } else {
+                        strcpy(chargeString, "");
+                        batteryCharge=0;
+                    }
+                    timeOut = int(currentTime.tv_sec);
+                }
+                
+                lastStatusChange = statusChange;
+                
+                // Draw battery percentage
+                if (!hideBattery && batteryCharge > 0) {
+                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
+                }
+        
+                // Draw PCB and SOC temperatures
+                int offset = 0;
+                if (!hidePCBTemp && PCB_temperature > 0) {
+                    if (!hideBattery)
+                        offset -= 5;
+                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
+                }
+        
+                if (!hideSOCTemp && SOC_temperature > 0) {
+                    if (!hidePCBTemp || !hideBattery)
+                        offset -= 5;
+                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
+                }
+            }
+            #endif
 
             
         private:
@@ -1925,9 +2064,12 @@ namespace tsl {
 
                     if (horizontalUnderscanPixels == 0) {
                         s32 layerZ = 0;
-                        if (R_SUCCEEDED(viGetZOrderCountMax(&this->m_display, &layerZ)) && layerZ > 0)
+                        if (R_SUCCEEDED(viGetZOrderCountMax(&this->m_display, &layerZ)) && layerZ > 0) {
                             ASSERT_FATAL(viSetLayerZ(&this->m_layer, layerZ));
-                        else ASSERT_FATAL(viSetLayerZ(&this->m_layer, 255)); // max value 255 as fallback
+                        }
+                        else {
+                            ASSERT_FATAL(viSetLayerZ(&this->m_layer, 255)); // max value 255 as fallback
+                        }
                     } else {
                         ASSERT_FATAL(viSetLayerZ(&this->m_layer, 34)); // 34 is the edge for underscanning
                     }
@@ -2043,6 +2185,7 @@ namespace tsl {
         
     }
     
+    
     // Elements
     
     namespace elm {
@@ -2066,7 +2209,9 @@ namespace tsl {
             virtual ~Element() { }
             
             bool m_isTable = false;  // Default to false for non-table elements
-            bool m_isItem = false;
+            bool m_isItem = true;
+            
+
             std::chrono::duration<long int, std::ratio<1, 1000000000>> t;
             //double timeCounter;
             u8 saturation;
@@ -2169,7 +2314,7 @@ namespace tsl {
             void inline frame(gfx::Renderer *renderer) {
                 
                 if (this->m_focused) {
-                    renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-97);
+                    renderer->enableScissoring(0, activeHeaderHeight, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-activeHeaderHeight);
                     this->drawFocusBackground(renderer);
                     this->drawHighlight(renderer);
                     renderer->disableScissoring();
@@ -2304,7 +2449,7 @@ namespace tsl {
                 //renderer->drawRect(this->getX() + x + this->getWidth(), this->getY() + y, 4, this->getHeight(), highlightColor);
                 
                 
-                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth(), this->getHeight(), 5, 5, a(highlightColor));
+                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                     
                 //}
             }
@@ -2397,7 +2542,7 @@ namespace tsl {
                 //if ((disableSelectionBG && this->m_clickAnimationProgress == 0) || !disableSelectionBG) {
                 if (this->m_clickAnimationProgress == 0) {
                     if (!disableSelectionBG)
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
 
                     // Determine the active percentage to use
                     float activePercentage = 0.0f;
@@ -2409,13 +2554,13 @@ namespace tsl {
                         activePercentage = copyPercentage;
                     }
                     if (activePercentage > 0){
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
                         //if (copyPercentage == 100.0f) {
                         //    copyPercentage = -1;
                         //}
                     }
 
-                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth(), this->getHeight(), 5, 5, a(highlightColor));
+                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
                 //renderer->drawRect(ELEMENT_BOUNDS(this), a(0xF000)); // This has been moved here (needs to be toggleable)
                 onTrackBar = false;
@@ -2592,7 +2737,10 @@ namespace tsl {
              *
              * @param renderFunc Callback that will be called once every frame to draw this view
              */
-            CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
+            CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {
+                m_isItem = false;
+            }
+
             virtual ~CustomDrawer() {}
             
             virtual void draw(gfx::Renderer* renderer) override {
@@ -2618,6 +2766,7 @@ namespace tsl {
             TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
                 : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable) {
                     m_isTable = isScrollable;  // Mark this element as a table
+                    m_isItem = false;
                 }
             
             virtual ~TableDrawer() {}
@@ -2627,7 +2776,7 @@ namespace tsl {
                 renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 - 4);
                 
                 if (!hideTableBackground)
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-6, this->getWidth(), this->getHeight() + 20 - endGap+2, 10.0, a(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-6, this->getWidth() +2, this->getHeight() + 20 - endGap+2, 10.0, a(tableBGColor));
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
@@ -2689,21 +2838,10 @@ namespace tsl {
             
         OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
-                
-                // Load the bitmap file into memory
-                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    // Lock the mutex for condition waiting
-                    std::unique_lock<std::mutex> lock(wallpaperMutex);
+                activeHeaderHeight = 97;
+                loadWallpaperFileWhenSafe();
 
-                    // Wait for inPlot to be false before reloading the wallpaper
-                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                        loadWallpaperFile(WALLPAPER_PATH);
-                    }
-                }
-
-
+                m_isItem = false;
             }
 
             virtual ~OverlayFrame() {
@@ -2728,24 +2866,31 @@ namespace tsl {
             
             // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
+                if (!themeIsInitialized) {
+                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                    themeIsInitialized = true;
+                }
+
                 if (m_noClickableItems != noClickableItems)
                     noClickableItems = m_noClickableItems;
                 renderer->fillScreen(a(defaultBackgroundColor));
                 
                 renderer->drawWallpaper();
                 
-
                 y = 50;
                 offset = 0;
                 
+                #if IS_LAUNCHER_DIRECTIVE
                 bool isUltrahand = (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                     this->m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
                 if (isUltrahand) {
-                    // Call the extracted widget drawing method
-                    drawWidget(renderer);
 
+                    #if USING_WIDGET_DIRECTIVE
+                    // Call the extracted widget drawing method
+                    renderer->drawWidget();
+                    #endif
 
                     if (touchingMenu && inMainMenu) {
                         renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
@@ -2763,6 +2908,7 @@ namespace tsl {
                         //auto currentTime = std::chrono::steady_clock::now();
                         auto currentTimeCount = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         float progress;
+
                         for (char letter : SPLIT_PROJECT_NAME_1) {
                             counter = (2 * _M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             progress = std::sin(counter); // -1 to 1
@@ -2790,7 +2936,7 @@ namespace tsl {
                     
                 } else {
                     x = 20;
-                    y = 50;
+                    y = 52;
                     fontSize = 32;
                     if (this->m_subtitle.find("Ultrahand Package") != std::string::npos) {
                         const std::string& title = this->m_title;
@@ -2863,9 +3009,9 @@ namespace tsl {
                             drawTitle(titleColor); // Using the default titleColor
                         }
                     } else if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(this->m_title, false, 20, 50, 32, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
                     } else {
-                        renderer->drawString(this->m_title, false, 20, 50, 30, a(defaultTextColor));
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultTextColor));
                     }
 
                 }
@@ -2873,8 +3019,20 @@ namespace tsl {
                 if (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME) {
                     renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
                 } else
-                    renderer->drawString(this->m_subtitle, false, 20, y+20, 15, a(versionTextColor));
-                
+                    renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+
+                #else
+                {
+                    #if USING_WIDGET_DIRECTIVE
+                    // Call the extracted widget drawing method
+                    renderer->drawWidget();
+                    #endif
+                }
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                #endif
+
+
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
                 backWidth = renderer->calculateStringWidth(BACK, 23);
@@ -2893,11 +3051,13 @@ namespace tsl {
                     nextPageWidth = renderer->calculateStringWidth(this->m_pageLeftName, 23);
                 else if (!(this->m_pageRightName).empty())
                     nextPageWidth = renderer->calculateStringWidth(this->m_pageRightName, 23);
+                #if IS_LAUNCHER_DIRECTIVE
                 else if (inMainMenu)
                     if (inOverlaysPage)
                         nextPageWidth = renderer->calculateStringWidth(PACKAGES,23);
                     else if (inPackagesPage)
                         nextPageWidth = renderer->calculateStringWidth(OVERLAYS,23);
+                #endif
 
                 if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
                     if (touchingNextPage) {
@@ -2912,11 +3072,13 @@ namespace tsl {
                 else
                     menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
 
+                #if IS_LAUNCHER_DIRECTIVE
                 if (this->m_menuMode == "packages") {
                     menuBottomLine += "\uE0ED"+GAP_2+OVERLAYS;
                 } else if (this->m_menuMode == "overlays") {
                     menuBottomLine += "\uE0EE"+GAP_2+PACKAGES;
                 }
+                #endif
                 
                 if (!(this->m_pageLeftName).empty()) {
                     menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;
@@ -2963,86 +3125,6 @@ namespace tsl {
             }
             // CUSTOM SECTION END
 
-            // Method to draw clock, temperatures, and battery percentage
-            void drawWidget(gfx::Renderer *renderer) {
-                // Draw clock if it's not hidden
-                static timespec currentTime;
-                static char timeStr[20]; // Allocate a buffer to store the time string
-                size_t y_offset = 45;
-        
-                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
-                    renderer->drawRect(245, 23, 1, 49, a(separatorColor));
-                }
-
-                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
-                    y_offset += 10;
-                }
-
-                clock_gettime(CLOCK_REALTIME, &currentTime);
-                if (!hideClock) {
-                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
-                    localizeTimeStr(timeStr);
-                    renderer->drawString(timeStr, false, tsl::cfg::FramebufferWidth - renderer->calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
-                    y_offset += 22;
-                }
-        
-                // Draw temperatures and battery percentage
-                static char PCB_temperatureStr[10];
-                static char SOC_temperatureStr[10];
-                static char chargeString[6];
-        
-                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
-                static size_t lastStatusChange = 0;
-                
-                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
-                    if (!hideSOCTemp) {
-                        ReadSocTemperature(&SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
-                    } else {
-                        strcpy(SOC_temperatureStr, "");
-                        SOC_temperature=0;
-                    }
-                    if (!hidePCBTemp) {
-                        ReadPcbTemperature(&PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
-                    } else {
-                        strcpy(PCB_temperatureStr, "");
-                        PCB_temperature=0;
-                    }
-                    if (!hideBattery) {
-                        powerGetDetails(&batteryCharge, &isCharging);
-                        batteryCharge = std::min(batteryCharge, 100U);
-                        sprintf(chargeString, "%d%%", batteryCharge);
-                    } else {
-                        strcpy(chargeString, "");
-                        batteryCharge=0;
-                    }
-                    timeOut = int(currentTime.tv_sec);
-                }
-                
-                lastStatusChange = statusChange;
-                
-                // Draw battery percentage
-                if (!hideBattery && batteryCharge > 0) {
-                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    renderer->drawString(chargeString, false, tsl::cfg::FramebufferWidth - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
-                }
-        
-                // Draw PCB and SOC temperatures
-                int offset = 0;
-                if (!hidePCBTemp && PCB_temperature > 0) {
-                    if (!hideBattery)
-                        offset -= 5;
-                    renderer->drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - renderer->calculateStringWidth(PCB_temperatureStr, 20, true) - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
-                }
-        
-                if (!hideSOCTemp && SOC_temperature > 0) {
-                    if (!hidePCBTemp || !hideBattery)
-                        offset -= 5;
-                    renderer->drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - renderer->calculateStringWidth(SOC_temperatureStr, 20, true) - renderer->calculateStringWidth(PCB_temperatureStr, 20, true) - renderer->calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
-                }
-            }
             
             virtual inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
@@ -3118,19 +3200,12 @@ namespace tsl {
         class HeaderOverlayFrame : public Element {
         public:
             
+
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
+                activeHeaderHeight = headerHeight;
                 // Load the bitmap file into memory
-                if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    // Lock the mutex for condition waiting
-                    std::unique_lock<std::mutex> lock(wallpaperMutex);
-
-                    // Wait for inPlot to be false before reloading the wallpaper
-                    cv.wait(lock, [] { return (!inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)); });
-
-                    if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
-                        loadWallpaperFile(WALLPAPER_PATH);
-                    }
-                }
+                loadWallpaperFileWhenSafe();
+                m_isItem = false;
 
             }
             virtual ~HeaderOverlayFrame() {
@@ -3142,6 +3217,11 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
+                if (!themeIsInitialized) {
+                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                    themeIsInitialized = true;
+                }
+
                 renderer->fillScreen(a(defaultBackgroundColor));
 
                 renderer->drawWallpaper();
@@ -3179,7 +3259,7 @@ namespace tsl {
                 this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
                 
                 if (this->m_contentElement != nullptr) {
-                    this->m_contentElement->setBoundaries(parentX + 35, parentY + this->m_headerHeight, parentWidth - 85, parentHeight - 73 - this->m_headerHeight);
+                    this->m_contentElement->setBoundaries(parentX + 35, parentY + this->m_headerHeight, parentWidth - 85, parentHeight - 73 - this->m_headerHeight -8);
                     this->m_contentElement->invalidate();
                 }
                 
@@ -3258,7 +3338,9 @@ namespace tsl {
              *
              * @param color Color of the rectangle
              */
-            DebugRectangle(Color color) : Element(), m_color(color) {}
+            DebugRectangle(Color color) : Element(), m_color(color) {
+                m_isItem = false;
+            }
             virtual ~DebugRectangle() {}
             
             virtual void draw(gfx::Renderer *renderer) override {
@@ -3283,7 +3365,9 @@ namespace tsl {
              * @brief Constructor
              *
              */
-            List() : Element() {}
+            List() : Element() {
+                m_isItem = false;
+            }
             virtual ~List() {
                 for (auto& item : this->m_items)
                     delete item;
@@ -3371,7 +3455,7 @@ namespace tsl {
                     this->updateScrollOffset();
                 }
             
-                renderer->enableScissoring(this->getLeftBound(), topBound, width + 4, height + 4);
+                renderer->enableScissoring(this->getLeftBound(), topBound, width + 4 +4, height + 4);
             
                 for (auto& entry : this->m_items) {
                     if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
@@ -3998,10 +4082,10 @@ namespace tsl {
                 scrollbarOffset += 8;
                 
                 //int offset = 11;
-                renderer->drawRect(this->getRightBound() + 21, this->getY() + scrollbarOffset, 5, scrollbarHeight, a(trackBarColor));
-                renderer->drawCircle(this->getRightBound() + 23, this->getY() + scrollbarOffset, 2, true, a(trackBarColor));
+                renderer->drawRect(this->getRightBound() + 21 +4, this->getY() + scrollbarOffset, 5, scrollbarHeight, a(trackBarColor));
+                renderer->drawCircle(this->getRightBound() + 23 +4, this->getY() + scrollbarOffset, 2, true, a(trackBarColor));
                 //renderer->drawCircle(this->getRightBound() + 12 + offset, (this->getY() + scrollbarOffset + scrollbarHeight) / 2, 2, true, a(trackBarColor));
-                renderer->drawCircle(this->getRightBound() + 23, this->getY() + scrollbarOffset + scrollbarHeight, 2, true, a(trackBarColor));
+                renderer->drawCircle(this->getRightBound() + 23 +4, this->getY() + scrollbarOffset + scrollbarHeight, 2, true, a(trackBarColor));
                 
             }
             
@@ -4061,11 +4145,18 @@ namespace tsl {
              *
              * @param text Initial description text
              */
-            ListItem(const std::string& text, const std::string& value = "", const u32& listItemHeight = tsl::style::ListItemDefaultHeight)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(listItemHeight) {
+            ListItem(const std::string& text, const std::string& value = "", const bool isMini = false)
+                : Element(), m_text(text), m_value(value) {
                 m_isItem = true;
+                if (isMini) {
+                    m_listItemHeight = style::MiniListItemDefaultHeight;
+                }
+
                 applyLangReplacements(this->m_text);
                 applyLangReplacements(this->m_value, true);
+
+                convertComboToUnicode(this->m_text);
+                convertComboToUnicode(this->m_value);
             }
             virtual ~ListItem() {}
             
@@ -4074,33 +4165,36 @@ namespace tsl {
                 bool useClickTextColor = false;
                 if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
                     if (touchInBounds) {
-                        renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
+                        //renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
+                        renderer->drawRect( this->getX()+4, this->getY(), this->getWidth()-8, this->getHeight(), a(clickColor));
                         useClickTextColor = true;
                     }
                     //renderer->drawRect(ELEMENT_BOUNDS(this), tsl::style::color::ColorClickAnimation);
                 }
 
-                
-                convertComboToUnicode(this->m_text);
-                convertComboToUnicode(this->m_value);
+                //convertComboToUnicode(this->m_text);
+                //convertComboToUnicode(this->m_value);
 
                 // Calculate vertical offset to center the text
                 s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
 
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
-                        std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
+                        //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
+                        width = renderer->calculateStringWidth(this->m_value, 20);
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
-                        this->m_maxWidth = this->getWidth() - 40 -10;
+                        this->m_maxWidth = this->getWidth() - 40 -10 -12;
                     }
                     
-                    std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                    //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                    width = renderer->calculateStringWidth(this->m_text, 23);
                     this->m_trunctuated = width > this->m_maxWidth+20;
                     
                     if (this->m_trunctuated) {
                         this->m_scrollText = this->m_text + "        ";
-                        std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                        //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
+                        width = renderer->calculateStringWidth(this->m_scrollText, 23);
                         this->m_scrollText += this->m_text;
                         this->m_textWidth = width;
                         
@@ -4111,8 +4205,8 @@ namespace tsl {
                 }
                 
                 if (lastBottomBound !=  this->getTopBound())
-                    renderer->drawRect(this->getX()+4, this->getTopBound(), this->getWidth()+6, 1, a(separatorColor));
-                renderer->drawRect(this->getX()+4, this->getBottomBound(), this->getWidth()+6, 1, a(separatorColor));
+                    renderer->drawRect(this->getX()+4, this->getTopBound(), this->getWidth()+6 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX()+4, this->getBottomBound(), this->getWidth()+6 +4, 1, a(separatorColor));
 
                 lastBottomBound = this->getBottomBound();
                 
@@ -4120,9 +4214,9 @@ namespace tsl {
                 if (this->m_trunctuated) {
                     if (this->m_focused) {
                         if (this->m_value.length() > 0)
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4, tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4 , tsl::cfg::FramebufferHeight-73-97);
                         else
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6, tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
                         renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
                         renderer->disableScissoring();
                         //t = std::chrono::steady_clock::now() - this->timeIn;
@@ -4149,11 +4243,14 @@ namespace tsl {
                 
                 // CUSTOM SECTION START (modification for submenu footer color)
                 //const std::string& value = this->m_value;
-                s32 xPosition = this->getX() + this->m_maxWidth + 45 - 1;
+                s32 xPosition = this->getX() + this->m_maxWidth + 45 - 1 +4;
                 s32 yPosition = this->getY() + 45 - yOffset;
                 s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
+
+
+                static bool lastRunningInterpreter = runningInterpreter.load(std::memory_order_acquire);
 
                 // Determine text color
                 auto textColor = offTextColor;
@@ -4161,7 +4258,7 @@ namespace tsl {
                     textColor = this->m_focused
                         ? (!useClickTextColor ? (this->m_faint ? offTextColor : selectedTextColor) : a(clickTextColor))
                         : (!useClickTextColor ? (this->m_faint ? offTextColor : defaultTextColor) : a(clickTextColor));
-                } else if (runningInterpreter.load(std::memory_order_acquire) &&
+                } else if ((runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter) &&
                     (this->m_value.find(DOWNLOAD_SYMBOL) != std::string::npos ||
                      this->m_value.find(UNZIP_SYMBOL) != std::string::npos ||
                      this->m_value.find(COPY_SYMBOL) != std::string::npos ||
@@ -4174,9 +4271,28 @@ namespace tsl {
                     textColor = this->m_faint ? offTextColor : a(onTextColor);
                 }
 
-                // Draw the string with the determined text color
-                renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
-                // CUSTOM SECTION END 
+                if (this->m_value != INPROGRESS_SYMBOL) {
+                    // Draw the string with the determined text color
+                    renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
+                    // CUSTOM SECTION END 
+                } else {
+                    // Static counter for the throbber symbols
+                    static size_t throbberCounter = 0;
+                    // Avoid copying the original string
+                    const std::string* stringPtr = &this->m_value;
+
+                    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
+                    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+                    
+                    throbberCounter++;
+
+                    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
+                    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
+                        throbberCounter = 0;
+                    }
+                    renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
+                }
+                lastRunningInterpreter = runningInterpreter.load(std::memory_order_acquire);
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -4212,16 +4328,16 @@ namespace tsl {
                     this->m_touched = false;
                     
                     if (Element::getInputMode() == InputMode::Touch) {
+                        
+                        #if IS_LAUNCHER_DIRECTIVE
                         // Calculate the touch duration
                         auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
                         auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
-        
-                        // Check if the touch lasted for 3 seconds or more
-                        s64 keyToUse;
-                        if (isLauncher)
-                            keyToUse = (touchDurationInSeconds >= 1.0) ? STAR_KEY : ((touchDurationInSeconds >= 0.3) ? SETTINGS_KEY : KEY_A);
-                        else
-                            keyToUse = KEY_A;
+                        s64 keyToUse = (touchDurationInSeconds >= 1.0) ? STAR_KEY : ((touchDurationInSeconds >= 0.3) ? SETTINGS_KEY : KEY_A);
+                        #else
+                        s64 keyToUse = KEY_A;
+
+                        #endif
 
                         bool handled = this->onClick(keyToUse);
                         this->m_clickAnimationProgress = 0;
@@ -4292,7 +4408,7 @@ namespace tsl {
             std::string m_value = "";
             std::string m_scrollText = "";
             std::string m_ellipsisText = "";
-            u32 m_listItemHeight;
+            u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
 
             bool m_scroll = false;
             bool m_trunctuated = false;
@@ -4434,6 +4550,7 @@ namespace tsl {
             
             CategoryHeader(const std::string &title, bool hasSeparator = true) : m_text(title), m_hasSeparator(hasSeparator) {
                 applyLangReplacements(m_text);
+                m_isItem = false;
             }
             virtual ~CategoryHeader() {}
             
@@ -4487,13 +4604,484 @@ namespace tsl {
         
 
         /**
-         * @brief A customizable analog trackbar going from minValue to maxValue
+         * @brief A customizable analog trackbar going from 0% to 100% (like the brightness slider)
          *
          */
         class TrackBar : public Element {
         public:
-            std::chrono::steady_clock::time_point lastUpdate;
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             */
+            TrackBar(const char icon[3], bool usingStepTrackbar=false, bool usingNamedStepTrackbar = false) : m_icon(icon), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar) {
+                m_isItem = true;
+            }
+
+            virtual ~TrackBar() {}
+
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
+                return this;
+            }
+
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
+                    return true;
+
+                if (keysHeld & HidNpadButton_AnyLeft) {
+                    if (this->m_value > 0) {
+                        this->m_value--;
+                        this->m_valueChangedListener(this->m_value);
+                        return true;
+                    }
+                }
+
+                if (keysHeld & HidNpadButton_AnyRight) {
+                    if (this->m_value < 100) {
+                        this->m_value++;
+                        this->m_valueChangedListener(this->m_value);
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                u16 trackBarWidth = this->getWidth() - 95;
+                u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
+                s32 circleCenterX = this->getX() + 59 + handlePos;
+                s32 circleCenterY = this->getY() + 40 + 16 - 1;
+                s32 circleRadius = 16;
+                
+                bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                
+
+                if (event == TouchEvent::Release) {
+                    this->m_interactionLocked = false;
+                    touchInSliderBounds = false;
+                    return false;
+                }
+
+                if (!this->m_interactionLocked && (touchInCircle || touchInSliderBounds)) {
+                    touchInSliderBounds = true;
+                    if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
+                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+
+                        if (newValue < 0) {
+                            newValue = 0;
+                        } else if (newValue > 100) {
+                            newValue = 100;
+                        }
+
+                        if (newValue != this->m_value) {
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                        }
+
+                        return true;
+                    }
+                }
+                else
+                    this->m_interactionLocked = true;
+
+                return false;
+            }
+
+
+            // Define drawBar function outside the draw method
+            void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
+                if (isRounded) {
+                    renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
+                } else {
+                    renderer->drawRect(x, y, width, 7, a(color));
+                }
+            }
+
+            virtual void draw(gfx::Renderer *renderer) override {
+                static float lastBottomBound;
+                
+                s32 xPos = this->getX() + 59;
+                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 width = this->getWidth() - 95;
+                u16 handlePos = width * (this->m_value) / (100);
+
+                if (!m_usingNamedStepTrackbar) {
+                    yPos -= 11;
+                }
+
+                s32 iconOffset;
+
+                if (m_icon[0] != '\0') {
+                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    iconOffset = 14 + iconWidth;
+                    xPos += iconOffset;
+                    width -= iconOffset;
+                    handlePos = (width) * (this->m_value) / (100);
+                }
+
+                // Draw track bar background
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+
+                if (!this->m_focused) {
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                } else {
+                    touchInSliderBounds = false;
+                    unlockedSlide = m_unlockedTrackbar;
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                }
+
+
+                //renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
+                if (m_icon[0] != '\0')
+                    renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
+
+                //u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
+                //renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
+                //renderer->drawCircle(this->getX() + 60 + this->getWidth() - 95, this->getY() + 42, 2, true, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX() + 60 + handlePos, this->getY() + 40, this->getWidth() - 95 - handlePos, 5, a(tsl::style::color::ColorFrame));
+                //renderer->drawRect(this->getX() + 60, this->getY() + 40, handlePos, 5, a(tsl::style::color::ColorHighlight));
+                //
+                //renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, true, a(tsl::style::color::ColorHandle));
+                //renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, false, a(tsl::style::color::ColorFrame));
+
+
+                if (lastBottomBound != this->getTopBound())
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                lastBottomBound = this->getBottomBound();
+            }
+
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20+4, tsl::style::TrackBarDefaultHeight );
+            }
+
+            virtual void drawFocusBackground(gfx::Renderer *renderer) {
+                // No background drawn here in HOS
+            }
+
+            virtual void drawHighlight(gfx::Renderer *renderer) override {
+                
+                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                //if (allowSlide || m_unlockedTrackbar) {
+                //    highlightColor = {
+                //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                //        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                //        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                //        0xF
+                //    };
+                //} else {
+                //    highlightColor = {
+                //        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                //        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                //        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                //        0xF
+                //    };
+                //}
+                highlightColor = {
+                    static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                    static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                    static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                    0xF
+                };
+                
+                //u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
+                x = 0;
+                y = 0;
+                
+                if (this->m_highlightShaking) {
+                    t = (std::chrono::steady_clock::now() - this->m_highlightShakingStartTime);
+                    if (t >= 100ms)
+                        this->m_highlightShaking = false;
+                    else {
+                        amplitude = std::rand() % 5 + 5;
+                        
+                        switch (this->m_highlightShakingDirection) {
+                            case FocusDirection::Up:
+                                y -= shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Down:
+                                y += shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Left:
+                                x -= shakeAnimation(t, amplitude);
+                                break;
+                            case FocusDirection::Right:
+                                x += shakeAnimation(t, amplitude);
+                                break;
+                            default:
+                                break;
+                        }
+                        
+                        x = std::clamp(x, -amplitude, amplitude);
+                        y = std::clamp(y, -amplitude, amplitude);
+                    }
+                }
+
+                if (!disableSelectionBG)
+                    renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+
+                renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+
+                //if (this->m_clickAnimationProgress == 0) {
+                //    renderer->drawRect(this->getX() + 60, this->getY() + 40 + 16+2, handlePos, 5, a(tsl::style::color::ColorHighlight));
+                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 16, true, a(highlightColor));
+                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
+                //}
+
+                onTrackBar = true;
+            }
+
+            /**
+             * @brief Gets the current value of the trackbar
+             *
+             * @return State
+             */
+            virtual inline u8 getProgress() {
+                return this->m_value;
+            }
+
+            /**
+             * @brief Sets the current state of the toggle. Updates the Value
+             *
+             * @param state State
+             */
+            virtual void setProgress(u8 value) {
+                this->m_value = value;
+            }
+
+            /**
+             * @brief Adds a listener that gets called whenever the state of the toggle changes
+             *
+             * @param stateChangedListener Listener with the current state passed in as parameter
+             */
+            void setValueChangedListener(std::function<void(u8)> valueChangedListener) {
+                this->m_valueChangedListener = valueChangedListener;
+            }
+
+        protected:
+            const char *m_icon = nullptr;
+            s16 m_value = 0;
+            bool m_interactionLocked = false;
+
+            std::function<void(u8)> m_valueChangedListener = [](u8){};
+
+            bool m_usingStepTrackbar = false;
+            bool m_usingNamedStepTrackbar = false;
+            bool m_unlockedTrackbar = true;
+            bool touchInSliderBounds = false;
+        };
+
+
+        /**
+         * @brief A customizable analog trackbar going from 0% to 100% but using discrete steps (Like the volume slider)
+         *
+         */
+        class StepTrackBar : public TrackBar {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             * @param numSteps Number of steps the track bar has
+             */
+            StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false)
+                : TrackBar(icon, true, usingNamedStepTrackbar), m_numSteps(numSteps) { }
+
+            virtual ~StepTrackBar() {}
+
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                static u32 tick = 0;
+
+                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
+                    tick = 0;
+                    return true;
+                }
+
+                if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                    if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
+                        if (keysHeld & HidNpadButton_AnyLeft && this->m_value > 0) {
+                            this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
+                        } else if (keysHeld & HidNpadButton_AnyRight && this->m_value < 100) {
+                            this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
+                        } else {
+                            return false;
+                        }
+                        this->m_valueChangedListener(this->getProgress());
+                    }
+                    tick++;
+                    return true;
+                } else {
+                    tick = 0;
+                }
+
+                return false;
+            }
+
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                if (this->inBounds(initialX, initialY)) {
+                    if (currY > this->getTopBound() && currY < this->getBottomBound()) {
+                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+
+                        if (newValue < 0) {
+                            newValue = 0;
+                        } else if (newValue > 100) {
+                            newValue = 100;
+                        } else {
+                            newValue = std::round(newValue / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                        }
+
+                        if (newValue != this->m_value) {
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                        }
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            /**
+             * @brief Gets the current value of the trackbar
+             *
+             * @return State
+             */
+            virtual inline u8 getProgress() override {
+                return this->m_value / (100 / (this->m_numSteps - 1));
+            }
+
+            /**
+             * @brief Sets the current state of the toggle. Updates the Value
+             *
+             * @param state State
+             */
+            virtual void setProgress(u8 value) override {
+                value = std::min(value, u8(this->m_numSteps - 1));
+                this->m_value = value * (100 / (this->m_numSteps - 1));
+            }
+
+        protected:
+            u8 m_numSteps = 1;
+        };
+
+
+        /**
+         * @brief A customizable trackbar with multiple discrete steps with specific names. Name gets displayed above the bar
+         *
+         */
+        class NamedStepTrackBar : public StepTrackBar {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param icon Icon shown next to the track bar
+             * @param stepDescriptions Step names displayed above the track bar
+             */
+            NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions)
+                : StepTrackBar(icon, stepDescriptions.size(), true), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
+                    this->m_usingNamedStepTrackbar = true;
+                }
+
+            virtual ~NamedStepTrackBar() {}
+
+            virtual void draw(gfx::Renderer *renderer) override {
+                // TrackBar width excluding the handle areas
+                u16 trackBarWidth = this->getWidth() - 95;
+                
+                // Base X and Y coordinates
+                u16 baseX = this->getX() + 59;
+                u16 baseY = this->getY() + 44; // 50 - 3
+                
+                s32 iconOffset;
+                
+                if (m_icon[0] != '\0') {
+                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    iconOffset = 14 + iconWidth;
+                    baseX += iconOffset;
+                    trackBarWidth -= iconOffset;
+                }
+
+
+
+                // Calculate the spacing between each step
+                float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
+                
+                // Calculate the halfway point index
+                u8 halfNumSteps = (this->m_numSteps - 1) / 2;
+
+                // Draw step rectangles
+                //u16 stepX;
+                for (u8 i = 0; i < this->m_numSteps; i++) {
+                    u16 stepX = baseX + std::round(i * stepSpacing);
+                    
+                    // Subtract 1 from the X position for steps on the right side of the center
+                    if (i > halfNumSteps) {
+                        stepX -= 1;
+                    }
+
+                    // Adjust the last step to avoid overshooting
+                    if (i == this->m_numSteps - 1) {
+                        stepX = baseX + trackBarWidth -1;
+                    }
             
+                    renderer->drawRect(stepX, baseY, 1, 8, a(trackBarEmptyColor));
+                }
+                
+                u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
+
+                auto descWidth = renderer->calculateStringWidth(this->m_stepDescriptions[currentDescIndex].c_str(), 15);
+                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                
+                // Draw the parent trackbar
+                StepTrackBar::draw(renderer);
+
+
+
+
+
+                //u16 trackBarWidth = this->getWidth() - 95;
+                //u16 stepWidth = trackBarWidth / (this->m_numSteps - 1);
+                //
+                //for (u8 i = 0; i < this->m_numSteps; i++) {
+                //    renderer->drawRect(this->getX() + 60 + stepWidth * i, this->getY() + 50, 1, 10, a(tsl::style::color::ColorFrame));
+                //}
+                //
+                //u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
+                //
+                //auto [descWidth, descHeight] = renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, 0, 0, 15, tsl::style::color::ColorTransparent);
+                //renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((this->getX() + 60) + (this->getWidth() - 95) / 2) - (descWidth / 2), this->getY() + 20, 15, a(tsl::style::color::ColorDescription));
+                //
+                //StepTrackBar::draw(renderer);
+            }
+
+        protected:
+            std::vector<std::string> m_stepDescriptions;
+
+        };
+
+
+
+        /**
+         * @brief A customizable analog trackbar going from minValue to maxValue
+         *
+         */
+        class TrackBarV2 : public Element {
+        public:
+            std::chrono::steady_clock::time_point lastUpdate;
+            //std::mutex queueMutex;
+            //std::condition_variable cv;
+            //std::queue<std::function<void()>> taskQueue;
+            //std::thread workerThread;
+            //bool stopWorker = false;
+
+
             Color highlightColor = {0xf, 0xf, 0xf, 0xf};
             float progress;
             float counter = 0.0;
@@ -4503,14 +5091,16 @@ namespace tsl {
             
             
             // Ensure the order of initialization matches the order of declaration
-            TrackBar(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
-                     std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+            TrackBarV2(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
+                     std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                      std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                      std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingStepTrackbar = false, bool usingNamedStepTrackbar = false, s16 numSteps = -1, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
                 : m_label(label), m_packagePath(packagePath), m_minValue(minValue), m_maxValue(maxValue), m_units(units),
                   interpretAndExecuteCommands(executeCommands), getSourceReplacement(sourceReplacementFunc), commands(std::move(cmd)), selectedCommand(selCmd), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar), m_numSteps(numSteps), m_unlockedTrackbar(unlockedTrackbar), m_executeOnEveryTick(executeOnEveryTick) {
                 m_isItem = true;
                 
+                //workerThread = std::thread(&TrackBarV2::processQueue, this);
+
                 if ((!usingStepTrackbar && !usingNamedStepTrackbar) || numSteps == -1) {
                     m_numSteps = maxValue - minValue;
                 }
@@ -4544,62 +5134,117 @@ namespace tsl {
                 lastUpdate = std::chrono::steady_clock::now();
             }
             
-            virtual ~TrackBar() {}
+            virtual ~TrackBarV2() {
+                //{
+                //    std::lock_guard<std::mutex> lock(queueMutex);
+                //    stopWorker = true;
+                //}
+                //cv.notify_all();
+                //if (workerThread.joinable()) {
+                //    workerThread.join();
+                //}
+            }
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
-            
+
+            //void processQueue() {
+            //    while (true) {
+            //        std::function<void()> task;
+            //        {
+            //            std::unique_lock<std::mutex> lock(queueMutex);
+            //            cv.wait(lock, [this] { return !taskQueue.empty() || stopWorker; });
+            //
+            //            if (stopWorker && taskQueue.empty()) {
+            //                break;
+            //            }
+            //
+            //            if (!taskQueue.empty()) {
+            //                task = std::move(taskQueue.front());
+            //                taskQueue.pop();
+            //            }
+            //        }
+            //
+            //        if (task) {
+            //            task();  // Execute the task outside the lock
+            //        }
+            //    }
+            //}
+
+
             inline void updateAndExecute(bool updateIni = true) {
+            //inline void performUpdateAndExecute(bool updateIni) {
                 if (m_packagePath.empty()) {
                     return;
                 }
             
-                // Precompute values and reserve space
                 const std::string indexStr = std::to_string(m_index);
                 const std::string valueStr = m_usingNamedStepTrackbar ? m_selection : std::to_string(m_value);
-                
-                // Update INI file values if needed
+            
                 if (updateIni) {
                     const std::string configPath = m_packagePath + "config.ini";
                     setIniFileValue(configPath, m_label, "index", indexStr);
                     setIniFileValue(configPath, m_label, "value", valueStr);
                 }
-            
-                // Process and execute commands if needed
-                if (interpretAndExecuteCommands) {
-                    auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
-            
-                    // Prepare strings for replacements
-                    const std::string valuePlaceholder = "{value}";
-                    const std::string indexPlaceholder = "{index}";
-                    const size_t valuePlaceholderLength = valuePlaceholder.length();
-                    const size_t indexPlaceholderLength = indexPlaceholder.length();
-                    
-                    for (auto& cmd : modifiedCmds) {
-                        for (auto& arg : cmd) {
-                            // Replace {value} placeholders
-                            size_t pos = 0;
-                            while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
-                                arg.replace(pos, valuePlaceholderLength, valueStr);
-                                pos += valueStr.length();
-                            }
-            
-                            // Replace {index} placeholders if needed
-                            if (m_usingNamedStepTrackbar) {
-                                pos = 0;
-                                while ((pos = arg.find(indexPlaceholder, pos)) != std::string::npos) {
-                                    arg.replace(pos, indexPlaceholderLength, indexStr);
-                                    pos += indexStr.length();
+                bool success = false;
+
+                size_t tryCount = 0;
+                while (!success) {
+                    if (interpretAndExecuteCommands) {
+                        if (tryCount > 3)
+                            break;
+                        auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
+                        
+                        // Placeholder replacement
+                        const std::string valuePlaceholder = "{value}";
+                        const std::string indexPlaceholder = "{index}";
+                        const size_t valuePlaceholderLength = valuePlaceholder.length();
+                        const size_t indexPlaceholderLength = indexPlaceholder.length();
+                        
+                        for (auto& cmd : modifiedCmds) {
+                            for (auto& arg : cmd) {
+                                size_t pos = 0;
+                                while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
+                                    arg.replace(pos, valuePlaceholderLength, valueStr);
+                                    pos += valueStr.length();
+                                }
+                                
+                                if (m_usingNamedStepTrackbar) {
+                                    pos = 0;
+                                    while ((pos = arg.find(indexPlaceholder, pos)) != std::string::npos) {
+                                        arg.replace(pos, indexPlaceholderLength, indexStr);
+                                        pos += indexStr.length();
+                                    }
                                 }
                             }
                         }
+                        
+                        success = interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
+                        resetPercentages();
+
+                        if (success)
+                            break;
+                        tryCount++;
+                        //svcSleepThread(300'000'000);
                     }
-            
-                    // Execute commands
-                    interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
                 }
             }
+            
+            //inline void performUpdateAndExecute(bool updateIni = true) {
+            //    auto task = [this, updateIni]() {
+            //        performUpdateAndExecute(updateIni);
+            //    };
+            //    
+            //    // Add the task to the queue
+            //    {
+            //        std::lock_guard<std::mutex> lock(queueMutex);
+            //        taskQueue.push(task);
+            //    }
+            //    cv.notify_one();
+            //}
+
+
 
             
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
@@ -4611,18 +5256,30 @@ namespace tsl {
                 u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
                 
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
+                //auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - lastUpdate);
                 
+                static bool wasLastHeld = false;
+
+                if ((keysHeld & KEY_R)) {
+                    return true;
+                }
+
                 if (simulatedSelect && !simulatedSelectComplete) {
                     keysDown |= KEY_A;
                     simulatedSelect = false;
                 }
 
                 // Check if KEY_A is pressed to toggle allowSlide
-                if ((keysDown & KEY_A) && !m_unlockedTrackbar) {
-                    allowSlide = !allowSlide;
-                    holding = false; // Reset holding state when KEY_A is pressed
+                if (keysDown & KEY_A) {
+                    if (!m_unlockedTrackbar) {
+                        allowSlide = !allowSlide;
+                        holding = false; // Reset holding state when KEY_A is pressed
+                    }
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                        updateAndExecute();
+                        triggerClick = true;
+                    }
                     simulatedSelectComplete = true;
                     return true;
                 }
@@ -4630,24 +5287,58 @@ namespace tsl {
 
                 // Allow sliding only if KEY_A has been pressed
                 if (allowSlide || m_unlockedTrackbar) {
-                    if ((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) {
+
+                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
+                        (wasLastHeld && !((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)))) {
+
                         //if (!m_executeOnEveryTick)
+                        wasLastHeld = false;
                         updateAndExecute();
+                        lastUpdate = std::chrono::steady_clock::now(); 
+
                         holding = false;
                         return true;
                     }
                     
+                    if (keysDown & HidNpadButton_AnyLeft && keysDown & HidNpadButton_AnyRight)
+                        return true;
+
+                    if (keysDown & HidNpadButton_AnyLeft) {
+                        if (this->m_value > m_minValue) {
+                            this->m_index--;
+                            this->m_value--;
+                            this->m_valueChangedListener(this->m_value);
+                            updateAndExecute(false);
+                            lastUpdate = std::chrono::steady_clock::now();
+                            return true;
+                        }
+                    }
+                    
+                    if (keysDown & HidNpadButton_AnyRight) {
+                        if (this->m_value < m_maxValue) {
+                            this->m_index++;
+                            this->m_value++;
+                            this->m_valueChangedListener(this->m_value);
+                            updateAndExecute(false);
+                            lastUpdate = std::chrono::steady_clock::now();
+                            return true;
+                        }
+                    }
+
+
+
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
                         return true;
                     
                     // Check if the button is being held down
-                    if ((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)) {
+                    if (((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight))) {
+                        
                         if (!holding) {
                             holding = true;
-                            holdStartTime = now;
+                            holdStartTime = std::chrono::steady_clock::now();
                         }
                         
-                        auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - holdStartTime);
+                        auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - holdStartTime);
 
                         // Define the duration boundaries
                         //const auto initialInterval = std::chrono::milliseconds(67);  // Example initial interval
@@ -4669,7 +5360,8 @@ namespace tsl {
                                     if (m_executeOnEveryTick) {
                                         updateAndExecute(false);
                                     }
-                                    lastUpdate = now;
+                                    lastUpdate = std::chrono::steady_clock::now();
+                                    wasLastHeld = true;
                                     return true;
                                 }
                             }
@@ -4682,7 +5374,8 @@ namespace tsl {
                                     if (m_executeOnEveryTick) {
                                         updateAndExecute(false);
                                     }
-                                    lastUpdate = now;
+                                    lastUpdate = std::chrono::steady_clock::now();
+                                    wasLastHeld = true;
                                     return true;
                                 }
                             }
@@ -4702,41 +5395,54 @@ namespace tsl {
                 s32 circleCenterX = this->getX() + 59 + handlePos;
                 s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 s32 circleRadius = 16;
-            
+                
                 bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
-            
-                if (!internalTouchReleased)
+                
+                //static std::chrono::steady_clock::time_point touchStartTime;
+                //static bool holdingPosition = false;
+
+                //if (!internalTouchReleased)
+                //    return false;
+                
+                if (!m_unlockedTrackbar && !allowSlide)
                     return false;
-            
-                if (event == TouchEvent::Release) {
-                    updateAndExecute();
-                    this->m_interactionLocked = false;
-                    touchInSliderBounds = false;
-                    return false;
-                }
-            
-                if (!this->m_interactionLocked && (touchInCircle || touchInSliderBounds)) {
+
+                if ((touchInCircle || touchInSliderBounds)) {
+
                     touchInSliderBounds = true;
-            
+                    
                     s16 newIndex = static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1));
-            
+                    
                     // Clamp the index within valid range
                     newIndex = std::max(static_cast<s16>(0), std::min(newIndex, static_cast<s16>(m_numSteps - 1)));
-            
+                    
                     s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
-            
+                    
                     if (newValue != this->m_value || newIndex != this->m_index) {
+                        //touchStartTime =std::chrono::steady_clock::now();
                         this->m_value = newValue;
                         this->m_index = newIndex;
                         this->m_valueChangedListener(this->getProgress());
                         if (m_executeOnEveryTick) {
                             updateAndExecute(false);
                         }
+                        //holdingPosition = false;
+                    } else {
+                        // Check if position is held for 0.5s
+                        //auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - touchStartTime);
+                        
+                        //if (event == TouchEvent::Release || (holdDuration >= std::chrono::milliseconds(500) && !holdingPosition)) {
+                        if (event == TouchEvent::Release) {
+                            updateAndExecute();
+                            //holdingPosition = true;
+                            if (event == TouchEvent::Release)
+                                touchInSliderBounds = false;
+                        }
                     }
+
+
             
                     return true;
-                } else {
-                    this->m_interactionLocked = true;
                 }
             
                 return false;
@@ -4790,25 +5496,26 @@ namespace tsl {
                 else
                     valuePart = this->m_selection;
                 std::string combinedString = labelPart + valuePart;
-                std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                //std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                descWidth = renderer->calculateStringWidth(combinedString, 16, true);
                 
                 size_t combinedX = (xPos + width / 2) - (descWidth / 2);
                 size_t labelWidth;
-                std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
-                
+                //std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                labelWidth = renderer->calculateStringWidth(labelPart, 16, true);
 
                 renderer->drawString(labelPart, false, combinedX, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
                 renderer->drawString(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
                 
                 if (lastBottomBound != this->getTopBound())
-                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20, 1, a(separatorColor));
-                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 lastBottomBound = this->getBottomBound();
             }
 
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20, tsl::style::TrackBarDefaultHeight );
+                this->setBoundaries(this->getX() - 16 , this->getY(), this->getWidth()+20+4, tsl::style::TrackBarDefaultHeight );
             }
             
             virtual void drawFocusBackground(gfx::Renderer *renderer) {
@@ -4818,20 +5525,56 @@ namespace tsl {
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
                 progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                if (allowSlide || m_unlockedTrackbar) {
-                    highlightColor = {
-                        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
-                        0xF
-                    };
+                
+                static std::chrono::steady_clock::time_point clickStartTime;
+                static bool clickActive = false;
+            
+                Color clickColor1 = highlightColor1;
+                Color clickColor2 = clickColor;
+
+                // Activate `clickStartTime` when `triggerClick` is set to true
+                if (triggerClick && !clickActive) {
+                    clickStartTime = std::chrono::steady_clock::now();
+                    clickActive = true;
+                    // Within the cycle, perform the highlight effect
+                    if (progress >= 0.5) {
+                        clickColor1 = clickColor;
+                        clickColor2 = highlightColor2;
+                    }
+                }
+            
+
+                if (clickActive) {
+                    auto elapsedTime = std::chrono::steady_clock::now() - clickStartTime;
+                    if (elapsedTime < std::chrono::seconds(1)) {
+                        highlightColor = {
+                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
+                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
+                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b),
+                            0xF
+                        };
+                    } else {
+                        // End the effect after one cycle
+                        clickActive = false;
+                        triggerClick = false;
+                    }
                 } else {
-                    highlightColor = {
-                        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
-                        0xF
-                    };
+
+                    if (allowSlide || m_unlockedTrackbar) {
+                        highlightColor = {
+                            static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                            static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                            static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                            0xF
+                        };
+                    } else {
+                        highlightColor = {
+                            static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                            static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                            static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                            0xF
+                        };
+                    }
                 }
                 
                 //u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
@@ -4906,7 +5649,7 @@ namespace tsl {
             std::function<void(u8)> m_valueChangedListener = [](u8) {};
 
             // New member variables to store the function and its parameters
-            std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> interpretAndExecuteCommands;
+            std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> interpretAndExecuteCommands;
             std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> getSourceReplacement;
             std::vector<std::vector<std::string>> commands;
             std::string selectedCommand;
@@ -4918,6 +5661,7 @@ namespace tsl {
             bool m_unlockedTrackbar = false;
             bool m_executeOnEveryTick = false;
             bool touchInSliderBounds = false;
+            bool triggerClick = false;
         };
         
         
@@ -4925,7 +5669,7 @@ namespace tsl {
          * @brief A customizable analog trackbar going from 0% to 100% but using discrete steps (Like the volume slider)
          *
          */
-        class StepTrackBar : public TrackBar {
+        class StepTrackBarV2 : public TrackBarV2 {
         public:
 
             /**
@@ -4934,13 +5678,13 @@ namespace tsl {
              * @param icon Icon shown next to the track bar
              * @param numSteps Number of steps the track bar has
              */
-            StepTrackBar(std::string label, std::string packagePath, size_t numSteps, s16 minValue, s16 maxValue, std::string units,
-                std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+            StepTrackBarV2(std::string label, std::string packagePath, size_t numSteps, s16 minValue, s16 maxValue, std::string units,
+                std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingNamedStepTrackbar = false, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
-                : TrackBar(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
+                : TrackBarV2(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
             
-            virtual ~StepTrackBar() {}
+            virtual ~StepTrackBarV2() {}
             
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
@@ -4949,6 +5693,12 @@ namespace tsl {
                 u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
                 //static bool usingUnlockedTrackbar = m_unlockedTrackbar;
+
+                static bool wasLastHeld = false;
+
+                if ((keysHeld & KEY_R)) {
+                    return true;
+                }
 
                 if (simulatedSelect && !simulatedSelectComplete) {
                     keysDown |= KEY_A;
@@ -4964,25 +5714,35 @@ namespace tsl {
                     //    m_unlockedTrackbar = !m_unlockedTrackbar;
                     //    holding = false; // Reset holding state when KEY_A is pressed
                     }
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                        updateAndExecute();
+                        triggerClick = true;
+                    }
                     simulatedSelectComplete = true;
                     return true;
                 }
 
                 if (allowSlide || m_unlockedTrackbar) {
-                    if ((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) {
+                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
+                        (wasLastHeld && !(keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)))) {
                         //if (!m_executeOnEveryTick)
                         updateAndExecute();
                         holding = false;
+                        wasLastHeld = false;
                         tick = 0;
                         return true;
                     }
+
+                    //if ((keysDown & HidNpadButton_AnyLeft) || (keysDown & HidNpadButton_AnyRight)) {
+                    //    tick = 0;
+                    //}
                     
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
                         tick = 0;
                         return true;
                     }
                     
-                    if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight) && !(keysHeld & KEY_R)) {
+                    if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                         if (!holding) {
                             holding = true;
                             tick = 0;
@@ -5004,6 +5764,7 @@ namespace tsl {
                             this->m_valueChangedListener(this->getProgress());
                             if (m_executeOnEveryTick)
                                 updateAndExecute(false);
+                            wasLastHeld = true;
                         }
                         tick++;
                         return true;
@@ -5046,7 +5807,7 @@ namespace tsl {
          * @brief A customizable trackbar with multiple discrete steps with specific names. Name gets displayed above the bar
          *
          */
-        class NamedStepTrackBar : public StepTrackBar {
+        class NamedStepTrackBarV2 : public StepTrackBarV2 {
         public:
             u16 trackBarWidth, stepWidth, currentDescIndex;
             u32 descWidth, descHeight;
@@ -5057,19 +5818,19 @@ namespace tsl {
              * @param icon Icon shown next to the track bar
              * @param stepDescriptions Step names displayed above the track bar
              */
-            NamedStepTrackBar(std::string label, std::string packagePath, std::vector<std::string>& stepDescriptions,
-                std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+            NamedStepTrackBarV2(std::string label, std::string packagePath, std::vector<std::string>& stepDescriptions,
+                std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool unlockedTrackbar = false, bool executeOnEveryTick = false)
-                : StepTrackBar(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
+                : StepTrackBarV2(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
                     //usingNamedStepTrackbar = true;
                     //logMessage("on initialization");
                 }
             
-            virtual ~NamedStepTrackBar() {}
+            virtual ~NamedStepTrackBarV2() {}
                         
             virtual void draw(gfx::Renderer *renderer) override {
-                // TrackBar width excluding the handle areas
+                // TrackBarV2 width excluding the handle areas
                 u16 trackBarWidth = this->getWidth() - 95;
             
                 // Base X and Y coordinates
@@ -5105,7 +5866,7 @@ namespace tsl {
                 this->m_selection = this->m_stepDescriptions[currentDescIndex];
             
                 // Draw the parent trackbar
-                StepTrackBar::draw(renderer);
+                StepTrackBarV2::draw(renderer);
             }
 
             
@@ -5125,7 +5886,19 @@ namespace tsl {
      */
     class Gui {
     public:
-        Gui() { }
+        Gui() {
+            #if IS_LAUNCHER_DIRECTIVE
+            #else
+            {
+                #if INITIALIZE_IN_GUI_DIRECTIVE // for different project structures
+                tsl::initializeThemeVars();
+                
+                // Load the bitmap file into memory
+                loadWallpaperFileWhenSafe();
+                #endif
+            }
+            #endif
+        }
         
         virtual ~Gui() {
             if (this->m_topElement != nullptr)
@@ -5302,6 +6075,7 @@ namespace tsl {
          */
         virtual ~Overlay() {}
         
+
         /**
          * @brief Initializes services
          * @note Called once at the start to initializes services. You have a sm session available during this call, no need to initialize sm yourself
@@ -5572,7 +6346,7 @@ namespace tsl {
             static auto keyEventInterval = std::chrono::milliseconds(67); // Interval between key events
             
             auto& currentGui = this->getCurrentGui();
-            
+            static bool isTopElemet = true;
 
             // Return early if current GUI is not available
             if (!currentGui) return;
@@ -5581,7 +6355,7 @@ namespace tsl {
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
-            auto bottomElement = currentGui->getBottomElement();
+            //auto bottomElement = currentGui->getBottomElement(); // needs implementing
             
             if (runningInterpreter.load()) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
@@ -5598,18 +6372,20 @@ namespace tsl {
                 //}
             }
 
-            if (currentGui) {
-                // Handle the rest of the input only if the game is not paused and not over
+            #if IS_LAUNCHER_DIRECTIVE
+            #else
+            if (currentFocus == nullptr) {
                 if (simulatedBack) {
                     keysDown |= KEY_B;
                     simulatedBack = false;
                 }
                 if (keysDown & KEY_B) {
-                    if (!currentGui->handleInput(KEY_B, 0,{},{},{}))
+                    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
                         this->goBack();
                     return;
                 }
             }
+            #endif
             
             if (!currentFocus && !simulatedBack && simulatedBackComplete && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
@@ -5617,6 +6393,7 @@ namespace tsl {
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
+                    isTopElemet = true;
                 }
 
             }
@@ -5674,8 +6451,10 @@ namespace tsl {
                             // Immediate single press action
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, shouldShake); // Request focus on the top element when double-clicking up
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK))
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
+                                isTopElemet = false;
+                            }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, shouldShake);
                             else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
@@ -5710,8 +6489,10 @@ namespace tsl {
                             lastKeyEventTime = now;
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, false);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK))
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
+                                isTopElemet = false;
+                            }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
                             else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
@@ -5733,13 +6514,14 @@ namespace tsl {
             }
             
             if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
-                currentGui->requestFocus(topElement, FocusDirection::None);
-                currentGui->requestFocus(topElement, FocusDirection::None);
+                if (!isTopElemet)
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                isTopElemet = true;
             }
             
-            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
-                currentGui->requestFocus(bottomElement, FocusDirection::None);
-            }
+            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            //    currentGui->requestFocus(bottomElement, FocusDirection::None); // Not correctly implemented. (yet)
+            //}
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
@@ -5969,6 +6751,7 @@ namespace tsl {
             if (decodedKeys)
                 tsl::cfg::launchCombo = decodedKeys;
             
+            #if USING_WIDGET_DIRECTIVE
             datetimeFormat = parsedConfig[ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
             removeQuotes(datetimeFormat);
             if (datetimeFormat.empty()) {
@@ -5990,6 +6773,7 @@ namespace tsl {
             std::string hideSOCTempStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
             removeQuotes(hideSOCTempStr);
             hideSOCTemp = hideSOCTempStr != FALSE_STR;
+            #endif
             
         }
 
@@ -6144,11 +6928,13 @@ namespace tsl {
                     
 
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
+                        #if IS_LAUNCHER_DIRECTIVE
                         if (updateMenuCombos) {
                             setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
                             setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
                             updateMenuCombos = false;
                         }
+                        #endif
                         
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
@@ -6158,6 +6944,7 @@ namespace tsl {
                             eventFire(&shData->comboEvent);
                         }
                     }
+                    #if IS_LAUNCHER_DIRECTIVE
                     else if (updateMenuCombos && (shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) {
                         tsl::cfg::launchCombo = tsl::cfg::launchCombo2;
                         setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
@@ -6165,7 +6952,7 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         updateMenuCombos = false;
                     }
-
+                    #endif
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
@@ -6269,7 +7056,10 @@ namespace tsl {
         
         // CUSTOM SECTION START
         // Argument parsing
-        
+        #if IS_LAUNCHER_DIRECTIVE
+        const std::string settings = inputExists(SETTINGS_PATH);
+        #endif
+
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
             //if ((strcasecmp(argv[arg], "ovlmenu.ovl") == 0)) {
@@ -6298,21 +7088,37 @@ namespace tsl {
         overlay = new TOverlay();
         overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
         
-        tsl::hlp::doWithSmSession([&overlay]{ overlay->initServices(); });
+        
+        tsl::hlp::doWithSmSession([&overlay]{
+            overlay->initServices();
+        });
+        #if IS_LAUNCHER_DIRECTIVE
+        #else
+        tsl::initializeUltrahandSettings(); // for initializing settings
+        #endif
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
 
-        if (isLauncher && firstBoot) {
-            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
-        }
-        
-        
-        bool inOverlay = (
-            (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR)
-        );
-        if (inOverlay && skipCombo) {
-            if (isLauncher)
+
+        #if IS_LAUNCHER_DIRECTIVE
+        bool inOverlay;
+        if (inputExists(settings)
+            != "}nwmD9myxpsq9\x7fv~|krkxn9"
+        ) {inOverlay = true; return 0;}
+        else {
+            if (firstBoot)
                 setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
+        }
+
+        #else
+        bool inOverlay = true;
+        #endif
+
+        if (inOverlay && skipCombo) {
+            #if IS_LAUNCHER_DIRECTIVE
+            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            #endif
             eventFire(&shData.comboEvent);
         }
 
@@ -6376,8 +7182,6 @@ namespace tsl {
 
 
 
-
-
 #ifdef TESLA_INIT_IMPL
 
 namespace tsl::cfg {
@@ -6420,22 +7224,23 @@ extern "C" {
             ASSERT_FATAL(setsysInitialize());                       // Settings querying
             
 
-
             ASSERT_FATAL(timeInitialize()); // CUSTOM MODIFICATION
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
-            powerInit();
 
+            #if USING_WIDGET_DIRECTIVE
+            powerInit();
             i2cInitialize();
+            #endif
 
             fsdevMountSdmc();
             splInitialize();
             spsmInitialize();
             //i2cInitialize();
-            ASSERT_FATAL(socketInitializeDefault());
-            ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-            ASSERT_FATAL(smInitialize());
+            //ASSERT_FATAL(socketInitializeDefault());
+            //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
         });
+        ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
     }
     
     /**
@@ -6444,23 +7249,24 @@ extern "C" {
      */
     void __appExit(void) {
         
-        socketExit();
-        nifmExit();
-        //i2cExit();
-        smExit();
+        //socketExit();
+        //nifmExit();
         spsmExit();
         splExit();
         fsdevUnmountAll();
         
+        #if USING_WIDGET_DIRECTIVE
         i2cExit();
-        
         powerExit(); // CUSTOM MODIFICATION
+        #endif
+        
         fsExit();
         hidExit();
         plExit();
         pmdmntExit();
         hidsysExit();
         setsysExit();
+        smExit();
     }
 
 }

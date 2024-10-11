@@ -1,7 +1,105 @@
+/********************************************************************************
+ * File: tsl_utils.cpp
+ * Author: ppkantorski
+ * Description: 
+ *   'tsl_utils.cpp' provides the implementation of various utility functions
+ *   defined in 'tsl_utils.hpp' for the Ultrahand Overlay project. This source file
+ *   includes functionality for system checks, input handling, time-based interpolation,
+ *   and other application-specific features essential for operating custom overlays
+ *   on the Nintendo Switch.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository:
+ *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
+ *
+ *   Note: This notice is integral to the project's documentation and must not be 
+ *   altered or removed.
+ *
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
 #include <tsl_utils.hpp>
 
 namespace ult {
     
+    std::unordered_map<std::string, std::string> translationCache;
+    
+
+    // Helper function to read file content into a string
+    bool readFileContent(const std::string& filePath, std::string& content) {
+        #if NO_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "r");
+            if (!file) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Failed to open JSON file: " + filePath);
+                #endif
+                return false;
+            }
+            char buffer[256];
+            while (fgets(buffer, sizeof(buffer), file) != nullptr) {
+                content += buffer;
+            }
+            fclose(file);
+        #else
+            std::ifstream file(filePath);
+            if (!file.is_open()) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Failed to open JSON file: " + filePath);
+                #endif
+                return false;
+            }
+            content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            file.close();
+        #endif
+    
+        return true;
+    }
+    
+    // Helper function to parse JSON-like content into a map
+    void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result) {
+        size_t pos = 0;
+        size_t keyStart, keyEnd, colonPos, valueStart, valueEnd;
+        std::string key, value;
+    
+        while ((pos = content.find('"', pos)) != std::string::npos) {
+            keyStart = pos + 1;
+            keyEnd = content.find('"', keyStart);
+            if (keyEnd == std::string::npos) break;
+    
+            key = content.substr(keyStart, keyEnd - keyStart);
+            colonPos = content.find(':', keyEnd);
+            if (colonPos == std::string::npos) break;
+    
+            valueStart = content.find('"', colonPos);
+            valueEnd = content.find('"', valueStart + 1);
+            if (valueStart == std::string::npos || valueEnd == std::string::npos) break;
+    
+            value = content.substr(valueStart + 1, valueEnd - valueStart - 1);
+            result[key] = value;
+    
+            pos = valueEnd + 1; // Move to the next key-value pair
+        }
+    }
+    
+    // Function to parse JSON key-value pairs into a map
+    bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result) {
+        std::string content;
+        if (!readFileContent(filePath, content)) {
+            return false;
+        }
+    
+        parseJsonContent(content, result);
+        return true;
+    }
+    
+    // Function to load translations from a JSON-like file into the translation cache
+    bool loadTranslationsFromJSON(const std::string& filePath) {
+        return parseJsonToMap(filePath, translationCache);
+    }
+    
+    
+    u16 activeHeaderHeight = 97;
+
     bool consoleIsDocked() {
         Result rc;
         ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
@@ -59,7 +157,10 @@ namespace ult {
         return std::string(titleIdStr);
     }
     
-    bool isLauncher = false;
+    //bool isLauncher = false;
+
+
+
     bool internalTouchReleased = true;
     u32 layerEdge = 0;
     bool useRightAlignment = false;
@@ -98,7 +199,7 @@ namespace ult {
     std::atomic<bool> runningInterpreter(false);
     std::atomic<bool> shakingProgress(true);
     
-    std::atomic<bool> isHidden(true);
+    std::atomic<bool> isHidden(false);
     
     //bool progressAnimation = false;
     bool disableTransparency = false;
@@ -110,70 +211,10 @@ namespace ult {
     bool allowSlide = false;
     bool unlockedSlide = false;
     
-    /**
-     * @brief Shutdown modes for the Ultrahand-Overlay project.
-     *
-     * These macros define the shutdown modes used in the Ultrahand-Overlay project:
-     * - `SpsmShutdownMode_Normal`: Normal shutdown mode.
-     * - `SpsmShutdownMode_Reboot`: Reboot mode.
-     */
-    #define SpsmShutdownMode_Normal 0
-    #define SpsmShutdownMode_Reboot 1
-    
-    /**
-     * @brief Key mapping macros for button keys.
-     *
-     * These macros define button keys for the Ultrahand-Overlay project to simplify key mappings.
-     * For example, `KEY_A` represents the `HidNpadButton_A` key.
-     */
-    #define KEY_A HidNpadButton_A
-    #define KEY_B HidNpadButton_B
-    #define KEY_X HidNpadButton_X
-    #define KEY_Y HidNpadButton_Y
-    #define KEY_L HidNpadButton_L
-    #define KEY_R HidNpadButton_R
-    #define KEY_ZL HidNpadButton_ZL
-    #define KEY_ZR HidNpadButton_ZR
-    #define KEY_PLUS HidNpadButton_Plus
-    #define KEY_MINUS HidNpadButton_Minus
-    #define KEY_DUP HidNpadButton_Up
-    #define KEY_DDOWN HidNpadButton_Down
-    #define KEY_DLEFT HidNpadButton_Left
-    #define KEY_DRIGHT HidNpadButton_Right
-    #define KEY_SL HidNpadButton_AnySL
-    #define KEY_SR HidNpadButton_AnySR
-    #define KEY_LSTICK HidNpadButton_StickL
-    #define KEY_RSTICK HidNpadButton_StickR
-    #define KEY_UP HidNpadButton_AnyUp
-    #define KEY_DOWN HidNpadButton_AnyDown
-    #define KEY_LEFT HidNpadButton_AnyLeft
-    #define KEY_RIGHT HidNpadButton_AnyRight
-    
-    
-    
     
     
     bool updateMenuCombos = false;
     
-    /**
-     * @brief Ultrahand-Overlay Input Macros
-     *
-     * This block of code defines macros for handling input in the Ultrahand-Overlay project.
-     * These macros simplify the mapping of input events to corresponding button keys and
-     * provide aliases for touch and joystick positions.
-     *
-     * The macros included in this block are:
-     *
-     * - `touchPosition`: An alias for a constant `HidTouchState` pointer.
-     * - `touchInput`: An alias for `&touchPos`, representing touch input.
-     * - `JoystickPosition`: An alias for `HidAnalogStickState`, representing joystick input.
-     *
-     * These macros are utilized within the Ultrahand-Overlay project to manage and interpret
-     * user input, including touch and joystick events.
-     */
-    #define touchPosition const HidTouchState
-    #define touchInput &touchPos
-    #define JoystickPosition HidAnalogStickState
     
     //void convertComboToUnicode(std::string& combo);
 
@@ -248,48 +289,10 @@ namespace ult {
     }
     
     
-    // For improving the speed of hexing consecutively with the same file and asciiPattern.
-    //std::unordered_map<std::string, std::string> hexSumCache;
-    
-    //std::string highlightColor1Str = "#2288CC";;
-    //std::string highlightColor2Str = "#88FFFF";;
-    
-    
-    //std::chrono::milliseconds interpolateKeyEventInterval(std::chrono::milliseconds duration) {
-    //    using namespace std::chrono;
-    //
-    //    const milliseconds threshold1 = milliseconds(2000);
-    //    const milliseconds threshold2 = milliseconds(3000);
-    //
-    //    const milliseconds interval1 = milliseconds(80);
-    //    const milliseconds interval2 = milliseconds(20);
-    //    const milliseconds interval3 = milliseconds(10);
-    //
-    //    if (duration > threshold2) {
-    //        return interval3;
-    //    } else if (duration > threshold1) {
-    //        double factor = double(duration.count() - threshold1.count()) / double(threshold2.count() - threshold1.count());
-    //        return milliseconds(static_cast<int>(interval2.count() + factor * (interval3.count() - interval2.count())));
-    //    } else {
-    //        double factor = double(duration.count()) / double(threshold1.count());
-    //        return milliseconds(static_cast<int>(interval1.count() + factor * (interval2.count() - interval1.count())));
-    //    }
-    //}
-    
-    //float customRound(float num) {
-    //    if (num >= 0) {
-    //        return floor(num + 0.5);
-    //    } else {
-    //        return ceil(num - 0.5);
-    //    }
-    //}
-    
-    // English string definitions
-    
     const std::string whiteColor = "#FFFFFF";
     const std::string blackColor = "#000000";
     
-    
+    #if IS_LAUNCHER_DIRECTIVE
     std::string ENGLISH = "English";
     std::string SPANISH = "Spanish";
     std::string FRENCH = "French";
@@ -303,8 +306,6 @@ namespace ult {
     std::string POLISH = "Polish";
     std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
     std::string TRADITIONAL_CHINESE = "Traditional Chinese";
-    std::string DEFAULT_CHAR_WIDTH = "0.33";
-    std::string UNAVAILABLE_SELECTION = "Not available";
     std::string OVERLAYS = "Overlays"; //defined in libTesla now
     std::string OVERLAY = "Overlay";
     std::string HIDDEN_OVERLAYS = "Hidden Overlays";
@@ -322,6 +323,7 @@ namespace ult {
     std::string SETTINGS = "Settings";
     std::string MAIN_SETTINGS = "Main Settings";
     std::string UI_SETTINGS = "UI Settings";
+
     std::string WIDGET = "Widget";
     std::string CLOCK = "Clock";
     std::string BATTERY = "Battery";
@@ -362,23 +364,15 @@ namespace ult {
     std::string OVERLAY_VERSIONS = "Overlay Versions";
     std::string PACKAGE_VERSIONS = "Package Versions";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-    std::string ON = "On";
-    std::string OFF = "Off";
+
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
     std::string _VERSION= "Version";
     std::string _CREATOR = "Creator(s)";
     std::string _ABOUT = "About";
     std::string _CREDITS = "Credits";
-    std::string OK = "OK";
-    std::string BACK = "Back";
-    std::string REBOOT_TO = "Reboot To";
-    std::string REBOOT = "Reboot";
-    std::string SHUTDOWN = "Shutdown";
-    std::string BOOT_ENTRY = "Boot Entry";
-    std::string GAP_1 = "     ";
-    std::string GAP_2 = "  ";
-    std::string USERGUIDE_OFFSET = "173";
+
+    std::string USERGUIDE_OFFSET = "175";
     std::string SETTINGS_MENU = "Settings Menu";
     std::string SCRIPT_OVERLAY = "Script Overlay";
     std::string STAR_FAVORITE = "Star/Favorite";
@@ -390,8 +384,31 @@ namespace ult {
     std::string SWIPE_TO_OPEN = "Swipe to Open";
     std::string RIGHT_SIDE_MODE = "Right-side Mode";
     std::string PROGRESS_ANIMATION = "Progress Animation";
+
+    std::string REBOOT_TO = "Reboot To";
+    std::string REBOOT = "Reboot";
+    std::string SHUTDOWN = "Shutdown";
+    std::string BOOT_ENTRY = "Boot Entry";
+    #endif
+
+
+    std::string DEFAULT_CHAR_WIDTH = "0.33";
+    std::string UNAVAILABLE_SELECTION = "Not available";
+
+
+    std::string ON = "On";
+    std::string OFF = "Off";
+
+    std::string OK = "OK";
+    std::string BACK = "Back";
+
+    std::string GAP_1 = "     ";
+    std::string GAP_2 = "  ";
+    
+
     std::string EMPTY = "Empty";
     
+    #if USING_WIDGET_DIRECTIVE
     std::string SUNDAY = "Sunday";
     std::string MONDAY = "Monday";
     std::string TUESDAY = "Tuesday";
@@ -433,7 +450,10 @@ namespace ult {
     std::string OCT = "Oct";
     std::string NOV = "Nov";
     std::string DEC = "Dec";
+    #endif
+
     
+    #if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars() {
         ENGLISH = "English";
@@ -524,7 +544,8 @@ namespace ult {
         BOOT_ENTRY = "Boot Entry";
         GAP_1 = "     ";
         GAP_2 = "  ";
-        USERGUIDE_OFFSET = "173";
+
+        USERGUIDE_OFFSET = "175";
         SETTINGS_MENU = "Settings Menu";
         SCRIPT_OVERLAY = "Script Overlay";
         STAR_FAVORITE = "Star/Favorite";
@@ -580,24 +601,30 @@ namespace ult {
         NOV = "Nov";
         DEC = "Dec";
     }
+    #endif
     
     
     
-    
-    // Define the updateIfNotEmpty function
-    void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData) {
-        std::string newValue = getStringFromJson(jsonData, jsonKey);
+    // Function to update a constant if the new value from JSON is not empty
+    void updateIfNotEmpty(std::string& constant, const std::string& newValue) {
         if (!newValue.empty()) {
             constant = newValue;
         }
     }
-    
-    void parseLanguage(const std::string langFile) {
-        json_t* langData = readJsonFromFile(langFile);
-        if (!langData)
+
+    void parseLanguage(const std::string& langFile) {
+        // Map to store parsed JSON data
+        std::unordered_map<std::string, std::string> jsonMap;
+        if (!parseJsonToMap(langFile, jsonMap)) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to parse language file: " + langFile);
+            #endif
             return;
+        }
+
         
-        std::unordered_map<std::string, std::string*> configMap = {
+        static std::unordered_map<std::string, std::string*> configMap = {
+            #if IS_LAUNCHER_DIRECTIVE
             {"ENGLISH", &ENGLISH},
             {"SPANISH", &SPANISH},
             {"FRENCH", &FRENCH},
@@ -610,8 +637,6 @@ namespace ult {
             {"RUSSIAN", &RUSSIAN},
             {"SIMPLIFIED_CHINESE", &SIMPLIFIED_CHINESE},
             {"TRADITIONAL_CHINESE", &TRADITIONAL_CHINESE},
-            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
-            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
             {"OVERLAYS", &OVERLAYS},
             {"OVERLAY", &OVERLAY},
             {"HIDDEN_OVERLAYS", &HIDDEN_OVERLAYS},
@@ -629,6 +654,7 @@ namespace ult {
             {"SETTINGS", &SETTINGS},
             {"MAIN_SETTINGS", &MAIN_SETTINGS},
             {"UI_SETTINGS", &UI_SETTINGS},
+
             {"WIDGET", &WIDGET},
             {"CLOCK", &CLOCK},
             {"BATTERY", &BATTERY},
@@ -669,22 +695,14 @@ namespace ult {
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
             {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
-            {"ON", &ON},
-            {"OFF", &OFF},
+
             {"PACKAGE_INFO", &PACKAGE_INFO},
-            {"_TITLE", &_TITLE},
-            {"_VERSION", &_VERSION},
-            {"_CREATOR", &_CREATOR},
-            {"_ABOUT", &_ABOUT},
-            {"_CREDITS", &_CREDITS},
-            {"OK", &OK},
-            {"BACK", &BACK},
-            {"REBOOT_TO", &REBOOT_TO},
-            {"REBOOT", &REBOOT},
-            {"SHUTDOWN", &SHUTDOWN},
-            {"BOOT_ENTRY", &BOOT_ENTRY},
-            {"GAP_1", &GAP_1},
-            {"GAP_2", &GAP_2},
+            {"TITLE", &_TITLE},
+            {"VERSION", &_VERSION},
+            {"CREATOR", &_CREATOR},
+            {"ABOUT", &_ABOUT},
+            {"CREDITS", &_CREDITS},
+
             {"USERGUIDE_OFFSET", &USERGUIDE_OFFSET},
             {"SETTINGS_MENU", &SETTINGS_MENU},
             {"SCRIPT_OVERLAY", &SCRIPT_OVERLAY},
@@ -697,7 +715,29 @@ namespace ult {
             {"SWIPE_TO_OPEN", &SWIPE_TO_OPEN},
             {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
             {"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
+
+            {"REBOOT_TO", &REBOOT_TO},
+            {"REBOOT", &REBOOT},
+            {"SHUTDOWN", &SHUTDOWN},
+            {"BOOT_ENTRY", &BOOT_ENTRY},
+            #endif
+
+
+            {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
+            {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
+
+            {"ON", &ON},
+            {"OFF", &OFF},
+
+            {"OK", &OK},
+            {"BACK", &BACK},
+
+            {"GAP_1", &GAP_1},
+            {"GAP_2", &GAP_2},
+
             {"EMPTY", &EMPTY},
+
+            #if USING_WIDGET_DIRECTIVE
             {"SUNDAY", &SUNDAY},
             {"MONDAY", &MONDAY},
             {"TUESDAY", &TUESDAY},
@@ -736,17 +776,15 @@ namespace ult {
             {"OCT", &OCT},
             {"NOV", &NOV},
             {"DEC", &DEC}
+            #endif
         };
     
         // Iterate over the map to update global variables
         for (auto& kv : configMap) {
-            updateIfNotEmpty(*kv.second, kv.first.c_str(), langData);
-        }
-    
-        // Free langData
-        if (langData != nullptr) {
-            json_decref(langData);
-            langData = nullptr;
+            auto it = jsonMap.find(kv.first);
+            if (it != jsonMap.end()) {
+                updateIfNotEmpty(*kv.second, it->second);
+            }
         }
     }
     
@@ -763,195 +801,105 @@ namespace ult {
     //    }
     //}
     
+    #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr) {
         // Define static unordered_map for day and month mappings
-        std::unordered_map<std::string, std::string> mappings = {
-            {"Sun", SUN},
-            {"Mon", MON},
-            {"Tue", TUE},
-            {"Wed", WED},
-            {"Thu", THU},
-            {"Fri", FRI},
-            {"Sat", SAT},
-            {"Sunday", SUNDAY},
-            {"Monday", MONDAY},
-            {"Tuesday", TUESDAY},
-            {"Wednesday", WEDNESDAY},
-            {"Thursday", THURSDAY},
-            {"Friday", FRIDAY},
-            {"Saturday", SATURDAY},
-            {"Jan", JAN},
-            {"Feb", FEB},
-            {"Mar", MAR},
-            {"Apr", APR},
-            {"May", MAY_ABBR},
-            {"Jun", JUN},
-            {"Jul", JUL},
-            {"Aug", AUG},
-            {"Sep", SEP},
-            {"Oct", OCT},
-            {"Nov", NOV},
-            {"Dec", DEC},
-            {"January", JANUARY},
-            {"February", FEBRUARY},
-            {"March", MARCH},
-            {"April", APRIL},
-            {"May", MAY},
-            {"June", JUNE},
-            {"July", JULY},
-            {"August", AUGUST},
-            {"September", SEPTEMBER},
-            {"October", OCTOBER},
-            {"November", NOVEMBER},
-            {"December", DECEMBER}
+        static std::unordered_map<std::string, std::string*> mappings = {
+            {"Sun", &SUN},
+            {"Mon", &MON},
+            {"Tue", &TUE},
+            {"Wed", &WED},
+            {"Thu", &THU},
+            {"Fri", &FRI},
+            {"Sat", &SAT},
+            {"Sunday", &SUNDAY},
+            {"Monday", &MONDAY},
+            {"Tuesday", &TUESDAY},
+            {"Wednesday", &WEDNESDAY},
+            {"Thursday", &THURSDAY},
+            {"Friday", &FRIDAY},
+            {"Saturday", &SATURDAY},
+            {"Jan", &JAN},
+            {"Feb", &FEB},
+            {"Mar", &MAR},
+            {"Apr", &APR},
+            {"May", &MAY_ABBR},
+            {"Jun", &JUN},
+            {"Jul", &JUL},
+            {"Aug", &AUG},
+            {"Sep", &SEP},
+            {"Oct", &OCT},
+            {"Nov", &NOV},
+            {"Dec", &DEC},
+            {"January", &JANUARY},
+            {"February", &FEBRUARY},
+            {"March", &MARCH},
+            {"April", &APRIL},
+            {"May", &MAY},
+            {"June", &JUNE},
+            {"July", &JULY},
+            {"August", &AUGUST},
+            {"September", &SEPTEMBER},
+            {"October", &OCTOBER},
+            {"November", &NOVEMBER},
+            {"December", &DECEMBER}
         };
     
         std::string timeStrCopy = timeStr; // Convert the char array to a string for processing
     
         // Apply day and month replacements
-        //applyTimeStrReplacements(timeStrCopy, mappings);
-    
         size_t pos;
         for (const auto& mapping : mappings) {
             pos = timeStrCopy.find(mapping.first);
             while (pos != std::string::npos) {
-                timeStrCopy.replace(pos, mapping.first.length(), mapping.second);
-                pos = timeStrCopy.find(mapping.first, pos + mapping.second.length());
+                timeStrCopy.replace(pos, mapping.first.length(), *(mapping.second));
+                pos = timeStrCopy.find(mapping.first, pos + mapping.second->length());
             }
         }
     
         // Copy the modified string back to the character array
         strcpy(timeStr, timeStrCopy.c_str());
     }
-    
+    #endif
+
     // Unified function to apply replacements
     void applyLangReplacements(std::string& text, bool isValue) {
-        // Define the maps for replacements
-        std::unordered_map<std::string, std::string> replacements;
+        // Static maps for replacements
+        #if IS_LAUNCHER_DIRECTIVE
+        static const std::unordered_map<std::string, std::string*> launcherReplacements = {
+            {"Reboot To", &REBOOT_TO},
+            {"Boot Entry", &BOOT_ENTRY},
+            {"Reboot", &REBOOT},
+            {"Shutdown", &SHUTDOWN}
+        };
+        #endif
+    
+        static const std::unordered_map<std::string, std::string*> valueReplacements = {
+            {"On", &ON},
+            {"Off", &OFF}
+        };
+    
+        // Determine which map to use
+        const std::unordered_map<std::string, std::string*>* replacements = nullptr;
     
         if (!isValue) {
-            replacements = {
-                {"Reboot To", REBOOT_TO},
-                {"Boot Entry", BOOT_ENTRY},
-                {"Reboot", REBOOT},
-                {"Shutdown", SHUTDOWN}
-            };
+            #if IS_LAUNCHER_DIRECTIVE
+            replacements = &launcherReplacements;
+            #else
+            return;
+            #endif
         } else {
-            replacements = {
-                {"On", ON},
-                {"Off", OFF}
-            };
+            replacements = &valueReplacements;
         }
     
         // Perform the direct replacement
-        auto it = replacements.find(text);
-        if (it != replacements.end()) {
-            text = it->second;
+        if (replacements) {
+            auto it = replacements->find(text);
+            if (it != replacements->end()) {
+                text = *(it->second);
+            }
         }
     }
-    
-    
-    
-    //// Map of character widths (pre-calibrated)
-    std::unordered_map<wchar_t, float> characterWidths = {
-        {L'<', 0.81},
-        {L'>', 0.81},
-        {L',', 0.25},
-        {L'/', 0.5},
-        {L'\\', 0.5},
-        {L'`', 0.25},
-        {L'\'', 0.186},
-        {L'↑', 1.0},
-        {L'~', 0.31},
-        {L'"', 0.31},
-        {L'!', 0.25},
-        {L'@', 0.87},
-        {L'#', 0.31},
-        {L'$', 0.56},
-        {L'^', 0.5},
-        {L'?', 0.5},
-        {L'°', 0.31},
-        {L'%', 0.87},
-        {L'*', 0.434},
-        {L'=', 0.750},
-        {L':', 0.25},
-        {L';', 0.25},
-        {L' ', 0.312},
-        {L'|', 0.26},
-        {L'.', 0.25},
-        {L'+', 0.75},
-        {L'-', 0.37},
-        {L'_', 0.50},
-        {L'&', 0.75},
-        {L'(', 0.31},
-        {L')', 0.31},
-        {L'[', 0.3635},
-        {L']', 0.3635},
-        {L'A', 0.745},
-        {L'B', 0.62},
-        {L'C', 0.745},
-        {L'D', 0.8082},
-        {L'E', 0.56},
-        {L'F', 0.56},
-        {L'G', 0.81},
-        {L'H', 0.685},
-        {L'I', 0.25},
-        {L'J', 0.50},
-        {L'K', 0.62},
-        {L'L', 0.435},
-        {L'M', 0.933},
-        {L'N', 0.81},
-        {L'O', 0.875},
-        {L'P', 0.56},
-        {L'Q', 0.875},
-        {L'R', 0.56},
-        {L'S', 0.56},
-        {L'T', 0.6198},
-        {L'U', 0.81},
-        {L'V', 0.75},
-        {L'W', 1.12},
-        {L'X', 0.625},
-        {L'Y', 0.625},
-        {L'Z', 0.745},
-        {L'a', 0.56},
-        {L'b', 0.62},
-        {L'c', 0.56},
-        {L'd', 0.625},
-        {L'e', 0.559},
-        {L'f', 0.25},
-        {L'g', 0.56},
-        {L'h', 0.56},
-        {L'i', 0.2485},
-        {L'j', 0.3748},
-        {L'k', 0.5588},
-        {L'l', 0.251},
-        {L'm', 0.935},
-        {L'n', 0.5573},
-        {L'o', 0.62},
-        {L'p', 0.62},
-        {L'q', 0.62},
-        {L'r', 0.3725},
-        {L's', 0.496},
-        {L't', 0.372},
-        {L'u', 0.561},
-        {L'v', 0.50},
-        {L'w', 0.87},
-        {L'x', 0.50},
-        {L'y', 0.50},
-        {L'z', 0.5},
-        {L'0', 0.62},
-        {L'1', 0.6199},
-        {L'2', 0.63},
-        {L'3', 0.62},
-        {L'4', 0.62},
-        {L'5', 0.62},
-        {L'6', 0.62},
-        {L'7', 0.62},
-        {L'8', 0.62},
-        {L'9', 0.62}
-    };
-    
-    float defaultNumericCharWidth = 0.66;
     
     
     
@@ -968,6 +916,7 @@ namespace ult {
     
     // Prepare a map of default settings
     std::map<std::string, std::string> defaultThemeSettingsMap = {
+        {"default_overlay_color", "#FFFFFF"},
         {"default_package_color", "#00FF00"},
         {"clock_color", whiteColor},
         {"bg_alpha", "13"},
@@ -1059,52 +1008,117 @@ namespace ult {
     
     
     std::atomic<bool> refreshWallpaper(false);
-    std::vector<u8> wallpaperData;
+    std::vector<u8> wallpaperData; 
     std::atomic<bool> inPlot(false);
     
     std::mutex wallpaperMutex;
     std::condition_variable cv;
     
     
-    
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        // Calculate the size of the bitmap in bytes
-        size_t dataSize = width * height * 4; // 4 bytes per pixel (RGBA8888)
+        size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
+        size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
         
-        // Resize the wallpaperData vector to the required size
-        wallpaperData.resize(dataSize);
-        
+        wallpaperData.resize(compressedDataSize);
+    
         if (!isFileOrDirectory(filePath)) {
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
+            wallpaperData.clear();
             return;
         }
     
-        // Open the file in binary mode
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file) {
-            //std::cerr << "Failed to open file: " << filePath << std::endl;
-            wallpaperData.clear(); // Clear wallpaperData if loading failed
-            return;
-        }
-        
-        // Read the file content into the wallpaperData buffer
-        file.read(reinterpret_cast<char*>(wallpaperData.data()), dataSize);
-        if (!file) {
-            //std::cerr << "Failed to read file: " << filePath << std::endl;
-            wallpaperData.clear(); // Clear wallpaperData if reading failed
-            return;
-        }
-        
-        // Preprocess the bitmap data by shifting the color values
-        for (size_t i = 0; i < dataSize; i += 4) {
-            // Shift the color values to reduce precision (if needed)
-            wallpaperData[i] >>= 4;   // Red
-            wallpaperData[i + 1] >>= 4; // Green
-            wallpaperData[i + 2] >>= 4; // Blue
-            wallpaperData[i + 3] >>= 4; // Alpha
+        #if NO_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "rb");
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+    
+            std::vector<uint8_t> buffer(originalDataSize);
+            size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
+            fclose(file);
+    
+            if (bytesRead != originalDataSize) {
+                wallpaperData.clear();
+                return;
+            }
+    
+        #else
+            std::ifstream file(filePath, std::ios::binary);
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+    
+            std::vector<uint8_t> buffer(originalDataSize);
+            file.read(reinterpret_cast<char*>(buffer.data()), originalDataSize);
+            if (!file) {
+                wallpaperData.clear();
+                return;
+            }
+        #endif
+    
+        // Compress RGBA8888 to RGBA4444
+        uint8_t* input = buffer.data();
+        uint8_t* output = wallpaperData.data();
+    
+        for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
+            // Read 2 RGBA pixels (8 bytes)
+            uint8_t r1 = input[i] >> 4;
+            uint8_t g1 = input[i + 1] >> 4;
+            uint8_t b1 = input[i + 2] >> 4;
+            uint8_t a1 = input[i + 3] >> 4;
+    
+            uint8_t r2 = input[i + 4] >> 4;
+            uint8_t g2 = input[i + 5] >> 4;
+            uint8_t b2 = input[i + 6] >> 4;
+            uint8_t a2 = input[i + 7] >> 4;
+    
+            // Pack them into 4 bytes (2 bytes per pixel)
+            output[j] = (r1 << 4) | g1;
+            output[j + 1] = (b1 << 4) | a1;
+            output[j + 2] = (r2 << 4) | g2;
+            output[j + 3] = (b2 << 4) | a2;
         }
     }
+
+
+    void loadWallpaperFileWhenSafe() {
+        if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
+            std::unique_lock<std::mutex> lock(wallpaperMutex);
+            cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire); });
+            if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
+                loadWallpaperFile(WALLPAPER_PATH);
+            }
+        }
+    }
+
+
+    void reloadWallpaper() {
+        // Signal that wallpaper is being refreshed
+        refreshWallpaper.store(true, std::memory_order_release);
+    
+        // Lock the mutex for condition waiting
+        std::unique_lock<std::mutex> lock(wallpaperMutex);
+    
+        // Wait for inPlot to be false before reloading the wallpaper
+        cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire); });
+    
+        // Clear the current wallpaper data
+        wallpaperData.clear();
+    
+        // Reload the wallpaper file
+        if (isFileOrDirectory(WALLPAPER_PATH)) {
+            loadWallpaperFile(WALLPAPER_PATH);
+        }
+    
+        // Signal that wallpaper has finished refreshing
+        refreshWallpaper.store(false, std::memory_order_release);
+        
+        // Notify any waiting threads
+        cv.notify_all();
+    }
+
     
     
     // Global variables for FPS calculation
@@ -1113,6 +1127,7 @@ namespace ult {
     //float fps = 0.0f;
     //double elapsedTime = 0.0;
     
+    bool themeIsInitialized = false; // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     
     // Variables for touch commands
     bool touchingBack = false;
@@ -1132,7 +1147,7 @@ namespace ult {
     bool touchInBounds = false;
     
     
-    
+    #if USING_WIDGET_DIRECTIVE
     // Battery implementation
     bool powerInitialized = false;
     bool powerCacheInitialized;
@@ -1199,9 +1214,9 @@ namespace ult {
         // Use cached values if not enough time has passed
         *batteryCharge = powerCacheCharge;
         *isCharging = powerCacheIsCharging;
+
         return true; // Return true as cache is used
     }
-    
     
     
     void powerInit(void) {
@@ -1237,6 +1252,7 @@ namespace ult {
             powerCacheInitialized = false;
         }
     }
+    #endif
     
     
     // Temperature Implementation
@@ -1247,8 +1263,7 @@ namespace ult {
     Original repository link (Deleted, last checked 15.04.2023): https://github.com/KazushiMe/Switch-OC-Suite
     */
     
-    Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out)
-    {
+    Result I2cReadRegHandler(u8 reg, I2cDevice dev, u16 *out) {
         struct readReg {
             u8 send;
             u8 sendLength;
@@ -1285,14 +1300,8 @@ namespace ult {
     }
     
     
-    #define TMP451_SOC_TEMP_REG 0x01  // Register for SOC temperature integer part
-    #define TMP451_SOC_TMP_DEC_REG 0x10  // Register for SOC temperature decimal part
-    #define TMP451_PCB_TEMP_REG 0x00  // Register for PCB temperature integer part
-    #define TMP451_PCB_TMP_DEC_REG 0x15  // Register for PCB temperature decimal part
-    
     // Common helper function to read temperature (integer and fractional parts)
-    Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly)
-    {
+    Result ReadTemperature(float *temperature, u8 integerReg, u8 fractionalReg, bool integerOnly) {
         u16 rawValue;
         u8 val;
         s32 integerPart = 0;
@@ -1324,22 +1333,19 @@ namespace ult {
     
         // Combine integer and fractional parts
         *temperature = static_cast<float>(integerPart) + fractionalPart;
-    
+        
         return 0;
     }
     
     // Function to get the SOC temperature
-    Result ReadSocTemperature(float *temperature, bool integerOnly)
-    {
+    Result ReadSocTemperature(float *temperature, bool integerOnly) {
         return ReadTemperature(temperature, TMP451_SOC_TEMP_REG, TMP451_SOC_TMP_DEC_REG, integerOnly);
     }
     
     // Function to get the PCB temperature
-    Result ReadPcbTemperature(float *temperature, bool integerOnly)
-    {
+    Result ReadPcbTemperature(float *temperature, bool integerOnly) {
         return ReadTemperature(temperature, TMP451_PCB_TEMP_REG, TMP451_PCB_TMP_DEC_REG, integerOnly);
     }
-    
     
     
     // Time implementation
@@ -1351,12 +1357,16 @@ namespace ult {
     //std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
+        
         hideClock = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_clock") != FALSE_STR);
         hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
         hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
         hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
+        
     }
+    #endif
     
     bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
     
@@ -1366,14 +1376,17 @@ namespace ult {
     
     std::string versionLabel;
     
+    #if IS_LAUNCHER_DIRECTIVE
     void reinitializeVersionLabels() {
         cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
         hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
         hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
+        #ifdef APP_VERSION
         versionLabel = std::string(APP_VERSION) + "   (" + loaderTitle + " " + (cleanVersionLabels ? "" : "v") + cleanVersionLabel(loaderInfo) + ")";
+        #endif
         //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
     }
-    
+    #endif
     
     
     // Number of renderer threads to use
@@ -1381,7 +1394,6 @@ namespace ult {
     std::vector<std::thread> threads(numThreads);
     s32 bmpChunkSize = (720 + numThreads - 1) / numThreads;
     std::atomic<s32> currentRow;
-    
     
     
 }

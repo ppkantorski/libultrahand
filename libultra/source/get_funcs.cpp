@@ -29,9 +29,42 @@ namespace ult {
      * @return The content of the file as a string with line endings normalized to '\n'.
      */
     std::string getFileContents(const std::string& filePath) {
+        #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "rb");
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open file: " + filePath);
+            #endif
+            return "";
+        }
+    
+        // Determine the file size
+        fseek(file, 0, SEEK_END);
+        long size = ftell(file);
+        if (size <= 0) {
+            fclose(file);
+            return "";
+        }
+        fseek(file, 0, SEEK_SET);
+    
+        // Read the entire file into a string
+        std::string content(size, '\0');
+        if (fread(&content[0], 1, size, file) != static_cast<size_t>(size)) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to read file: " + filePath);
+            #endif
+            fclose(file);
+            return "";
+        }
+    
+        fclose(file);
+    
+        #else
         std::ifstream file(filePath, std::ios::binary);
         if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
+            #endif
             return "";
         }
     
@@ -46,15 +79,18 @@ namespace ult {
         // Read the entire file into a string
         std::string content(size, '\0');
         if (!file.read(&content[0], size)) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to read file: " + filePath);
+            #endif
             return "";
         }
+        #endif
     
-        // Erase any carriage return characters
+        // Erase any carriage return characters (normalize line endings)
         content.erase(std::remove(content.begin(), content.end(), '\r'), content.end());
         return content;
     }
-    
+
     
     
     

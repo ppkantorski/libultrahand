@@ -25,7 +25,7 @@
 #include <string>
 #include <iterator> 
 #include <vector>
-#include <jansson.h>
+//#include <jansson.h>
 #include <regex>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -189,6 +189,9 @@ namespace ult {
     
     std::string customAlign(int number);
     
+    #if IS_LAUNCHER_DIRECTIVE
+    std::string inputExists(const std::string& input);
+    #endif
 }
 
 #endif

@@ -54,10 +54,30 @@ namespace ult {
     // Function to read file into a vector of strings
     std::vector<std::string> readListFromFile(const std::string& filePath) {
         std::vector<std::string> lines;
-        std::ifstream file(filePath);
     
-        if (!file.is_open()) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
+            #endif
+            return lines; // Return empty vector
+        }
+    
+        char buffer[4096];  // Buffer to hold each line
+        while (fgets(buffer, sizeof(buffer), file)) {
+            // Remove newline character from the buffer if present
+            buffer[strcspn(buffer, "\n")] = '\0';  // Replace newline with null terminator
+            lines.emplace_back(buffer);  // Add line to vector
+        }
+    
+        fclose(file);  // Close the file after reading
+    #else
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Unable to open file: " + filePath);
+            #endif
             return lines; // Return empty vector
         }
     
@@ -66,14 +86,42 @@ namespace ult {
             lines.push_back(std::move(line));
         }
     
-        return lines;
+        file.close();  // Close the file
+    #endif
+    
+        return lines;  // Return the vector of lines
     }
+
     
     // Function to get an entry from the list based on the index
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(listPath.c_str(), "r");  // Open the file in text mode
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Unable to open file: " + listPath);
+            #endif
+            return ""; // Return an empty string if the file cannot be opened
+        }
+    
+        std::string line;
+        // Read lines until reaching the desired index
+        for (size_t i = 0; i <= listIndex; ++i) {
+            char buffer[4096];  // Buffer to hold each line
+            if (!fgets(buffer, sizeof(buffer), file)) {
+                fclose(file);  // Close the file before returning
+                return ""; // Return an empty string if the index is out of bounds
+            }
+            line = buffer;  // Store the line (it will include a newline character if present)
+        }
+    
+        fclose(file);  // Close the file after reading
+    #else
         std::ifstream file(listPath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + listPath);
+            #endif
             return ""; // Return an empty string if the file cannot be opened
         }
     
@@ -84,9 +132,13 @@ namespace ult {
             }
         }
     
-        return line;
-    }
+        file.close();  // Close the file
+    #endif
     
+        return line;  // Return the line at the specified index
+    }
+
+
     /**
      * @brief Splits a string into a vector of strings using a delimiter.
      *
@@ -122,34 +174,76 @@ namespace ult {
     // Function to read file into a set of strings
     std::unordered_set<std::string> readSetFromFile(const std::string& filePath) {
         std::unordered_set<std::string> lines;
-        std::ifstream file(filePath);
     
-        if (!file.is_open()) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
-            return lines; // Return empty set
+            #endif
+            return lines; // Return empty set if the file cannot be opened
+        }
+    
+        char buffer[4096];  // Buffer to hold each line
+        while (fgets(buffer, sizeof(buffer), file)) {
+            // Remove trailing newline character if it exists
+            buffer[strcspn(buffer, "\n")] = 0;  
+            lines.insert(buffer);  // Insert the line into the set
+        }
+    
+        fclose(file);  // Close the file after reading
+    #else
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Unable to open file: " + filePath);
+            #endif
+            return lines; // Return empty set if the file cannot be opened
         }
     
         std::string line;
         while (std::getline(file, line)) {
-            lines.insert(std::move(line));
+            lines.insert(std::move(line));  // Insert lines into the set
         }
     
-        return lines;
+        file.close();  // Close the file
+    #endif
+    
+        return lines;  // Return the set of lines
     }
+    
     
     // Function to write a set to a file
     void writeSetToFile(const std::unordered_set<std::string>& fileSet, const std::string& filePath) {
-        std::ofstream file(filePath);
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "w");  // Open the file in write mode
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open file: " + filePath);
+            #endif
+            return;  // Exit if the file cannot be opened
+        }
     
+        for (const auto& entry : fileSet) {
+            fprintf(file, "%s\n", entry.c_str());  // Write each entry followed by a newline
+        }
+    
+        fclose(file);  // Close the file after writing
+    #else
+        std::ofstream file(filePath);
         if (file.is_open()) {
             for (const auto& entry : fileSet) {
-                file << entry << '\n';
+                file << entry << '\n';  // Write each entry followed by a newline
             }
-            file.close();
+            file.close();  // Close the file after writing
         } else {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
+            #endif
         }
+    #endif
     }
+
     
     // Function to compare two file lists and save duplicates to an output file
     void compareFilesLists(const std::string& txtFilePath1, const std::string& txtFilePath2, const std::string& outputTxtFilePath) {
@@ -171,17 +265,42 @@ namespace ult {
     
     // Helper function to read a text file and process each line with a callback
     void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback) {
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in read mode
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Unable to open file: " + filePath);
+            #endif
+            return;  // Exit if the file cannot be opened
+        }
+    
+        char buffer[1024];  // Buffer to store each line
+        while (fgets(buffer, sizeof(buffer), file)) {
+            // Remove newline character, if present
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            callback(buffer);  // Call the provided callback function
+        }
+    
+        fclose(file);  // Close the file after processing
+    #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
-            return;
+            #endif
+            return;  // Exit if the file cannot be opened
         }
     
         std::string line;
         while (std::getline(file, line)) {
-            callback(line);
+            callback(line);  // Call the provided callback function
         }
+    #endif
     }
+
     
     void compareWildcardFilesLists(const std::string& wildcardPatternFilePath, const std::string& txtFilePath, const std::string& outputTxtFilePath) {
         //logMessage("Comparing wildcard files with: " + txtFilePath);

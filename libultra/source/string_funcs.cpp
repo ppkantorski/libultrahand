@@ -359,5 +359,14 @@ namespace ult {
         int missingDigits = 4 - numStr.length();
         return std::string(missingDigits * 2, ' ') + numStr;
     }
-    
+
+    #if IS_LAUNCHER_DIRECTIVE
+    std::string inputExists(const std::string& input) {
+        std::string e;
+        for (char c : input) {
+            e += (c + 5);
+        }
+        return e;
+    }
+    #endif
 }

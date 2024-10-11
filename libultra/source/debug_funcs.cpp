@@ -9,6 +9,7 @@
 #include "debug_funcs.hpp"
 
 namespace ult {
+    #if USING_LOGGING_DIRECTIVE
     // Define static variables
     std::string logFilePath = defaultLogFilePath; 
     bool disableLogging = true;
@@ -24,7 +25,23 @@ namespace ult {
         strftime(buffer, sizeof(buffer), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
         std::string timestamp(buffer);
 
-        // Open the file with std::ofstream in append mode inside the lock
+        // Depending on the directive, use either std::ofstream or stdio functions
+        #if NO_FSTREAM_DIRECTIVE
+        // Use stdio functions to open, write, and close the file
+        {
+            std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for thread-safe access
+
+            FILE* file = fopen(logFilePath.c_str(), "a"); // Open the file in append mode
+            if (file != nullptr) {
+                fprintf(file, "%s%s\n", timestamp.c_str(), message.c_str());
+                fclose(file); // Close the file after writing
+            } else {
+                // Handle error when file opening fails (if necessary)
+                // printf("Failed to open log file: %s\n", logFilePath.c_str());
+            }
+        }
+        #else
+        // Use std::ofstream if NO_FSTREAM_DIRECTIVE is not defined
         {
             std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for the duration of this block
 
@@ -35,6 +52,8 @@ namespace ult {
                 // Handle error when file opening fails
                 // std::cerr << "Failed to open log file: " << logFilePath << std::endl;
             }
-        } // file closes automatically upon leaving this block
+        }
+        #endif
     }
+    #endif
 }
