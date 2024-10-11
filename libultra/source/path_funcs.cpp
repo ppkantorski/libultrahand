@@ -728,20 +728,37 @@ namespace ult {
      */
     void copySingleFile(const std::string& fromFile, const std::string& toFile, long long& totalBytesCopied, 
                         const long long totalSize, const std::string& logSource, const std::string& logDestination) {
+        size_t maxRetries = 10;
+        size_t retryCount = 0;
     #if NO_FSTREAM_DIRECTIVE
-        FILE* srcFile = fopen(fromFile.c_str(), "rb");
-        FILE* destFile = fopen(toFile.c_str(), "wb");
+        FILE* srcFile = nullptr;
+        FILE* destFile = nullptr;
         char buffer[COPY_BUFFER_SIZE];
-    
-        if (!srcFile || !destFile) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening files for copying.");
-            #endif
-            if (srcFile) fclose(srcFile);
-            if (destFile) fclose(destFile);
-            return;
+        while (true) {
+            srcFile = fopen(fromFile.c_str(), "rb");
+            destFile = fopen(toFile.c_str(), "wb");
+            
+            
+            if (!srcFile || !destFile) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Error opening files for copying. Retry #"+std::to_string(retryCount));
+                #endif
+                if (srcFile) fclose(srcFile);
+                if (destFile) fclose(destFile);
+                retryCount++;
+                if (retryCount > maxRetries) {
+                    #if USING_LOGGING_DIRECTIVE
+                    logMessage("Error max retry count exceeded.");
+                    #endif
+                    return;
+                }
+                else
+                    continue;
+            } else {
+                break;
+            }
         }
-    
+            
         FILE* logSourceFile = nullptr;
         FILE* logDestinationFile = nullptr;
         if (!logSource.empty()) {
@@ -753,7 +770,7 @@ namespace ult {
                 #endif
             }
         }
-    
+        
         if (!logDestination.empty()) {
             createDirectory(getParentDirFromPath(logDestination));
             logDestinationFile = fopen(logDestination.c_str(), "a");
@@ -763,7 +780,7 @@ namespace ult {
                 #endif
             }
         }
-    
+        
         while (true) {
             size_t bytesRead = fread(buffer, 1, COPY_BUFFER_SIZE, srcFile);
             if (bytesRead == 0) {
@@ -773,7 +790,7 @@ namespace ult {
                 #endif
                 break;
             }
-    
+            
             if (abortFileOp.load(std::memory_order_acquire)) {
                 fclose(destFile);
                 fclose(srcFile);
@@ -802,18 +819,35 @@ namespace ult {
         if (logDestinationFile) {
             fclose(logDestinationFile);
         }
+        //#if USING_LOGGING_DIRECTIVE
+        //logMessage("Success. Try count: "+std::to_string(retryCount));
+        //#endif
     #else
-        std::ifstream srcFile(fromFile, std::ios::binary);
-        std::ofstream destFile(toFile, std::ios::binary);
         char buffer[COPY_BUFFER_SIZE];
-    
-        if (!srcFile || !destFile) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening files for copying.");
-            #endif
-            return;
+        std::ifstream srcFile;
+        std::ofstream destFile;
+        while (true) {
+            srcFile.open(fromFile, std::ios::binary);
+            destFile.open(toFile, std::ios::binary);
+        
+            if (srcFile.is_open() && destFile.is_open()) {
+                break;
+            } else {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Error opening files for copying. Retry #"+std::to_string(retryCount));
+                #endif
+                retryCount++;
+                if (retryCount > maxRetries) {
+                    #if USING_LOGGING_DIRECTIVE
+                    logMessage("Error max retry count exceeded.");
+                    #endif
+                    return;
+                }
+                else
+                    continue;
+            }
         }
-    
+        
         std::ofstream logSourceFile, logDestinationFile;
         if (!logSource.empty()) {
             createDirectory(getParentDirFromPath(logSource));
@@ -824,7 +858,7 @@ namespace ult {
                 #endif
             }
         }
-    
+        
         if (!logDestination.empty()) {
             createDirectory(getParentDirFromPath(logDestination));
             logDestinationFile.open(logDestination, std::ios::app);
@@ -834,7 +868,7 @@ namespace ult {
                 #endif
             }
         }
-    
+        
         while (srcFile.read(buffer, COPY_BUFFER_SIZE)) {
             if (abortFileOp.load(std::memory_order_acquire)) {
                 destFile.close();
@@ -868,6 +902,9 @@ namespace ult {
         if (logDestinationFile.is_open()) {
             logDestinationFile.close();
         }
+        //#if USING_LOGGING_DIRECTIVE
+        //logMessage("Success. Try count: "+std::to_string(retryCount));
+        //#endif
     #endif
     }
         

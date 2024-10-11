@@ -5075,7 +5075,13 @@ namespace tsl {
         class TrackBarV2 : public Element {
         public:
             std::chrono::steady_clock::time_point lastUpdate;
-            
+            //std::mutex queueMutex;
+            //std::condition_variable cv;
+            //std::queue<std::function<void()>> taskQueue;
+            //std::thread workerThread;
+            //bool stopWorker = false;
+
+
             Color highlightColor = {0xf, 0xf, 0xf, 0xf};
             float progress;
             float counter = 0.0;
@@ -5086,13 +5092,15 @@ namespace tsl {
             
             // Ensure the order of initialization matches the order of declaration
             TrackBarV2(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
-                     std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+                     std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                      std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                      std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingStepTrackbar = false, bool usingNamedStepTrackbar = false, s16 numSteps = -1, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
                 : m_label(label), m_packagePath(packagePath), m_minValue(minValue), m_maxValue(maxValue), m_units(units),
                   interpretAndExecuteCommands(executeCommands), getSourceReplacement(sourceReplacementFunc), commands(std::move(cmd)), selectedCommand(selCmd), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar), m_numSteps(numSteps), m_unlockedTrackbar(unlockedTrackbar), m_executeOnEveryTick(executeOnEveryTick) {
                 m_isItem = true;
                 
+                //workerThread = std::thread(&TrackBarV2::processQueue, this);
+
                 if ((!usingStepTrackbar && !usingNamedStepTrackbar) || numSteps == -1) {
                     m_numSteps = maxValue - minValue;
                 }
@@ -5126,62 +5134,117 @@ namespace tsl {
                 lastUpdate = std::chrono::steady_clock::now();
             }
             
-            virtual ~TrackBarV2() {}
+            virtual ~TrackBarV2() {
+                //{
+                //    std::lock_guard<std::mutex> lock(queueMutex);
+                //    stopWorker = true;
+                //}
+                //cv.notify_all();
+                //if (workerThread.joinable()) {
+                //    workerThread.join();
+                //}
+            }
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
-            
+
+            //void processQueue() {
+            //    while (true) {
+            //        std::function<void()> task;
+            //        {
+            //            std::unique_lock<std::mutex> lock(queueMutex);
+            //            cv.wait(lock, [this] { return !taskQueue.empty() || stopWorker; });
+            //
+            //            if (stopWorker && taskQueue.empty()) {
+            //                break;
+            //            }
+            //
+            //            if (!taskQueue.empty()) {
+            //                task = std::move(taskQueue.front());
+            //                taskQueue.pop();
+            //            }
+            //        }
+            //
+            //        if (task) {
+            //            task();  // Execute the task outside the lock
+            //        }
+            //    }
+            //}
+
+
             inline void updateAndExecute(bool updateIni = true) {
+            //inline void performUpdateAndExecute(bool updateIni) {
                 if (m_packagePath.empty()) {
                     return;
                 }
             
-                // Precompute values and reserve space
                 const std::string indexStr = std::to_string(m_index);
                 const std::string valueStr = m_usingNamedStepTrackbar ? m_selection : std::to_string(m_value);
-                
-                // Update INI file values if needed
+            
                 if (updateIni) {
                     const std::string configPath = m_packagePath + "config.ini";
                     setIniFileValue(configPath, m_label, "index", indexStr);
                     setIniFileValue(configPath, m_label, "value", valueStr);
                 }
-            
-                // Process and execute commands if needed
-                if (interpretAndExecuteCommands) {
-                    auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
-            
-                    // Prepare strings for replacements
-                    const std::string valuePlaceholder = "{value}";
-                    const std::string indexPlaceholder = "{index}";
-                    const size_t valuePlaceholderLength = valuePlaceholder.length();
-                    const size_t indexPlaceholderLength = indexPlaceholder.length();
-                    
-                    for (auto& cmd : modifiedCmds) {
-                        for (auto& arg : cmd) {
-                            // Replace {value} placeholders
-                            size_t pos = 0;
-                            while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
-                                arg.replace(pos, valuePlaceholderLength, valueStr);
-                                pos += valueStr.length();
-                            }
-            
-                            // Replace {index} placeholders if needed
-                            if (m_usingNamedStepTrackbar) {
-                                pos = 0;
-                                while ((pos = arg.find(indexPlaceholder, pos)) != std::string::npos) {
-                                    arg.replace(pos, indexPlaceholderLength, indexStr);
-                                    pos += indexStr.length();
+                bool success = false;
+
+                size_t tryCount = 0;
+                while (!success) {
+                    if (interpretAndExecuteCommands) {
+                        if (tryCount > 3)
+                            break;
+                        auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
+                        
+                        // Placeholder replacement
+                        const std::string valuePlaceholder = "{value}";
+                        const std::string indexPlaceholder = "{index}";
+                        const size_t valuePlaceholderLength = valuePlaceholder.length();
+                        const size_t indexPlaceholderLength = indexPlaceholder.length();
+                        
+                        for (auto& cmd : modifiedCmds) {
+                            for (auto& arg : cmd) {
+                                size_t pos = 0;
+                                while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
+                                    arg.replace(pos, valuePlaceholderLength, valueStr);
+                                    pos += valueStr.length();
+                                }
+                                
+                                if (m_usingNamedStepTrackbar) {
+                                    pos = 0;
+                                    while ((pos = arg.find(indexPlaceholder, pos)) != std::string::npos) {
+                                        arg.replace(pos, indexPlaceholderLength, indexStr);
+                                        pos += indexStr.length();
+                                    }
                                 }
                             }
                         }
+                        
+                        success = interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
+                        resetPercentages();
+
+                        if (success)
+                            break;
+                        tryCount++;
+                        //svcSleepThread(300'000'000);
                     }
-            
-                    // Execute commands
-                    interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
                 }
             }
+            
+            //inline void performUpdateAndExecute(bool updateIni = true) {
+            //    auto task = [this, updateIni]() {
+            //        performUpdateAndExecute(updateIni);
+            //    };
+            //    
+            //    // Add the task to the queue
+            //    {
+            //        std::lock_guard<std::mutex> lock(queueMutex);
+            //        taskQueue.push(task);
+            //    }
+            //    cv.notify_one();
+            //}
+
+
 
             
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
@@ -5196,15 +5259,27 @@ namespace tsl {
                 //auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - lastUpdate);
                 
+                static bool wasLastHeld = false;
+
+                if ((keysHeld & KEY_R)) {
+                    return true;
+                }
+
                 if (simulatedSelect && !simulatedSelectComplete) {
                     keysDown |= KEY_A;
                     simulatedSelect = false;
                 }
 
                 // Check if KEY_A is pressed to toggle allowSlide
-                if ((keysDown & KEY_A) && !m_unlockedTrackbar) {
-                    allowSlide = !allowSlide;
-                    holding = false; // Reset holding state when KEY_A is pressed
+                if (keysDown & KEY_A) {
+                    if (!m_unlockedTrackbar) {
+                        allowSlide = !allowSlide;
+                        holding = false; // Reset holding state when KEY_A is pressed
+                    }
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                        updateAndExecute();
+                        triggerClick = true;
+                    }
                     simulatedSelectComplete = true;
                     return true;
                 }
@@ -5213,18 +5288,18 @@ namespace tsl {
                 // Allow sliding only if KEY_A has been pressed
                 if (allowSlide || m_unlockedTrackbar) {
 
-                    if ((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) {
+                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
+                        (wasLastHeld && !((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)))) {
+
                         //if (!m_executeOnEveryTick)
+                        wasLastHeld = false;
                         updateAndExecute();
-                        lastUpdate = std::chrono::steady_clock::now(); // Adjust lastUpdate to account for the time taken by updateAndExecute()
+                        lastUpdate = std::chrono::steady_clock::now(); 
 
                         holding = false;
                         return true;
                     }
                     
-                    if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
-                        return true;
-
                     if (keysDown & HidNpadButton_AnyLeft && keysDown & HidNpadButton_AnyRight)
                         return true;
 
@@ -5233,9 +5308,7 @@ namespace tsl {
                             this->m_index--;
                             this->m_value--;
                             this->m_valueChangedListener(this->m_value);
-                            if (m_executeOnEveryTick) {
-                                updateAndExecute(false);
-                            }
+                            updateAndExecute(false);
                             lastUpdate = std::chrono::steady_clock::now();
                             return true;
                         }
@@ -5246,16 +5319,19 @@ namespace tsl {
                             this->m_index++;
                             this->m_value++;
                             this->m_valueChangedListener(this->m_value);
-                            if (m_executeOnEveryTick) {
-                                updateAndExecute(false);
-                            }
+                            updateAndExecute(false);
                             lastUpdate = std::chrono::steady_clock::now();
                             return true;
                         }
                     }
+
+
+
+                    if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
+                        return true;
                     
                     // Check if the button is being held down
-                    if ((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)) {
+                    if (((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight))) {
                         
                         if (!holding) {
                             holding = true;
@@ -5285,6 +5361,7 @@ namespace tsl {
                                         updateAndExecute(false);
                                     }
                                     lastUpdate = std::chrono::steady_clock::now();
+                                    wasLastHeld = true;
                                     return true;
                                 }
                             }
@@ -5298,6 +5375,7 @@ namespace tsl {
                                         updateAndExecute(false);
                                     }
                                     lastUpdate = std::chrono::steady_clock::now();
+                                    wasLastHeld = true;
                                     return true;
                                 }
                             }
@@ -5317,41 +5395,54 @@ namespace tsl {
                 s32 circleCenterX = this->getX() + 59 + handlePos;
                 s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 s32 circleRadius = 16;
-            
+                
                 bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
-            
-                if (!internalTouchReleased)
+                
+                //static std::chrono::steady_clock::time_point touchStartTime;
+                //static bool holdingPosition = false;
+
+                //if (!internalTouchReleased)
+                //    return false;
+                
+                if (!m_unlockedTrackbar && !allowSlide)
                     return false;
-            
-                if (event == TouchEvent::Release) {
-                    updateAndExecute();
-                    this->m_interactionLocked = false;
-                    touchInSliderBounds = false;
-                    return false;
-                }
-            
-                if (!this->m_interactionLocked && (touchInCircle || touchInSliderBounds)) {
+
+                if ((touchInCircle || touchInSliderBounds)) {
+
                     touchInSliderBounds = true;
-            
+                    
                     s16 newIndex = static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1));
-            
+                    
                     // Clamp the index within valid range
                     newIndex = std::max(static_cast<s16>(0), std::min(newIndex, static_cast<s16>(m_numSteps - 1)));
-            
+                    
                     s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
-            
+                    
                     if (newValue != this->m_value || newIndex != this->m_index) {
+                        //touchStartTime =std::chrono::steady_clock::now();
                         this->m_value = newValue;
                         this->m_index = newIndex;
                         this->m_valueChangedListener(this->getProgress());
                         if (m_executeOnEveryTick) {
                             updateAndExecute(false);
                         }
+                        //holdingPosition = false;
+                    } else {
+                        // Check if position is held for 0.5s
+                        //auto holdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - touchStartTime);
+                        
+                        //if (event == TouchEvent::Release || (holdDuration >= std::chrono::milliseconds(500) && !holdingPosition)) {
+                        if (event == TouchEvent::Release) {
+                            updateAndExecute();
+                            //holdingPosition = true;
+                            if (event == TouchEvent::Release)
+                                touchInSliderBounds = false;
+                        }
                     }
+
+
             
                     return true;
-                } else {
-                    this->m_interactionLocked = true;
                 }
             
                 return false;
@@ -5434,20 +5525,56 @@ namespace tsl {
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
                 progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                if (allowSlide || m_unlockedTrackbar) {
-                    highlightColor = {
-                        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
-                        0xF
-                    };
+                
+                static std::chrono::steady_clock::time_point clickStartTime;
+                static bool clickActive = false;
+            
+                Color clickColor1 = highlightColor1;
+                Color clickColor2 = clickColor;
+
+                // Activate `clickStartTime` when `triggerClick` is set to true
+                if (triggerClick && !clickActive) {
+                    clickStartTime = std::chrono::steady_clock::now();
+                    clickActive = true;
+                    // Within the cycle, perform the highlight effect
+                    if (progress >= 0.5) {
+                        clickColor1 = clickColor;
+                        clickColor2 = highlightColor2;
+                    }
+                }
+            
+
+                if (clickActive) {
+                    auto elapsedTime = std::chrono::steady_clock::now() - clickStartTime;
+                    if (elapsedTime < std::chrono::seconds(1)) {
+                        highlightColor = {
+                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
+                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
+                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b),
+                            0xF
+                        };
+                    } else {
+                        // End the effect after one cycle
+                        clickActive = false;
+                        triggerClick = false;
+                    }
                 } else {
-                    highlightColor = {
-                        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
-                        0xF
-                    };
+
+                    if (allowSlide || m_unlockedTrackbar) {
+                        highlightColor = {
+                            static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
+                            static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
+                            static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                            0xF
+                        };
+                    } else {
+                        highlightColor = {
+                            static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
+                            static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
+                            static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                            0xF
+                        };
+                    }
                 }
                 
                 //u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
@@ -5522,7 +5649,7 @@ namespace tsl {
             std::function<void(u8)> m_valueChangedListener = [](u8) {};
 
             // New member variables to store the function and its parameters
-            std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> interpretAndExecuteCommands;
+            std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> interpretAndExecuteCommands;
             std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> getSourceReplacement;
             std::vector<std::vector<std::string>> commands;
             std::string selectedCommand;
@@ -5534,6 +5661,7 @@ namespace tsl {
             bool m_unlockedTrackbar = false;
             bool m_executeOnEveryTick = false;
             bool touchInSliderBounds = false;
+            bool triggerClick = false;
         };
         
         
@@ -5551,7 +5679,7 @@ namespace tsl {
              * @param numSteps Number of steps the track bar has
              */
             StepTrackBarV2(std::string label, std::string packagePath, size_t numSteps, s16 minValue, s16 maxValue, std::string units,
-                std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+                std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingNamedStepTrackbar = false, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
                 : TrackBarV2(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
@@ -5565,6 +5693,12 @@ namespace tsl {
                 u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
                 //static bool usingUnlockedTrackbar = m_unlockedTrackbar;
+
+                static bool wasLastHeld = false;
+
+                if ((keysHeld & KEY_R)) {
+                    return true;
+                }
 
                 if (simulatedSelect && !simulatedSelectComplete) {
                     keysDown |= KEY_A;
@@ -5580,25 +5714,35 @@ namespace tsl {
                     //    m_unlockedTrackbar = !m_unlockedTrackbar;
                     //    holding = false; // Reset holding state when KEY_A is pressed
                     }
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                        updateAndExecute();
+                        triggerClick = true;
+                    }
                     simulatedSelectComplete = true;
                     return true;
                 }
 
                 if (allowSlide || m_unlockedTrackbar) {
-                    if ((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) {
+                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
+                        (wasLastHeld && !(keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)))) {
                         //if (!m_executeOnEveryTick)
                         updateAndExecute();
                         holding = false;
+                        wasLastHeld = false;
                         tick = 0;
                         return true;
                     }
+
+                    //if ((keysDown & HidNpadButton_AnyLeft) || (keysDown & HidNpadButton_AnyRight)) {
+                    //    tick = 0;
+                    //}
                     
                     if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
                         tick = 0;
                         return true;
                     }
                     
-                    if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight) && !(keysHeld & KEY_R)) {
+                    if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                         if (!holding) {
                             holding = true;
                             tick = 0;
@@ -5620,6 +5764,7 @@ namespace tsl {
                             this->m_valueChangedListener(this->getProgress());
                             if (m_executeOnEveryTick)
                                 updateAndExecute(false);
+                            wasLastHeld = true;
                         }
                         tick++;
                         return true;
@@ -5674,7 +5819,7 @@ namespace tsl {
              * @param stepDescriptions Step names displayed above the track bar
              */
             NamedStepTrackBarV2(std::string label, std::string packagePath, std::vector<std::string>& stepDescriptions,
-                std::function<void(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
+                std::function<bool(std::vector<std::vector<std::string>>&&, const std::string&, const std::string&)> executeCommands = nullptr,
                 std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                 std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool unlockedTrackbar = false, bool executeOnEveryTick = false)
                 : StepTrackBarV2(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
@@ -6201,7 +6346,7 @@ namespace tsl {
             static auto keyEventInterval = std::chrono::milliseconds(67); // Interval between key events
             
             auto& currentGui = this->getCurrentGui();
-            
+            static bool isTopElemet = true;
 
             // Return early if current GUI is not available
             if (!currentGui) return;
@@ -6210,7 +6355,7 @@ namespace tsl {
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
-            auto bottomElement = currentGui->getBottomElement();
+            //auto bottomElement = currentGui->getBottomElement(); // needs implementing
             
             if (runningInterpreter.load()) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
@@ -6248,6 +6393,7 @@ namespace tsl {
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
+                    isTopElemet = true;
                 }
 
             }
@@ -6305,8 +6451,10 @@ namespace tsl {
                             // Immediate single press action
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, shouldShake); // Request focus on the top element when double-clicking up
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK))
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
+                                isTopElemet = false;
+                            }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, shouldShake);
                             else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
@@ -6341,8 +6489,10 @@ namespace tsl {
                             lastKeyEventTime = now;
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, false);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK))
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
+                                isTopElemet = false;
+                            }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
                             else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
@@ -6364,13 +6514,14 @@ namespace tsl {
             }
             
             if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
-                currentGui->requestFocus(topElement, FocusDirection::None);
-                currentGui->requestFocus(topElement, FocusDirection::None);
+                if (!isTopElemet)
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                isTopElemet = true;
             }
             
-            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
-                currentGui->requestFocus(bottomElement, FocusDirection::None);
-            }
+            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            //    currentGui->requestFocus(bottomElement, FocusDirection::None); // Not correctly implemented. (yet)
+            //}
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
