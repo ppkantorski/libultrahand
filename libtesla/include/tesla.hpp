@@ -1962,8 +1962,25 @@ namespace tsl {
             }
 
             inline void setLayerPosImpl(u32 x, u32 y) {
-                cfg::LayerPosX = x;
-                cfg::LayerPosY = y;
+                // Get the underscan pixel values for both horizontal and vertical borders
+                auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
+                //int horizontalUnderscanPixels = 0;
+
+                //useRightAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "right_alignment") == TRUE_STR);
+                //cfg::LayerPosX = 1280-32;
+                cfg::LayerPosX = 0;
+                cfg::LayerPosY = 0;
+                cfg::FramebufferWidth  = DefaultFramebufferWidth;
+                cfg::FramebufferHeight = DefaultFramebufferHeight;
+
+                //correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
+                if (useRightAlignment && correctFrameSize) {
+                    cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
+                    layerEdge = (1280-448);
+                }
+
+                cfg::LayerPosX += x;
+                cfg::LayerPosY += y;
                 ASSERT_FATAL(viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY));
             }
 
@@ -2396,6 +2413,8 @@ namespace tsl {
                 this->m_currentFramebuffer = nullptr;
             }
         };
+
+        // Helper function to calculate string width
         float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
             if (originalString.empty()) {
                 return 0.0f;
