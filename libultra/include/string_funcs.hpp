@@ -34,6 +34,59 @@
 namespace ult {
     
     /**
+     * @brief A lightweight string stream class that mimics basic functionality of std::istringstream.
+     */
+    class StringStream {
+    public:
+        StringStream() : position(0), hexMode(false), validState(true) {}
+    
+    
+        // Add this constructor to accept a string
+        StringStream(const std::string& input) : data(input), position(0), hexMode(false) {}
+    
+        // Set hex mode
+        StringStream& hex() {
+            hexMode = true;
+            return *this;
+        }
+    
+        // Reset hex mode
+        StringStream& resetHex() {
+            hexMode = false;
+            return *this;
+        }
+    
+        // Mimics std::getline() with a delimiter
+        bool getline(std::string& output, char delimiter);
+    
+        // Mimics operator >> to split by whitespace
+        StringStream& operator>>(std::string& output);
+    
+        // Overload the << operator to insert strings and integers
+        StringStream& operator<<(const std::string& input);
+        StringStream& operator<<(const char* input);
+        StringStream& operator<<(char input);
+        StringStream& operator<<(int input);  // Handles int insertion with hex support
+    
+        // Conversion to bool for checking stream state (success/failure)
+        explicit operator bool() const {
+            return validState;
+        }
+    
+        std::string str() const;
+    
+    private:
+        std::string data;
+        size_t position;
+        bool hexMode;
+        bool validState;  // Track if the stream is in a valid state
+    };
+    
+
+    
+
+
+    /**
      * @brief Trims leading and trailing whitespaces from a string.
      *
      * This function removes leading and trailing whitespaces, tabs, newlines, carriage returns, form feeds,
@@ -145,6 +198,17 @@ namespace ult {
     
     std::string stringToLowercase(const std::string& str);
     
+
+    /**
+     * @brief Converts a string to uppercase.
+     *
+     * This function takes a string as input and returns an uppercase version of that string.
+     *
+     * @param str The input string to convert to uppercase.
+     * @return The uppercase version of the input string.
+     */
+    
+    std::string stringToUppercase(const std::string& str);
     
     /**
      * @brief Formats a priority string to a desired width.

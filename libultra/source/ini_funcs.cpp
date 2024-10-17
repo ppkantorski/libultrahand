@@ -144,6 +144,8 @@ namespace ult {
         size_t delimiterPos;
         //std::string key, value;
         
+        std::string newLine1, newLine2;
+
         for (auto& line : lines) {
             trim(line);
             
@@ -163,9 +165,9 @@ namespace ult {
                     //value = trim(trimmedLine.substr(delimiterPos + 1));
                     if (!lastHeader.empty()) {
                         //iniData[lastHeader][key] = value;
-                        std::string newLine1 = line.substr(0, delimiterPos);
+                        newLine1 = line.substr(0, delimiterPos);
                         trim(newLine1);
-                        std::string newLine2 = line.substr(delimiterPos + 1);
+                        newLine2 = line.substr(delimiterPos + 1);
                         trim(newLine2);
                         iniData[lastHeader][newLine1] = newLine2;
                     }
@@ -563,7 +565,7 @@ namespace ult {
             return;
         }
     
-        std::stringstream buffer;
+        StringStream buffer(""); // Use StringStream to collect results
         char line[1024];
         bool sectionFound = false;
         bool keyFound = false;
@@ -625,7 +627,7 @@ namespace ult {
         }
     #else
         std::ifstream configFile(fileToEdit);
-        std::stringstream buffer;  // Use stringstream to buffer the output.
+        StringStream buffer(""); // Use StringStream to collect results
     
         if (!configFile) {
             std::ofstream outFile(fileToEdit);
@@ -1194,18 +1196,20 @@ namespace ult {
         bool inQuotes = false;
         std::string part;
     
-        std::istringstream iss(line);
-        while (std::getline(iss, part, '\'')) { // Handle single quotes
+        StringStream iss(line);  // Use your custom StringStream
+    
+        // Use StringStream's getline method, not std::getline
+        while (iss.getline(part, '\'')) {  // Handle single quotes using custom getline
             if (inQuotes) {
-                commandParts.push_back(part); // Inside quotes, treat as a whole argument
+                commandParts.push_back(part);  // Inside quotes, treat as a whole argument
             } else {
-                std::istringstream argIss(part);
+                StringStream argIss(part);
                 std::string arg;
-                while (argIss >> arg) {
-                    commandParts.push_back(arg); // Split part outside quotes by spaces
+                while (argIss >> arg) {  // Use custom operator >> to split by spaces
+                    commandParts.push_back(arg);  // Split part outside quotes by spaces
                 }
             }
-            inQuotes = !inQuotes; // Toggle the inQuotes flag
+            inQuotes = !inQuotes;  // Toggle the inQuotes flag
         }
     
         return commandParts;

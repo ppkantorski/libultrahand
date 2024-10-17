@@ -2,6 +2,94 @@
 
 namespace ult {
     
+
+    // Default constructor
+    //StringStream::StringStream() : position(0) {}
+    //
+    //// Constructor that takes a string reference to process
+    //StringStream::StringStream(const std::string& input) : data(input), position(0) {}
+
+    // Mimics std::getline() with a delimiter
+    bool StringStream::getline(std::string& output, char delimiter) {
+        if (position >= data.size()) {
+            return false;  // End of string
+        }
+    
+        size_t nextPos = data.find(delimiter, position);
+    
+        if (nextPos != std::string::npos) {
+            output = data.substr(position, nextPos - position);  // Extract the token
+            position = nextPos + 1;  // Move past the delimiter
+        } else {
+            output = data.substr(position);  // Last segment with no more delimiters
+            position = data.size();  // Reached the end
+        }
+    
+        return true;
+    }
+    
+    // Mimics operator >> to split by whitespace
+    StringStream& StringStream::operator>>(std::string& output) {
+        // Skip leading whitespace
+        while (position < data.size() && std::isspace(data[position])) {
+            ++position;
+        }
+    
+        if (position >= data.size()) {
+            output.clear();
+            validState = false;  // Set the stream to an invalid state if we reach the end
+            return *this;
+        }
+    
+        size_t nextPos = position;
+        while (nextPos < data.size() && !std::isspace(data[nextPos])) {
+            ++nextPos;
+        }
+    
+        output = data.substr(position, nextPos - position);
+        position = nextPos;
+    
+        validState = true;  // Successfully extracted a word
+        return *this;
+    }
+    
+    // Overload << operator for std::string
+    StringStream& StringStream::operator<<(const std::string& input) {
+        data += input;
+        return *this;
+    }
+    
+    // Overload << operator for const char*
+    StringStream& StringStream::operator<<(const char* input) {
+        data += input;
+        return *this;
+    }
+    
+    // Overload << operator for char
+    StringStream& StringStream::operator<<(char input) {
+        data += input;
+        return *this;
+    }
+    
+    // Overload << operator for int (handles hex mode)
+    StringStream& StringStream::operator<<(int input) {
+        if (hexMode) {
+            char buffer[20];  // Buffer large enough for hex conversion
+            sprintf(buffer, "%x", input);  // Convert integer to hex string
+            data += buffer;
+        } else {
+            data += std::to_string(input);
+        }
+        return *this;
+    }
+    
+    // Return the current buffer content
+    std::string StringStream::str() const {
+        return data;
+    }
+    
+
+
     /**
      * @brief Trims leading and trailing whitespaces from a string.
      *
@@ -218,12 +306,38 @@ namespace ult {
     
     std::string stringToLowercase(const std::string& str) {
         std::string result = str;
-        std::transform(result.begin(), result.end(), result.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
+        //std::transform(result.begin(), result.end(), result.begin(),
+        //               [](unsigned char c) { return std::tolower(c); });
+        //return result;
+        for (char& c : result) {
+            if (c >= 'A' && c <= 'Z') {
+                c += 32;
+            }
+        }
         return result;
     }
     
+    /**
+     * @brief Converts a string to uppercase.
+     *
+     * This function takes a string as input and returns an uppercase version of that string.
+     *
+     * @param str The input string to convert to uppercase.
+     * @return The uppercase version of the input string.
+     */
     
+    std::string stringToUppercase(const std::string& str) {
+        std::string result = str;
+        for (char& c : result) {
+            if (c >= 'a' && c <= 'z') {
+                c -= 32;
+            }
+        }
+        return result;
+    }
+
+
+
     /**
      * @brief Formats a priority string to a desired width.
      *
@@ -266,7 +380,7 @@ namespace ult {
     
     
     std::string getFirstLongEntry(const std::string& input, size_t minLength) {
-        std::istringstream iss(input);
+        StringStream iss(input);  // Use custom StringStream
         std::string word;
     
         // Split the input string based on spaces and get the first word

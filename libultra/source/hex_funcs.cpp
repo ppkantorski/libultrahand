@@ -579,7 +579,8 @@ namespace ult {
     #endif
     
         std::string result(hexStream.begin(), hexStream.end());
-        std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+        //std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+        result = stringToUppercase(result);
     
         return result;
     }
@@ -610,10 +611,12 @@ namespace ult {
             
             // Split the placeholder content into its components (customAsciiPattern, offsetStr, length)
             std::vector<std::string> components;
-            std::istringstream componentStream(placeholderContent);
+            
+            // Use StringStream instead of std::istringstream
+            StringStream componentStream(placeholderContent);
             std::string component;
             
-            while (std::getline(componentStream, component, ',')) {
+            while (componentStream.getline(component, ',')) {
                 trim(component);
                 components.push_back(component);
             }
@@ -627,9 +630,6 @@ namespace ult {
                 // Call the parsing function and replace the placeholder
                 std::string parsedResult = parseHexDataAtCustomOffset(hexPath, customAsciiPattern, offsetStr, length);
                 
-                
-                //std::string parsedResult = customAsciiPattern+offsetStr;
-                
                 // Only replace if parsedResult returns a non-empty string
                 if (!parsedResult.empty()) {
                     // Replace the entire placeholder with the parsed result
@@ -640,6 +640,7 @@ namespace ult {
         
         return replacement;
     }
+
     
     
         

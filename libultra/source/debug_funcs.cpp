@@ -18,19 +18,19 @@ namespace ult {
     void logMessage(const std::string& message) {
         if (disableLogging)
             return;
-
+        
         std::time_t currentTime = std::time(nullptr);
         std::tm* timeInfo = std::localtime(&currentTime);
         char buffer[30];
         strftime(buffer, sizeof(buffer), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
         std::string timestamp(buffer);
-
+        
         // Depending on the directive, use either std::ofstream or stdio functions
         #if NO_FSTREAM_DIRECTIVE
         // Use stdio functions to open, write, and close the file
         {
             std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for thread-safe access
-
+            
             FILE* file = fopen(logFilePath.c_str(), "a"); // Open the file in append mode
             if (file != nullptr) {
                 fprintf(file, "%s%s\n", timestamp.c_str(), message.c_str());
@@ -44,7 +44,7 @@ namespace ult {
         // Use std::ofstream if NO_FSTREAM_DIRECTIVE is not defined
         {
             std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for the duration of this block
-
+            
             std::ofstream file(logFilePath.c_str(), std::ios::app);
             if (file.is_open()) {
                 file << timestamp + message + "\n";

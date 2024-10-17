@@ -283,9 +283,11 @@ namespace ult {
         }
     
         int offset = 0;
-        std::istringstream iss(pchtxt);
+        StringStream iss(pchtxt);  // Use your custom StringStream
         std::string line;
-        while (std::getline(iss, line)) {
+        
+        // Use your custom getline method instead of std::getline
+        while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
             trim(line);
             if (line.empty() || line[0] == '#') {
                 continue;
@@ -373,12 +375,20 @@ namespace ult {
     // Helper function to convert a vector of bytes to a hex string for logging
     
     std::string hexToString(const std::vector<uint8_t>& bytes) {
-        std::ostringstream oss;
+        StringStream oss;  // Use your custom StringStream
+        oss.hex();  // Enable hex mode for the stream
+    
         for (uint8_t byte : bytes) {
-            oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+            if (byte < 0x10) {
+                oss << "0";  // Append leading zero for single-digit hex values
+            }
+            oss << static_cast<int>(byte);  // Convert byte to int and then append it
         }
-        return oss.str();
+    
+        return oss.str();  // Return the final hex string
     }
+
+
     
     
     
@@ -428,33 +438,33 @@ namespace ult {
                 }
                 continue;  // Skip empty lines and lines starting with '@'
             }
-    
-            std::istringstream iss(line);
+            
+            StringStream iss(line);
             std::string addressStr, valueStr;
     
             if (!(iss >> addressStr >> valueStr)) {
                 continue;
             }
-    
+            
             char* endPtr;
             address = std::strtoul(addressStr.c_str(), &endPtr, 16) + offset; // Adjust address by offset
             if (*endPtr != '\0') {
                 continue;
             }
-    
+            
             for (size_t i = 0; i < valueStr.length(); i += 2) {
                 byte = std::stoi(valueStr.substr(i, 2), nullptr, 16);
                 valueBytes.push_back(byte);
             }
-    
+            
             if (valueBytes.empty()) {
                 continue;
             }
-    
+            
             patches.push_back(std::make_pair(address, valueBytes));
             valueBytes.clear();
         }
-    
+        
         if (nsobid.empty()) {
             nsobid = pchtxtPath.substr(pchtxtPath.find_last_of("/\\") + 1);
             nsobid = nsobid.substr(0, nsobid.find_last_of("."));
@@ -498,7 +508,7 @@ namespace ult {
                 continue;  // Skip empty lines and lines starting with '@'
             }
     
-            std::istringstream iss(line);
+            StringStream iss(line);
             std::string addressStr, valueStr;
     
             if (!(iss >> addressStr >> valueStr)) {

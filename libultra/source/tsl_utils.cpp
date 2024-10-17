@@ -21,7 +21,11 @@
 #include <tsl_utils.hpp>
 
 namespace ult {
-    
+    bool correctFrameSize; // for detecting the correct Overlay display size
+
+    //u16 DefaultFramebufferWidth = 448;            ///< Width of the framebuffer
+    //u16 DefaultFramebufferHeight = 720;           ///< Height of the framebuffer
+
     std::unordered_map<std::string, std::string> translationCache;
     
 
@@ -246,6 +250,11 @@ namespace ult {
         // Quick check to see if the string contains a '+'
         if (combo.find('+') == std::string::npos) {
             return;  // No '+' found, nothing to modify
+        }
+
+        // Exit early if the combo contains any spaces
+        if (combo.find(' ') != std::string::npos) {
+            return;  // Spaces found, return without modifying
         }
     
         std::string unicodeCombo;

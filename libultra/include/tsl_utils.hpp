@@ -57,6 +57,11 @@
 
 
 namespace ult {
+    extern bool correctFrameSize; // for detecting the correct Overlay display size
+
+    //extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
+    //extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
+
     extern std::unordered_map<std::string, std::string> translationCache;
     bool readFileContent(const std::string& filePath, std::string& content);
     void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result);
@@ -220,8 +225,8 @@ namespace ult {
     extern const std::string whiteColor;
     extern const std::string blackColor;
     
-    constexpr float _M_PI = 3.14159265358979323846;
-    constexpr float RAD_TO_DEG = 180.0f / _M_PI;
+    constexpr double _M_PI = 3.14159265358979323846;  // For double precision
+    constexpr double RAD_TO_DEG = 180.0f / _M_PI;
     
     #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;

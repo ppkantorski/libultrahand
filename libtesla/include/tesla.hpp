@@ -40,6 +40,14 @@
 
 #pragma once
 
+#include <cstdlib>
+extern "C" { // assertion override
+    void __assert_func(const char *_file, int _line, const char *_func, const char *_expr ) {
+        abort();
+    }
+}
+
+
 #include <ultra.hpp>
 #include <switch.h>
 #include <arm_neon.h>
@@ -101,7 +109,15 @@ using namespace ult;
 using namespace std::literals::string_literals;
 using namespace std::literals::chrono_literals;
 
+#if IS_STATUS_MONITOR_DIRECTIVE
+u8 TeslaFPS = 60;
+u8 alphabackground = 0xD;
+bool FullMode = true;
+bool deactivateOriginalFooter = false;
+#endif
 
+u16 DefaultFramebufferWidth = 448;
+u16 DefaultFramebufferHeight = 720;
 
 namespace tsl {
 
@@ -111,6 +127,8 @@ namespace tsl {
         
         constexpr u32 ScreenWidth = 1920;       ///< Width of the Screen
         constexpr u32 ScreenHeight = 1080;      ///< Height of the Screen
+        constexpr u32 LayerMaxWidth = 1280;
+        constexpr u32 LayerMaxHeight = 720;
         
         extern u16 LayerWidth;                  ///< Width of the Tesla layer
         extern u16 LayerHeight;                 ///< Height of the Tesla layer
@@ -140,8 +158,8 @@ namespace tsl {
         
     };
     
-    
-    inline Color GradientColor(float temperature) {
+    #if USING_WIDGET_DIRECTIVE
+    static Color GradientColor(float temperature) {
         // Ensure temperature is within the range [0, 100]
         temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
         
@@ -186,10 +204,10 @@ namespace tsl {
         
         return Color(r, g, b, a);
     }
-    
+    #endif
 
 
-    inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
+    static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
         std::string validHex = hexColor.empty() || hexColor[0] != '#' ? hexColor : hexColor.substr(1);
         
         if (!isValidHexColor(validHex)) {
@@ -205,30 +223,30 @@ namespace tsl {
     }
 
 
-    inline std::tuple<uint8_t, uint8_t, uint8_t> hexToRGB444Floats(const std::string& hexColor, const std::string& defaultHexColor = "#FFFFFF") {
-        const char* validHex = hexColor.c_str();
-        if (validHex[0] == '#') validHex++;
-        
-        if (!isValidHexColor(validHex)) {
-            validHex = defaultHexColor.c_str();
-            if (validHex[0] == '#') validHex++;
-        }
-        
-        // Manually parse the hex string to an integer value
-        unsigned int hexValue = (hexMap[static_cast<unsigned char>(validHex[0])] << 20) |
-                                (hexMap[static_cast<unsigned char>(validHex[1])] << 16) |
-                                (hexMap[static_cast<unsigned char>(validHex[2])] << 12) |
-                                (hexMap[static_cast<unsigned char>(validHex[3])] << 8)  |
-                                (hexMap[static_cast<unsigned char>(validHex[4])] << 4)  |
-                                hexMap[static_cast<unsigned char>(validHex[5])];
-        
-        // Extract and scale the RGB components from 8-bit (0-255) to 4-bit float scale (0-15)
-        uint8_t red = ((hexValue >> 16) & 0xFF) / 255.0f * 15.0f;
-        uint8_t green = ((hexValue >> 8) & 0xFF) / 255.0f * 15.0f;
-        uint8_t blue = (hexValue & 0xFF) / 255.0f * 15.0f;
-        
-        return std::make_tuple(red, green, blue);
-    }
+    //std::tuple<uint8_t, uint8_t, uint8_t> hexToRGB444Floats(const std::string& hexColor, const std::string& defaultHexColor = "#FFFFFF") {
+    //    const char* validHex = hexColor.c_str();
+    //    if (validHex[0] == '#') validHex++;
+    //    
+    //    if (!isValidHexColor(validHex)) {
+    //        validHex = defaultHexColor.c_str();
+    //        if (validHex[0] == '#') validHex++;
+    //    }
+    //    
+    //    // Manually parse the hex string to an integer value
+    //    unsigned int hexValue = (hexMap[static_cast<unsigned char>(validHex[0])] << 20) |
+    //                            (hexMap[static_cast<unsigned char>(validHex[1])] << 16) |
+    //                            (hexMap[static_cast<unsigned char>(validHex[2])] << 12) |
+    //                            (hexMap[static_cast<unsigned char>(validHex[3])] << 8)  |
+    //                            (hexMap[static_cast<unsigned char>(validHex[4])] << 4)  |
+    //                            hexMap[static_cast<unsigned char>(validHex[5])];
+    //    
+    //    // Extract and scale the RGB components from 8-bit (0-255) to 4-bit float scale (0-15)
+    //    uint8_t red = ((hexValue >> 16) & 0xFF) / 255.0f * 15.0f;
+    //    uint8_t green = ((hexValue >> 8) & 0xFF) / 255.0f * 15.0f;
+    //    uint8_t blue = (hexValue & 0xFF) / 255.0f * 15.0f;
+    //    
+    //    return std::make_tuple(red, green, blue);
+    //}
 
     
     
@@ -258,7 +276,7 @@ namespace tsl {
 
     #if IS_LAUNCHER_DIRECTIVE
     static Color logoColor1 = RGB888(whiteColor);
-    static Color logoColor2 = RGB888("#F7253E");
+    static Color logoColor2 = RGB888("F7253E");
     #endif
 
     static size_t defaultBackgroundAlpha = 13;
@@ -276,14 +294,14 @@ namespace tsl {
     static Color defaultOverlayColor = RGB888(whiteColor);
     static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
     static Color clockColor = RGB888(whiteColor);
-    static Color batteryColor = RGB888("#ffff45");
-    static Color versionTextColor = RGB888("#AAAAAA");
-    static Color onTextColor = RGB888("#00FFDD");
-    static Color offTextColor = RGB888("#AAAAAA");
+    static Color batteryColor = RGB888("ffff45");
+    static Color versionTextColor = RGB888("AAAAAA");
+    static Color onTextColor = RGB888("00FFDD");
+    static Color offTextColor = RGB888("AAAAAA");
     
     #if IS_LAUNCHER_DIRECTIVE
-    static std::tuple<float,float,float> dynamicLogoRGB1 = hexToRGB444Floats("#00E669");
-    static std::tuple<float,float,float> dynamicLogoRGB2 = hexToRGB444Floats("#8080EA");
+    static Color dynamicLogoRGB1 = RGB888("00E669");
+    static Color dynamicLogoRGB2 = RGB888("8080EA");
     #endif
 
     static bool disableSelectionBG = false;
@@ -292,41 +310,41 @@ namespace tsl {
     static size_t selectionBGAlpha = 7;
     static Color selectionBGColor = RGB888(blackColor, selectionBGAlpha);
 
-    static Color highlightColor1 = RGB888("#2288CC");
-    static Color highlightColor2 = RGB888("#88FFFF");
-    static Color highlightColor3 = RGB888("#FFFF45");
-    static Color highlightColor4 = RGB888("#F7253E");
+    static Color highlightColor1 = RGB888("2288CC");
+    static Color highlightColor2 = RGB888("88FFFF");
+    static Color highlightColor3 = RGB888("FFFF45");
+    static Color highlightColor4 = RGB888("F7253E");
 
     static Color highlightColor = tsl::style::color::ColorHighlight;
     
     static size_t clickAlpha = 7;
-    static Color clickColor = RGB888("#3E25F7", clickAlpha);
+    static Color clickColor = RGB888("3E25F7", clickAlpha);
 
     static size_t progressAlpha = 7;
-    static Color progressColor = RGB888("#253EF7", progressAlpha);
+    static Color progressColor = RGB888("253EF7", progressAlpha);
 
-    static Color trackBarColor = RGB888("#555555");
+    static Color trackBarColor = RGB888("555555");
 
     static size_t separatorAlpha = 15;
-    static Color separatorColor = RGB888("#404040", separatorAlpha);
+    static Color separatorColor = RGB888("404040", separatorAlpha);
 
     static Color selectedTextColor = RGB888(whiteColor);
     static Color inprogressTextColor = RGB888(whiteColor);
-    static Color invalidTextColor = RGB888("#FF0000");
+    static Color invalidTextColor = RGB888("FF0000");
     static Color clickTextColor = RGB888(whiteColor);
 
     static size_t tableBGAlpha = 10;
-    static Color tableBGColor = RGB888("#303030", tableBGAlpha);
-    static Color sectionTextColor = RGB888("#e9ff40");
+    static Color tableBGColor = RGB888("303030", tableBGAlpha);
+    static Color sectionTextColor = RGB888("e9ff40");
     static Color infoTextColor = RGB888(whiteColor);
-    static Color warningTextColor = RGB888("#FF7777");
+    static Color warningTextColor = RGB888("FF7777");
 
 
-    static Color trackBarSliderColor = RGB888("#606060");
-    static Color trackBarSliderBorderColor = RGB888("#505050");
-    static Color trackBarSliderMalleableColor = RGB888("#A0A0A0");
-    static Color trackBarFullColor = RGB888("#00FFDD");
-    static Color trackBarEmptyColor = RGB888("#404040");
+    static Color trackBarSliderColor = RGB888("606060");
+    static Color trackBarSliderBorderColor = RGB888("505050");
+    static Color trackBarSliderMalleableColor = RGB888("A0A0A0");
+    static Color trackBarFullColor = RGB888("00FFDD");
+    static Color trackBarEmptyColor = RGB888("404040");
     
     static void initializeThemeVars() { // NOTE: This needs to be called once in your application.
         // Fetch all theme settings at once from the INI file
@@ -378,8 +396,8 @@ namespace tsl {
             offTextColor = getColor("off_text_color");
             
             #if IS_LAUNCHER_DIRECTIVE
-            dynamicLogoRGB1 = hexToRGB444Floats(getValue("dynamic_logo_color_1"));
-            dynamicLogoRGB2 = hexToRGB444Floats(getValue("dynamic_logo_color_2"));
+            dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
+            dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
             #endif
 
             disableSelectionBG = (getValue("disable_selection_bg") == TRUE_STR);
@@ -536,12 +554,12 @@ namespace tsl {
          *
          * @param f wrapped function
          */
-        template<typename F>
-        static inline void doWithSDCardHandle(F f) {
-            fsdevMountSdmc();
-            f();
-            fsdevUnmountDevice("sdmc");
-        }
+        //template<typename F>
+        //static inline void doWithSDCardHandle(F f) {
+        //    fsdevMountSdmc();
+        //    f();
+        //    fsdevUnmountDevice("sdmc");
+        //}
         
         /**
          * @brief Guard that will execute a passed function at the end of the current scope
@@ -617,7 +635,33 @@ namespace tsl {
              */
             using IniData = std::map<std::string, std::map<std::string, std::string>>;
             
-            
+            /**
+             * @brief Parses a ini string
+             * 
+             * @param str String to parse
+             * @return Parsed data
+             * // Modified to be "const std" instead of just "std"
+             */
+            //static IniData parseIni(const std::string &str) {
+            //    IniData iniData;
+            //    
+            //    auto lines = split(str, '\n');
+            //    
+            //    std::string lastHeader = "";
+            //    for (auto& line : lines) {
+            //        line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+            //        
+            //        if (line[0] == '[' && line[line.size() - 1] == ']') {
+            //            lastHeader = line.substr(1, line.size() - 2);
+            //            iniData.emplace(lastHeader, std::map<std::string, std::string>{});
+            //        }
+            //        else if (auto keyValuePair = split(line, '='); keyValuePair.size() == 2) {
+            //            iniData[lastHeader].emplace(keyValuePair[0], keyValuePair[1]);
+            //        }
+            //    }
+            //    
+            //    return iniData;
+            //}
             
             /**
              * @brief Unparses ini data into a string
@@ -786,6 +830,9 @@ namespace tsl {
             s32 x, y, w, h;
         };
         
+
+        float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers); // forward declaration
+
         /**
          * @brief Manages the Tesla layer and draws raw data to the screen
          */
@@ -796,6 +843,19 @@ namespace tsl {
             
             friend class tsl::Overlay;
             
+            /**
+             * @brief Gets the renderer instance
+             *
+             * @return Renderer
+             */
+            inline static Renderer& get() {
+                static Renderer renderer;
+                
+                return renderer;
+            }
+            
+            stbtt_fontinfo m_stdFont, m_localFont, m_extFont;
+            bool m_hasLocalFont = false;
 
             /**
              * @brief Handles opacity of drawn colors for fadeout. Pass all colors through this function in order to apply opacity properly
@@ -937,6 +997,136 @@ namespace tsl {
                 }
             }
 
+            /**
+             * @brief Draws a rectangle of given sizes with empty filling
+             * 
+             * @param x X pos 
+             * @param y Y pos
+             * @param w Width
+             * @param h Height
+             * @param color Color
+             */
+            inline void drawEmptyRect(s16 x, s16 y, s16 w, s16 h, Color color) {
+                if (x < 0 || y < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight)
+                    return;
+
+                for (s16 x1 = x; x1 <= (x + w); x1++)
+                    for (s16 y1 = y; y1 <= (y + h); y1++)
+                        if (y1 == y || x1 == x || y1 == y + h || x1 == x + w)
+                            this->setPixelBlendDst(x1, y1, color);
+            }
+
+            /**
+             * @brief Draws a line
+             * 
+             * @param x0 Start X pos 
+             * @param y0 Start Y pos
+             * @param x1 End X pos
+             * @param y1 End Y pos
+             * @param color Color
+             */
+            inline void drawLine(s16 x0, s16 y0, s16 x1, s16 y1, Color color) {
+
+                if ((x0 == x1) && (y0 == y1)) {
+                    this->setPixelBlendDst(x0, y0, color);
+                    return;
+                }
+
+                s16 x_max = std::max(x0, x1);
+                s16 y_max = std::max(y0, y1);
+                s16 x_min = std::min(x0, x1);
+                s16 y_min = std::min(y0, y1);
+
+                if (x_min < 0 || y_min < 0 || x_min >= cfg::FramebufferWidth || y_min >= cfg::FramebufferHeight)
+                    return;
+
+                // y = mx + b
+                s16 dy = y_max - y_min;
+                s16 dx = x_max - x_min;
+
+                if (dx == 0) {
+                    for (s16 y = y_min; y <= y_max; y++) {
+                        this->setPixelBlendDst(x_min, y, color);
+                    }
+                    return;
+                }
+
+                float m = (float)dy / float(dx);
+                float b = y_min - (m * x_min);
+
+                for (s16 x = x_min; x <= x_max; x++) {
+                    s16 y = std::lround((m * (float)x) + b);
+                    s16 y_end = std::lround((m * (float)(x+1)) + b);
+                    if (y == y_end) {
+                        if (x <= x_max && y <= y_max)
+                            this->setPixelBlendDst(x, y, color);
+                    }
+                    else while (y < y_end) {
+                        if (x <= x_max && y <= y_max)
+                            this->setPixelBlendDst(x, y, color);
+                        y += 1;
+                    }
+                }
+                    
+            }
+
+            /**
+             * @brief Draws a dashed line
+             * 
+             * @param x0 Start X pos 
+             * @param y0 Start Y pos
+             * @param x1 End X pos
+             * @param y1 End Y pos
+             * @param line_width How long one line can be
+             * @param color Color
+             */
+            inline void drawDashedLine(s16 x0, s16 y0, s16 x1, s16 y1, s16 line_width, Color color) {
+                // Source of formula: https://www.cc.gatech.edu/grads/m/Aaron.E.McClennen/Bresenham/code.html
+
+                s16 x_min = std::min(x0, x1);
+                s16 x_max = std::max(x0, x1);
+                s16 y_min = std::min(y0, y1);
+                s16 y_max = std::max(y0, y1);
+
+                if (x_min < 0 || y_min < 0 || x_min >= cfg::FramebufferWidth || y_min >= cfg::FramebufferHeight)
+                    return;
+
+                s16 dx = x_max - x_min;
+                s16 dy = y_max - y_min;
+                s16 d = 2 * dy - dx;
+                s16 incrE = 2*dy;
+                s16 incrNE = 2*(dy - dx);
+
+                this->setPixelBlendDst(x_min, y_min, color);
+
+                s16 x = x_min;
+                s16 y = y_min;
+                s16 rendered = 0;
+
+                while(x < x1) {
+                    if (d <= 0) {
+                        d += incrE;
+                        x++;
+                    }
+                    else {
+                        d += incrNE;
+                        x++;
+                        y++;
+                    }
+                    rendered++;
+                    if (x < 0 || y < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight)
+                        continue;
+                    if (x <= x_max && y <= y_max) {
+                        if (rendered > 0 && rendered < line_width) {
+                            this->setPixelBlendDst(x, y, color);
+                        }
+                        else if (rendered > 0 && rendered >= line_width) {
+                            rendered *= -1;
+                        }
+                    }
+                } 
+                    
+            }
             
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
                 s32 x = radius;
@@ -1332,9 +1522,10 @@ namespace tsl {
                     //std::lock_guard<std::mutex> lock(wallpaperMutex);
                     if (!wallpaperData.empty()) {
                         // Draw the bitmap at position (0, 0) on the screen
-                        if (!refreshWallpaper.load(std::memory_order_acquire))
-                            drawBitmapRGBA4444(0, 0, 448, 720, wallpaperData.data());
-                        else
+                        //static bool correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720);
+                        if (!refreshWallpaper.load(std::memory_order_acquire) && correctFrameSize) { // hard coded width and height for consistency
+                            drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, wallpaperData.data());
+                        } else
                             inPlot.store(false, std::memory_order_release);
                     } else {
                         inPlot.store(false, std::memory_order_release);
@@ -1388,99 +1579,102 @@ namespace tsl {
                 u8 *glyphBmp;
                 int width, height;
             };
-            
-            
-            inline float calculateStringWidth(const std::string& originalString, const s32 fontSize, const bool fixedWidthNumbers = false) {
-                if (originalString.empty()) {
-                    return 0.0f;
-                }
 
-                #ifdef UI_OVERRIDE_PATH
-                
-                // Check for translation in the cache
-                auto translatedIt = translationCache.find(originalString);
-                const std::string& translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
-                
-                // Cache the translation if it wasn't already present
-                if (translatedIt == translationCache.end()) {
-                    translationCache[originalString] = translatedString; // You would normally use some translation function here
-                }
-                
-                // Use a pointer to iterate over the translated string
-                const std::string* stringPtr = &translatedString;
-
-                #else
-
-                const std::string* stringPtr = &originalString;
-
-                #endif
-
-                float totalWidth = 0.0f;
-
-                ssize_t codepointWidth;
-                u32 prevCharacter = 0;
-                u32 currCharacter = 0;
-            
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-            
-                auto itStrEnd = stringPtr->cend();
-                auto itStr = stringPtr->cbegin();
-            
-                u64 key = 0;
-                Glyph* glyph = nullptr;
-                auto it = s_glyphCache.end();
-            
-                while (itStr != itStrEnd) {
-                    // Decode UTF-8 codepoint
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                    if (codepointWidth <= 0) {
-                        break;
-                    }
-            
-                    // Move the iterator forward by the width of the current codepoint
-                    itStr += codepointWidth;
-            
-                    if (currCharacter == '\n') {
-                        continue;
-                    }
-            
-                    // Calculate glyph key
-                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-            
-                    // Check cache for the glyph
-                    it = s_glyphCache.find(key);
-            
-                    // If glyph not found, create and cache it
-                    if (it == s_glyphCache.end()) {
-                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-            
-                        // Determine the appropriate font for the character
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
-                        stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
-                    } else {
-                        glyph = &it->second;
-                    }
-            
-                    if (prevCharacter) {
-                        float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
-                        totalWidth += kernAdvance * glyph->currFontSize;
-                    }
-            
-                    totalWidth += int(glyph->xAdvance * glyph->currFontSize);
-            
-                    prevCharacter = currCharacter;
-                }
-            
-                return totalWidth;
+            const stbtt_fontinfo& getStandardFont() const {
+                return m_stdFont;
             }
+            
+            //inline float calculateStringWidth(const std::string& originalString, const s32 fontSize, const bool fixedWidthNumbers = false) {
+            //    if (originalString.empty()) {
+            //        return 0.0f;
+            //    }
+            //    
+            //    #ifdef UI_OVERRIDE_PATH
+            //    
+            //    // Check for translation in the cache
+            //    auto translatedIt = translationCache.find(originalString);
+            //    const std::string& translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+            //    
+            //    // Cache the translation if it wasn't already present
+            //    if (translatedIt == translationCache.end()) {
+            //        translationCache[originalString] = translatedString; // You would normally use some translation function here
+            //    }
+            //    
+            //    // Use a pointer to iterate over the translated string
+            //    const std::string* stringPtr = &translatedString;
+            //    
+            //    #else
+            //    
+            //    const std::string* stringPtr = &originalString;
+            //    
+            //    #endif
+            //    
+            //    float totalWidth = 0.0f;
+            //    
+            //    ssize_t codepointWidth;
+            //    u32 prevCharacter = 0;
+            //    u32 currCharacter = 0;
+            //    
+            //    static std::unordered_map<u64, Glyph> s_glyphCache;
+            //    
+            //    auto itStrEnd = stringPtr->cend();
+            //    auto itStr = stringPtr->cbegin();
+            //    
+            //    u64 key = 0;
+            //    Glyph* glyph = nullptr;
+            //    auto it = s_glyphCache.end();
+            //
+            //    while (itStr != itStrEnd) {
+            //        // Decode UTF-8 codepoint
+            //        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+            //        if (codepointWidth <= 0) {
+            //            break;
+            //        }
+            //
+            //        // Move the iterator forward by the width of the current codepoint
+            //        itStr += codepointWidth;
+            //
+            //        if (currCharacter == '\n') {
+            //            continue;
+            //        }
+            //
+            //        // Calculate glyph key
+            //        key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+            //
+            //        // Check cache for the glyph
+            //        it = s_glyphCache.find(key);
+            //
+            //        // If glyph not found, create and cache it
+            //        if (it == s_glyphCache.end()) {
+            //            glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
+            //
+            //            // Determine the appropriate font for the character
+            //            if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+            //                glyph->currFont = &this->m_extFont;
+            //            } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+            //                glyph->currFont = &this->m_localFont;
+            //            } else {
+            //                glyph->currFont = &this->m_stdFont;
+            //            }
+            //
+            //            glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
+            //            stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
+            //        } else {
+            //            glyph = &it->second;
+            //        }
+            //
+            //        if (prevCharacter) {
+            //            float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
+            //            totalWidth += kernAdvance * glyph->currFontSize;
+            //        }
+            //
+            //        totalWidth += int(glyph->xAdvance * glyph->currFontSize);
+            //
+            //        prevCharacter = currCharacter;
+            //    }
+            //
+            //    return totalWidth;
+            //}
             
             
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
@@ -1497,6 +1691,11 @@ namespace tsl {
                 const std::string* stringPtr = &translatedString;
 
                 #else
+                //std::string translatedString = originalString;
+                //applyLangReplacements(translatedString);
+                //applyLangReplacements(translatedString, true);
+                //convertComboToUnicode(translatedString);
+
                 const std::string* stringPtr = &originalString;
                 #endif
 
@@ -1748,6 +1947,26 @@ namespace tsl {
                 return *stringPtr;
             }
 
+            inline void setLayerPos(u32 x, u32 y) {
+                float ratio = 1.5;
+                u32 maxX = cfg::ScreenWidth - (int)(ratio * cfg::FramebufferWidth);
+                u32 maxY = cfg::ScreenHeight - (int)(ratio * cfg::FramebufferHeight);
+                if (x > maxX || y > maxY) {
+                    return;
+                }
+                setLayerPosImpl(x, y);
+            }
+
+            static Renderer& getRenderer() {
+                return get();
+            }
+
+            inline void setLayerPosImpl(u32 x, u32 y) {
+                cfg::LayerPosX = x;
+                cfg::LayerPosY = y;
+                ASSERT_FATAL(viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY));
+            }
+
 
             #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
@@ -1838,18 +2057,6 @@ namespace tsl {
                 updateDrawFunction();
             }
             
-
-            /**
-             * @brief Gets the renderer instance
-             *
-             * @return Renderer
-             */
-            inline static Renderer& get() {
-                static Renderer renderer;
-                
-                return renderer;
-            }
-            
             /**
              * @brief Sets the opacity of the layer
              *
@@ -1872,8 +2079,6 @@ namespace tsl {
             
             std::stack<ScissoringConfig> m_scissoringStack;
             
-            stbtt_fontinfo m_stdFont, m_localFont, m_extFont;
-            bool m_hasLocalFont = false;
             
             static inline float s_opacity = 1.0F;
             
@@ -1958,7 +2163,7 @@ namespace tsl {
                         return UINT32_MAX;
                     }
                 }
-            
+                
                 // Calculate the base offset
                 //tmpPos = (((y & 127) / 16) + ((x / 32) * 8) + ((y / 128) * (cfg::FramebufferWidth / 4)))*1024;
                 return (((y & 127) / 16) + ((x / 32) * 8) + ((y / 128) * 112))*512 +
@@ -1969,7 +2174,7 @@ namespace tsl {
                         (y % 2) * 8 + 
                         (x % 8);
                 //tmpPos *= 1024; // 16 * 16 * 4 = 1024
-            
+                
                 // Calculate the fine offset and add it to the base offset
                 //tmpPos += ((y % 16) / 8) * 512 + 
                 //          ((x % 32) / 16) * 256 + 
@@ -1977,7 +2182,7 @@ namespace tsl {
                 //          ((x % 16) / 8) * 32 + 
                 //          (y % 2) * 16 + 
                 //          (x % 8) * 2;
-            
+                
                 //return tmpPos;
             }
 
@@ -2032,15 +2237,19 @@ namespace tsl {
 
                 useRightAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "right_alignment") == TRUE_STR);
                 //cfg::LayerPosX = 1280-32;
-                if (useRightAlignment) {
+                cfg::LayerPosX = 0;
+                cfg::LayerPosY = 0;
+                cfg::FramebufferWidth  = DefaultFramebufferWidth;
+                cfg::FramebufferHeight = DefaultFramebufferHeight;
+
+                correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
+                if (useRightAlignment && correctFrameSize) {
                     cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
                     layerEdge = (1280-448);
                 }
-                cfg::LayerPosY = 0;
-                cfg::FramebufferWidth  = 448;
-                cfg::FramebufferHeight = 720;
-                cfg::LayerWidth  = cfg::ScreenHeight * (float(cfg::FramebufferWidth) / float(cfg::FramebufferHeight));
-                cfg::LayerHeight = cfg::ScreenHeight;
+
+                cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
+                cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
 
                 // Apply underscanning offset
                 cfg::LayerWidth += horizontalUnderscanPixels;
@@ -2176,12 +2385,93 @@ namespace tsl {
              * @warning Don't call this before calling \ref startFrame once
              */
             inline void endFrame() {
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                std::memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
+                svcSleepThread(1000*1000*1000 / TeslaFPS);
+                #endif
+
                 this->waitForVSync();
                 framebufferEnd(&this->m_framebuffer);
                 
                 this->m_currentFramebuffer = nullptr;
             }
         };
+        float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
+            if (originalString.empty()) {
+                return 0.0f;
+            }
+        
+            static const stbtt_fontinfo& font = tsl::gfx::Renderer::get().getStandardFont();
+            float maxWidth = 0.0f;
+            float currentLineWidth = 0.0f;
+            ssize_t codepointWidth;
+            u32 prevCharacter = 0;
+            u32 currCharacter = 0;
+        
+            static std::unordered_map<u64, Renderer::Glyph> s_glyphCache;
+            auto itStrEnd = originalString.cend();
+            auto itStr = originalString.cbegin();
+        
+            u64 key = 0;
+            Renderer::Glyph* glyph = nullptr;
+            auto it = s_glyphCache.end();
+        
+            while (itStr != itStrEnd) {
+                // Decode UTF-8 codepoint
+                codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+                if (codepointWidth <= 0) {
+                    break;
+                }
+        
+                // Move the iterator forward by the width of the current codepoint
+                itStr += codepointWidth;
+        
+                // If newline, finalize the current line's width and start a new line
+                if (currCharacter == '\n') {
+                    if (currentLineWidth > maxWidth) {
+                        maxWidth = currentLineWidth;
+                    }
+                    currentLineWidth = 0.0f; // Reset for the new line
+                    prevCharacter = 0;
+                    continue;
+                }
+        
+                // Calculate glyph key
+                key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+        
+                // Check cache for the glyph
+                it = s_glyphCache.find(key);
+        
+                // If glyph not found, create and cache it
+                if (it == s_glyphCache.end()) {
+                    glyph = &s_glyphCache.emplace(key, Renderer::Glyph()).first->second;
+        
+                    // Use const_cast to handle const font
+                    glyph->currFont = const_cast<stbtt_fontinfo*>(&font);
+                    glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
+                    stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
+                } else {
+                    glyph = &it->second;
+                }
+        
+                if (prevCharacter) {
+                    float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
+                    currentLineWidth += kernAdvance * glyph->currFontSize;
+                }
+        
+                currentLineWidth += int(glyph->xAdvance * glyph->currFontSize);
+                prevCharacter = currCharacter;
+            }
+        
+            // Final comparison for the last line (if no trailing newline)
+            if (currentLineWidth > maxWidth) {
+                maxWidth = currentLineWidth;
+            }
+        
+            return maxWidth;
+        }
+
+
         
     }
     
@@ -2726,6 +3016,31 @@ namespace tsl {
             
         };
         
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        /**
+         * @brief A Element that exposes the renderer directly to draw custom views easily
+         */
+        class CustomDrawer : public Element {
+            public:
+                /**
+                 * @brief Constructor
+                 * @note This element should only be used to draw static things the user cannot interact with e.g info text, images, etc.
+                 * 
+                 * @param renderFunc Callback that will be called once every frame to draw this view
+                 */
+                CustomDrawer(std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
+                virtual ~CustomDrawer() {}
+
+                virtual void draw(gfx::Renderer* renderer) override {
+                    this->m_renderFunc(renderer, this->getX(), this->getY(), this->getWidth(), this->getHeight());
+                }
+
+                virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {}
+
+            private:
+                std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> m_renderFunc;
+        };
+    #else
         /**
          * @brief A Element that exposes the renderer directly to draw custom views easily
          */
@@ -2756,7 +3071,7 @@ namespace tsl {
         private:
             std::function<void(gfx::Renderer*, s32 x, s32 y, s32 w, s32 h)> m_renderFunc;
         };
-
+    #endif
 
         /**
          * @brief A Element that exposes the renderer directly to draw custom views easily
@@ -2800,6 +3115,290 @@ namespace tsl {
             size_t endGap = 3;
             bool isScrollable = false;
         };
+
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        /**
+         * @brief The base frame which can contain another view
+         * 
+         */
+        //class OverlayFrame : public Element {
+        //public:
+        //    //std::string defaultTextColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "text_color");
+        //    //tsl::gfx::Color defaultTextColor = tsl::gfx::RGB888(defaultTextColorStr);
+        //    //std::string clockColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "clock_color");
+        //    //tsl::gfx::Color clockColor = tsl::gfx::RGB888(clockColorStr);
+        //    //std::string batteryColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "battery_color");
+        //    //tsl::gfx::Color batteryColor = tsl::gfx::RGB888(batteryColorStr);
+        //    
+        //    /**
+        //     * @brief Constructor
+        //     * 
+        //     * @param title Name of the Overlay drawn bolt at the top
+        //     * @param subtitle Subtitle drawn bellow the title e.g version number
+        //     */
+        //    OverlayFrame(std::string title, std::string subtitle) : Element(), m_title(title), m_subtitle(subtitle) {}
+        //    virtual ~OverlayFrame() {
+        //        if (this->m_contentElement != nullptr)
+        //            delete this->m_contentElement;
+        //    }
+//
+        //    virtual void draw(gfx::Renderer *renderer) override {
+        //        renderer->fillScreen(a({ 0x0, 0x0, 0x0, alphabackground }));
+//
+        //        renderer->drawString(this->m_title.c_str(), false, 20, 50, 30, a(defaultTextColor));
+        //        renderer->drawString(this->m_subtitle.c_str(), false, 20, 70, 15, a(defaultTextColor));
+//
+        //        if (FullMode == true) renderer->drawRect(15, 720 - 73, tsl::cfg::FramebufferWidth - 30, 1, a(defaultTextColor));
+        //        if (!deactivateOriginalFooter) renderer->drawString("\uE0E1  Back     \uE0E0  OK", false, 30, 693, 23, a(defaultTextColor));
+//
+        //        if (this->m_contentElement != nullptr)
+        //            this->m_contentElement->frame(renderer);
+        //    }
+//
+        //    virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+        //        this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
+//
+        //        if (this->m_contentElement != nullptr) {
+        //            this->m_contentElement->setBoundaries(parentX + 35, parentY + 140, parentWidth - 85, parentHeight - 73 - 105); // CUSTOM MODIFICATION
+        //            this->m_contentElement->invalidate();
+        //        }
+        //    }
+//
+        //    virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+        //        if (this->m_contentElement != nullptr)
+        //            return this->m_contentElement->requestFocus(oldFocus, direction);
+        //        else
+        //            return nullptr;
+        //    }
+//
+        //    /**
+        //     * @brief Sets the content of the frame
+        //     * 
+        //     * @param content Element
+        //     */
+        //    virtual void setContent(Element *content) final {
+        //        if (this->m_contentElement != nullptr)
+        //            delete this->m_contentElement;
+//
+        //        this->m_contentElement = content;
+//
+        //        if (content != nullptr) {
+        //            this->m_contentElement->setParent(this);
+        //            this->invalidate();
+        //        }
+        //    }
+//
+        //protected:
+        //    Element *m_contentElement = nullptr;
+//
+        //    std::string m_title, m_subtitle;
+        //};
+
+        /**
+         * @brief The base frame which can contain another view
+         *
+         */
+        class OverlayFrame : public Element {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param title Name of the Overlay drawn bolt at the top
+             * @param subtitle Subtitle drawn bellow the title e.g version number
+             */
+            std::string m_title;
+            std::string m_subtitle;
+            std::string m_menuMode; // CUSTOM MODIFICATION
+            std::string m_colorSelection; // CUSTOM MODIFICATION
+            std::string m_pageLeftName; // CUSTOM MODIFICATION
+            std::string m_pageRightName; // CUSTOM MODIFICATION
+            bool m_noClickableItems;
+
+            //tsl::Color handColor = RGB888("#F7253E");
+            tsl::Color titleColor = {0xF,0xF,0xF,0xF};
+            const double cycleDuration = 1.5;
+            float counter = 0;
+            float countOffset;
+            double timeInSeconds;
+            float progress;
+            float letterWidth;
+            float x, y;
+            int offset, y_offset;
+            int fontSize;
+
+            std::string menuBottomLine;
+            
+        OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
+            : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
+                activeHeaderHeight = 97;
+                loadWallpaperFileWhenSafe();
+
+                m_isItem = false;
+            }
+
+            virtual ~OverlayFrame() {
+                if (this->m_contentElement != nullptr)
+                    delete this->m_contentElement;
+            }
+
+            
+            // Function to calculate FPS
+            //void updateFPS(double currentTimeCount) {
+            //    static double lastUpdateTime = currentTimeCount;
+            //
+            //    frameCount++;
+            //    elapsedTime = currentTimeCount - lastUpdateTime;
+            //
+            //    if (elapsedTime >= 1.0) { // Update FPS every second
+            //        fps = frameCount / static_cast<float>(elapsedTime);
+            //        lastUpdateTime = currentTimeCount;
+            //        frameCount = 0;
+            //    }
+            //}
+            
+            // CUSTOM SECTION START
+            virtual void draw(gfx::Renderer *renderer) override {
+                if (!themeIsInitialized) {
+                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
+                    themeIsInitialized = true;
+                }
+
+                if (m_noClickableItems != noClickableItems)
+                    noClickableItems = m_noClickableItems;
+                //renderer->fillScreen(a(defaultBackgroundColor));
+                renderer->fillScreen(a({ 0x0, 0x0, 0x0, alphabackground }));
+                
+                if (FullMode == true) renderer->drawWallpaper();
+                
+                y = 50;
+                offset = 0;
+                
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                
+
+                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+                
+                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
+                if (touchingBack) {
+                    renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                }
+
+                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
+                if (touchingSelect && !m_noClickableItems) {
+                    renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                }
+                
+                if (!(this->m_pageLeftName).empty())
+                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
+                else if (!(this->m_pageRightName).empty())
+                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
+                #if IS_LAUNCHER_DIRECTIVE
+                else if (inMainMenu)
+                    if (inOverlaysPage)
+                        nextPageWidth = tsl::gfx::calculateStringWidth(PACKAGES,23);
+                    else if (inPackagesPage)
+                        nextPageWidth = tsl::gfx::calculateStringWidth(OVERLAYS,23);
+                #endif
+
+                if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
+                    if (touchingNextPage) {
+                        renderer->drawRoundedRect(18.0f + backWidth+68.0f + ((!m_noClickableItems) ? selectWidth+68.0f : 0), static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
+                    }
+                }
+
+                if (m_noClickableItems)
+                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1;
+                else
+                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
+                
+                if (!(this->m_pageLeftName).empty()) {
+                    menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;
+                } else if (!(this->m_pageRightName).empty()) {
+                    menuBottomLine += "\uE0EE"+GAP_2 + this->m_pageRightName;
+                }
+                
+                //renderer->drawString(menuBottomLine.c_str(), false, 30, 693, 23, a(defaultTextColor));
+                // Render the text with special character handling
+                if (!deactivateOriginalFooter) renderer->drawStringWithColoredSections(menuBottomLine, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
+                
+                
+                if (this->m_contentElement != nullptr)
+                    this->m_contentElement->frame(renderer);
+
+            }
+            // CUSTOM SECTION END
+
+            
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+                this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
+        
+                if (this->m_contentElement != nullptr) {
+                    this->m_contentElement->setBoundaries(parentX + 35, parentY + 140, parentWidth - 85, parentHeight - 73 - 105); // CUSTOM MODIFICATION
+                    this->m_contentElement->invalidate();
+                }
+            }
+            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+                if (this->m_contentElement != nullptr)
+                    return this->m_contentElement->requestFocus(oldFocus, direction);
+                else
+                    return nullptr;
+            }
+            
+            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+                // Discard touches outside bounds
+                if (!this->m_contentElement->inBounds(currX, currY) || !internalTouchReleased)
+                    return false;
+                
+                if (this->m_contentElement != nullptr)
+                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
+                else return false;
+            }
+            
+            /**
+             * @brief Sets the content of the frame
+             *
+             * @param content Element
+             */
+            inline void setContent(Element *content) {
+                if (this->m_contentElement != nullptr)
+                    delete this->m_contentElement;
+                
+                this->m_contentElement = content;
+                
+                if (content != nullptr) {
+                    this->m_contentElement->setParent(this);
+                    this->invalidate();
+                }
+            }
+            
+            /**
+             * @brief Changes the title of the menu
+             *
+             * @param title Title to change to
+             */
+            inline void setTitle(const std::string &title) {
+                this->m_title = title;
+            }
+            
+            /**
+             * @brief Changes the subtitle of the menu
+             *
+             * @param title Subtitle to change to
+             */
+            inline void setSubtitle(const std::string &subtitle) {
+                this->m_subtitle = subtitle;
+            }
+            
+        protected:
+            Element *m_contentElement = nullptr;
+            
+            //std::string m_title, m_subtitle;
+        };
+    #else
 
         
         /**
@@ -2913,21 +3512,28 @@ namespace tsl {
                             counter = (2 * _M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             progress = std::sin(counter); // -1 to 1
                             
+                            //highlightColor = {
+                            //    static_cast<u8>((std::get<0>(dynamicLogoRGB2) - std::get<0>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<0>(dynamicLogoRGB1)),
+                            //    static_cast<u8>((std::get<1>(dynamicLogoRGB2) - std::get<1>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<1>(dynamicLogoRGB1)),
+                            //    static_cast<u8>((std::get<2>(dynamicLogoRGB2) - std::get<2>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<2>(dynamicLogoRGB1)),
+                            //    15
+                            //};
+
                             highlightColor = {
-                                static_cast<u8>((std::get<0>(dynamicLogoRGB2) - std::get<0>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<0>(dynamicLogoRGB1)),
-                                static_cast<u8>((std::get<1>(dynamicLogoRGB2) - std::get<1>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<1>(dynamicLogoRGB1)),
-                                static_cast<u8>((std::get<2>(dynamicLogoRGB2) - std::get<2>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<2>(dynamicLogoRGB1)),
-                                15
+                                static_cast<u8>((dynamicLogoRGB2.r - dynamicLogoRGB1.r) * (progress + 1.0) / 2.0 + dynamicLogoRGB1.r),
+                                static_cast<u8>((dynamicLogoRGB2.g - dynamicLogoRGB1.g) * (progress + 1.0) / 2.0 + dynamicLogoRGB1.g),
+                                static_cast<u8>((dynamicLogoRGB2.b - dynamicLogoRGB1.b) * (progress + 1.0) / 2.0 + dynamicLogoRGB1.b),
+                                15 // Alpha remains constant, or you can interpolate it as well
                             };
                             
                             renderer->drawString(std::string(1, letter), false, x, y + offset, fontSize, a(highlightColor));
-                            x += renderer->calculateStringWidth(std::string(1, letter), fontSize);
+                            x += tsl::gfx::calculateStringWidth(std::string(1, letter), fontSize);
                             countOffset -= 0.2F;
                         }
                     } else {
                         for (char letter : SPLIT_PROJECT_NAME_1) {
                             renderer->drawString(std::string(1, letter), false, x, y + offset, fontSize, a(logoColor1));
-                            x += renderer->calculateStringWidth(std::string(1, letter), fontSize);
+                            x += tsl::gfx::calculateStringWidth(std::string(1, letter), fontSize);
                             countOffset -= 0.2F;
                         }
                     }
@@ -2988,7 +3594,7 @@ namespace tsl {
                                 renderer->drawString(std::string(1, letter).c_str(), false, x, y, fontSize, a(highlightColor));
                                 
                                 // Manually calculate the width of the current letter
-                                letterWidth = renderer->calculateStringWidth(std::string(1, letter), fontSize);
+                                letterWidth = tsl::gfx::calculateStringWidth(std::string(1, letter), fontSize);
                                 
                                 // Adjust the x-coordinate for the next character's position
                                 x += letterWidth;
@@ -3035,28 +3641,28 @@ namespace tsl {
 
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
-                backWidth = renderer->calculateStringWidth(BACK, 23);
+                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
                 if (touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                selectWidth = renderer->calculateStringWidth(OK, 23);
+                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
                 if (touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 if (!(this->m_pageLeftName).empty())
-                    nextPageWidth = renderer->calculateStringWidth(this->m_pageLeftName, 23);
+                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
                 else if (!(this->m_pageRightName).empty())
-                    nextPageWidth = renderer->calculateStringWidth(this->m_pageRightName, 23);
+                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
                 #if IS_LAUNCHER_DIRECTIVE
                 else if (inMainMenu)
                     if (inOverlaysPage)
-                        nextPageWidth = renderer->calculateStringWidth(PACKAGES,23);
+                        nextPageWidth = tsl::gfx::calculateStringWidth(PACKAGES,23);
                     else if (inPackagesPage)
-                        nextPageWidth = renderer->calculateStringWidth(OVERLAYS,23);
+                        nextPageWidth = tsl::gfx::calculateStringWidth(OVERLAYS,23);
                 #endif
 
                 if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
@@ -3192,6 +3798,7 @@ namespace tsl {
             
             //std::string m_title, m_subtitle;
         };
+    #endif
         
         /**
          * @brief The base frame which can contain another view with a customizable header
@@ -3233,13 +3840,13 @@ namespace tsl {
                 
                 //renderer->drawString(("\uE0E1  "+BACK+"     \uE0E0  "+OK), false, 30, 693, 23, a(defaultTextColor)); // CUSTOM MODIFICATION
                 
-                backWidth = renderer->calculateStringWidth(BACK, 23);
+                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
                 if (touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                selectWidth = renderer->calculateStringWidth(OK, 23);
+                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
                 if (touchingSelect) {
                     renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
@@ -4152,15 +4759,16 @@ namespace tsl {
                     m_listItemHeight = style::MiniListItemDefaultHeight;
                 }
 
+                // Initial translations
                 applyLangReplacements(this->m_text);
-                applyLangReplacements(this->m_value, true);
-
                 convertComboToUnicode(this->m_text);
+                applyLangReplacements(this->m_value, true);
                 convertComboToUnicode(this->m_value);
             }
             virtual ~ListItem() {}
             
             virtual void draw(gfx::Renderer *renderer) override {
+
                 static float lastBottomBound;
                 bool useClickTextColor = false;
                 if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
@@ -4172,29 +4780,26 @@ namespace tsl {
                     //renderer->drawRect(ELEMENT_BOUNDS(this), tsl::style::color::ColorClickAnimation);
                 }
 
-                //convertComboToUnicode(this->m_text);
-                //convertComboToUnicode(this->m_value);
-
                 // Calculate vertical offset to center the text
                 s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
 
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
                         //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
-                        width = renderer->calculateStringWidth(this->m_value, 20);
+                        width = tsl::gfx::calculateStringWidth(this->m_value, 20);
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
                         this->m_maxWidth = this->getWidth() - 40 -10 -12;
                     }
                     
                     //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                    width = renderer->calculateStringWidth(this->m_text, 23);
+                    width = tsl::gfx::calculateStringWidth(this->m_text, 23);
                     this->m_trunctuated = width > this->m_maxWidth+20;
                     
                     if (this->m_trunctuated) {
                         this->m_scrollText = this->m_text + "        ";
                         //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                        width = renderer->calculateStringWidth(this->m_scrollText, 23);
+                        width = tsl::gfx::calculateStringWidth(this->m_scrollText, 23);
                         this->m_scrollText += this->m_text;
                         this->m_textWidth = width;
                         
@@ -4370,6 +4975,9 @@ namespace tsl {
                 this->m_scrollText = "";
                 this->m_ellipsisText = "";
                 this->m_maxWidth = 0;
+
+                applyLangReplacements(this->m_text);
+                convertComboToUnicode(this->m_text);
             }
             
             /**
@@ -4382,6 +4990,9 @@ namespace tsl {
                 this->m_value = value;
                 this->m_faint = faint;
                 this->m_maxWidth = 0;
+
+                applyLangReplacements(this->m_value, true);
+                convertComboToUnicode(this->m_value);
             }
             
             /**
@@ -4450,7 +5061,7 @@ namespace tsl {
                     keys |= KEY_A;
                     simulatedSelect = false;
                 }
-
+                // Handle KEY_A for toggling
                 if (keys & HidNpadButton_A) {
                     this->m_state = !this->m_state;
                     
@@ -4460,7 +5071,16 @@ namespace tsl {
                     simulatedSelectComplete = true;
                     return ListItem::onClick(keys);
                 }
-                
+                #if IS_LAUNCHER_DIRECTIVE
+                // Handle SCRIPT_KEY for executing script logic
+                else if (keys & SCRIPT_KEY) {
+                    // Trigger the script key listener
+                    if (this->m_scriptKeyListener) {
+                        this->m_scriptKeyListener(this->m_state);  // Pass the current state to the script key listener
+                    }
+                    return ListItem::onClick(keys);
+                }
+                #endif
                 return false;
             }
             
@@ -4480,7 +5100,6 @@ namespace tsl {
              */
             virtual inline void setState(bool state) {
                 this->m_state = state;
-                
                 this->setValue(state ? this->m_onValue : this->m_offValue, !state);
             }
             
@@ -4492,12 +5111,23 @@ namespace tsl {
             void setStateChangedListener(std::function<void(bool)> stateChangedListener) {
                 this->m_stateChangedListener = stateChangedListener;
             }
+
+            #if IS_LAUNCHER_DIRECTIVE
+            // Attach the script key listener for SCRIPT_KEY handling
+            void setScriptKeyListener(std::function<void(bool)> scriptKeyListener) {
+                this->m_scriptKeyListener = scriptKeyListener;
+            }
+            #endif
             
         protected:
             bool m_state = true;
             std::string m_onValue, m_offValue;
             
             std::function<void(bool)> m_stateChangedListener = [](bool){};
+
+            #if IS_LAUNCHER_DIRECTIVE
+            std::function<void(bool)> m_scriptKeyListener = nullptr;     // Script key listener (with state)
+            #endif
         };
         
 
@@ -4550,6 +5180,7 @@ namespace tsl {
             
             CategoryHeader(const std::string &title, bool hasSeparator = true) : m_text(title), m_hasSeparator(hasSeparator) {
                 applyLangReplacements(m_text);
+                convertComboToUnicode(m_text);
                 m_isItem = false;
             }
             virtual ~CategoryHeader() {}
@@ -4591,6 +5222,7 @@ namespace tsl {
             
             inline void setText(const std::string &text) {
                 this->m_text = text;
+                applyLangReplacements(m_text);
             }
             
             inline const std::string& getText() const {
@@ -4713,7 +5345,7 @@ namespace tsl {
                 s32 iconOffset;
 
                 if (m_icon[0] != '\0') {
-                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
                     width -= iconOffset;
@@ -5002,7 +5634,7 @@ namespace tsl {
                 s32 iconOffset;
                 
                 if (m_icon[0] != '\0') {
-                    s32 iconWidth = 23;//renderer->calculateStringWidth(m_icon, 23);
+                    s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     baseX += iconOffset;
                     trackBarWidth -= iconOffset;
@@ -5036,7 +5668,7 @@ namespace tsl {
                 
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
 
-                auto descWidth = renderer->calculateStringWidth(this->m_stepDescriptions[currentDescIndex].c_str(), 15);
+                auto descWidth = tsl::gfx::calculateStringWidth(this->m_stepDescriptions[currentDescIndex].c_str(), 15);
                 renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
                 
                 // Draw the parent trackbar
@@ -5075,12 +5707,6 @@ namespace tsl {
         class TrackBarV2 : public Element {
         public:
             std::chrono::steady_clock::time_point lastUpdate;
-            //std::mutex queueMutex;
-            //std::condition_variable cv;
-            //std::queue<std::function<void()>> taskQueue;
-            //std::thread workerThread;
-            //bool stopWorker = false;
-
 
             Color highlightColor = {0xf, 0xf, 0xf, 0xf};
             float progress;
@@ -5089,6 +5715,11 @@ namespace tsl {
             s32 amplitude;
             u32 descWidth, descHeight;
             
+            // Add setScriptKeyListener function
+            void setScriptKeyListener(std::function<void()> listener) {
+                m_scriptKeyListener = std::move(listener);
+            }
+
             
             // Ensure the order of initialization matches the order of declaration
             TrackBarV2(std::string label, std::string packagePath = "", s16 minValue = 0, s16 maxValue = 100, std::string units = "",
@@ -5098,8 +5729,6 @@ namespace tsl {
                 : m_label(label), m_packagePath(packagePath), m_minValue(minValue), m_maxValue(maxValue), m_units(units),
                   interpretAndExecuteCommands(executeCommands), getSourceReplacement(sourceReplacementFunc), commands(std::move(cmd)), selectedCommand(selCmd), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar), m_numSteps(numSteps), m_unlockedTrackbar(unlockedTrackbar), m_executeOnEveryTick(executeOnEveryTick) {
                 m_isItem = true;
-                
-                //workerThread = std::thread(&TrackBarV2::processQueue, this);
 
                 if ((!usingStepTrackbar && !usingNamedStepTrackbar) || numSteps == -1) {
                     m_numSteps = maxValue - minValue;
@@ -5134,47 +5763,14 @@ namespace tsl {
                 lastUpdate = std::chrono::steady_clock::now();
             }
             
-            virtual ~TrackBarV2() {
-                //{
-                //    std::lock_guard<std::mutex> lock(queueMutex);
-                //    stopWorker = true;
-                //}
-                //cv.notify_all();
-                //if (workerThread.joinable()) {
-                //    workerThread.join();
-                //}
-            }
+            virtual ~TrackBarV2() {}
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
 
-            //void processQueue() {
-            //    while (true) {
-            //        std::function<void()> task;
-            //        {
-            //            std::unique_lock<std::mutex> lock(queueMutex);
-            //            cv.wait(lock, [this] { return !taskQueue.empty() || stopWorker; });
-            //
-            //            if (stopWorker && taskQueue.empty()) {
-            //                break;
-            //            }
-            //
-            //            if (!taskQueue.empty()) {
-            //                task = std::move(taskQueue.front());
-            //                taskQueue.pop();
-            //            }
-            //        }
-            //
-            //        if (task) {
-            //            task();  // Execute the task outside the lock
-            //        }
-            //    }
-            //}
-
 
             inline void updateAndExecute(bool updateIni = true) {
-            //inline void performUpdateAndExecute(bool updateIni) {
                 if (m_packagePath.empty()) {
                     return;
                 }
@@ -5202,9 +5798,10 @@ namespace tsl {
                         const size_t valuePlaceholderLength = valuePlaceholder.length();
                         const size_t indexPlaceholderLength = indexPlaceholder.length();
                         
+                        size_t pos;
                         for (auto& cmd : modifiedCmds) {
                             for (auto& arg : cmd) {
-                                size_t pos = 0;
+                                pos = 0;
                                 while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
                                     arg.replace(pos, valuePlaceholderLength, valueStr);
                                     pos += valueStr.length();
@@ -5226,33 +5823,17 @@ namespace tsl {
                         if (success)
                             break;
                         tryCount++;
-                        //svcSleepThread(300'000'000);
                     }
                 }
             }
             
-            //inline void performUpdateAndExecute(bool updateIni = true) {
-            //    auto task = [this, updateIni]() {
-            //        performUpdateAndExecute(updateIni);
-            //    };
-            //    
-            //    // Add the task to the queue
-            //    {
-            //        std::lock_guard<std::mutex> lock(queueMutex);
-            //        taskQueue.push(task);
-            //    }
-            //    cv.notify_one();
-            //}
-
-
-
             
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 //static std::chrono::milliseconds initialInterval{67}; // Initial interval between value changes (67ms)
                 static bool holding = false;
                 static std::chrono::steady_clock::time_point holdStartTime;
                 static u64 prevKeysHeld = 0;
-                //static bool allowSlide = false; // Flag to allow sliding after KEY_A is pressed
+                
                 u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
                 
@@ -5281,6 +5862,14 @@ namespace tsl {
                         triggerClick = true;
                     }
                     simulatedSelectComplete = true;
+                    return true;
+                }
+
+                // Handle SCRIPT_KEY press
+                if (keysDown & SCRIPT_KEY) {
+                    if (m_scriptKeyListener) {
+                        m_scriptKeyListener();
+                    }
                     return true;
                 }
                 
@@ -5444,7 +6033,7 @@ namespace tsl {
             
                     return true;
                 }
-            
+                
                 return false;
             }
 
@@ -5484,10 +6073,10 @@ namespace tsl {
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
-                
+                 
                 std::string labelPart = this->m_label;
                 removeTag(labelPart);
-                labelPart += " ";
+                //labelPart += " ";
 
                 //std::string valuePart = m_usingNamedStepTrackbar ? this->m_selection : std::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
                 std::string valuePart;
@@ -5495,18 +6084,28 @@ namespace tsl {
                     valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? std::to_string(this->m_value) + this->m_units : std::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
                 else
                     valuePart = this->m_selection;
-                std::string combinedString = labelPart + valuePart;
-                //std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
-                descWidth = renderer->calculateStringWidth(combinedString, 16, true);
-                
-                size_t combinedX = (xPos + width / 2) - (descWidth / 2);
-                size_t labelWidth;
-                //std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
-                labelWidth = renderer->calculateStringWidth(labelPart, 16, true);
 
-                renderer->drawString(labelPart, false, combinedX, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
-                renderer->drawString(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+
+                //std::string combinedString = labelPart + valuePart;
+                ////std::tie(descWidth, descHeight) = renderer->drawString(combinedString, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                //descWidth = tsl::gfx::calculateStringWidth(combinedString, 16, true);
+                //
+                //size_t combinedX = (xPos + width / 2) - (descWidth / 2);
+                //size_t labelWidth;
+                ////std::tie(labelWidth, descHeight) = renderer->drawString(labelPart, false, 0, 0, 16, a(tsl::style::color::ColorTransparent));
+                //labelWidth = tsl::gfx::calculateStringWidth(labelPart, 16, true);
+                //
+                //renderer->drawString(labelPart, false, combinedX, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
+                //renderer->drawString(valuePart, false, combinedX + labelWidth, this->getY() + 14 + 16, 16, a(onTextColor));
                 
+
+                
+                size_t valueWidth = tsl::gfx::calculateStringWidth(valuePart, 16);
+
+                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
+                renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+
+
                 if (lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
@@ -5528,7 +6127,7 @@ namespace tsl {
                 
                 static std::chrono::steady_clock::time_point clickStartTime;
                 static bool clickActive = false;
-            
+                
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
 
@@ -5542,11 +6141,18 @@ namespace tsl {
                         clickColor2 = highlightColor2;
                     }
                 }
-            
+                static auto lastLabel = m_label;
 
+                if (lastLabel != m_label) {
+                    clickActive = false;
+                    triggerClick = false;
+                }
+                lastLabel = m_label;
+
+                //std::chrono::duration<float> elapsedTime;
                 if (clickActive) {
                     auto elapsedTime = std::chrono::steady_clock::now() - clickStartTime;
-                    if (elapsedTime < std::chrono::seconds(1)) {
+                    if (elapsedTime < std::chrono::milliseconds(500)) {
                         highlightColor = {
                             static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
                             static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
@@ -5558,6 +6164,7 @@ namespace tsl {
                         clickActive = false;
                         triggerClick = false;
                     }
+
                 } else {
 
                     if (allowSlide || m_unlockedTrackbar) {
@@ -5622,6 +6229,38 @@ namespace tsl {
                 //}
 
                 onTrackBar = true;
+
+
+                if (clickActive) {
+                    std::chrono::duration<float, std::milli> elapsedTimeMs = (std::chrono::steady_clock::now() - clickStartTime);
+    
+    
+                    // Handle click animation progress and animColor rendering
+                    auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (elapsedTimeMs.count() / 500.0f));
+                    
+                    // Ensure progress does not go below 0
+                    if (clickAnimationProgress < 0.0f) {
+                        clickAnimationProgress = 0.0f;
+                    }
+                
+                    if (clickAnimationProgress > 0.0f) {
+                        u8 saturation = tsl::style::ListItemHighlightSaturation * (float(clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
+                
+                        Color animColor = {0xF, 0xF, 0xF, 0xF};
+                        if (invertBGClickColor) {
+                            animColor.r = 15 - saturation;
+                            animColor.g = 15 - saturation;
+                            animColor.b = 15 - saturation;
+                            animColor.a = 15 - saturation;
+                        } else {
+                            animColor.r = saturation;
+                            animColor.g = saturation;
+                            animColor.b = saturation;
+                            animColor.a = saturation;
+                        }
+                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), a(animColor));
+                    }
+                }
             }
             
             virtual inline u8 getProgress() {
@@ -5662,6 +6301,8 @@ namespace tsl {
             bool m_executeOnEveryTick = false;
             bool touchInSliderBounds = false;
             bool triggerClick = false;
+            std::function<void()> m_scriptKeyListener;
+
         };
         
         
@@ -5685,7 +6326,7 @@ namespace tsl {
                 : TrackBarV2(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
             
             virtual ~StepTrackBarV2() {}
-            
+
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
                 static bool holding = false;
@@ -5719,6 +6360,14 @@ namespace tsl {
                         triggerClick = true;
                     }
                     simulatedSelectComplete = true;
+                    return true;
+                }
+
+                // Handle SCRIPT_KEY press
+                if (keysDown & SCRIPT_KEY) {
+                    if (m_scriptKeyListener) {
+                        m_scriptKeyListener();
+                    }
                     return true;
                 }
 
@@ -6146,7 +6795,8 @@ namespace tsl {
          *
          */
         void hide() {
-            
+        #if IS_STATUS_MONITOR_DIRECTIVE
+        #else
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = 0;
                 this->m_disableNextAnimation = false;
@@ -6157,6 +6807,7 @@ namespace tsl {
             }
             isHidden.store(true);
             this->onHide();
+        #endif
         }
         
         /**
@@ -6319,6 +6970,277 @@ namespace tsl {
         
 
 
+        
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
+            // Static variables to maintain state between function calls
+            static HidTouchState initialTouchPos = { 0 };
+            static HidTouchState oldTouchPos = { 0 };
+            static bool oldTouchDetected = false;
+            static elm::TouchEvent touchEvent, oldTouchEvent;
+            //static elm::TouchEvent oldTouchEvent;
+
+            //static ssize_t counter = 0;
+
+            static std::chrono::steady_clock::time_point buttonPressTime, lastKeyEventTime;
+            //static std::chrono::steady_clock::time_point lastKeyEventTime;
+            static bool singlePressHandled = false;
+            static const auto clickThreshold = std::chrono::milliseconds(340); // Adjust this value as needed
+            static auto keyEventInterval = std::chrono::milliseconds(67); // Interval between key events
+            
+            auto& currentGui = this->getCurrentGui();
+            static bool isTopElemet = true;
+
+            // Return early if current GUI is not available
+            //if (!currentGui) return;
+            //if (!internalTouchReleased) return;
+            
+            // Retrieve current focus and top/bottom elements of the GUI
+            auto currentFocus = currentGui->getFocusedElement();
+            auto topElement = currentGui->getTopElement();
+            //auto bottomElement = currentGui->getBottomElement(); // needs implementing
+            
+            //if (runningInterpreter.load()) {
+            //    if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
+            //        currentFocus->shakeHighlight(FocusDirection::Up);
+            //    else if (keysDown & KEY_DOWN && !(keysDown & ~KEY_DOWN & ALL_KEYS_MASK))
+            //        currentFocus->shakeHighlight(FocusDirection::Down);
+            //    else if (keysDown & KEY_LEFT && !(keysDown & ~KEY_LEFT & ALL_KEYS_MASK))
+            //        currentFocus->shakeHighlight(FocusDirection::Left);
+            //    else if (keysDown & KEY_RIGHT && !(keysDown & ~KEY_RIGHT & ALL_KEYS_MASK))
+            //        currentFocus->shakeHighlight(FocusDirection::Right);
+            //    //else if (progressAnimation) {
+            //    //    currentFocus->shakeHighlight(static_cast<FocusDirection>(counter % 4));
+            //    //    counter = (counter + 1) % 4;
+            //    //}
+            //}
+
+            
+            if (!currentFocus && !simulatedBack && simulatedBackComplete && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (!topElement) return;
+                
+                if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                    currentGui->markInitialFocusSet();
+                    isTopElemet = true;
+                }
+
+            }
+            static bool hasScrolled = false;
+
+
+            if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
+                if (!simulatedBack && simulatedBackComplete && topElement) {
+                    if (oldTouchEvent == elm::TouchEvent::Scroll) {
+                        hasScrolled = true;
+                    }
+                    if (!hasScrolled) {
+                        currentGui->removeFocus();
+                        currentGui->requestFocus(topElement, FocusDirection::None);
+                    }
+                }
+            }
+            
+            bool handled = false;
+            elm::Element* parentElement = currentFocus;
+            
+            while (!handled && parentElement) {
+                handled = parentElement->onClick(keysDown) || parentElement->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
+                parentElement = parentElement->getParent();
+            }
+            
+            if (currentGui != this->getCurrentGui()) return;
+            
+            handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
+            
+
+            if (hasScrolled) {
+                bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
+                
+                
+                if (singleArrowKeyPress) {
+                    auto now = std::chrono::steady_clock::now();
+                    buttonPressTime = now;
+                    lastKeyEventTime = now;
+                    hasScrolled = false;
+                }
+            } else {
+
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+                    static bool shouldShake = true;
+                    bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
+                    
+                    if (singleArrowKeyPress) {
+                        
+                        auto now = std::chrono::steady_clock::now();
+                        if (keysDown) {
+                            buttonPressTime = now;
+                            lastKeyEventTime = now;
+                            singlePressHandled = false;
+                            // Immediate single press action
+                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, shouldShake); // Request focus on the top element when double-clicking up
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
+                                isTopElemet = false;
+                            }
+                            else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, shouldShake);
+                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, shouldShake);
+                            //shouldShake = currentGui->getFocusedElement() != currentFocus;
+                        }
+                        if (keysHeld & ~KEY_DOWN & ~KEY_UP & ~KEY_LEFT & ~KEY_RIGHT & ALL_KEYS_MASK) // reset
+                            buttonPressTime = now;
+                        
+                        auto durationSincePress = std::chrono::duration_cast<std::chrono::milliseconds>(now - buttonPressTime);
+                        auto durationSinceLastEvent = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastKeyEventTime);
+                        
+                        if (!singlePressHandled && durationSincePress >= clickThreshold) {
+                            singlePressHandled = true;
+                        }
+                        
+
+                        // Define the duration boundaries
+                        //const auto initialInterval = std::chrono::milliseconds(67);  // Example initial interval
+                        //const auto shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
+                        //const auto transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
+                        
+                        // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
+                        float t = std::min(1.0f, static_cast<float>(durationSincePress.count()) / transitionPoint.count());
+                        
+                        // Smooth transition between intervals
+                        keyEventInterval = interpolateDuration(initialInterval, shortInterval, t);
+                        
+                        //keyEventInterval = interpolateKeyEventInterval(durationSincePress);
+                        
+                        if (singlePressHandled && durationSinceLastEvent >= keyEventInterval) {
+                            lastKeyEventTime = now;
+                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, false);
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
+                                isTopElemet = false;
+                            }
+                            else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
+                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
+                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, false);
+                            //shouldShake = currentGui->getFocusedElement() != currentFocus;
+                        }
+                    } else {
+                        // Handle the rest of the input
+                        if (simulatedBack) {
+                            keysDown |= KEY_B;
+                            simulatedBack = false;
+                        }
+
+                        if (keysDown & KEY_B)
+                            this->goBack();
+                        singlePressHandled = false;
+                    }
+                }
+            }
+            
+            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (!isTopElemet)
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                isTopElemet = true;
+            }
+            
+            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            //    currentGui->requestFocus(bottomElement, FocusDirection::None); // Not correctly implemented. (yet)
+            //}
+            
+            if (!touchDetected && oldTouchDetected && currentGui && topElement) {
+                topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
+            }
+
+            //u32 layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
+
+            touchingBack = (touchPos.x >= 20.0f + layerEdge && touchPos.x < backWidth+86.0f + layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            touchingSelect = !noClickableItems && (touchPos.x >= backWidth+86.0f + layerEdge && touchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            if (!noClickableItems)
+                touchingNextPage = (touchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (touchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            else
+                touchingNextPage = (touchPos.x >= (backWidth+86.0f + layerEdge) && (touchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            touchingMenu = (touchPos.x > layerEdge && touchPos.x <= 245+layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= 245 + layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+            
+
+            if (touchDetected) {
+                if (!interruptedTouch) interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
+                
+                u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
+                u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
+                
+                bool isScroll = (xDistance * xDistance + yDistance * yDistance) > 1000;
+                if (isScroll) {
+                    elm::Element::setInputMode(InputMode::TouchScroll);
+                    touchEvent = elm::TouchEvent::Scroll;
+                } else {
+                    if (touchEvent != elm::TouchEvent::Scroll) {
+                        touchEvent = elm::TouchEvent::Hold;
+                    }
+                }
+                
+                if (!oldTouchDetected) {
+                    initialTouchPos = touchPos;
+                    elm::Element::setInputMode(InputMode::Touch);
+                    if (!runningInterpreter.load(std::memory_order_acquire)) {
+                        touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + layerEdge);
+                        if (touchInBounds) currentGui->removeFocus();
+                    }
+                    touchEvent = elm::TouchEvent::Touch;
+                }
+                
+                if (currentGui && topElement && !runningInterpreter.load(std::memory_order_acquire)) {
+                    topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
+                    if (touchPos.x > 40U + layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
+                        currentGui->removeFocus();
+                    }
+                    
+                }
+                
+                oldTouchPos = touchPos;
+                if ((touchPos.x < layerEdge || touchPos.x > cfg::FramebufferWidth + layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                    oldTouchPos = { 0 };
+                    initialTouchPos = { 0 };
+                    //this->hide();
+                }
+                stillTouching = true;
+            } else {
+                if (!interruptedTouch && !runningInterpreter.load(std::memory_order_acquire)) {
+                    if ((oldTouchPos.x >= 20.0f + layerEdge && oldTouchPos.x < backWidth+86.0f + layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        simulatedBackComplete = false;
+                        simulatedBack = true;
+                    } else if (!noClickableItems && (oldTouchPos.x >= backWidth+86.0f + layerEdge && oldTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        simulatedSelectComplete = false;
+                        simulatedSelect = true;
+                    } else if (!noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        simulatedNextPageComplete = false;
+                        simulatedNextPage = true;
+                    } else if (noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        simulatedNextPageComplete = false;
+                        simulatedNextPage = true;
+                    } else if ((oldTouchPos.x > layerEdge && oldTouchPos.x <= layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
+                        simulatedMenuComplete = false;
+                        simulatedMenu = true;
+                    }
+                }
+                
+                elm::Element::setInputMode(InputMode::Controller);
+                
+                oldTouchPos = { 0 };
+                initialTouchPos = { 0 };
+                touchEvent = elm::TouchEvent::None;
+                stillTouching = false;
+                interruptedTouch = false;
+            }
+            
+            oldTouchDetected = touchDetected;
+            oldTouchEvent = touchEvent;
+        }
+    #else
         /**
          * @brief Called once per frame with the latest HID inputs
          *
@@ -6611,10 +7533,8 @@ namespace tsl {
             oldTouchDetected = touchDetected;
             oldTouchEvent = touchEvent;
         }
-        
-        
-        
 
+    #endif
 
         /**
          * @brief Clears the screen
@@ -7223,12 +8143,11 @@ extern "C" {
             ASSERT_FATAL(hidsysInitialize());                       // Focus control
             ASSERT_FATAL(setsysInitialize());                       // Settings querying
             
-
+            #if USING_WIDGET_DIRECTIVE
             ASSERT_FATAL(timeInitialize()); // CUSTOM MODIFICATION
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
 
-            #if USING_WIDGET_DIRECTIVE
             powerInit();
             i2cInitialize();
             #endif
@@ -7241,6 +8160,14 @@ extern "C" {
             //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
         });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
+
+        #if IS_STATUS_MONITOR_DIRECTIVE
+        Service *plSrv = plGetServiceSession();
+        Service plClone;
+        ASSERT_FATAL(serviceClone(plSrv, &plClone));
+        serviceClose(plSrv);
+        *plSrv = plClone;
+        #endif
     }
     
     /**

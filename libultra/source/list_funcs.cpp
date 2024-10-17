@@ -155,12 +155,26 @@ namespace ult {
             // Remove the parentheses or brackets
             std::string values = str.substr(1, str.size() - 2);
             
-            // Use a stringstream to split the string on commas
-            std::stringstream ss(values);
-            std::string item;
+            size_t start = 0;
+            size_t end = 0;
             
-            while (std::getline(ss, item, ',')) {
-                // Trim leading and trailing spaces from each token
+            // Iterate through the string manually to split by commas
+            while ((end = values.find(',', start)) != std::string::npos) {
+                std::string item = values.substr(start, end - start);
+                
+                // Trim leading and trailing spaces
+                trim(item);
+                
+                // Remove quotes from each token if necessary
+                removeQuotes(item);
+                
+                result.push_back(item);
+                start = end + 1;
+            }
+            
+            // Handle the last item after the last comma
+            if (start < values.size()) {
+                std::string item = values.substr(start);
                 trim(item);
                 removeQuotes(item);
                 result.push_back(item);
@@ -169,6 +183,7 @@ namespace ult {
         
         return result;
     }
+
     
     
     // Function to read file into a set of strings
