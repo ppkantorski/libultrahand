@@ -3284,10 +3284,14 @@ namespace tsl {
 
                 if (m_noClickableItems != noClickableItems)
                     noClickableItems = m_noClickableItems;
-                //renderer->fillScreen(a(defaultBackgroundColor));
-                renderer->fillScreen(a({ 0x0, 0x0, 0x0, alphabackground }));
                 
-                if (FullMode == true) renderer->drawWallpaper();
+                
+                if (FullMode == true) {
+                    renderer->fillScreen(a(defaultBackgroundColor));
+                    renderer->drawWallpaper();
+                } else {
+                    renderer->fillScreen({ 0x0, 0x0, 0x0, alphabackground});
+                }
                 
                 y = 50;
                 offset = 0;
@@ -3295,15 +3299,15 @@ namespace tsl {
                 renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
                 renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
                 
-
-                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+                if (FullMode == true)
+                    renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
                 backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
                 if (touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
-
+                
                 selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
                 if (touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
