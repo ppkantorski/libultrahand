@@ -2962,26 +2962,6 @@ namespace tsl {
                 return {}; // Return empty vector for simplicity
             }
 
-            ///**
-            // * @brief Adds a child element to this element
-            // *
-            // * @param child Child element to add
-            // */
-            //void addChild(Element* child) {
-            //    // Set the parent of the child to this element
-            //    child->setParent(this);
-            //    // Add the child to the list of children
-            //    m_children.push_back(child);
-            //}
-            //
-            ///**
-            // * @brief Get the list of child elements
-            // *
-            // * @return Vector of child elements
-            // */
-            //const std::vector<Element*>& getChildren() const { return this->m_children; }
-
-
             /**
              * @brief Marks this element as focused or unfocused to draw the highlight
              *
@@ -3136,82 +3116,6 @@ namespace tsl {
         };
 
     #if IS_STATUS_MONITOR_DIRECTIVE
-        /**
-         * @brief The base frame which can contain another view
-         * 
-         */
-        //class OverlayFrame : public Element {
-        //public:
-        //    //std::string defaultTextColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "text_color");
-        //    //tsl::gfx::Color defaultTextColor = tsl::gfx::RGB888(defaultTextColorStr);
-        //    //std::string clockColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "clock_color");
-        //    //tsl::gfx::Color clockColor = tsl::gfx::RGB888(clockColorStr);
-        //    //std::string batteryColorStr = parseValueFromIniSection("/config/ultrahand/theme.ini", "theme", "battery_color");
-        //    //tsl::gfx::Color batteryColor = tsl::gfx::RGB888(batteryColorStr);
-        //    
-        //    /**
-        //     * @brief Constructor
-        //     * 
-        //     * @param title Name of the Overlay drawn bolt at the top
-        //     * @param subtitle Subtitle drawn bellow the title e.g version number
-        //     */
-        //    OverlayFrame(std::string title, std::string subtitle) : Element(), m_title(title), m_subtitle(subtitle) {}
-        //    virtual ~OverlayFrame() {
-        //        if (this->m_contentElement != nullptr)
-        //            delete this->m_contentElement;
-        //    }
-//
-        //    virtual void draw(gfx::Renderer *renderer) override {
-        //        renderer->fillScreen(a({ 0x0, 0x0, 0x0, alphabackground }));
-//
-        //        renderer->drawString(this->m_title.c_str(), false, 20, 50, 30, a(defaultTextColor));
-        //        renderer->drawString(this->m_subtitle.c_str(), false, 20, 70, 15, a(defaultTextColor));
-//
-        //        if (FullMode == true) renderer->drawRect(15, 720 - 73, tsl::cfg::FramebufferWidth - 30, 1, a(defaultTextColor));
-        //        if (!deactivateOriginalFooter) renderer->drawString("\uE0E1  Back     \uE0E0  OK", false, 30, 693, 23, a(defaultTextColor));
-//
-        //        if (this->m_contentElement != nullptr)
-        //            this->m_contentElement->frame(renderer);
-        //    }
-//
-        //    virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-        //        this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
-//
-        //        if (this->m_contentElement != nullptr) {
-        //            this->m_contentElement->setBoundaries(parentX + 35, parentY + 140, parentWidth - 85, parentHeight - 73 - 105); // CUSTOM MODIFICATION
-        //            this->m_contentElement->invalidate();
-        //        }
-        //    }
-//
-        //    virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
-        //        if (this->m_contentElement != nullptr)
-        //            return this->m_contentElement->requestFocus(oldFocus, direction);
-        //        else
-        //            return nullptr;
-        //    }
-//
-        //    /**
-        //     * @brief Sets the content of the frame
-        //     * 
-        //     * @param content Element
-        //     */
-        //    virtual void setContent(Element *content) final {
-        //        if (this->m_contentElement != nullptr)
-        //            delete this->m_contentElement;
-//
-        //        this->m_contentElement = content;
-//
-        //        if (content != nullptr) {
-        //            this->m_contentElement->setParent(this);
-        //            this->invalidate();
-        //        }
-        //    }
-//
-        //protected:
-        //    Element *m_contentElement = nullptr;
-//
-        //    std::string m_title, m_subtitle;
-        //};
 
         /**
          * @brief The base frame which can contain another view
@@ -3227,28 +3131,16 @@ namespace tsl {
              */
             std::string m_title;
             std::string m_subtitle;
-            std::string m_menuMode; // CUSTOM MODIFICATION
-            std::string m_colorSelection; // CUSTOM MODIFICATION
-            std::string m_pageLeftName; // CUSTOM MODIFICATION
-            std::string m_pageRightName; // CUSTOM MODIFICATION
             bool m_noClickableItems;
 
-            //tsl::Color handColor = RGB888("#F7253E");
-            tsl::Color titleColor = {0xF,0xF,0xF,0xF};
-            const double cycleDuration = 1.5;
-            float counter = 0;
-            float countOffset;
-            double timeInSeconds;
-            float progress;
-            float letterWidth;
             float x, y;
             int offset, y_offset;
             int fontSize;
 
             std::string menuBottomLine;
             
-        OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
-            : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
+        OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
+            : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
                 activeHeaderHeight = 97;
                 loadWallpaperFileWhenSafe();
 
@@ -3261,21 +3153,6 @@ namespace tsl {
             }
 
             
-            // Function to calculate FPS
-            //void updateFPS(double currentTimeCount) {
-            //    static double lastUpdateTime = currentTimeCount;
-            //
-            //    frameCount++;
-            //    elapsedTime = currentTimeCount - lastUpdateTime;
-            //
-            //    if (elapsedTime >= 1.0) { // Update FPS every second
-            //        fps = frameCount / static_cast<float>(elapsedTime);
-            //        lastUpdateTime = currentTimeCount;
-            //        frameCount = 0;
-            //    }
-            //}
-            
-            // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
                 if (!themeIsInitialized) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
@@ -3307,42 +3184,18 @@ namespace tsl {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
-                
+
                 selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
                 if (touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
-                if (!(this->m_pageLeftName).empty())
-                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
-                else if (!(this->m_pageRightName).empty())
-                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
-                #if IS_LAUNCHER_DIRECTIVE
-                else if (inMainMenu)
-                    if (inOverlaysPage)
-                        nextPageWidth = tsl::gfx::calculateStringWidth(PACKAGES,23);
-                    else if (inPackagesPage)
-                        nextPageWidth = tsl::gfx::calculateStringWidth(OVERLAYS,23);
-                #endif
-
-                if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
-                    if (touchingNextPage) {
-                        renderer->drawRoundedRect(18.0f + backWidth+68.0f + ((!m_noClickableItems) ? selectWidth+68.0f : 0), static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
-                    }
-                }
 
                 if (m_noClickableItems)
                     menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1;
                 else
                     menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
-                
-                if (!(this->m_pageLeftName).empty()) {
-                    menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;
-                } else if (!(this->m_pageRightName).empty()) {
-                    menuBottomLine += "\uE0EE"+GAP_2 + this->m_pageRightName;
-                }
                 
                 //renderer->drawString(menuBottomLine.c_str(), false, 30, 693, 23, a(defaultTextColor));
                 // Render the text with special character handling
@@ -3353,7 +3206,7 @@ namespace tsl {
                     this->m_contentElement->frame(renderer);
 
             }
-            // CUSTOM SECTION END
+            
 
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
