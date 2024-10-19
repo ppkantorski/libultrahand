@@ -59,8 +59,8 @@
 namespace ult {
     extern bool correctFrameSize; // for detecting the correct Overlay display size
 
-    //extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
-    //extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
+    extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
+    extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
 
     extern std::unordered_map<std::string, std::string> translationCache;
     bool readFileContent(const std::string& filePath, std::string& content);

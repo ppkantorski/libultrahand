@@ -40,13 +40,6 @@
 
 #pragma once
 
-#include <cstdlib>
-extern "C" { // assertion override
-    void __assert_func(const char *_file, int _line, const char *_func, const char *_expr ) {
-        abort();
-    }
-}
-
 
 #include <ultra.hpp>
 #include <switch.h>
@@ -116,8 +109,7 @@ bool FullMode = true;
 bool deactivateOriginalFooter = false;
 #endif
 
-u16 DefaultFramebufferWidth = 448;
-u16 DefaultFramebufferHeight = 720;
+
 
 namespace tsl {
 
@@ -221,33 +213,6 @@ namespace tsl {
         
         return Color(redValue >> 4, greenValue >> 4, blueValue >> 4, alpha);
     }
-
-
-    //std::tuple<uint8_t, uint8_t, uint8_t> hexToRGB444Floats(const std::string& hexColor, const std::string& defaultHexColor = "#FFFFFF") {
-    //    const char* validHex = hexColor.c_str();
-    //    if (validHex[0] == '#') validHex++;
-    //    
-    //    if (!isValidHexColor(validHex)) {
-    //        validHex = defaultHexColor.c_str();
-    //        if (validHex[0] == '#') validHex++;
-    //    }
-    //    
-    //    // Manually parse the hex string to an integer value
-    //    unsigned int hexValue = (hexMap[static_cast<unsigned char>(validHex[0])] << 20) |
-    //                            (hexMap[static_cast<unsigned char>(validHex[1])] << 16) |
-    //                            (hexMap[static_cast<unsigned char>(validHex[2])] << 12) |
-    //                            (hexMap[static_cast<unsigned char>(validHex[3])] << 8)  |
-    //                            (hexMap[static_cast<unsigned char>(validHex[4])] << 4)  |
-    //                            hexMap[static_cast<unsigned char>(validHex[5])];
-    //    
-    //    // Extract and scale the RGB components from 8-bit (0-255) to 4-bit float scale (0-15)
-    //    uint8_t red = ((hexValue >> 16) & 0xFF) / 255.0f * 15.0f;
-    //    uint8_t green = ((hexValue >> 8) & 0xFF) / 255.0f * 15.0f;
-    //    uint8_t blue = (hexValue & 0xFF) / 255.0f * 15.0f;
-    //    
-    //    return std::make_tuple(red, green, blue);
-    //}
-
     
     
     namespace style {
@@ -831,7 +796,7 @@ namespace tsl {
         };
         
 
-        float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers); // forward declaration
+        static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers); // forward declaration
 
         /**
          * @brief Manages the Tesla layer and draws raw data to the screen
@@ -2415,7 +2380,7 @@ namespace tsl {
         };
 
         // Helper function to calculate string width
-        float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
+        static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
             if (originalString.empty()) {
                 return 0.0f;
             }
@@ -3291,11 +3256,15 @@ namespace tsl {
              */
             std::string m_title;
             std::string m_subtitle;
+
+            bool m_noClickableItems;
+
+        #if IS_LAUNCHER_DIRECTIVE
             std::string m_menuMode; // CUSTOM MODIFICATION
             std::string m_colorSelection; // CUSTOM MODIFICATION
             std::string m_pageLeftName; // CUSTOM MODIFICATION
             std::string m_pageRightName; // CUSTOM MODIFICATION
-            bool m_noClickableItems;
+            
 
             //tsl::Color handColor = RGB888("#F7253E");
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
@@ -3305,14 +3274,21 @@ namespace tsl {
             double timeInSeconds;
             float progress;
             float letterWidth;
+        #endif
+
             float x, y;
             int offset, y_offset;
             int fontSize;
 
             std::string menuBottomLine;
-            
-        OverlayFrame(const std::string& title, const std::string& subtitle, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "", const bool& _noClickableItems=false)
-            : Element(), m_title(title), m_subtitle(subtitle), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), m_noClickableItems(_noClickableItems) {
+        
+    #if IS_LAUNCHER_DIRECTIVE
+        OverlayFrame(const std::string& title, const std::string& subtitle,  const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
+            : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
+    #else
+        OverlayFrame(const std::string& title, const std::string& subtitle,  const bool& _noClickableItems=false)
+            : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
+    #endif
                 activeHeaderHeight = 97;
                 loadWallpaperFileWhenSafe();
 
@@ -3529,17 +3505,20 @@ namespace tsl {
                                               selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
+                #if IS_LAUNCHER_DIRECTIVE
+
                 if (!(this->m_pageLeftName).empty())
                     nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
                 else if (!(this->m_pageRightName).empty())
                     nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
-                #if IS_LAUNCHER_DIRECTIVE
-                else if (inMainMenu)
+
+                else if (inMainMenu) {
                     if (inOverlaysPage)
                         nextPageWidth = tsl::gfx::calculateStringWidth(PACKAGES,23);
                     else if (inPackagesPage)
                         nextPageWidth = tsl::gfx::calculateStringWidth(OVERLAYS,23);
-                #endif
+                }
+                
 
                 if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
                     if (touchingNextPage) {
@@ -3547,6 +3526,7 @@ namespace tsl {
                                                   nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
+                #endif
 
 
                 if (m_noClickableItems)
@@ -3560,13 +3540,14 @@ namespace tsl {
                 } else if (this->m_menuMode == "overlays") {
                     menuBottomLine += "\uE0EE"+GAP_2+PACKAGES;
                 }
-                #endif
+                
                 
                 if (!(this->m_pageLeftName).empty()) {
                     menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;
                 } else if (!(this->m_pageRightName).empty()) {
                     menuBottomLine += "\uE0EE"+GAP_2 + this->m_pageRightName;
                 }
+                #endif
                 
                 //renderer->drawString(menuBottomLine.c_str(), false, 30, 693, 23, a(defaultTextColor));
                 // Render the text with special character handling
@@ -6672,6 +6653,18 @@ namespace tsl {
          */
         void hide() {
         #if IS_STATUS_MONITOR_DIRECTIVE
+            if (FullMode && !deactivateOriginalFooter) {
+                if (this->m_disableNextAnimation) {
+                    this->m_animationCounter = 0;
+                    this->m_disableNextAnimation = false;
+                }
+                else {
+                    this->m_fadeOutAnimationPlaying = true;
+                    this->m_animationCounter = MAX_ANIMATION_COUNTER;
+                }
+                isHidden.store(true);
+                this->onHide();
+            }
         #else
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = 0;
@@ -7081,7 +7074,9 @@ namespace tsl {
                 if ((touchPos.x < layerEdge || touchPos.x > cfg::FramebufferWidth + layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
-                    //this->hide();
+                    if (FullMode && !deactivateOriginalFooter) {
+                        this->hide();
+                    }
                 }
                 stillTouching = true;
             } else {
@@ -7613,6 +7608,7 @@ namespace tsl {
             eventClear(&powerButtonPressEvent);
             hlp::ScopeGuard powerButtonEventGuard([&] { eventClose(&powerButtonPressEvent); });
             
+
             // For handling screenshots color alpha
             Event captureButtonPressEvent = {};
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
@@ -7741,8 +7737,8 @@ namespace tsl {
                         }
                     }
                     #if IS_LAUNCHER_DIRECTIVE
-                    else if (updateMenuCombos && (shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) {
-                        tsl::cfg::launchCombo = tsl::cfg::launchCombo2;
+                    else if (updateMenuCombos && (((shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) && shData->keysDown & tsl::cfg::launchCombo2)) {
+                        std::swap(tsl::cfg::launchCombo, tsl::cfg::launchCombo2); // Swap the two launch combos
                         setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
                         setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, TESLA_COMBO_STR);
                         eventFire(&shData->comboEvent);

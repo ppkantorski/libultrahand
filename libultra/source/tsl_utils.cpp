@@ -20,11 +20,19 @@
 
 #include <tsl_utils.hpp>
 
+#include <cstdlib>
+extern "C" { // assertion override
+    void __assert_func(const char *_file, int _line, const char *_func, const char *_expr ) {
+        abort();
+    }
+}
+
+
 namespace ult {
     bool correctFrameSize; // for detecting the correct Overlay display size
 
-    //u16 DefaultFramebufferWidth = 448;            ///< Width of the framebuffer
-    //u16 DefaultFramebufferHeight = 720;           ///< Height of the framebuffer
+    u16 DefaultFramebufferWidth = 448;            ///< Width of the framebuffer
+    u16 DefaultFramebufferHeight = 720;           ///< Height of the framebuffer
 
     std::unordered_map<std::string, std::string> translationCache;
     
