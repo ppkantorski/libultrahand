@@ -258,7 +258,7 @@ namespace tsl {
 
     static Color defaultOverlayColor = RGB888(whiteColor);
     static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
-    static Color defaultScriptColor = RGB888("FF333F");
+    static Color defaultScriptColor = RGB888("FF33FF");
     static Color clockColor = RGB888(whiteColor);
     static Color batteryColor = RGB888("ffff45");
     static Color versionTextColor = RGB888("AAAAAA");
