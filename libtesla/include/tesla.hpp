@@ -258,6 +258,7 @@ namespace tsl {
 
     static Color defaultOverlayColor = RGB888(whiteColor);
     static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
+    static Color defaultScriptColor = RGB888("FF333F");
     static Color clockColor = RGB888(whiteColor);
     static Color batteryColor = RGB888("ffff45");
     static Color versionTextColor = RGB888("AAAAAA");
@@ -352,6 +353,7 @@ namespace tsl {
             botttomSeparatorColor = getColor("bottom_separator_color");
             defaultOverlayColor = getColor("default_overlay_color");
             defaultPackageColor = getColor("default_package_color");
+            defaultScriptColor = getColor("default_script_color");
 
             clockColor = getColor("clock_color");
             batteryColor = getColor("battery_color");
@@ -3331,17 +3333,17 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
-                #if IS_LAUNCHER_DIRECTIVE
+            #if IS_LAUNCHER_DIRECTIVE
                 bool isUltrahand = (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                     this->m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
                 if (isUltrahand) {
 
-                    #if USING_WIDGET_DIRECTIVE
+                #if USING_WIDGET_DIRECTIVE
                     // Call the extracted widget drawing method
                     renderer->drawWidget();
-                    #endif
+                #endif
 
                     if (touchingMenu && inMainMenu) {
                         renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
@@ -3398,7 +3400,7 @@ namespace tsl {
                     fontSize = 32;
 
                     if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultScriptColor));
                     } else {
                         const std::string& title = this->m_title;
                         titleColor = defaultPackageColor; // Default to green
@@ -3480,7 +3482,8 @@ namespace tsl {
                 } else
                     renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
 
-                #else
+            #else
+
                 {
                     #if USING_WIDGET_DIRECTIVE
                     // Call the extracted widget drawing method
@@ -3489,7 +3492,8 @@ namespace tsl {
                 }
                 renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
                 renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
-                #endif
+
+            #endif
 
 
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
@@ -3506,7 +3510,7 @@ namespace tsl {
                                               selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
-                #if IS_LAUNCHER_DIRECTIVE
+            #if IS_LAUNCHER_DIRECTIVE
 
                 if (!(this->m_pageLeftName).empty())
                     nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
@@ -3527,7 +3531,7 @@ namespace tsl {
                                                   nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
-                #endif
+            #endif
 
 
                 if (m_noClickableItems)
@@ -3535,7 +3539,7 @@ namespace tsl {
                 else
                     menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
 
-                #if IS_LAUNCHER_DIRECTIVE
+            #if IS_LAUNCHER_DIRECTIVE
                 if (this->m_menuMode == "packages") {
                     menuBottomLine += "\uE0ED"+GAP_2+OVERLAYS;
                 } else if (this->m_menuMode == "overlays") {
@@ -3548,7 +3552,7 @@ namespace tsl {
                 } else if (!(this->m_pageRightName).empty()) {
                     menuBottomLine += "\uE0EE"+GAP_2 + this->m_pageRightName;
                 }
-                #endif
+            #endif
                 
                 //renderer->drawString(menuBottomLine.c_str(), false, 30, 693, 23, a(defaultTextColor));
                 // Render the text with special character handling
