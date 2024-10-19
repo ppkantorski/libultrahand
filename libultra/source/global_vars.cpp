@@ -54,8 +54,8 @@ namespace ult {
     const std::string ULTRAHAND_REPO_URL = "https://github.com/ppkantorski/Ultrahand-Overlay/";
     const std::string INCLUDED_THEME_FOLDER_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/themes/";
     const std::string LATEST_RELEASE_INFO_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/RELEASE.ini";
-    const std::string NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
-    const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
+    const std::string NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/latest/download/nx-ovlloader.zip";
+    const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/latest/download/nx-ovlloader+.zip";
     
     const std::string LAUNCH_ARGS_STR = "launch_args";
     const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";
