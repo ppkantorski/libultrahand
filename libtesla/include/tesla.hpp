@@ -3396,7 +3396,10 @@ namespace tsl {
                     x = 20;
                     y = 52;
                     fontSize = 32;
-                    if (this->m_subtitle.find("Ultrahand Package") != std::string::npos) {
+
+                    if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
+                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
+                    } else {
                         const std::string& title = this->m_title;
                         titleColor = defaultPackageColor; // Default to green
                         
@@ -3466,10 +3469,8 @@ namespace tsl {
                         } else { // for unknown colors
                             drawTitle(titleColor); // Using the default titleColor
                         }
-                    } else if (this->m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(this->m_title, false, x, y, fontSize, a(Color(0xFF, 0x33, 0x3F, 0xFF)));
-                    } else {
-                        renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultTextColor));
+                    //} else {
+                    //    renderer->drawString(this->m_title, false, x, y, fontSize, a(defaultTextColor));
                     }
 
                 }
