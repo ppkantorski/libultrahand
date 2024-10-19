@@ -3283,7 +3283,7 @@ namespace tsl {
             int fontSize;
 
             std::string menuBottomLine;
-        
+            
     #if IS_LAUNCHER_DIRECTIVE
         OverlayFrame(const std::string& title, const std::string& subtitle,  const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
@@ -3479,8 +3479,15 @@ namespace tsl {
                 
                 if (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME) {
                     renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
-                } else
-                    renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                } else {
+                    std::string subtitle = this->m_subtitle;
+                    size_t pos = subtitle.find("(Ultrahand Script*)");
+                    if (pos != std::string::npos) {
+                        // Remove "(Ultrahand Script*)" from m_subtitle
+                        subtitle.erase(pos, std::string("(Ultrahand Script*)").length());
+                    }
+                    renderer->drawString(subtitle, false, 20, y+23, 15, a(versionTextColor));
+                }
 
             #else
 
