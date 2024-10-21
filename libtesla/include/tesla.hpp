@@ -63,11 +63,6 @@
 #include <barrier>
 
 
-//using namespace ult;
-
-
-// CUSTOM SECTION END
-
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
 // #define TESLA_INIT_IMPL
@@ -1551,98 +1546,6 @@ namespace tsl {
                 return m_stdFont;
             }
             
-            //inline float calculateStringWidth(const std::string& originalString, const s32 fontSize, const bool fixedWidthNumbers = false) {
-            //    if (originalString.empty()) {
-            //        return 0.0f;
-            //    }
-            //    
-            //    #ifdef UI_OVERRIDE_PATH
-            //    
-            //    // Check for translation in the cache
-            //    auto translatedIt = ult::translationCache.find(originalString);
-            //    const std::string& translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
-            //    
-            //    // Cache the translation if it wasn't already present
-            //    if (translatedIt == ult::translationCache.end()) {
-            //        ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
-            //    }
-            //    
-            //    // Use a pointer to iterate over the translated string
-            //    const std::string* stringPtr = &translatedString;
-            //    
-            //    #else
-            //    
-            //    const std::string* stringPtr = &originalString;
-            //    
-            //    #endif
-            //    
-            //    float totalWidth = 0.0f;
-            //    
-            //    ssize_t codepointWidth;
-            //    u32 prevCharacter = 0;
-            //    u32 currCharacter = 0;
-            //    
-            //    static std::unordered_map<u64, Glyph> s_glyphCache;
-            //    
-            //    auto itStrEnd = stringPtr->cend();
-            //    auto itStr = stringPtr->cbegin();
-            //    
-            //    u64 key = 0;
-            //    Glyph* glyph = nullptr;
-            //    auto it = s_glyphCache.end();
-            //
-            //    while (itStr != itStrEnd) {
-            //        // Decode UTF-8 codepoint
-            //        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-            //        if (codepointWidth <= 0) {
-            //            break;
-            //        }
-            //
-            //        // Move the iterator forward by the width of the current codepoint
-            //        itStr += codepointWidth;
-            //
-            //        if (currCharacter == '\n') {
-            //            continue;
-            //        }
-            //
-            //        // Calculate glyph key
-            //        key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-            //
-            //        // Check cache for the glyph
-            //        it = s_glyphCache.find(key);
-            //
-            //        // If glyph not found, create and cache it
-            //        if (it == s_glyphCache.end()) {
-            //            glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-            //
-            //            // Determine the appropriate font for the character
-            //            if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-            //                glyph->currFont = &this->m_extFont;
-            //            } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-            //                glyph->currFont = &this->m_localFont;
-            //            } else {
-            //                glyph->currFont = &this->m_stdFont;
-            //            }
-            //
-            //            glyph->currFontSize = float(stbtt_ScaleForPixelHeight(glyph->currFont, fontSize));
-            //            stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
-            //        } else {
-            //            glyph = &it->second;
-            //        }
-            //
-            //        if (prevCharacter) {
-            //            float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
-            //            totalWidth += kernAdvance * glyph->currFontSize;
-            //        }
-            //
-            //        totalWidth += int(glyph->xAdvance * glyph->currFontSize);
-            //
-            //        prevCharacter = currCharacter;
-            //    }
-            //
-            //    return totalWidth;
-            //}
-            
             
             inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
@@ -1787,10 +1690,10 @@ namespace tsl {
                 size_t startPos = 0;
                 size_t textLength = text.length();
                 u32 segmentWidth, segmentHeight;
-            
+                
                 // Create a set for fast symbol lookup
                 std::unordered_set<std::string> specialSymbolSet(specialSymbols.begin(), specialSymbols.end());
-            
+                
                 // Variables initialized outside the loop
                 size_t specialPos = std::string::npos;
                 size_t foundLength = 0;
@@ -1798,12 +1701,12 @@ namespace tsl {
                 std::string normalTextStr; // To hold the text before the special symbol
                 std::string specialSymbolStr; // To hold the special symbol text
                 size_t pos; // To store position of the special symbol in the text
-            
+                
                 while (startPos < textLength) {
                     specialPos = std::string::npos;
                     foundLength = 0;
                     foundSymbol = std::string_view(); // Reset the foundSymbol
-            
+                    
                     // Find the nearest special symbol
                     for (const auto& symbol : specialSymbolSet) {
                         pos = text.find(symbol, startPos);
@@ -1813,13 +1716,13 @@ namespace tsl {
                             foundSymbol = symbol;
                         }
                     }
-            
+                    
                     // If no special symbol is found, draw the rest of the text
                     if (specialPos == std::string::npos) {
                         drawString(text.substr(startPos), false, x, y, fontSize, defaultColor);
                         break;
                     }
-            
+                    
                     // Draw the segment before the special symbol
                     if (specialPos > startPos) {
                         normalTextStr = text.substr(startPos, specialPos - startPos);
