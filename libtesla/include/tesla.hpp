@@ -4808,7 +4808,20 @@ namespace tsl {
             u32 m_textWidth = 0;
         };
         
-
+        class MiniListItem : public ListItem {
+        public:
+            // Constructor for MiniListItem, with no `isMini` boolean.
+            MiniListItem(const std::string& text, const std::string& value = "")
+                : ListItem(text, value, true)  // Call the parent constructor with `isMini = true`
+            {
+                // Additional MiniListItem-specific initialization can go here, if necessary.
+            }
+            
+            // Destructor if needed (inherits default behavior from ListItem)
+            virtual ~MiniListItem() {}
+        };
+        
+        
         /**
          * @brief A toggleable list item that changes the state from On to Off when the A button gets pressed
          *
