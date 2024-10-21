@@ -516,12 +516,12 @@ namespace tsl {
          *
          * @param f wrapped function
          */
-        //template<typename F>
-        //static inline void doWithSDCardHandle(F f) {
-        //    fsdevMountSdmc();
-        //    f();
-        //    fsdevUnmountDevice("sdmc");
-        //}
+        template<typename F>
+        static inline void doWithSDCardHandle(F f) {
+            fsdevMountSdmc();
+            f();
+            fsdevUnmountDevice("sdmc");
+        }
         
         /**
          * @brief Guard that will execute a passed function at the end of the current scope
@@ -4820,8 +4820,8 @@ namespace tsl {
             // Destructor if needed (inherits default behavior from ListItem)
             virtual ~MiniListItem() {}
         };
-        
-        
+
+
         /**
          * @brief A toggleable list item that changes the state from On to Off when the A button gets pressed
          *
