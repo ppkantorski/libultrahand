@@ -63,7 +63,7 @@
 #include <barrier>
 
 
-using namespace ult;
+//using namespace ult;
 
 
 // CUSTOM SECTION END
@@ -199,17 +199,17 @@ namespace tsl {
     #endif
 
 
-    static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = whiteColor) {
+    static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
         std::string validHex = hexColor.empty() || hexColor[0] != '#' ? hexColor : hexColor.substr(1);
         
-        if (!isValidHexColor(validHex)) {
+        if (!ult::isValidHexColor(validHex)) {
             validHex = defaultHexColor;
         }
         
         // Convert hex to RGB values
-        uint8_t redValue = (hexMap[static_cast<unsigned char>(validHex[0])] << 4) | hexMap[static_cast<unsigned char>(validHex[1])];
-        uint8_t greenValue = (hexMap[static_cast<unsigned char>(validHex[2])] << 4) | hexMap[static_cast<unsigned char>(validHex[3])];
-        uint8_t blueValue = (hexMap[static_cast<unsigned char>(validHex[4])] << 4) | hexMap[static_cast<unsigned char>(validHex[5])];
+        uint8_t redValue = (ult::hexMap[static_cast<unsigned char>(validHex[0])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[1])];
+        uint8_t greenValue = (ult::hexMap[static_cast<unsigned char>(validHex[2])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[3])];
+        uint8_t blueValue = (ult::hexMap[static_cast<unsigned char>(validHex[4])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[5])];
         
         return Color(redValue >> 4, greenValue >> 4, blueValue >> 4, alpha);
     }
@@ -240,26 +240,26 @@ namespace tsl {
     static bool disableColorfulLogo = false;
 
     #if IS_LAUNCHER_DIRECTIVE
-    static Color logoColor1 = RGB888(whiteColor);
+    static Color logoColor1 = RGB888(ult::whiteColor);
     static Color logoColor2 = RGB888("F7253E");
     #endif
 
     static size_t defaultBackgroundAlpha = 13;
     
-    static Color defaultBackgroundColor = RGB888(blackColor, defaultBackgroundAlpha);
-    static Color defaultTextColor = RGB888(whiteColor);
-    static Color headerTextColor = RGB888(whiteColor);
-    static Color headerSeparatorColor = RGB888(whiteColor);
-    static Color starColor = RGB888(whiteColor);
-    static Color selectionStarColor = RGB888(whiteColor);
-    static Color buttonColor = RGB888(whiteColor);
-    static Color bottomTextColor = RGB888(whiteColor);
-    static Color botttomSeparatorColor = RGB888(whiteColor);
+    static Color defaultBackgroundColor = RGB888(ult::blackColor, defaultBackgroundAlpha);
+    static Color defaultTextColor = RGB888(ult::whiteColor);
+    static Color headerTextColor = RGB888(ult::whiteColor);
+    static Color headerSeparatorColor = RGB888(ult::whiteColor);
+    static Color starColor = RGB888(ult::whiteColor);
+    static Color selectionStarColor = RGB888(ult::whiteColor);
+    static Color buttonColor = RGB888(ult::whiteColor);
+    static Color bottomTextColor = RGB888(ult::whiteColor);
+    static Color botttomSeparatorColor = RGB888(ult::whiteColor);
 
-    static Color defaultOverlayColor = RGB888(whiteColor);
-    static Color defaultPackageColor = RGB888(whiteColor);//RGB888("#00FF00");
+    static Color defaultOverlayColor = RGB888(ult::whiteColor);
+    static Color defaultPackageColor = RGB888(ult::whiteColor);//RGB888("#00FF00");
     static Color defaultScriptColor = RGB888("FF33FF");
-    static Color clockColor = RGB888(whiteColor);
+    static Color clockColor = RGB888(ult::whiteColor);
     static Color batteryColor = RGB888("ffff45");
     static Color versionTextColor = RGB888("AAAAAA");
     static Color onTextColor = RGB888("00FFDD");
@@ -274,7 +274,7 @@ namespace tsl {
     static bool invertBGClickColor = false;
 
     static size_t selectionBGAlpha = 7;
-    static Color selectionBGColor = RGB888(blackColor, selectionBGAlpha);
+    static Color selectionBGColor = RGB888(ult::blackColor, selectionBGAlpha);
 
     static Color highlightColor1 = RGB888("2288CC");
     static Color highlightColor2 = RGB888("88FFFF");
@@ -294,15 +294,15 @@ namespace tsl {
     static size_t separatorAlpha = 15;
     static Color separatorColor = RGB888("404040", separatorAlpha);
 
-    static Color selectedTextColor = RGB888(whiteColor);
-    static Color inprogressTextColor = RGB888(whiteColor);
+    static Color selectedTextColor = RGB888(ult::whiteColor);
+    static Color inprogressTextColor = RGB888(ult::whiteColor);
     static Color invalidTextColor = RGB888("FF0000");
-    static Color clickTextColor = RGB888(whiteColor);
+    static Color clickTextColor = RGB888(ult::whiteColor);
 
     static size_t tableBGAlpha = 10;
     static Color tableBGColor = RGB888("303030", tableBGAlpha);
     static Color sectionTextColor = RGB888("e9ff40");
-    static Color infoTextColor = RGB888(whiteColor);
+    static Color infoTextColor = RGB888(ult::whiteColor);
     static Color warningTextColor = RGB888("FF7777");
 
 
@@ -314,13 +314,13 @@ namespace tsl {
     
     static void initializeThemeVars() { // NOTE: This needs to be called once in your application.
         // Fetch all theme settings at once from the INI file
-        auto themeData = getParsedDataFromIniFile(THEME_CONFIG_INI_PATH);
-        if (themeData.count(THEME_STR) > 0) {
-            auto& themeSection = themeData[THEME_STR];
+        auto themeData = ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH);
+        if (themeData.count(ult::THEME_STR) > 0) {
+            auto& themeSection = themeData[ult::THEME_STR];
             
             // Fetch and process each theme setting using a helper to simplify fetching and fallback
             auto getValue = [&](const std::string& key) {
-                return themeSection.count(key) ? themeSection[key] : defaultThemeSettingsMap[key];
+                return themeSection.count(key) ? themeSection[key] : ult::defaultThemeSettingsMap[key];
             };
             
             // Convert hex color to Color and manage default values and conversion
@@ -331,10 +331,10 @@ namespace tsl {
             
             auto getAlpha = [&](const std::string& key) {
                 std::string alphaStr = getValue(key);
-                return !alphaStr.empty() ? std::stoi(alphaStr) : std::stoi(defaultThemeSettingsMap[key]);
+                return !alphaStr.empty() ? std::stoi(alphaStr) : std::stoi(ult::defaultThemeSettingsMap[key]);
             };
             
-            disableColorfulLogo = (getValue("disable_colorful_logo") == TRUE_STR);
+            disableColorfulLogo = (getValue("disable_colorful_logo") == ult::TRUE_STR);
             
             #if IS_LAUNCHER_DIRECTIVE
             logoColor1 = getColor("logo_color_1");
@@ -367,8 +367,8 @@ namespace tsl {
             dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
             #endif
 
-            disableSelectionBG = (getValue("disable_selection_bg") == TRUE_STR);
-            invertBGClickColor = (getValue("invert_bg_click_color") == TRUE_STR);
+            disableSelectionBG = (getValue("disable_selection_bg") == ult::TRUE_STR);
+            invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
 
             selectionBGAlpha = getAlpha("selection_bg_alpha");
             selectionBGColor = getColor("selection_bg_color", selectionBGAlpha);
@@ -413,34 +413,34 @@ namespace tsl {
     #else
     static void initializeUltrahandSettings() { // only needed for regular overlays
 
-        std::string defaultLang = parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, DEFAULT_LANG_STR);
+        std::string defaultLang = ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::DEFAULT_LANG_STR);
         defaultLang = defaultLang.empty() ? "en" : defaultLang;
 
         #ifdef UI_OVERRIDE_PATH
         
         std::string UI_PATH = UI_OVERRIDE_PATH;
-        preprocessPath(UI_PATH);
+        ult::preprocessPath(UI_PATH);
 
         const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
         const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
                   
         const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
 
-        if (isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
-            THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
-        if (isFileOrDirectory(NEW_WALLPAPER_PATH))
-            WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
-        if (isFileOrDirectory(TRANSLATION_JSON_PATH))
-            loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
+        if (ult::isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
+            ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
+        if (ult::isFileOrDirectory(NEW_WALLPAPER_PATH))
+            ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+        if (ult::isFileOrDirectory(TRANSLATION_JSON_PATH))
+            ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
 
         #endif
         // Set Ultrahand Globals
-        useSwipeToOpen = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "swipe_to_open") == TRUE_STR);
-        useOpaqueScreenshots = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == TRUE_STR);
+        ult::useSwipeToOpen = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "swipe_to_open") == ult::TRUE_STR);
+        ult::useOpaqueScreenshots = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == ult::TRUE_STR);
 
-        std::string langFile = LANG_PATH+defaultLang+".json";
-        if (isFileOrDirectory(langFile))
-            parseLanguage(langFile);
+        std::string langFile = ult::LANG_PATH+defaultLang+".json";
+        if (ult::isFileOrDirectory(langFile))
+            ult::parseLanguage(langFile);
     }
     #endif
     
@@ -685,7 +685,7 @@ namespace tsl {
                 if (R_FAILED(rc) || readSize != static_cast<u64>(configFileSize))
                     return {};
                 
-                return parseIni(configFileData);
+                return ult::parseIni(configFileData);
             }
             
             /**
@@ -735,7 +735,7 @@ namespace tsl {
          * @return Key code
          */
         static u64 stringToKeyCode(const std::string& value) {
-            for (const auto& keyInfo : KEYS_INFO) {
+            for (const auto& keyInfo : ult::KEYS_INFO) {
                 if (strcasecmp(value.c_str(), keyInfo.name) == 0)
                     return keyInfo.key;
             }
@@ -751,7 +751,7 @@ namespace tsl {
          */
         static u64 comboStringToKeys(const std::string &value) {
             u64 keyCombo = 0x00;
-            for (std::string key : split(removeWhiteSpaces(value), '+')) { // CUSTOM MODIFICATION (bug fix)
+            for (std::string key : ult::split(ult::removeWhiteSpaces(value), '+')) { // CUSTOM MODIFICATION (bug fix)
                 keyCombo |= hlp::stringToKeyCode(key);
             }
             return keyCombo;
@@ -769,7 +769,7 @@ namespace tsl {
             std::string result;
             bool first = true;
         
-            for (const auto &keyInfo : KEYS_INFO) {
+            for (const auto &keyInfo : ult::KEYS_INFO) {
                 if (keys & keyInfo.key) {
                     if (!first) {
                         result += "+";
@@ -831,7 +831,7 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                u8 alpha = (disableTransparency && useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
+                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
                 return (c.rgba & 0x0FFF) | (alpha << 12);
             }
             
@@ -1308,26 +1308,26 @@ namespace tsl {
                 s32 y_end = y + h;
                 s32 r2 = radius * radius;
             
-                // Reuse threads and implement work-stealing
-                currentRow = y;
+                // Reuse ult::threads and implement work-stealing
+                ult::currentRow = y;
             
                 auto threadTask = [this, x, y, x_end, y_end, r2, radius, color]() {
                     s32 startRow;
                     while (true) {
-                        startRow = currentRow.fetch_add(4);
+                        startRow = ult::currentRow.fetch_add(4);
                         if (startRow >= y_end) break;
                         //s32 endRow = std::min(startRow + 4,y_end); // Process one row at a time
                         processRoundedRectChunk(this, x, y, x_end, y_end, r2, radius, color, startRow, std::min(startRow + 4,y_end));
                     }
                 };
             
-                // Launch threads
-                for (unsigned i = 0; i < numThreads; ++i) {
-                    threads[i] = std::thread(threadTask);
+                // Launch ult::threads
+                for (unsigned i = 0; i < ult::numThreads; ++i) {
+                    ult::threads[i] = std::thread(threadTask);
                 }
             
-                // Join threads
-                for (auto& t : threads) {
+                // Join ult::threads
+                for (auto& t : ult::threads) {
                     if (t.joinable()) t.join();
                 }
             }
@@ -1344,7 +1344,7 @@ namespace tsl {
 
             std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
             inline void updateDrawFunction() {
-                if (expandedMemory) {
+                if (ult::expandedMemory) {
                     drawRoundedRect = [this](s32 x, s32 y, s32 w, s32 h, s32 radius, Color color) {
                         drawRoundedRectMultiThreaded(x, y, w, h, radius, color);
                     };
@@ -1443,7 +1443,7 @@ namespace tsl {
                     }
                 }
             
-                inPlotBarrier.arrive_and_wait(); // Wait for all threads to reach this point
+                ult::inPlotBarrier.arrive_and_wait(); // Wait for all ult::threads to reach this point
             }
             
             
@@ -1465,39 +1465,39 @@ namespace tsl {
 
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
 
-                // Divide rows among threads
-                //s32 chunkSize = (screenH + numThreads - 1) / numThreads;
-                for (unsigned i = 0; i < numThreads; ++i) {
-                    s32 startRow = i * bmpChunkSize;
-                    s32 endRow = std::min(startRow + bmpChunkSize, screenH);
+                // Divide rows among ult::threads
+                //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
+                for (unsigned i = 0; i < ult::numThreads; ++i) {
+                    s32 startRow = i * ult::bmpChunkSize;
+                    s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
                     
                     // Bind the member function and create the thread
-                    threads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, endRow));
+                    ult::threads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, endRow));
                 }
             
-                // Join all threads
-                for (auto& t : threads) {
+                // Join all ult::threads
+                for (auto& t : ult::threads) {
                     t.join();
                 }
             }
 
 
             inline void drawWallpaper() {
-                if (expandedMemory && !refreshWallpaper.load(std::memory_order_acquire)) {
-                    //inPlot = true;
-                    inPlot.store(true, std::memory_order_release);
+                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire)) {
+                    //ult::inPlot = true;
+                    ult::inPlot.store(true, std::memory_order_release);
                     //std::lock_guard<std::mutex> lock(wallpaperMutex);
-                    if (!wallpaperData.empty()) {
+                    if (!ult::wallpaperData.empty()) {
                         // Draw the bitmap at position (0, 0) on the screen
-                        //static bool correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720);
-                        if (!refreshWallpaper.load(std::memory_order_acquire) && correctFrameSize) { // hard coded width and height for consistency
-                            drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, wallpaperData.data());
+                        //static bool ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720);
+                        if (!ult::refreshWallpaper.load(std::memory_order_acquire) && ult::correctFrameSize) { // hard coded width and height for consistency
+                            drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
                         } else
-                            inPlot.store(false, std::memory_order_release);
+                            ult::inPlot.store(false, std::memory_order_release);
                     } else {
-                        inPlot.store(false, std::memory_order_release);
+                        ult::inPlot.store(false, std::memory_order_release);
                     }
-                    //inPlot = false;
+                    //ult::inPlot = false;
                 }
             }
 
@@ -1559,12 +1559,12 @@ namespace tsl {
             //    #ifdef UI_OVERRIDE_PATH
             //    
             //    // Check for translation in the cache
-            //    auto translatedIt = translationCache.find(originalString);
-            //    const std::string& translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+            //    auto translatedIt = ult::translationCache.find(originalString);
+            //    const std::string& translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
             //    
             //    // Cache the translation if it wasn't already present
-            //    if (translatedIt == translationCache.end()) {
-            //        translationCache[originalString] = translatedString; // You would normally use some translation function here
+            //    if (translatedIt == ult::translationCache.end()) {
+            //        ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
             //    }
             //    
             //    // Use a pointer to iterate over the translated string
@@ -1648,20 +1648,20 @@ namespace tsl {
                 
                 #ifdef UI_OVERRIDE_PATH
                 // Check for translation in the cache
-                auto translatedIt = translationCache.find(originalString);
-                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+                auto translatedIt = ult::translationCache.find(originalString);
+                std::string translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
 
                 // Cache the translation if it wasn't already present
-                if (translatedIt == translationCache.end()) {
-                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                if (translatedIt == ult::translationCache.end()) {
+                    ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
                 }
                 const std::string* stringPtr = &translatedString;
 
                 #else
                 //std::string translatedString = originalString;
-                //applyLangReplacements(translatedString);
-                //applyLangReplacements(translatedString, true);
-                //convertComboToUnicode(translatedString);
+                //ult::applyLangReplacements(translatedString);
+                //ult::applyLangReplacements(translatedString, true);
+                //ult::convertComboToUnicode(translatedString);
 
                 const std::string* stringPtr = &originalString;
                 #endif
@@ -1856,12 +1856,12 @@ namespace tsl {
             inline std::string limitStringLength(const std::string& originalString, const bool monospace, const s32 fontSize, const s32 maxLength) {
                 #ifdef UI_OVERRIDE_PATH
                 // Check for translation in the cache
-                auto translatedIt = translationCache.find(originalString);
-                std::string translatedString = (translatedIt != translationCache.end()) ? translatedIt->second : originalString;
+                auto translatedIt = ult::translationCache.find(originalString);
+                std::string translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
                 
                 // Cache the translation if it wasn't already present
-                if (translatedIt == translationCache.end()) {
-                    translationCache[originalString] = translatedString; // You would normally use some translation function here
+                if (translatedIt == ult::translationCache.end()) {
+                    ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
                 }
                 const std::string* stringPtr = &translatedString;
                 #else
@@ -1933,17 +1933,17 @@ namespace tsl {
                 auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
                 //int horizontalUnderscanPixels = 0;
 
-                //useRightAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "right_alignment") == TRUE_STR);
+                //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
                 //cfg::LayerPosX = 1280-32;
                 cfg::LayerPosX = 0;
                 cfg::LayerPosY = 0;
-                cfg::FramebufferWidth  = DefaultFramebufferWidth;
-                cfg::FramebufferHeight = DefaultFramebufferHeight;
+                cfg::FramebufferWidth  = ult::DefaultFramebufferWidth;
+                cfg::FramebufferHeight = ult::DefaultFramebufferHeight;
 
-                //correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
-                if (useRightAlignment && correctFrameSize) {
+                //ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
+                if (ult::useRightAlignment && ult::correctFrameSize) {
                     cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
-                    layerEdge = (1280-448);
+                    ult::layerEdge = (1280-448);
                 }
 
                 cfg::LayerPosX += x;
@@ -1960,18 +1960,18 @@ namespace tsl {
                 static char timeStr[20]; // Allocate a buffer to store the time string
                 size_t y_offset = 45;
         
-                if (!(hideBattery && hidePCBTemp && hideSOCTemp && hideClock)) {
+                if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
                     drawRect(245, 23, 1, 49, a(separatorColor));
                 }
 
-                if ((hideBattery && hidePCBTemp && hideSOCTemp) || hideClock) {
+                if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
                     y_offset += 10;
                 }
 
                 clock_gettime(CLOCK_REALTIME, &currentTime);
-                if (!hideClock) {
-                    strftime(timeStr, sizeof(timeStr), datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
-                    localizeTimeStr(timeStr);
+                if (!ult::hideClock) {
+                    strftime(timeStr, sizeof(timeStr), ult::datetimeFormat.c_str(), localtime(&currentTime.tv_sec));
+                    ult::localizeTimeStr(timeStr);
                     drawString(timeStr, false, tsl::cfg::FramebufferWidth - calculateStringWidth(timeStr, 20, true) - 20, y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
@@ -1981,56 +1981,56 @@ namespace tsl {
                 static char SOC_temperatureStr[10];
                 static char chargeString[6];
         
-                size_t statusChange = size_t(hideSOCTemp) + size_t(hidePCBTemp) + size_t(hideBattery);
+                size_t statusChange = size_t(ult::hideSOCTemp) + size_t(ult::hidePCBTemp) + size_t(ult::hideBattery);
                 static size_t lastStatusChange = 0;
                 
-                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
-                    if (!hideSOCTemp) {
-                        ReadSocTemperature(&SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(SOC_temperature)));
+                if ((currentTime.tv_sec - ult::timeOut) >= 1 || statusChange != lastStatusChange) {
+                    if (!ult::hideSOCTemp) {
+                        ult::ReadSocTemperature(&ult::SOC_temperature);
+                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
                     } else {
                         strcpy(SOC_temperatureStr, "");
-                        SOC_temperature=0;
+                        ult::SOC_temperature=0;
                     }
-                    if (!hidePCBTemp) {
-                        ReadPcbTemperature(&PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(PCB_temperature)));
+                    if (!ult::hidePCBTemp) {
+                        ult::ReadPcbTemperature(&ult::PCB_temperature);
+                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::PCB_temperature)));
                     } else {
                         strcpy(PCB_temperatureStr, "");
-                        PCB_temperature=0;
+                        ult::PCB_temperature=0;
                     }
-                    if (!hideBattery) {
-                        powerGetDetails(&batteryCharge, &isCharging);
-                        batteryCharge = std::min(batteryCharge, 100U);
-                        sprintf(chargeString, "%d%%", batteryCharge);
+                    if (!ult::hideBattery) {
+                        ult::powerGetDetails(&ult::batteryCharge, &ult::isCharging);
+                        ult::batteryCharge = std::min(ult::batteryCharge, 100U);
+                        sprintf(chargeString, "%d%%", ult::batteryCharge);
                     } else {
                         strcpy(chargeString, "");
-                        batteryCharge=0;
+                        ult::batteryCharge=0;
                     }
-                    timeOut = int(currentTime.tv_sec);
+                    ult::timeOut = int(currentTime.tv_sec);
                 }
                 
                 lastStatusChange = statusChange;
                 
                 // Draw battery percentage
-                if (!hideBattery && batteryCharge > 0) {
-                    Color batteryColorToUse = isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                if (!ult::hideBattery && ult::batteryCharge > 0) {
+                    Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                            (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
                     drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
                 }
         
                 // Draw PCB and SOC temperatures
                 int offset = 0;
-                if (!hidePCBTemp && PCB_temperature > 0) {
-                    if (!hideBattery)
+                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                    if (!ult::hideBattery)
                         offset -= 5;
-                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(PCB_temperature)));
+                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
                 }
         
-                if (!hideSOCTemp && SOC_temperature > 0) {
-                    if (!hidePCBTemp || !hideBattery)
+                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                    if (!ult::hidePCBTemp || !ult::hideBattery)
                         offset -= 5;
-                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(SOC_temperature)));
+                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - calculateStringWidth(SOC_temperatureStr, 20, true) - calculateStringWidth(PCB_temperatureStr, 20, true) - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
                 }
             }
             #endif
@@ -2173,7 +2173,7 @@ namespace tsl {
             
 
             std::pair<int, int> getUnderscanPixels() {
-                if (!consoleIsDocked()) {
+                if (!ult::consoleIsDocked()) {
                     return {0, 0};
                 }
                 
@@ -2219,17 +2219,17 @@ namespace tsl {
                 auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
                 //int horizontalUnderscanPixels = 0;
 
-                useRightAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "right_alignment") == TRUE_STR);
+                ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
                 //cfg::LayerPosX = 1280-32;
                 cfg::LayerPosX = 0;
                 cfg::LayerPosY = 0;
-                cfg::FramebufferWidth  = DefaultFramebufferWidth;
-                cfg::FramebufferHeight = DefaultFramebufferHeight;
+                cfg::FramebufferWidth  = ult::DefaultFramebufferWidth;
+                cfg::FramebufferHeight = ult::DefaultFramebufferHeight;
 
-                correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
-                if (useRightAlignment && correctFrameSize) {
+                ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
+                if (ult::useRightAlignment && ult::correctFrameSize) {
                     cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
-                    layerEdge = (1280-448);
+                    ult::layerEdge = (1280-448);
                 }
 
                 cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
@@ -2590,7 +2590,7 @@ namespace tsl {
             void inline frame(gfx::Renderer *renderer) {
                 
                 if (this->m_focused) {
-                    renderer->enableScissoring(0, activeHeaderHeight, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-activeHeaderHeight);
+                    renderer->enableScissoring(0, ult::activeHeaderHeight, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-ult::activeHeaderHeight);
                     this->drawFocusBackground(renderer);
                     this->drawHighlight(renderer);
                     renderer->disableScissoring();
@@ -2672,8 +2672,8 @@ namespace tsl {
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
                 
-                //half progress = half((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                progress = (std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0;
+                //half progress = half((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = (std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0;
                 
                 if (progress >= 0.5) {
                     clickColor1 = clickColor;
@@ -2768,8 +2768,8 @@ namespace tsl {
                     return;
                 
                 
-                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                if (runningInterpreter.load(std::memory_order_acquire)) {
+                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                if (ult::runningInterpreter.load(std::memory_order_acquire)) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
                         static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
@@ -2822,24 +2822,24 @@ namespace tsl {
 
                     // Determine the active percentage to use
                     float activePercentage = 0.0f;
-                    if (downloadPercentage > 0) {
-                        activePercentage = downloadPercentage;
-                    } else if (unzipPercentage > 0) {
-                        activePercentage = unzipPercentage;
-                    } else if (copyPercentage > 0) {
-                        activePercentage = copyPercentage;
+                    if (ult::downloadPercentage > 0) {
+                        activePercentage = ult::downloadPercentage;
+                    } else if (ult::unzipPercentage > 0) {
+                        activePercentage = ult::unzipPercentage;
+                    } else if (ult::copyPercentage > 0) {
+                        activePercentage = ult::copyPercentage;
                     }
                     if (activePercentage > 0){
                         renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
-                        //if (copyPercentage == 100.0f) {
-                        //    copyPercentage = -1;
+                        //if (ult::copyPercentage == 100.0f) {
+                        //    ult::copyPercentage = -1;
                         //}
                     }
 
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
                 //renderer->drawRect(ELEMENT_BOUNDS(this), a(0xF000)); // This has been moved here (needs to be toggleable)
-                onTrackBar = false;
+                ult::onTrackBar = false;
             }
             
             
@@ -2905,8 +2905,8 @@ namespace tsl {
              * @return true if coordinates are in bounds, false otherwise
              */
             bool inBounds(s32 touchX, s32 touchY) {
-                //static u32 layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
-                return touchX >= this->getLeftBound() + int(layerEdge) && touchX <= this->getRightBound() + int(layerEdge) && touchY >= this->getTopBound() && touchY <= this->getBottomBound();
+                //static u32 ult::layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
+                return touchX >= this->getLeftBound() + int(ult::layerEdge) && touchX <= this->getRightBound() + int(ult::layerEdge) && touchY >= this->getTopBound() && touchY <= this->getBottomBound();
             }
             
             /**
@@ -3108,8 +3108,8 @@ namespace tsl {
             
         OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
-                activeHeaderHeight = 97;
-                loadWallpaperFileWhenSafe();
+                ult::activeHeaderHeight = 97;
+                ult::loadWallpaperFileWhenSafe();
 
                 m_isItem = false;
             }
@@ -3121,13 +3121,13 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!themeIsInitialized) {
+                if (!ult::themeIsInitialized) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    themeIsInitialized = true;
+                    ult::themeIsInitialized = true;
                 }
 
-                if (m_noClickableItems != noClickableItems)
-                    noClickableItems = m_noClickableItems;
+                if (m_noClickableItems != ult::noClickableItems)
+                    ult::noClickableItems = m_noClickableItems;
                 
                 
                 if (FullMode == true) {
@@ -3146,23 +3146,23 @@ namespace tsl {
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
-                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
-                if (touchingBack) {
+                ult::backWidth = tsl::gfx::calculateStringWidth(ult::BACK, 23);
+                if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
-                if (touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                ult::selectWidth = tsl::gfx::calculateStringWidth(ult::OK, 23);
+                if (ult::touchingSelect && !m_noClickableItems) {
+                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
 
                 if (m_noClickableItems)
-                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1;
+                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1;
                 else
-                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
+                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
                 
                 //renderer->drawString(menuBottomLine.c_str(), false, 30, 693, 23, a(defaultTextColor));
                 // Render the text with special character handling
@@ -3193,7 +3193,7 @@ namespace tsl {
             
             virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY) || !internalTouchReleased)
+                if (!this->m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased)
                     return false;
                 
                 if (this->m_contentElement != nullptr)
@@ -3291,8 +3291,8 @@ namespace tsl {
         OverlayFrame(const std::string& title, const std::string& subtitle,  const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
     #endif
-                activeHeaderHeight = 97;
-                loadWallpaperFileWhenSafe();
+                ult::activeHeaderHeight = 97;
+                ult::loadWallpaperFileWhenSafe();
 
                 m_isItem = false;
             }
@@ -3319,13 +3319,13 @@ namespace tsl {
             
             // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!themeIsInitialized) {
+                if (!ult::themeIsInitialized) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    themeIsInitialized = true;
+                    ult::themeIsInitialized = true;
                 }
 
-                if (m_noClickableItems != noClickableItems)
-                    noClickableItems = m_noClickableItems;
+                if (m_noClickableItems != ult::noClickableItems)
+                    ult::noClickableItems = m_noClickableItems;
                 renderer->fillScreen(a(defaultBackgroundColor));
                 
                 renderer->drawWallpaper();
@@ -3334,7 +3334,7 @@ namespace tsl {
                 offset = 0;
                 
             #if IS_LAUNCHER_DIRECTIVE
-                bool isUltrahand = (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME && 
+                bool isUltrahand = (this->m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                     this->m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                     this->m_subtitle.find("Ultrahand Script") == std::string::npos);
 
@@ -3345,7 +3345,7 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
 
-                    if (touchingMenu && inMainMenu) {
+                    if (ult::touchingMenu && ult::inMainMenu) {
                         renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
                     }
                     
@@ -3362,8 +3362,8 @@ namespace tsl {
                         auto currentTimeCount = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         float progress;
 
-                        for (char letter : SPLIT_PROJECT_NAME_1) {
-                            counter = (2 * _M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
+                        for (char letter : ult::SPLIT_PROJECT_NAME_1) {
+                            counter = (2 * ult::_M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             progress = std::sin(counter); // -1 to 1
                             
                             //highlightColor = {
@@ -3385,14 +3385,14 @@ namespace tsl {
                             countOffset -= 0.2F;
                         }
                     } else {
-                        for (char letter : SPLIT_PROJECT_NAME_1) {
+                        for (char letter : ult::SPLIT_PROJECT_NAME_1) {
                             renderer->drawString(std::string(1, letter), false, x, y + offset, fontSize, a(logoColor1));
                             x += tsl::gfx::calculateStringWidth(std::string(1, letter), fontSize);
                             countOffset -= 0.2F;
                         }
                     }
                     
-                    renderer->drawString(SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
+                    renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
                     
                 } else {
                     x = 20;
@@ -3437,7 +3437,7 @@ namespace tsl {
                         } else if (this->m_colorSelection == "ultra") {
                             for (char letter : title) {
                                 // Calculate the progress for each letter based on the counter
-                                progress = calculateAmplitude(counter - x * 0.0001F);
+                                progress = ult::calculateAmplitude(counter - x * 0.0001F);
                                 
                                 // Calculate the corresponding highlight color for each letter
                                 highlightColor = {
@@ -3461,7 +3461,7 @@ namespace tsl {
                             }
                         } else if (this->m_colorSelection.size() == 7 && this->m_colorSelection[0] == '#') {
                             // Check if m_colorSelection is a valid hexadecimal color
-                            if (isValidHexColor(this->m_colorSelection.substr(1))) {
+                            if (ult::isValidHexColor(this->m_colorSelection.substr(1))) {
                                 titleColor = RGB888(this->m_colorSelection.substr(1));
                                 drawTitle(titleColor);
                             } else {
@@ -3477,14 +3477,14 @@ namespace tsl {
 
                 }
                 
-                if (this->m_title == CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawString(versionLabel, false, 20, y+25, 15, a(versionTextColor));
+                if (this->m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
+                    renderer->drawString(ult::versionLabel, false, 20, y+25, 15, a(versionTextColor));
                 } else {
                     std::string subtitle = this->m_subtitle;
-                    size_t pos = subtitle.find("(Ultrahand Script*)");
+                    size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         // Remove "(Ultrahand Script*)" from m_subtitle
-                        subtitle.erase(pos, std::string("(Ultrahand Script*)").length());
+                        subtitle.erase(pos, std::string("?Ultrahand Script").length());
                     }
                     renderer->drawString(subtitle, false, 20, y+23, 15, a(versionTextColor));
                 }
@@ -3505,59 +3505,59 @@ namespace tsl {
 
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
-                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
-                if (touchingBack) {
+                ult::backWidth = tsl::gfx::calculateStringWidth(ult::BACK, 23);
+                if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
-                if (touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                ult::selectWidth = tsl::gfx::calculateStringWidth(ult::OK, 23);
+                if (ult::touchingSelect && !m_noClickableItems) {
+                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
             #if IS_LAUNCHER_DIRECTIVE
 
                 if (!(this->m_pageLeftName).empty())
-                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
+                    ult::nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageLeftName, 23);
                 else if (!(this->m_pageRightName).empty())
-                    nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
+                    ult::nextPageWidth = tsl::gfx::calculateStringWidth(this->m_pageRightName, 23);
 
-                else if (inMainMenu) {
-                    if (inOverlaysPage)
-                        nextPageWidth = tsl::gfx::calculateStringWidth(PACKAGES,23);
-                    else if (inPackagesPage)
-                        nextPageWidth = tsl::gfx::calculateStringWidth(OVERLAYS,23);
+                else if (ult::inMainMenu) {
+                    if (ult::inOverlaysPage)
+                        ult::nextPageWidth = tsl::gfx::calculateStringWidth(ult::PACKAGES,23);
+                    else if (ult::inPackagesPage)
+                        ult::nextPageWidth = tsl::gfx::calculateStringWidth(ult::OVERLAYS,23);
                 }
                 
 
-                if (inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
-                    if (touchingNextPage) {
-                        renderer->drawRoundedRect(18.0f + backWidth+68.0f + ((!m_noClickableItems) ? selectWidth+68.0f : 0), static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
+                if (ult::inMainMenu || !(this->m_pageLeftName).empty() || !(this->m_pageRightName).empty()) {
+                    if (ult::touchingNextPage) {
+                        renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f + ((!m_noClickableItems) ? ult::selectWidth+68.0f : 0), static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
             #endif
 
 
                 if (m_noClickableItems)
-                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1;
+                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1;
                 else
-                    menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
+                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
 
             #if IS_LAUNCHER_DIRECTIVE
                 if (this->m_menuMode == "packages") {
-                    menuBottomLine += "\uE0ED"+GAP_2+OVERLAYS;
+                    menuBottomLine += "\uE0ED"+ult::GAP_2+ult::OVERLAYS;
                 } else if (this->m_menuMode == "overlays") {
-                    menuBottomLine += "\uE0EE"+GAP_2+PACKAGES;
+                    menuBottomLine += "\uE0EE"+ult::GAP_2+ult::PACKAGES;
                 }
                 
                 
                 if (!(this->m_pageLeftName).empty()) {
-                    menuBottomLine += "\uE0ED"+GAP_2 + this->m_pageLeftName;
+                    menuBottomLine += "\uE0ED"+ult::GAP_2 + this->m_pageLeftName;
                 } else if (!(this->m_pageRightName).empty()) {
-                    menuBottomLine += "\uE0EE"+GAP_2 + this->m_pageRightName;
+                    menuBottomLine += "\uE0EE"+ult::GAP_2 + this->m_pageRightName;
                 }
             #endif
                 
@@ -3619,7 +3619,7 @@ namespace tsl {
             
             virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY) || !internalTouchReleased)
+                if (!this->m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased)
                     return false;
                 
                 if (this->m_contentElement != nullptr)
@@ -3678,9 +3678,9 @@ namespace tsl {
             
 
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
-                activeHeaderHeight = headerHeight;
+                ult::activeHeaderHeight = headerHeight;
                 // Load the bitmap file into memory
-                loadWallpaperFileWhenSafe();
+                ult::loadWallpaperFileWhenSafe();
                 m_isItem = false;
 
             }
@@ -3693,9 +3693,9 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!themeIsInitialized) {
+                if (!ult::themeIsInitialized) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    themeIsInitialized = true;
+                    ult::themeIsInitialized = true;
                 }
 
                 renderer->fillScreen(a(defaultBackgroundColor));
@@ -3707,21 +3707,21 @@ namespace tsl {
                 
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
-                //renderer->drawString(("\uE0E1  "+BACK+"     \uE0E0  "+OK), false, 30, 693, 23, a(defaultTextColor)); // CUSTOM MODIFICATION
+                //renderer->drawString(("\uE0E1  "+ult::BACK+"     \uE0E0  "+ult::OK), false, 30, 693, 23, a(defaultTextColor)); // CUSTOM MODIFICATION
                 
-                backWidth = tsl::gfx::calculateStringWidth(BACK, 23);
-                if (touchingBack) {
+                ult::backWidth = tsl::gfx::calculateStringWidth(ult::BACK, 23);
+                if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                selectWidth = tsl::gfx::calculateStringWidth(OK, 23);
-                if (touchingSelect) {
-                    renderer->drawRoundedRect(18.0f + backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                ult::selectWidth = tsl::gfx::calculateStringWidth(ult::OK, 23);
+                if (ult::touchingSelect) {
+                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
 
-                std::string menuBottomLine = "\uE0E1"+GAP_2+BACK+GAP_1+"\uE0E0"+GAP_2+OK+GAP_1;
+                std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
                 renderer->drawStringWithColoredSections(menuBottomLine, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
 
                 if (this->m_header != nullptr)
@@ -4629,10 +4629,10 @@ namespace tsl {
                 }
 
                 // Initial translations
-                applyLangReplacements(this->m_text);
-                convertComboToUnicode(this->m_text);
-                applyLangReplacements(this->m_value, true);
-                convertComboToUnicode(this->m_value);
+                ult::applyLangReplacements(this->m_text);
+                ult::convertComboToUnicode(this->m_text);
+                ult::applyLangReplacements(this->m_value, true);
+                ult::convertComboToUnicode(this->m_value);
             }
             virtual ~ListItem() {}
             
@@ -4641,7 +4641,7 @@ namespace tsl {
                 static float lastBottomBound;
                 bool useClickTextColor = false;
                 if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
-                    if (touchInBounds) {
+                    if (ult::touchInBounds) {
                         //renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
                         renderer->drawRect( this->getX()+4, this->getY(), this->getWidth()-8, this->getHeight(), a(clickColor));
                         useClickTextColor = true;
@@ -4708,7 +4708,7 @@ namespace tsl {
                     }
                 } else {
                     // Render the text with special character handling
-                    renderer->drawStringWithColoredSections(this->m_text, {STAR_SYMBOL+"  "}, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(this->m_text, {ult::STAR_SYMBOL+"  "}, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
                         a(this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
                         a(this->m_focused ? starColor : selectionStarColor)
                     );
@@ -4724,28 +4724,28 @@ namespace tsl {
                 //bool isFocused = this->m_focused;
 
 
-                static bool lastRunningInterpreter = runningInterpreter.load(std::memory_order_acquire);
+                static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
 
                 // Determine text color
                 auto textColor = offTextColor;
-                if (this->m_value == DROPDOWN_SYMBOL || this->m_value == OPTION_SYMBOL) {
+                if (this->m_value == ult::DROPDOWN_SYMBOL || this->m_value == ult::OPTION_SYMBOL) {
                     textColor = this->m_focused
                         ? (!useClickTextColor ? (this->m_faint ? offTextColor : selectedTextColor) : a(clickTextColor))
                         : (!useClickTextColor ? (this->m_faint ? offTextColor : defaultTextColor) : a(clickTextColor));
-                } else if ((runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter) &&
-                    (this->m_value.find(DOWNLOAD_SYMBOL) != std::string::npos ||
-                     this->m_value.find(UNZIP_SYMBOL) != std::string::npos ||
-                     this->m_value.find(COPY_SYMBOL) != std::string::npos ||
-                     this->m_value == INPROGRESS_SYMBOL)) {
+                } else if ((ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter) &&
+                    (this->m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
+                     this->m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
+                     this->m_value.find(ult::COPY_SYMBOL) != std::string::npos ||
+                     this->m_value == ult::INPROGRESS_SYMBOL)) {
 
                     textColor = this->m_faint ? offTextColor : a(inprogressTextColor);
-                } else if (this->m_value == CROSSMARK_SYMBOL) {
+                } else if (this->m_value == ult::CROSSMARK_SYMBOL) {
                     textColor = this->m_faint ? offTextColor : a(invalidTextColor);
                 } else {
                     textColor = this->m_faint ? offTextColor : a(onTextColor);
                 }
 
-                if (this->m_value != INPROGRESS_SYMBOL) {
+                if (this->m_value != ult::INPROGRESS_SYMBOL) {
                     // Draw the string with the determined text color
                     renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
                     // CUSTOM SECTION END 
@@ -4755,18 +4755,18 @@ namespace tsl {
                     // Avoid copying the original string
                     const std::string* stringPtr = &this->m_value;
 
-                    //size_t index = (throbberCounter / 10) % THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                    stringPtr = &THROBBER_SYMBOLS[(throbberCounter / 10) % THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+                    //size_t index = (throbberCounter / 10) % ult::THROBBER_SYMBOLS.size();  // Change index every 10 counts
+                    stringPtr = &ult::THROBBER_SYMBOLS[(throbberCounter / 10) % ult::THROBBER_SYMBOLS.size()];  // Point to the new string without copying
                     
                     throbberCounter++;
 
                     // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
-                    if (throbberCounter >= 10 * THROBBER_SYMBOLS.size()) {
+                    if (throbberCounter >= 10 * ult::THROBBER_SYMBOLS.size()) {
                         throbberCounter = 0;
                     }
                     renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
                 }
-                lastRunningInterpreter = runningInterpreter.load(std::memory_order_acquire);
+                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -4774,13 +4774,13 @@ namespace tsl {
             }
             
             virtual bool onClick(u64 keys) override {
-                if (simulatedSelect && !simulatedSelectComplete) {
+                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
                     keys |= KEY_A;
-                    simulatedSelect = false;
+                    ult::simulatedSelect = false;
                 }
                 if (keys & KEY_A) {
                     this->triggerClickAnimation();
-                    simulatedSelectComplete = true;
+                    ult::simulatedSelectComplete = true;
                 }
                 else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
                     this->m_clickAnimationProgress = 0;
@@ -4845,8 +4845,8 @@ namespace tsl {
                 this->m_ellipsisText = "";
                 this->m_maxWidth = 0;
 
-                applyLangReplacements(this->m_text);
-                convertComboToUnicode(this->m_text);
+                ult::applyLangReplacements(this->m_text);
+                ult::convertComboToUnicode(this->m_text);
             }
             
             /**
@@ -4860,8 +4860,8 @@ namespace tsl {
                 this->m_faint = faint;
                 this->m_maxWidth = 0;
 
-                applyLangReplacements(this->m_value, true);
-                convertComboToUnicode(this->m_value);
+                ult::applyLangReplacements(this->m_value, true);
+                ult::convertComboToUnicode(this->m_value);
             }
             
             /**
@@ -4918,7 +4918,7 @@ namespace tsl {
              * @param onValue Value drawn if the toggle is on
              * @param offValue Value drawn if the toggle is off
              */
-            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ON, const std::string& offValue = OFF)
+            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF)
                 : ListItem(text), m_state(initialState), m_onValue(onValue), m_offValue(offValue) {
                 this->setState(this->m_state);
             }
@@ -4926,9 +4926,9 @@ namespace tsl {
             virtual ~ToggleListItem() {}
             
             virtual bool onClick(u64 keys) override {
-                if (simulatedSelect && !simulatedSelectComplete) {
+                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
                     keys |= KEY_A;
-                    simulatedSelect = false;
+                    ult::simulatedSelect = false;
                 }
                 // Handle KEY_A for toggling
                 if (keys & HidNpadButton_A) {
@@ -4937,7 +4937,7 @@ namespace tsl {
                     this->setState(this->m_state);
                     this->m_stateChangedListener(this->m_state);
                     
-                    simulatedSelectComplete = true;
+                    ult::simulatedSelectComplete = true;
                     return ListItem::onClick(keys);
                 }
                 #if IS_LAUNCHER_DIRECTIVE
@@ -5048,8 +5048,8 @@ namespace tsl {
             
             
             CategoryHeader(const std::string &title, bool hasSeparator = true) : m_text(title), m_hasSeparator(hasSeparator) {
-                applyLangReplacements(m_text);
-                convertComboToUnicode(m_text);
+                ult::applyLangReplacements(m_text);
+                ult::convertComboToUnicode(m_text);
                 m_isItem = false;
             }
             virtual ~CategoryHeader() {}
@@ -5091,7 +5091,7 @@ namespace tsl {
             
             inline void setText(const std::string &text) {
                 this->m_text = text;
-                applyLangReplacements(m_text);
+                ult::applyLangReplacements(m_text);
             }
             
             inline const std::string& getText() const {
@@ -5230,10 +5230,10 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    unlockedSlide = m_unlockedTrackbar;
+                    ult::unlockedSlide = m_unlockedTrackbar;
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
 
 
@@ -5268,8 +5268,8 @@ namespace tsl {
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                //if (allowSlide || m_unlockedTrackbar) {
+                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                //if (ult::allowSlide || m_unlockedTrackbar) {
                 //    highlightColor = {
                 //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
                 //        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
@@ -5335,7 +5335,7 @@ namespace tsl {
                 //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
                 //}
 
-                onTrackBar = true;
+                ult::onTrackBar = true;
             }
 
             /**
@@ -5605,13 +5605,13 @@ namespace tsl {
 
                 bool loadedValue = false;
                 if (!m_packagePath.empty()) {
-                    std::string initialIndex = parseValueFromIniSection(m_packagePath + "config.ini", m_label, "index");
+                    std::string initialIndex = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "index");
 
                     if (!initialIndex.empty()) {
                         m_index = static_cast<s16>(std::stoi(initialIndex)); // convert initializedValue to s16
                     }
                     if (!m_usingNamedStepTrackbar) {
-                        std::string initialValue = parseValueFromIniSection(m_packagePath + "config.ini", m_label, "value");
+                        std::string initialValue = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "value");
                         
                         if (!initialValue.empty()) {
                             m_value = static_cast<s16>(std::stoi(initialValue)); // convert initializedValue to s16
@@ -5649,8 +5649,8 @@ namespace tsl {
             
                 if (updateIni) {
                     const std::string configPath = m_packagePath + "config.ini";
-                    setIniFileValue(configPath, m_label, "index", indexStr);
-                    setIniFileValue(configPath, m_label, "value", valueStr);
+                    ult::setIniFileValue(configPath, m_label, "index", indexStr);
+                    ult::setIniFileValue(configPath, m_label, "value", valueStr);
                 }
                 bool success = false;
 
@@ -5687,7 +5687,7 @@ namespace tsl {
                         }
                         
                         success = interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
-                        resetPercentages();
+                        ult::resetPercentages();
 
                         if (success)
                             break;
@@ -5715,22 +5715,22 @@ namespace tsl {
                     return true;
                 }
 
-                if (simulatedSelect && !simulatedSelectComplete) {
+                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
                     keysDown |= KEY_A;
-                    simulatedSelect = false;
+                    ult::simulatedSelect = false;
                 }
 
-                // Check if KEY_A is pressed to toggle allowSlide
+                // Check if KEY_A is pressed to toggle ult::allowSlide
                 if (keysDown & KEY_A) {
                     if (!m_unlockedTrackbar) {
-                        allowSlide = !allowSlide;
+                        ult::allowSlide = !ult::allowSlide;
                         holding = false; // Reset holding state when KEY_A is pressed
                     }
-                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide)) {
                         updateAndExecute();
                         triggerClick = true;
                     }
-                    simulatedSelectComplete = true;
+                    ult::simulatedSelectComplete = true;
                     return true;
                 }
 
@@ -5744,7 +5744,7 @@ namespace tsl {
                 
 
                 // Allow sliding only if KEY_A has been pressed
-                if (allowSlide || m_unlockedTrackbar) {
+                if (ult::allowSlide || m_unlockedTrackbar) {
 
                     if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
                         (wasLastHeld && !((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)))) {
@@ -5804,10 +5804,10 @@ namespace tsl {
                         //const auto transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
                         
                         // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                        float t = std::min(1.0f, static_cast<float>(holdDuration.count()) / transitionPoint.count());
+                        float t = std::min(1.0f, static_cast<float>(holdDuration.count()) / ult::transitionPoint.count());
                         
                         // Smooth transition between intervals
-                        std::chrono::milliseconds currentInterval = interpolateDuration(initialInterval, shortInterval, t);
+                        std::chrono::milliseconds currentInterval = ult::interpolateDuration(ult::initialInterval, ult::shortInterval, t);
                         
                         if (elapsed >= currentInterval) {
                             if (keysHeld & HidNpadButton_AnyLeft) {
@@ -5859,10 +5859,10 @@ namespace tsl {
                 //static std::chrono::steady_clock::time_point touchStartTime;
                 //static bool holdingPosition = false;
 
-                //if (!internalTouchReleased)
+                //if (!ult::internalTouchReleased)
                 //    return false;
                 
-                if (!m_unlockedTrackbar && !allowSlide)
+                if (!m_unlockedTrackbar && !ult::allowSlide)
                     return false;
 
                 if ((touchInCircle || touchInSliderBounds)) {
@@ -5937,14 +5937,14 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    unlockedSlide = m_unlockedTrackbar;
+                    ult::unlockedSlide = m_unlockedTrackbar;
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
                  
                 std::string labelPart = this->m_label;
-                removeTag(labelPart);
+                ult::removeTag(labelPart);
                 //labelPart += " ";
 
                 //std::string valuePart = m_usingNamedStepTrackbar ? this->m_selection : std::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
@@ -5992,7 +5992,7 @@ namespace tsl {
             
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((std::sin(2.0 * _M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
                 
                 static std::chrono::steady_clock::time_point clickStartTime;
                 static bool clickActive = false;
@@ -6036,7 +6036,7 @@ namespace tsl {
 
                 } else {
 
-                    if (allowSlide || m_unlockedTrackbar) {
+                    if (ult::allowSlide || m_unlockedTrackbar) {
                         highlightColor = {
                             static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
                             static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
@@ -6097,7 +6097,7 @@ namespace tsl {
                 //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
                 //}
 
-                onTrackBar = true;
+                ult::onTrackBar = true;
 
 
                 if (clickActive) {
@@ -6210,25 +6210,25 @@ namespace tsl {
                     return true;
                 }
 
-                if (simulatedSelect && !simulatedSelectComplete) {
+                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
                     keysDown |= KEY_A;
-                    simulatedSelect = false;
+                    ult::simulatedSelect = false;
                 }
 
-                // Check if KEY_A is pressed to toggle allowSlide
+                // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A)) {
                     if (!m_unlockedTrackbar) {
-                        allowSlide = !allowSlide;
+                        ult::allowSlide = !ult::allowSlide;
                         holding = false; // Reset holding state when KEY_A is pressed
                     //} else {
                     //    m_unlockedTrackbar = !m_unlockedTrackbar;
                     //    holding = false; // Reset holding state when KEY_A is pressed
                     }
-                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !allowSlide)) {
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide)) {
                         updateAndExecute();
                         triggerClick = true;
                     }
-                    simulatedSelectComplete = true;
+                    ult::simulatedSelectComplete = true;
                     return true;
                 }
 
@@ -6240,7 +6240,7 @@ namespace tsl {
                     return true;
                 }
 
-                if (allowSlide || m_unlockedTrackbar) {
+                if (ult::allowSlide || m_unlockedTrackbar) {
                     if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
                         (wasLastHeld && !(keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)))) {
                         //if (!m_executeOnEveryTick)
@@ -6412,7 +6412,7 @@ namespace tsl {
                 tsl::initializeThemeVars();
                 
                 // Load the bitmap file into memory
-                loadWallpaperFileWhenSafe();
+                ult::loadWallpaperFileWhenSafe();
                 #endif
             }
             #endif
@@ -6652,7 +6652,7 @@ namespace tsl {
                 this->m_animationCounter = 0;
             }
 
-            isHidden.store(false);
+            ult::isHidden.store(false);
             this->onShow();
             
             if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
@@ -6674,7 +6674,7 @@ namespace tsl {
                     this->m_fadeOutAnimationPlaying = true;
                     this->m_animationCounter = MAX_ANIMATION_COUNTER;
                 }
-                isHidden.store(true);
+                ult::isHidden.store(true);
                 this->onHide();
             }
         #else
@@ -6686,7 +6686,7 @@ namespace tsl {
                 this->m_fadeOutAnimationPlaying = true;
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
             }
-            isHidden.store(true);
+            ult::isHidden.store(true);
             this->onHide();
         #endif
         }
@@ -6874,14 +6874,14 @@ namespace tsl {
 
             // Return early if current GUI is not available
             //if (!currentGui) return;
-            //if (!internalTouchReleased) return;
+            //if (!ult::internalTouchReleased) return;
             
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
             //auto bottomElement = currentGui->getBottomElement(); // needs implementing
             
-            //if (runningInterpreter.load()) {
+            //if (ult::runningInterpreter.load()) {
             //    if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
             //        currentFocus->shakeHighlight(FocusDirection::Up);
             //    else if (keysDown & KEY_DOWN && !(keysDown & ~KEY_DOWN & ALL_KEYS_MASK))
@@ -6897,7 +6897,7 @@ namespace tsl {
             //}
 
             
-            if (!currentFocus && !simulatedBack && simulatedBackComplete && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
                 
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
@@ -6911,7 +6911,7 @@ namespace tsl {
 
 
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!simulatedBack && simulatedBackComplete && topElement) {
+                if (!ult::simulatedBack && ult::simulatedBackComplete && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -6947,7 +6947,7 @@ namespace tsl {
                 }
             } else {
 
-                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                     static bool shouldShake = true;
                     bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                     
@@ -6988,10 +6988,10 @@ namespace tsl {
                         //const auto transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
                         
                         // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                        float t = std::min(1.0f, static_cast<float>(durationSincePress.count()) / transitionPoint.count());
+                        float t = std::min(1.0f, static_cast<float>(durationSincePress.count()) / ult::transitionPoint.count());
                         
                         // Smooth transition between intervals
-                        keyEventInterval = interpolateDuration(initialInterval, shortInterval, t);
+                        keyEventInterval = ult::interpolateDuration(ult::initialInterval, ult::shortInterval, t);
                         
                         //keyEventInterval = interpolateKeyEventInterval(durationSincePress);
                         
@@ -7011,9 +7011,9 @@ namespace tsl {
                         }
                     } else {
                         // Handle the rest of the input
-                        if (simulatedBack) {
+                        if (ult::simulatedBack) {
                             keysDown |= KEY_B;
-                            simulatedBack = false;
+                            ult::simulatedBack = false;
                         }
 
                         if (keysDown & KEY_B)
@@ -7023,13 +7023,13 @@ namespace tsl {
                 }
             }
             
-            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!isTopElemet)
                     currentGui->requestFocus(topElement, FocusDirection::None);
                 isTopElemet = true;
             }
             
-            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
             //    currentGui->requestFocus(bottomElement, FocusDirection::None); // Not correctly implemented. (yet)
             //}
             
@@ -7037,19 +7037,19 @@ namespace tsl {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
             }
 
-            //u32 layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
+            //u32 ult::layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
 
-            touchingBack = (touchPos.x >= 20.0f + layerEdge && touchPos.x < backWidth+86.0f + layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            touchingSelect = !noClickableItems && (touchPos.x >= backWidth+86.0f + layerEdge && touchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            if (!noClickableItems)
-                touchingNextPage = (touchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (touchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingBack = (touchPos.x >= 20.0f + ult::layerEdge && touchPos.x < ult::backWidth+86.0f + ult::layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingSelect = !ult::noClickableItems && (touchPos.x >= ult::backWidth+86.0f + ult::layerEdge && touchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            if (!ult::noClickableItems)
+                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
             else
-                touchingNextPage = (touchPos.x >= (backWidth+86.0f + layerEdge) && (touchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            touchingMenu = (touchPos.x > layerEdge && touchPos.x <= 245+layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= 245 + layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= 245+ult::layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= 245 + ult::layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
             
 
             if (touchDetected) {
-                if (!interruptedTouch) interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
+                if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
                 u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
@@ -7067,47 +7067,47 @@ namespace tsl {
                 if (!oldTouchDetected) {
                     initialTouchPos = touchPos;
                     elm::Element::setInputMode(InputMode::Touch);
-                    if (!runningInterpreter.load(std::memory_order_acquire)) {
-                        touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + layerEdge);
-                        if (touchInBounds) currentGui->removeFocus();
+                    if (!ult::runningInterpreter.load(std::memory_order_acquire)) {
+                        ult::touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + ult::layerEdge);
+                        if (ult::touchInBounds) currentGui->removeFocus();
                     }
                     touchEvent = elm::TouchEvent::Touch;
                 }
                 
-                if (currentGui && topElement && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (currentGui && topElement && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
-                    if (touchPos.x > 40U + layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
+                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + ult::layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
                         currentGui->removeFocus();
                     }
                     
                 }
                 
                 oldTouchPos = touchPos;
-                if ((touchPos.x < layerEdge || touchPos.x > cfg::FramebufferWidth + layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
                     if (FullMode && !deactivateOriginalFooter) {
                         this->hide();
                     }
                 }
-                stillTouching = true;
+                ult::stillTouching = true;
             } else {
-                if (!interruptedTouch && !runningInterpreter.load(std::memory_order_acquire)) {
-                    if ((oldTouchPos.x >= 20.0f + layerEdge && oldTouchPos.x < backWidth+86.0f + layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedBackComplete = false;
-                        simulatedBack = true;
-                    } else if (!noClickableItems && (oldTouchPos.x >= backWidth+86.0f + layerEdge && oldTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedSelectComplete = false;
-                        simulatedSelect = true;
-                    } else if (!noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedNextPageComplete = false;
-                        simulatedNextPage = true;
-                    } else if (noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedNextPageComplete = false;
-                        simulatedNextPage = true;
-                    } else if ((oldTouchPos.x > layerEdge && oldTouchPos.x <= layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
-                        simulatedMenuComplete = false;
-                        simulatedMenu = true;
+                if (!ult::interruptedTouch && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                    if ((oldTouchPos.x >= 20.0f + ult::layerEdge && oldTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedBackComplete = false;
+                        ult::simulatedBack = true;
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedSelectComplete = false;
+                        ult::simulatedSelect = true;
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedNextPageComplete = false;
+                        ult::simulatedNextPage = true;
+                    } else if (ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedNextPageComplete = false;
+                        ult::simulatedNextPage = true;
+                    } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= ult::layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= ult::layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
+                        ult::simulatedMenuComplete = false;
+                        ult::simulatedMenu = true;
                     }
                 }
                 
@@ -7116,8 +7116,8 @@ namespace tsl {
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
-                stillTouching = false;
-                interruptedTouch = false;
+                ult::stillTouching = false;
+                ult::interruptedTouch = false;
             }
             
             oldTouchDetected = touchDetected;
@@ -7155,14 +7155,14 @@ namespace tsl {
 
             // Return early if current GUI is not available
             if (!currentGui) return;
-            if (!internalTouchReleased) return;
+            if (!ult::internalTouchReleased) return;
             
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
             //auto bottomElement = currentGui->getBottomElement(); // needs implementing
             
-            if (runningInterpreter.load()) {
+            if (ult::runningInterpreter.load()) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Up);
                 else if (keysDown & KEY_DOWN && !(keysDown & ~KEY_DOWN & ALL_KEYS_MASK))
@@ -7180,9 +7180,9 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
             #else
             if (currentFocus == nullptr) {
-                if (simulatedBack) {
+                if (ult::simulatedBack) {
                     keysDown |= KEY_B;
-                    simulatedBack = false;
+                    ult::simulatedBack = false;
                 }
                 if (keysDown & KEY_B) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{}))
@@ -7192,7 +7192,7 @@ namespace tsl {
             }
             #endif
             
-            if (!currentFocus && !simulatedBack && simulatedBackComplete && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
                 
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
@@ -7206,7 +7206,7 @@ namespace tsl {
 
 
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!simulatedBack && simulatedBackComplete && topElement) {
+                if (!ult::simulatedBack && ult::simulatedBackComplete && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -7242,7 +7242,7 @@ namespace tsl {
                 }
             } else {
 
-                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !stillTouching && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                     static bool shouldShake = true;
                     bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                     
@@ -7283,10 +7283,10 @@ namespace tsl {
                         //const auto transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
                         
                         // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                        float t = std::min(1.0f, static_cast<float>(durationSincePress.count()) / transitionPoint.count());
+                        float t = std::min(1.0f, static_cast<float>(durationSincePress.count()) / ult::transitionPoint.count());
                         
                         // Smooth transition between intervals
-                        keyEventInterval = interpolateDuration(initialInterval, shortInterval, t);
+                        keyEventInterval = ult::interpolateDuration(ult::initialInterval, ult::shortInterval, t);
                         
                         //keyEventInterval = interpolateKeyEventInterval(durationSincePress);
                         
@@ -7306,9 +7306,9 @@ namespace tsl {
                         }
                     } else {
                         // Handle the rest of the input
-                        if (simulatedBack) {
+                        if (ult::simulatedBack) {
                             keysDown |= KEY_B;
-                            simulatedBack = false;
+                            ult::simulatedBack = false;
                         }
 
                         if (keysDown & KEY_B)
@@ -7318,13 +7318,13 @@ namespace tsl {
                 }
             }
             
-            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!isTopElemet)
                     currentGui->requestFocus(topElement, FocusDirection::None);
                 isTopElemet = true;
             }
             
-            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !runningInterpreter.load(std::memory_order_acquire)) {
+            //if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
             //    currentGui->requestFocus(bottomElement, FocusDirection::None); // Not correctly implemented. (yet)
             //}
             
@@ -7332,19 +7332,19 @@ namespace tsl {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
             }
 
-            //u32 layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
+            //u32 ult::layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
 
-            touchingBack = (touchPos.x >= 20.0f + layerEdge && touchPos.x < backWidth+86.0f + layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            touchingSelect = !noClickableItems && (touchPos.x >= backWidth+86.0f + layerEdge && touchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            if (!noClickableItems)
-                touchingNextPage = (touchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (touchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingBack = (touchPos.x >= 20.0f + ult::layerEdge && touchPos.x < ult::backWidth+86.0f + ult::layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingSelect = !ult::noClickableItems && (touchPos.x >= ult::backWidth+86.0f + ult::layerEdge && touchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            if (!ult::noClickableItems)
+                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
             else
-                touchingNextPage = (touchPos.x >= (backWidth+86.0f + layerEdge) && (touchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            touchingMenu = (touchPos.x > layerEdge && touchPos.x <= 245+layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= 245 + layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= 245+ult::layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= 245 + ult::layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
             
 
             if (touchDetected) {
-                if (!interruptedTouch) interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
+                if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
                 u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
@@ -7362,45 +7362,45 @@ namespace tsl {
                 if (!oldTouchDetected) {
                     initialTouchPos = touchPos;
                     elm::Element::setInputMode(InputMode::Touch);
-                    if (!runningInterpreter.load(std::memory_order_acquire)) {
-                        touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + layerEdge);
-                        if (touchInBounds) currentGui->removeFocus();
+                    if (!ult::runningInterpreter.load(std::memory_order_acquire)) {
+                        ult::touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + ult::layerEdge);
+                        if (ult::touchInBounds) currentGui->removeFocus();
                     }
                     touchEvent = elm::TouchEvent::Touch;
                 }
                 
-                if (currentGui && topElement && !runningInterpreter.load(std::memory_order_acquire)) {
+                if (currentGui && topElement && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
-                    if (touchPos.x > 40U + layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
+                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + ult::layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
                         currentGui->removeFocus();
                     }
                     
                 }
                 
                 oldTouchPos = touchPos;
-                if ((touchPos.x < layerEdge || touchPos.x > cfg::FramebufferWidth + layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
                     this->hide();
                 }
-                stillTouching = true;
+                ult::stillTouching = true;
             } else {
-                if (!interruptedTouch && !runningInterpreter.load(std::memory_order_acquire)) {
-                    if ((oldTouchPos.x >= 20.0f + layerEdge && oldTouchPos.x < backWidth+86.0f + layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + layerEdge && initialTouchPos.x < backWidth+86.0f + layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedBackComplete = false;
-                        simulatedBack = true;
-                    } else if (!noClickableItems && (oldTouchPos.x >= backWidth+86.0f + layerEdge && oldTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  backWidth+86.0f + layerEdge && initialTouchPos.x < (backWidth+86.0f + selectWidth+68.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedSelectComplete = false;
-                        simulatedSelect = true;
-                    } else if (!noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + selectWidth+68.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f + selectWidth+68.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedNextPageComplete = false;
-                        simulatedNextPage = true;
-                    } else if (noClickableItems && (oldTouchPos.x >= (backWidth+86.0f + layerEdge) && (oldTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (backWidth+86.0f + layerEdge) && (initialTouchPos.x <= backWidth+86.0f +nextPageWidth+70.0f + layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
-                        simulatedNextPageComplete = false;
-                        simulatedNextPage = true;
-                    } else if ((oldTouchPos.x > layerEdge && oldTouchPos.x <= layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > layerEdge && initialTouchPos.x <= layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
-                        simulatedMenuComplete = false;
-                        simulatedMenu = true;
+                if (!ult::interruptedTouch && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                    if ((oldTouchPos.x >= 20.0f + ult::layerEdge && oldTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedBackComplete = false;
+                        ult::simulatedBack = true;
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedSelectComplete = false;
+                        ult::simulatedSelect = true;
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedNextPageComplete = false;
+                        ult::simulatedNextPage = true;
+                    } else if (ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                        ult::simulatedNextPageComplete = false;
+                        ult::simulatedNextPage = true;
+                    } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= ult::layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= ult::layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
+                        ult::simulatedMenuComplete = false;
+                        ult::simulatedMenu = true;
                     }
                 }
                 
@@ -7409,8 +7409,8 @@ namespace tsl {
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
-                stillTouching = false;
-                interruptedTouch = false;
+                ult::stillTouching = false;
+                ult::interruptedTouch = false;
             }
             
             oldTouchDetected = touchDetected;
@@ -7524,7 +7524,7 @@ namespace tsl {
         static const char* ULTRAHAND_CONFIG_FILE = "/config/ultrahand/config.ini"; // CUSTOM MODIFICATION
         
         /**
-         * @brief Data shared between the different threads
+         * @brief Data shared between the different ult::threads
          *
          */
         struct SharedThreadData {
@@ -7550,32 +7550,32 @@ namespace tsl {
         static void parseOverlaySettings() {
             hlp::ini::IniData parsedConfig = hlp::ini::readOverlaySettings(ULTRAHAND_CONFIG_FILE);
             
-            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ULTRAHAND_PROJECT_NAME][KEY_COMBO_STR]); // CUSTOM MODIFICATION
+            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR ]); // CUSTOM MODIFICATION
             if (decodedKeys)
                 tsl::cfg::launchCombo = decodedKeys;
             
             #if USING_WIDGET_DIRECTIVE
-            datetimeFormat = parsedConfig[ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
-            removeQuotes(datetimeFormat);
-            if (datetimeFormat.empty()) {
-                datetimeFormat = DEFAULT_DT_FORMAT;
-                removeQuotes(datetimeFormat);
+            ult::datetimeFormat = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
+            ult::removeQuotes(ult::datetimeFormat);
+            if (ult::datetimeFormat.empty()) {
+                ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
+                ult::removeQuotes(ult::datetimeFormat);
             }
-            std::string hideClockStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_clock"];
-            removeQuotes(hideClockStr);
-            hideClock = hideClockStr != FALSE_STR;
+            std::string hideClockStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_clock"];
+            ult::removeQuotes(hideClockStr);
+            ult::hideClock = hideClockStr != ult::FALSE_STR;
             
-            std::string hideBatteryStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_battery"];
-            removeQuotes(hideBatteryStr);
-            hideBattery = hideBatteryStr != FALSE_STR;
+            std::string hideBatteryStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_battery"];
+            ult::removeQuotes(hideBatteryStr);
+            ult::hideBattery = hideBatteryStr != ult::FALSE_STR;
             
-            std::string hidePCBTempStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_pcb_temp"];
-            removeQuotes(hidePCBTempStr);
-            hidePCBTemp = hidePCBTempStr != FALSE_STR;
+            std::string hidePCBTempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_pcb_temp"];
+            ult::removeQuotes(hidePCBTempStr);
+            ult::hidePCBTemp = hidePCBTempStr != ult::FALSE_STR;
             
-            std::string hideSOCTempStr = parsedConfig[ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
-            removeQuotes(hideSOCTempStr);
-            hideSOCTemp = hideSOCTempStr != FALSE_STR;
+            std::string hideSOCTempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
+            ult::removeQuotes(hideSOCTempStr);
+            ult::hideSOCTemp = hideSOCTempStr != ult::FALSE_STR;
             #endif
             
         }
@@ -7588,13 +7588,13 @@ namespace tsl {
         [[maybe_unused]] static void updateCombo(u64 keys) {
             tsl::cfg::launchCombo = keys;
             hlp::ini::updateOverlaySettings({
-                { TESLA_STR, { // CUSTOM MODIFICATION
-                    { KEY_COMBO_STR, tsl::hlp::keysToComboString(keys) }
+                { ult::TESLA_STR, { // CUSTOM MODIFICATION
+                    { ult::KEY_COMBO_STR , tsl::hlp::keysToComboString(keys) }
                 }}
             }, TESLA_CONFIG_FILE);
             hlp::ini::updateOverlaySettings({
-                { ULTRAHAND_PROJECT_NAME, { // CUSTOM MODIFICATION
-                    { KEY_COMBO_STR, tsl::hlp::keysToComboString(keys) }
+                { ult::ULTRAHAND_PROJECT_NAME, { // CUSTOM MODIFICATION
+                    { ult::KEY_COMBO_STR , tsl::hlp::keysToComboString(keys) }
                 }}
             }, ULTRAHAND_CONFIG_FILE);
         }
@@ -7689,18 +7689,18 @@ namespace tsl {
                         
                     
                         if (!shData->overlayOpen) {
-                            internalTouchReleased = false;
+                            ult::internalTouchReleased = false;
                         }
                         
                         elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - currentTouchTime).count();
                         // Check if the touch is within bounds for left-to-right swipe within the time window
-                        if (useSwipeToOpen && elapsedTime <= TOUCH_THREHELD_MS) {
+                        if (ult::useSwipeToOpen && elapsedTime <= TOUCH_THREHELD_MS) {
                             if (lastTouchX != 0 && currentTouch.x != 0) {
-                                if (layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
+                                if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
                                     eventFire(&shData->comboEvent);
                                 }
                                 // Check if the touch is within bounds for right-to-left swipe within the time window
-                                else if (layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
+                                else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
                                     eventFire(&shData->comboEvent);
                                 }
                             }
@@ -7708,7 +7708,7 @@ namespace tsl {
                     
                         // Handle touch release state
                         if (currentTouch.x == 0 && currentTouch.y == 0) {
-                            internalTouchReleased = true;  // Indicate that the touch has been released
+                            ult::internalTouchReleased = true;  // Indicate that the touch has been released
                             lastTouchX = currentTouch.x;
                         }
 
@@ -7721,7 +7721,7 @@ namespace tsl {
                     } else {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
-                        internalTouchReleased = true;
+                        ult::internalTouchReleased = true;
                     
                         // Reset touch history to invalid state
                         lastTouchX = 0;
@@ -7733,10 +7733,10 @@ namespace tsl {
 
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                         #if IS_LAUNCHER_DIRECTIVE
-                        if (updateMenuCombos) {
-                            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
-                            setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, ULTRAHAND_COMBO_STR);
-                            updateMenuCombos = false;
+                        if (ult::updateMenuCombos) {
+                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR , ult::ULTRAHAND_COMBO_STR);
+                            ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR , ult::ULTRAHAND_COMBO_STR);
+                            ult::updateMenuCombos = false;
                         }
                         #endif
                         
@@ -7749,12 +7749,12 @@ namespace tsl {
                         }
                     }
                     #if IS_LAUNCHER_DIRECTIVE
-                    else if (updateMenuCombos && (((shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) && shData->keysDown & tsl::cfg::launchCombo2)) {
+                    else if (ult::updateMenuCombos && (((shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) && shData->keysDown & tsl::cfg::launchCombo2)) {
                         std::swap(tsl::cfg::launchCombo, tsl::cfg::launchCombo2); // Swap the two launch combos
-                        setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, KEY_COMBO_STR, TESLA_COMBO_STR);
-                        setIniFileValue(TESLA_CONFIG_INI_PATH, TESLA_STR, KEY_COMBO_STR, TESLA_COMBO_STR);
+                        ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
+                        ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
                         eventFire(&shData->comboEvent);
-                        updateMenuCombos = false;
+                        ult::updateMenuCombos = false;
                     }
                     #endif
                     
@@ -7790,10 +7790,10 @@ namespace tsl {
                             
                             break;
                         case WaiterObject_CaptureButton:
-                            disableTransparency = true;
+                            ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
                             svcSleepThread(300'000'000);
-                            disableTransparency = false;
+                            ult::disableTransparency = false;
                             break;
                     }
                 } else if (rc != KERNELRESULT(TimedOut)) {
@@ -7831,7 +7831,7 @@ namespace tsl {
 
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         // std::string args = std::filesystem::path(ovlPath).filename();
-        std::string args = getNameFromPath(ovlPath); // CUSTOM MODIFICATION
+        std::string args = ult::getNameFromPath(ovlPath); // CUSTOM MODIFICATION
         args += " " + origArgs;
     
         // Check if "--skipCombo" is already in origArgs
@@ -7861,7 +7861,7 @@ namespace tsl {
         // CUSTOM SECTION START
         // Argument parsing
         #if IS_LAUNCHER_DIRECTIVE
-        const std::string settings = inputExists(SETTINGS_PATH);
+        const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
         #endif
 
         bool skipCombo = false;
@@ -7872,7 +7872,7 @@ namespace tsl {
             if ((strcasecmp(argv[arg], "--skipCombo") == 0)) {
                 skipCombo = true;
                 //logMessage("Skip combo is present.");
-                firstBoot = false;
+                ult::firstBoot = false;
                 break;
             }
             //std::memset(argv[arg], 0, std::strlen(argv[arg]));
@@ -7906,13 +7906,13 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
         bool inOverlay;
-        if (inputExists(settings)
+        if (ult::inputExists(settings)
             != "}nwmD9myxpsq9\x7fv~|krkxn9"
         ) {inOverlay = true; return 0;}
         else {
-            if (firstBoot)
-                setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
-            inOverlay = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR) != FALSE_STR);
+            if (ult::firstBoot)
+                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
+            inOverlay = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR) != ult::FALSE_STR);
         }
 
         #else
@@ -7921,7 +7921,7 @@ namespace tsl {
 
         if (inOverlay && skipCombo) {
             #if IS_LAUNCHER_DIRECTIVE
-            setIniFileValue(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, IN_OVERLAY_STR, FALSE_STR);
+            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
             #endif
             eventFire(&shData.comboEvent);
         }
@@ -8032,7 +8032,7 @@ extern "C" {
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
 
-            powerInit();
+            ult::powerInit();
             i2cInitialize();
             #endif
 
@@ -8068,7 +8068,7 @@ extern "C" {
         
         #if USING_WIDGET_DIRECTIVE
         i2cExit();
-        powerExit(); // CUSTOM MODIFICATION
+        ult::powerExit(); // CUSTOM MODIFICATION
         #endif
         
         fsExit();
