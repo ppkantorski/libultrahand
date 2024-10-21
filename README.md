@@ -164,6 +164,8 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
 
+- [sys-clk](https://github.com/ppkantorski/sys-clk)
+
 - [FPSLocker](https://github.com/ppkantorski/FPSLocker)
 
 - [QuickNTP](https://github.com/ppkantorski/QuickNTP)
