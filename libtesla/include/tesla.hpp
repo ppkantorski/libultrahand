@@ -2273,8 +2273,10 @@ namespace tsl {
              */
             inline void endFrame() {
                 #if IS_STATUS_MONITOR_DIRECTIVE
-                std::memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
-                svcSleepThread(1000*1000*1000 / TeslaFPS);
+                if (!FullMode || deactivateOriginalFooter) {
+                    std::memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
+                    svcSleepThread(1000*1000*1000 / TeslaFPS);
+                }
                 #endif
 
                 this->waitForVSync();
