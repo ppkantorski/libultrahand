@@ -172,6 +172,8 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [QuickNTP](https://github.com/ppkantorski/QuickNTP)
 
+- [SysDVR Overlay](https://github.com/ppkantorski/sysdvr-overlay)
+
 - [Fizeau](https://github.com/ppkantorski/Fizeau)
 
 - [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
