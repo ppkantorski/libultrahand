@@ -61,7 +61,7 @@ namespace ult {
      */
     std::string decimalToHex(const std::string& decimalStr) {
         // Convert decimal string to integer
-        int decimalValue = std::stoi(decimalStr);
+        int decimalValue = ult::stoi(decimalStr);
         
         // If decimalValue is 0, return "00"
         if (decimalValue == 0) {
@@ -123,7 +123,7 @@ namespace ult {
         }
     
         // Convert the decimal value to a string
-        return std::to_string(decimalValue);
+        return ult::to_string(decimalValue);
     }
     
     
@@ -196,7 +196,7 @@ namespace ult {
         
         for (size_t i = 0; i < hexData.length(); i += 2) {
             std::string byteString = hexData.substr(i, 2);
-            binaryData.push_back(static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
+            binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
         }
     
         // Read the file in chunks to find the offsets where the hex data is located
@@ -208,7 +208,7 @@ namespace ult {
             for (size_t i = 0; i < bytesRead; ++i) {
                 if (offset + i + binaryData.size() <= fileSize && 
                     std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
-                    offsets.push_back(std::to_string(offset + i));
+                    offsets.push_back(ult::to_string(offset + i));
                 }
             }
             offset += bytesRead;
@@ -235,7 +235,7 @@ namespace ult {
     
         for (size_t i = 0; i < hexData.length(); i += 2) {
             std::string byteString = hexData.substr(i, 2);
-            binaryData.push_back(static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
+            binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
         }
     
         // Read the file in chunks to find the offsets where the hex data is located
@@ -248,7 +248,7 @@ namespace ult {
             for (size_t i = 0; i < bytesRead; ++i) {
                 if (offset + i + binaryData.size() <= fileSize && 
                     std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
-                    offsets.push_back(std::to_string(offset + i));
+                    offsets.push_back(ult::to_string(offset + i));
                 }
             }
             offset += bytesRead;
@@ -303,7 +303,7 @@ namespace ult {
         std::string byteString;
         for (size_t i = 0, j = 0; i < hexData.length(); i += 2, ++j) {
             byteString = hexData.substr(i, 2);
-            binaryData[j] = static_cast<unsigned char>(std::stoi(byteString, nullptr, 16));
+            binaryData[j] = static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16));
         }
     
         // Move to the specified offset and write the binary data directly to the file
@@ -345,7 +345,7 @@ namespace ult {
         std::string byteString;
         for (size_t i = 0, j = 0; i < hexData.length(); i += 2, ++j) {
             byteString = hexData.substr(i, 2);
-            binaryData[j] = static_cast<unsigned char>(std::stoi(byteString, nullptr, 16));
+            binaryData[j] = static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16));
         }
     
         // Move to the specified offset and write the binary data directly to the file
@@ -379,14 +379,14 @@ namespace ult {
     void hexEditByCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, const std::string& hexDataReplacement, size_t occurrence) {
         
         // Create a cache key based on filePath and customAsciiPattern
-        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + std::to_string(occurrence);
+        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
         
         int hexSum = -1;
         
         // Check if the result is already cached
         auto cachedResult = hexSumCache.find(cacheKey);
         if (cachedResult != hexSumCache.end()) {
-            hexSum = std::stoi(cachedResult->second); // load sum from cache
+            hexSum = ult::stoi(cachedResult->second); // load sum from cache
         }
         
         if (hexSum == -1) {
@@ -404,10 +404,10 @@ namespace ult {
             std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
             
             if (!offsets.empty()) {
-                hexSum = std::stoi(offsets[occurrence]);
+                hexSum = ult::stoi(offsets[occurrence]);
                 
                 // Convert 'hexSum' to a string and add it to the cache
-                hexSumCache[cacheKey] = std::to_string(hexSum);
+                hexSumCache[cacheKey] = ult::to_string(hexSum);
             } else {
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
@@ -419,8 +419,8 @@ namespace ult {
         
         if (hexSum != -1) {
             // Calculate the total offset to seek in the file
-            //int sum = hexSum + std::stoi(offsetStr);
-            hexEditByOffset(filePath, std::to_string(hexSum + std::stoi(offsetStr)), hexDataReplacement);
+            //int sum = hexSum + ult::stoi(offsetStr);
+            hexEditByOffset(filePath, ult::to_string(hexSum + ult::stoi(offsetStr)), hexDataReplacement);
         } else {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to find " + customAsciiPattern + ".");
@@ -480,19 +480,19 @@ namespace ult {
      * @param occurrence The occurrence/index of the data to replace (default is "0" to replace all occurrences).
      */
     std::string parseHexDataAtCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, size_t length, size_t occurrence) {
-        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + std::to_string(occurrence);
+        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
         int hexSum = -1;
     
         auto cachedResult = hexSumCache.find(cacheKey);
         if (cachedResult != hexSumCache.end()) {
-            hexSum = std::stoi(cachedResult->second);
+            hexSum = ult::stoi(cachedResult->second);
         } else {
             std::string customHexPattern = asciiToHex(customAsciiPattern); // Function should cache its results if expensive
             std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern); // Consider optimizing this search
     
             if (!offsets.empty() && offsets.size() > occurrence) {
-                hexSum = std::stoi(offsets[occurrence]);
-                hexSumCache[cacheKey] = std::to_string(hexSum);
+                hexSum = ult::stoi(offsets[occurrence]);
+                hexSumCache[cacheKey] = ult::to_string(hexSum);
             } else {
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");

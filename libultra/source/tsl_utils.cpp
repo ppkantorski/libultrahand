@@ -181,9 +181,9 @@ namespace ult {
     
     
     // Define the duration boundaries (for smooth scrolling)
-    const std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
-    const std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
-    const std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
+    //const std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
+    //const std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
+    //const std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
     
     // Function to interpolate between two durations
     std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t) {
@@ -306,8 +306,8 @@ namespace ult {
     }
     
     
-    const std::string whiteColor = "#FFFFFF";
-    const std::string blackColor = "#000000";
+    //const std::string whiteColor = "#FFFFFF";
+    //const std::string blackColor = "#000000";
     
     #if IS_LAUNCHER_DIRECTIVE
     std::string ENGLISH = "English";
@@ -921,14 +921,14 @@ namespace ult {
     
     
     // Predefined hexMap
-    const std::array<int, 256> hexMap = [] {
-        std::array<int, 256> map = {0};
-        map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
-        map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
-        map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
-        map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
-        return map;
-    }();
+    //const std::array<int, 256> hexMap = [] {
+    //    std::array<int, 256> map = {0};
+    //    map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
+    //    map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
+    //    map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
+    //    map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
+    //    return map;
+    //}();
     
     
     // Prepare a map of default settings
@@ -1019,7 +1019,7 @@ namespace ult {
             return 1.0f;  // Flat amplitude (maximum positive)
         } else {
             // Calculate the sinusoidal amplitude for the remaining period
-            return (std::cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
+            return (APPROXIMATE_cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
         }
     }
             
@@ -1413,5 +1413,17 @@ namespace ult {
     s32 bmpChunkSize = (720 + numThreads - 1) / numThreads;
     std::atomic<s32> currentRow;
     
-    
+    //std::atomic<unsigned int> barrierCounter{0};
+    //std::mutex barrierMutex;
+    //std::condition_variable barrierCV;
+    //
+    //void barrierWait() {
+    //    std::unique_lock<std::mutex> lock(barrierMutex);
+    //    if (++barrierCounter == numThreads) {
+    //        barrierCounter = 0; // Reset for the next round
+    //        barrierCV.notify_all();
+    //    } else {
+    //        barrierCV.wait(lock, [] { return barrierCounter == 0; });
+    //    }
+    //}
 }

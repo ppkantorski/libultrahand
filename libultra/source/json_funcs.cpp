@@ -102,7 +102,7 @@ namespace ult {
     
         if (!jsonObj) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + std::to_string(error.line));
+            logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + to_string(error.line));
             #endif
             return nullptr; // Return nullptr to indicate failure clearly
         }

@@ -24,7 +24,7 @@ namespace ult {
     
     size_t COPY_BUFFER_SIZE = 4096*4; // Increase buffer size to 128 KB
 
-     std::atomic<int> copyPercentage(-1);
+    std::atomic<int> copyPercentage(-1);
 
     /**
      * @brief Checks if a path points to a directory.
@@ -36,10 +36,7 @@ namespace ult {
      */
     bool isDirectory(const std::string& path) {
         struct stat pathStat;
-        if (stat(path.c_str(), &pathStat) == 0) {
-            return S_ISDIR(pathStat.st_mode);
-        }
-        return false;
+        return (stat(path.c_str(), &pathStat) == 0 && S_ISDIR(pathStat.st_mode));
     }
     
     
@@ -54,10 +51,7 @@ namespace ult {
      */
     bool isFile(const std::string& path) {
         struct stat pathStat;
-        if (stat(path.c_str(), &pathStat) == 0) {
-            return S_ISREG(pathStat.st_mode);
-        }
-        return false;
+        return (stat(path.c_str(), &pathStat) == 0 && S_ISREG(pathStat.st_mode));
     }
     
     
@@ -70,8 +64,8 @@ namespace ult {
      * @return True if the path points to a file or directory, false otherwise.
      */
     bool isFileOrDirectory(const std::string& path) {
-        struct stat buffer;
-        return (stat(path.c_str(), &buffer) == 0);
+        struct stat pathStat;
+        return (stat(path.c_str(), &pathStat) == 0);
     }
     
     
@@ -741,7 +735,7 @@ namespace ult {
             
             if (!srcFile || !destFile) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Error opening files for copying. Retry #"+std::to_string(retryCount));
+                logMessage("Error opening files for copying. Retry #"+to_string(retryCount));
                 #endif
                 if (srcFile) fclose(srcFile);
                 if (destFile) fclose(destFile);
@@ -820,7 +814,7 @@ namespace ult {
             fclose(logDestinationFile);
         }
         //#if USING_LOGGING_DIRECTIVE
-        //logMessage("Success. Try count: "+std::to_string(retryCount));
+        //logMessage("Success. Try count: "+to_string(retryCount));
         //#endif
     #else
         char buffer[COPY_BUFFER_SIZE];
@@ -834,7 +828,7 @@ namespace ult {
                 break;
             } else {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Error opening files for copying. Retry #"+std::to_string(retryCount));
+                logMessage("Error opening files for copying. Retry #"+to_string(retryCount));
                 #endif
                 retryCount++;
                 if (retryCount > maxRetries) {
@@ -903,7 +897,7 @@ namespace ult {
             logDestinationFile.close();
         }
         //#if USING_LOGGING_DIRECTIVE
-        //logMessage("Success. Try count: "+std::to_string(retryCount));
+        //logMessage("Success. Try count: "+to_string(retryCount));
         //#endif
     #endif
     }

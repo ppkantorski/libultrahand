@@ -30,7 +30,7 @@ namespace ult {
      */
     PackageHeader getPackageHeaderFromIni(const std::string& filePath) {
         PackageHeader packageHeader;
-    
+        
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
@@ -40,6 +40,7 @@ namespace ult {
         char buffer[1024];
         std::string line;
         
+        std::map<std::string, std::string*> fieldMap;
         while (fgets(buffer, sizeof(buffer), file)) {
             line = std::string(buffer);
     #else
@@ -49,11 +50,13 @@ namespace ult {
         }
         
         std::string line;
+
+        std::map<std::string, std::string*> fieldMap;
         while (getline(file, line)) {
     #endif
     
             // Map to store references to the fields of the structure
-            std::map<std::string, std::string*> fieldMap = {
+            fieldMap = {
                 {";title=", &packageHeader.title},
                 {";version=", &packageHeader.version},
                 {";creator=", &packageHeader.creator},

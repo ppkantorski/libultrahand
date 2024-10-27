@@ -38,7 +38,7 @@
 
 #include <stdlib.h>
 #include <strings.h>
-#include <math.h>
+//#include <math.h>
 
 #include <algorithm>
 #include <cstring>
@@ -54,7 +54,10 @@
 #include <map>
 #include <barrier>
 
-
+#ifndef APPROXIMATE_cos
+// Approximation for cos(x) using Taylor series around 0
+#define APPROXIMATE_cos(x)       (1 - (x) * (x) / 2 + (x) * (x) * (x) * (x) / 24)  // valid for small x
+#endif
 
 namespace ult {
     extern bool correctFrameSize; // for detecting the correct Overlay display size
@@ -85,10 +88,15 @@ namespace ult {
 
     
     // Define the duration boundaries (for smooth scrolling)
-    extern const std::chrono::milliseconds initialInterval;  // Example initial interval
-    extern const std::chrono::milliseconds shortInterval;    // Short interval after long hold
-    extern const std::chrono::milliseconds transitionPoint; // Point at which the shortest interval is reached
+    //extern const std::chrono::milliseconds initialInterval;  // Example initial interval
+    //extern const std::chrono::milliseconds shortInterval;    // Short interval after long hold
+    //extern const std::chrono::milliseconds transitionPoint; // Point at which the shortest interval is reached
     
+
+    constexpr std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
+    constexpr std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
+    constexpr std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
+
     // Function to interpolate between two durations
     std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t);
     
@@ -222,8 +230,8 @@ namespace ult {
     
     // English string definitions
     
-    extern const std::string whiteColor;
-    extern const std::string blackColor;
+    constexpr std::string whiteColor = "#FFFFFF";
+    constexpr std::string blackColor = "#000000";
     
     constexpr double _M_PI = 3.14159265358979323846;  // For double precision
     constexpr double RAD_TO_DEG = 180.0f / _M_PI;
@@ -415,7 +423,15 @@ namespace ult {
     
     
     // Predefined hexMap
-    extern const std::array<int, 256> hexMap;
+    //extern const std::array<int, 256> hexMap;
+    constexpr std::array<int, 256> hexMap = [] {
+        std::array<int, 256> map = {0};
+        map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
+        map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
+        map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
+        map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
+        return map;
+    }();
     
     
     // Prepare a map of default settings
@@ -560,9 +576,16 @@ namespace ult {
     
     
     
-    inline std::barrier inPlotBarrier(numThreads, [](){
+    static std::barrier inPlotBarrier(numThreads, [](){
         inPlot.store(false, std::memory_order_release);
     });
+
+
+    //extern std::atomic<unsigned int> barrierCounter;
+    //extern std::mutex barrierMutex;
+    //extern std::condition_variable barrierCV;
+    //
+    //extern void barrierWait();
     
 
     void initializeThemeVars();

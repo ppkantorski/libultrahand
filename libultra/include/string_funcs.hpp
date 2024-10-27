@@ -26,13 +26,19 @@
 #include <iterator> 
 #include <vector>
 //#include <jansson.h>
-#include <regex>
+//#include <regex>
+#include <algorithm>
 #include <sys/stat.h>
 #include <dirent.h>
 #include "debug_funcs.hpp"
 
 namespace ult {
     
+    extern std::string to_string(int value);
+    extern int stoi(const std::string& str, std::size_t* pos = nullptr, int base = 10);
+    extern float stof(const std::string& str);
+
+
     /**
      * @brief A lightweight string stream class that mimics basic functionality of std::istringstream.
      */
@@ -67,6 +73,7 @@ namespace ult {
         StringStream& operator<<(const char* input);
         StringStream& operator<<(char input);
         StringStream& operator<<(int input);  // Handles int insertion with hex support
+        StringStream& operator<<(long long input); // for long long
     
         // Conversion to bool for checking stream state (success/failure)
         explicit operator bool() const {
@@ -74,6 +81,7 @@ namespace ult {
         }
     
         std::string str() const;
+        void clear() { data.clear(); position = 0; } // Add clear function
     
     private:
         std::string data;

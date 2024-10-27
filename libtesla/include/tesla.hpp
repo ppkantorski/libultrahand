@@ -46,7 +46,7 @@
 #include <arm_neon.h>
 
 #include <strings.h>
-#include <math.h>
+//#include <math.h>
 
 #include <algorithm>
 #include <cstring>
@@ -326,7 +326,7 @@ namespace tsl {
             
             auto getAlpha = [&](const std::string& key) {
                 std::string alphaStr = getValue(key);
-                return !alphaStr.empty() ? std::stoi(alphaStr) : std::stoi(ult::defaultThemeSettingsMap[key]);
+                return !alphaStr.empty() ? ult::stoi(alphaStr) : ult::stoi(ult::defaultThemeSettingsMap[key]);
             };
             
             disableColorfulLogo = (getValue("disable_colorful_logo") == ult::TRUE_STR);
@@ -604,26 +604,26 @@ namespace tsl {
              * @return Parsed data
              * // Modified to be "const std" instead of just "std"
              */
-            //static IniData parseIni(const std::string &str) {
-            //    IniData iniData;
-            //    
-            //    auto lines = split(str, '\n');
-            //    
-            //    std::string lastHeader = "";
-            //    for (auto& line : lines) {
-            //        line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
-            //        
-            //        if (line[0] == '[' && line[line.size() - 1] == ']') {
-            //            lastHeader = line.substr(1, line.size() - 2);
-            //            iniData.emplace(lastHeader, std::map<std::string, std::string>{});
-            //        }
-            //        else if (auto keyValuePair = split(line, '='); keyValuePair.size() == 2) {
-            //            iniData[lastHeader].emplace(keyValuePair[0], keyValuePair[1]);
-            //        }
-            //    }
-            //    
-            //    return iniData;
-            //}
+            static IniData parseIni(const std::string &str) {
+                //IniData iniData;
+                //
+                //auto lines = split(str, '\n');
+                //
+                //std::string lastHeader = "";
+                //for (auto& line : lines) {
+                //    line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+                //    
+                //    if (line[0] == '[' && line[line.size() - 1] == ']') {
+                //        lastHeader = line.substr(1, line.size() - 2);
+                //        iniData.emplace(lastHeader, std::map<std::string, std::string>{});
+                //    }
+                //    else if (auto keyValuePair = split(line, '='); keyValuePair.size() == 2) {
+                //        iniData[lastHeader].emplace(keyValuePair[0], keyValuePair[1]);
+                //    }
+                //}
+                
+                return ult::parseIni(str);
+            }
             
             /**
              * @brief Unparses ini data into a string
@@ -785,8 +785,6 @@ namespace tsl {
         
         extern "C" u64 __nx_vi_layer_id;
         
-        //Color src(0);
-        //Color end(0);
 
         struct ScissoringConfig {
             s32 x, y, w, h;
@@ -1439,6 +1437,7 @@ namespace tsl {
                 }
             
                 ult::inPlotBarrier.arrive_and_wait(); // Wait for all ult::threads to reach this point
+                //ult::barrierWait(); // Wait for all threads
             }
             
             
@@ -2361,9 +2360,6 @@ namespace tsl {
         
             return maxWidth;
         }
-
-
-        
     }
     
     
@@ -2394,13 +2390,8 @@ namespace tsl {
             
 
             std::chrono::duration<long int, std::ratio<1, 1000000000>> t;
-            //double timeCounter;
             u8 saturation;
-            //Color animColor = tsl::style::color::ColorClickAnimation;
             float progress;
-
-            //Color clickColor1 = Color(0);
-            //Color clickColor2 = Color(0);
             
             s32 x, y;
             s32 amplitude;
@@ -2577,8 +2568,8 @@ namespace tsl {
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
                 
-                //half progress = half((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                progress = (std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0;
+                //half progress = half((std::sin(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = (STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0;
                 
                 if (progress >= 0.5) {
                     clickColor1 = clickColor;
@@ -2673,7 +2664,7 @@ namespace tsl {
                     return;
                 
                 
-                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = ((STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0);
                 if (ult::runningInterpreter.load(std::memory_order_acquire)) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -2725,6 +2716,7 @@ namespace tsl {
                     if (!disableSelectionBG)
                         renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
 
+                    #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
                     float activePercentage = 0.0f;
                     if (ult::downloadPercentage > 0) {
@@ -2740,6 +2732,7 @@ namespace tsl {
                         //    ult::copyPercentage = -1;
                         //}
                     }
+                    #endif
 
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
@@ -3268,8 +3261,9 @@ namespace tsl {
                         float progress;
 
                         for (char letter : ult::SPLIT_PROJECT_NAME_1) {
-                            counter = (2 * ult::_M_PI * (fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
-                            progress = std::sin(counter); // -1 to 1
+                            counter = (2 * ult::_M_PI * (STBTT_fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
+                            //progress = std::sin(counter); // -1 to 1
+                            progress = STBTT_cos(counter - ult::_M_PI / 2.0); // -1 to 1
                             
                             //highlightColor = {
                             //    static_cast<u8>((std::get<0>(dynamicLogoRGB2) - std::get<0>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<0>(dynamicLogoRGB1)),
@@ -3770,8 +3764,8 @@ namespace tsl {
             std::chrono::steady_clock::time_point lastUpdateTime;
             std::chrono::duration<float> elapsed;
 
-            const float smoothingFactor = 0.15f;  // Lower value means faster smoothing
-            const float dampingFactor = 0.3f;   // Closer to 1 means slower damping
+            static constexpr float smoothingFactor = 0.15f;  // Lower value means faster smoothing
+            static constexpr float dampingFactor = 0.3f;   // Closer to 1 means slower damping
 
 
             bool isInTable = false;  // Track if we're inside a table
@@ -3782,7 +3776,7 @@ namespace tsl {
             // Use a vector to track how many downward scroll steps were taken for each table
             std::vector<int> scrollStepsInsideTable;  // This will track scroll steps for each table
             
-            const float TABLE_SCROLL_STEP_SIZE = 40.0f; // Fixed scroll step size
+            static constexpr float TABLE_SCROLL_STEP_SIZE = 40.0f; // Fixed scroll step size
 
             
             virtual void draw(gfx::Renderer* renderer) override {
@@ -4210,16 +4204,16 @@ namespace tsl {
                         }
                         if (_isTable) {
                             // Adjust scroll steps for this table
-                            int requiredSteps = static_cast<int>(std::ceil(static_cast<float>(totalScrollableHeight) / TABLE_SCROLL_STEP_SIZE));
+                            int requiredSteps = static_cast<int>(STBTT_iceil(static_cast<float>(totalScrollableHeight) / TABLE_SCROLL_STEP_SIZE));
                             scrollStepsInsideTable[tableIndex] = std::max(scrollStepsInsideTable[tableIndex], requiredSteps);
                         }
                     }
 
                     
                     if (isInTable) {
-                        //logMessage("Inside table: Offset: " + std::to_string(this->m_offset) + 
-                        //           " | EntryOffset: " + std::to_string(entryOffset) + 
-                        //           " | scrollStepsInsideTable: " + std::to_string(scrollStepsInsideTable[tableIndex]));
+                        //logMessage("Inside table: Offset: " + ult::to_string(this->m_offset) + 
+                        //           " | EntryOffset: " + ult::to_string(entryOffset) + 
+                        //           " | scrollStepsInsideTable: " + ult::to_string(scrollStepsInsideTable[tableIndex]));
                         
                         if (scrollStepsInsideTable[tableIndex] > 0) {
                             // Decrease the offset and decrement steps one at a time
@@ -4235,7 +4229,7 @@ namespace tsl {
                         
                                 for (ssize_t i = static_cast<ssize_t>(tableIndex) - 1; i >= 0; --i) {
                                     if (this->m_items[i]->isTable()) {
-                                        //logMessage("Skipping table or non-focusable item at index: " + std::to_string(i));
+                                        //logMessage("Skipping table or non-focusable item at index: " + ult::to_string(i));
                                         continue;
                                     }
                         
@@ -4244,10 +4238,10 @@ namespace tsl {
                                         this->m_focusedIndex = static_cast<size_t>(i);
                                         this->updateScrollOffset();
                                         isInTable = false;
-                                        //logMessage("Exited table. Focus is now on the previous item at index: " + std::to_string(i));
+                                        //logMessage("Exited table. Focus is now on the previous item at index: " + ult::to_string(i));
                                         return newFocus;
                                     } else {
-                                        //logMessage("Failed to focus on the previous item at index: " + std::to_string(i));
+                                        //logMessage("Failed to focus on the previous item at index: " + ult::to_string(i));
                                     }
                                 }
                         
@@ -4260,8 +4254,8 @@ namespace tsl {
                             this->m_offset = this->m_nextOffset;
                             scrollStepsInsideTable[tableIndex]--;  // Decrement steps for the current table
                     
-                            //logMessage("Scrolling up inside table. Current offset: " + std::to_string(this->m_offset) + 
-                            //           " | Remaining scroll steps: " + std::to_string(scrollStepsInsideTable[tableIndex]));
+                            //logMessage("Scrolling up inside table. Current offset: " + ult::to_string(this->m_offset) + 
+                            //           " | Remaining scroll steps: " + ult::to_string(scrollStepsInsideTable[tableIndex]));
                     
                             // Redraw the list to reflect the new position
                             this->invalidate();  // Ensure the view is updated after each movement
@@ -4275,7 +4269,7 @@ namespace tsl {
                     
                             for (ssize_t i = static_cast<ssize_t>(tableIndex) - 1; i >= 0; --i) {
                                 if (this->m_items[i]->isTable()) {
-                                    //logMessage("Skipping table or non-focusable item at index: " + std::to_string(i));
+                                    //logMessage("Skipping table or non-focusable item at index: " + ult::to_string(i));
                                     continue;
                                 }
                     
@@ -4284,10 +4278,10 @@ namespace tsl {
                                     this->m_focusedIndex = static_cast<size_t>(i);
                                     this->updateScrollOffset();
                                     isInTable = false;
-                                    //logMessage("Exited table. Focus is now on the previous item at index: " + std::to_string(i));
+                                    //logMessage("Exited table. Focus is now on the previous item at index: " + ult::to_string(i));
                                     return newFocus;
                                 } else {
-                                    //logMessage("Failed to focus on the previous item at index: " + std::to_string(i));
+                                    //logMessage("Failed to focus on the previous item at index: " + ult::to_string(i));
                                 }
                             }
                     
@@ -4311,7 +4305,7 @@ namespace tsl {
                                 this->updateScrollOffset();
                                 isInTable = this->m_items[i]->isTable();
                                 tableIndex = isInTable ? i : 0;
-                                //logMessage("Focus moved to item: " + std::to_string(i));
+                                //logMessage("Focus moved to item: " + ult::to_string(i));
                                 return newFocus;
                             }
                         }
@@ -4330,11 +4324,7 @@ namespace tsl {
                 return oldFocus;
             }
             
-                        
-
-
-
-
+            
             
             /**
              * @brief Gets the item at the index in the list
@@ -4516,33 +4506,283 @@ namespace tsl {
          */
         class ListItem : public Element {
         public:
+            u32 width, height;
+            std::chrono::steady_clock::time_point m_touchStartTime;
+        
+            ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
+                m_isItem = true;
+                applyInitialTranslations();
+            }
+        
+            virtual ~ListItem() = default;
+        
+            virtual void draw(gfx::Renderer *renderer) override {
+                static float lastBottomBound = 0.0f;
+                bool useClickTextColor = m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
+                if (useClickTextColor) {
+                    renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
+                }
+        
+                s32 yOffset = (tsl::style::ListItemDefaultHeight - m_listItemHeight) / 2;
+        
+                if (m_maxWidth == 0) {
+                    calculateWidths(renderer);
+                }
+        
+                if (lastBottomBound != this->getTopBound()) {
+                    renderer->drawRect(this->getX() + 4, this->getTopBound(), this->getWidth() + 10, 1, a(separatorColor));
+                }
+                renderer->drawRect(this->getX() + 4, this->getBottomBound(), this->getWidth() + 10, 1, a(separatorColor));
+                lastBottomBound = this->getBottomBound();
+        
+                if (m_truncated) {
+                    drawTruncatedText(renderer, yOffset, useClickTextColor);
+                } else {
+                    renderer->drawStringWithColoredSections(m_text, {ult::STAR_SYMBOL + "  "}, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                        a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor)),
+                        a(m_focused ? starColor : selectionStarColor));
+                }
+        
+                drawValue(renderer, yOffset, useClickTextColor);
+            }
+        
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+                this->setBoundaries(this->getX() + 3, this->getY(), this->getWidth() + 9, m_listItemHeight);
+            }
+        
+            virtual bool onClick(u64 keys) override {
+                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
+                    keys |= KEY_A;
+                    ult::simulatedSelect = false;
+                }
+                if (keys & KEY_A) {
+                    triggerClickAnimation();
+                    ult::simulatedSelectComplete = true;
+                } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+                    m_clickAnimationProgress = 0;
+                }
+                return Element::onClick(keys);
+            }
+        
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                if (event == TouchEvent::Touch) {
+                    m_touched = inBounds(currX, currY);
+                    if (m_touched) {
+                        m_touchStartTime = std::chrono::steady_clock::now();
+                    }
+                }
+        
+                if (event == TouchEvent::Release && m_touched) {
+                    m_touched = false;
+        
+                    if (Element::getInputMode() == InputMode::Touch) {
+                        s64 keyToUse = determineKeyOnTouchRelease();
+                        bool handled = onClick(keyToUse);
+                        m_clickAnimationProgress = 0;
+                        return handled;
+                    }
+                }
+                return false;
+            }
+        
+            virtual void setFocused(bool state) override {
+                m_scroll = false;
+                m_scrollOffset = 0;
+                timeIn = std::chrono::steady_clock::now();
+                Element::setFocused(state);
+            }
+        
+            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+                return this;
+            }
+        
+            inline void setText(const std::string& text) {
+                m_text = text;
+                resetTextProperties();
+                applyInitialTranslations();
+            }
+        
+            inline void setValue(const std::string& value, bool faint = false) {
+                m_value = value;
+                m_faint = faint;
+                m_maxWidth = 0;
+                applyInitialTranslations(true);
+            }
+        
+            inline const std::string& getText() const {
+                return m_text;
+            }
+        
+            inline const std::string& getValue() const {
+                return m_value;
+            }
+        
+        protected:
+            std::chrono::steady_clock::time_point timeIn;
+            std::string m_text;
+            std::string m_value;
+            std::string m_scrollText;
+            std::string m_ellipsisText;
+            u32 m_listItemHeight;
+        
+            bool m_scroll = false;
+            bool m_truncated = false;
+            bool m_faint = false;
+            bool m_touched = false;
+        
+            float m_scrollOffset = 0.0;
+            u32 m_maxWidth = 0;
+            u32 m_textWidth = 0;
+        
+        private:
+            void applyInitialTranslations(bool isValue = false) {
+                if (isValue) {
+                    ult::applyLangReplacements(m_value, true);
+                    ult::convertComboToUnicode(m_value);
+                } else {
+                    ult::applyLangReplacements(m_text);
+                    ult::convertComboToUnicode(m_text);
+                }
+            }
+        
+            void calculateWidths(gfx::Renderer* renderer) {
+                if (!m_value.empty()) {
+                    m_maxWidth = getWidth() - tsl::gfx::calculateStringWidth(m_value, 20) - 66;
+                } else {
+                    m_maxWidth = getWidth() - 62;
+                }
+        
+                u32 width = tsl::gfx::calculateStringWidth(m_text, 23);
+                m_truncated = width > m_maxWidth + 20;
+        
+                if (m_truncated) {
+                    m_scrollText = m_text + "        ";
+                    m_textWidth = tsl::gfx::calculateStringWidth(m_scrollText, 23);
+                    m_scrollText += m_text;
+                    m_ellipsisText = renderer->limitStringLength(m_text, false, 23, m_maxWidth);
+                } else {
+                    m_textWidth = width;
+                }
+            }
+        
+            void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+                if (m_focused) {
+                    renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 30-3), tsl::cfg::FramebufferHeight - 170);
+                    renderer->drawString(m_scrollText, false, getX() + 19 - m_scrollOffset, getY() + 45 - yOffset, 23, a(selectedTextColor));
+                    renderer->disableScissoring();
+                    handleScrolling();
+                } else {
+                    renderer->drawString(m_ellipsisText, false, getX() + 19, getY() + 45 - yOffset, 23,
+                        a(useClickTextColor ? clickTextColor : defaultTextColor));
+                }
+            }
+        
+            void handleScrolling() {
+                if (std::chrono::steady_clock::now() - timeIn >= 2000ms) {
+                    if (m_scrollOffset >= m_textWidth) {
+                        m_scrollOffset = 0;
+                        timeIn = std::chrono::steady_clock::now();
+                    } else {
+                        m_scrollOffset = 0.1f * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - timeIn - 2000ms).count();
+                    }
+                }
+            }
+
+        
+            void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+                s32 xPosition = getX() + m_maxWidth + 44 +3;
+                s32 yPosition = getY() + 45 - yOffset;
+                s32 fontSize = 20;
+        
+                static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+                auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
+        
+                if (m_value != ult::INPROGRESS_SYMBOL) {
+                    renderer->drawString(m_value, false, xPosition, yPosition, fontSize, textColor);
+                } else {
+                    drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
+                }
+                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+            }
+        
+            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
+                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
+                    return a(m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedTextColor)) :
+                        (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
+                } else if (((ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter) &&
+                    (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
+                     m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
+                     m_value.find(ult::COPY_SYMBOL) != std::string::npos
+                     )) || m_value == ult::INPROGRESS_SYMBOL) {
+                    return m_faint ? offTextColor : a(inprogressTextColor);
+                } else if (m_value == ult::CROSSMARK_SYMBOL) {
+                    return m_faint ? offTextColor : a(invalidTextColor);
+                } else {
+                    return m_faint ? offTextColor : a(onTextColor);
+                }
+            }
+        
+            void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
+                static size_t throbberCounter = 0;
+                const std::string* stringPtr = &ult::THROBBER_SYMBOLS[(throbberCounter / 10) % ult::THROBBER_SYMBOLS.size()];
+                throbberCounter = (throbberCounter + 1) % (10 * ult::THROBBER_SYMBOLS.size());
+                renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
+            }
+        
+            s64 determineKeyOnTouchRelease() const {
+        #if IS_LAUNCHER_DIRECTIVE
+                auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
+                auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
+                return (touchDurationInSeconds >= 1.0f) ? STAR_KEY : ((touchDurationInSeconds >= 0.3f) ? SETTINGS_KEY : KEY_A);
+        #else
+                return KEY_A;
+        #endif
+            }
+        
+            void resetTextProperties() {
+                m_scrollText.clear();
+                m_ellipsisText.clear();
+                m_maxWidth = 0;
+            }
+        };
+        
+        
+        class MiniListItem : public ListItem {
+        public:
+            // Constructor for MiniListItem, with no `isMini` boolean.
+            MiniListItem(const std::string& text, const std::string& value = "")
+                : ListItem(text, value, true)  // Call the parent constructor with `isMini = true`
+            {
+                // Additional MiniListItem-specific initialization can go here, if necessary.
+            }
+            
+            // Destructor if needed (inherits default behavior from ListItem)
+            virtual ~MiniListItem() {}
+        };
+
+        /**
+         * @brief A item that goes into a list (this version uses value and faint color sourcing)
+         *
+         */
+        class ListItemV2 : public Element {
+        public:
             //std::chrono::duration<long int, std::ratio<1, 1000000000>> t;
             u32 width, height;
             std::chrono::steady_clock::time_point m_touchStartTime;  // Track the time when touch starts
-
 
             /**
              * @brief Constructor
              *
              * @param text Initial description text
              */
-            ListItem(const std::string& text, const std::string& value = "", const bool isMini = false)
-                : Element(), m_text(text), m_value(value) {
-                m_isItem = true;
-                if (isMini) {
-                    m_listItemHeight = style::MiniListItemDefaultHeight;
-                }
-
-                // Initial translations
-                ult::applyLangReplacements(this->m_text);
-                ult::convertComboToUnicode(this->m_text);
-                ult::applyLangReplacements(this->m_value, true);
-                ult::convertComboToUnicode(this->m_value);
+            ListItemV2(const std::string& text, const std::string& value = "", Color valueColor = onTextColor, Color faintColor = offTextColor)
+                : Element(), m_text(text), m_value(value), m_valueColor{valueColor}, m_faintColor{faintColor} {
             }
-            virtual ~ListItem() {}
-            
-            virtual void draw(gfx::Renderer *renderer) override {
+            virtual ~ListItemV2() {}
 
+
+            virtual void draw(gfx::Renderer *renderer) override {
                 static float lastBottomBound;
                 bool useClickTextColor = false;
                 if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
@@ -4593,7 +4833,7 @@ namespace tsl {
                 if (this->m_trunctuated) {
                     if (this->m_focused) {
                         if (this->m_value.length() > 0)
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 - 6-4 , tsl::cfg::FramebufferHeight-73-97);
+                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 30 -3, tsl::cfg::FramebufferHeight-73-97);
                         else
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
                         renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
@@ -4622,33 +4862,18 @@ namespace tsl {
                 
                 // CUSTOM SECTION START (modification for submenu footer color)
                 //const std::string& value = this->m_value;
-                s32 xPosition = this->getX() + this->m_maxWidth + 45 - 1 +4;
+                s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
                 s32 yPosition = this->getY() + 45 - yOffset;
                 s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
 
 
-                static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+                //static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
 
                 // Determine text color
-                auto textColor = offTextColor;
-                if (this->m_value == ult::DROPDOWN_SYMBOL || this->m_value == ult::OPTION_SYMBOL) {
-                    textColor = this->m_focused
-                        ? (!useClickTextColor ? (this->m_faint ? offTextColor : selectedTextColor) : a(clickTextColor))
-                        : (!useClickTextColor ? (this->m_faint ? offTextColor : defaultTextColor) : a(clickTextColor));
-                } else if ((ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter) &&
-                    (this->m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
-                     this->m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
-                     this->m_value.find(ult::COPY_SYMBOL) != std::string::npos ||
-                     this->m_value == ult::INPROGRESS_SYMBOL)) {
-
-                    textColor = this->m_faint ? offTextColor : a(inprogressTextColor);
-                } else if (this->m_value == ult::CROSSMARK_SYMBOL) {
-                    textColor = this->m_faint ? offTextColor : a(invalidTextColor);
-                } else {
-                    textColor = this->m_faint ? offTextColor : a(onTextColor);
-                }
+                auto textColor = this->m_faint ? a(m_faintColor) : a(m_valueColor);
+                
 
                 if (this->m_value != ult::INPROGRESS_SYMBOL) {
                     // Draw the string with the determined text color
@@ -4671,13 +4896,13 @@ namespace tsl {
                     }
                     renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
                 }
-                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+                //lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
             }
-            
+
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 this->setBoundaries(this->getX()+2+1, this->getY(), this->getWidth()+8+1, m_listItemHeight);
             }
-            
+
             virtual bool onClick(u64 keys) override {
                 if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
                     keys |= KEY_A;
@@ -4692,53 +4917,38 @@ namespace tsl {
 
                 return Element::onClick(keys);
             }
-            
-            
+
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                if (event == TouchEvent::Touch) {
+                if (event == TouchEvent::Touch)
                     this->m_touched = this->inBounds(currX, currY);
-                    if (this->m_touched) {
-                        // Start the timer when touch begins
-                        m_touchStartTime = std::chrono::steady_clock::now();
-                    }
-                }
-        
+
                 if (event == TouchEvent::Release && this->m_touched) {
                     this->m_touched = false;
-                    
+
                     if (Element::getInputMode() == InputMode::Touch) {
-                        
-                        #if IS_LAUNCHER_DIRECTIVE
-                        // Calculate the touch duration
-                        auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
-                        auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
-                        s64 keyToUse = (touchDurationInSeconds >= 1.0) ? STAR_KEY : ((touchDurationInSeconds >= 0.3) ? SETTINGS_KEY : KEY_A);
-                        #else
-                        s64 keyToUse = KEY_A;
+                        bool handled = this->onClick(HidNpadButton_A);
 
-                        #endif
-
-                        bool handled = this->onClick(keyToUse);
                         this->m_clickAnimationProgress = 0;
                         return handled;
                     }
                 }
-        
+
+
                 return false;
             }
-            
-            
+
+
             virtual void setFocused(bool state) override {
                 this->m_scroll = false;
                 this->m_scrollOffset = 0;
                 this->timeIn = std::chrono::steady_clock::now(); // CUSTOM MODIFICATION
                 Element::setFocused(state);
             }
-            
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
                 return this;
             }
-            
+
             /**
              * @brief Sets the left hand description text of the list item
              *
@@ -4749,11 +4959,8 @@ namespace tsl {
                 this->m_scrollText = "";
                 this->m_ellipsisText = "";
                 this->m_maxWidth = 0;
-
-                ult::applyLangReplacements(this->m_text);
-                ult::convertComboToUnicode(this->m_text);
             }
-            
+
             /**
              * @brief Sets the right hand value text of the list item
              *
@@ -4764,11 +4971,26 @@ namespace tsl {
                 this->m_value = value;
                 this->m_faint = faint;
                 this->m_maxWidth = 0;
-
-                ult::applyLangReplacements(this->m_value, true);
-                ult::convertComboToUnicode(this->m_value);
             }
-            
+
+            /**
+             * @brief Sets the value color
+             *
+             * @param value_color color of the value
+             */
+            inline void setValueColor(Color value_color) {
+                this->m_valueColor = value_color;
+            }
+
+            /**
+             * @brief Sets the faint color
+             *
+             * @param faint_color color of the faint
+             */
+            inline void setFaintColor(Color faint_color) {
+                this->m_faintColor = faint_color;
+            }
+
             /**
              * @brief Gets the left hand description text of the list item
              *
@@ -4777,7 +4999,7 @@ namespace tsl {
             inline const std::string& getText() const {
                 return this->m_text;
             }
-            
+
             /**
              * @brief Gets the right hand value text of the list item
              *
@@ -4786,39 +5008,30 @@ namespace tsl {
             inline const std::string& getValue() {
                 return this->m_value;
             }
-            
+
         protected:
             std::chrono::steady_clock::time_point timeIn;// = std::chrono::system_clock::now();
+
             std::string m_text;
             std::string m_value = "";
             std::string m_scrollText = "";
             std::string m_ellipsisText = "";
             u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
 
+            Color m_valueColor;
+            Color m_faintColor;
+
             bool m_scroll = false;
             bool m_trunctuated = false;
             bool m_faint = false;
-            
+
             bool m_touched = false;
-            
+
             u16 m_maxScroll = 0;
-            //half m_scrollOffset = half(0);
-            float m_scrollOffset = 0.0;
+            u16 m_scrollOffset = 0;
             u32 m_maxWidth = 0;
             u32 m_textWidth = 0;
-        };
-        
-        class MiniListItem : public ListItem {
-        public:
-            // Constructor for MiniListItem, with no `isMini` boolean.
-            MiniListItem(const std::string& text, const std::string& value = "")
-                : ListItem(text, value, true)  // Call the parent constructor with `isMini = true`
-            {
-                // Additional MiniListItem-specific initialization can go here, if necessary.
-            }
-            
-            // Destructor if needed (inherits default behavior from ListItem)
-            virtual ~MiniListItem() {}
+            u16 m_scrollAnimationCounter = 0;
         };
 
 
@@ -4836,8 +5049,8 @@ namespace tsl {
              * @param onValue Value drawn if the toggle is on
              * @param offValue Value drawn if the toggle is off
              */
-            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF)
-                : ListItem(text), m_state(initialState), m_onValue(onValue), m_offValue(offValue) {
+            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF, bool isMini = false)
+                : ListItem(text, "", isMini), m_state(initialState), m_onValue(onValue), m_offValue(offValue) {
                 this->setState(this->m_state);
             }
             
@@ -5186,7 +5399,7 @@ namespace tsl {
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = (STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
                 //if (ult::allowSlide || m_unlockedTrackbar) {
                 //    highlightColor = {
                 //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -5518,7 +5731,7 @@ namespace tsl {
                 m_isItem = true;
 
                 if ((!usingStepTrackbar && !usingNamedStepTrackbar) || numSteps == -1) {
-                    m_numSteps = maxValue - minValue;
+                    m_numSteps = (maxValue - minValue)+1;
                 }
 
                 bool loadedValue = false;
@@ -5526,13 +5739,13 @@ namespace tsl {
                     std::string initialIndex = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "index");
 
                     if (!initialIndex.empty()) {
-                        m_index = static_cast<s16>(std::stoi(initialIndex)); // convert initializedValue to s16
+                        m_index = static_cast<s16>(ult::stoi(initialIndex)); // convert initializedValue to s16
                     }
                     if (!m_usingNamedStepTrackbar) {
                         std::string initialValue = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "value");
                         
                         if (!initialValue.empty()) {
-                            m_value = static_cast<s16>(std::stoi(initialValue)); // convert initializedValue to s16
+                            m_value = static_cast<s16>(ult::stoi(initialValue)); // convert initializedValue to s16
                             loadedValue = true;
                         }
                     }
@@ -5562,8 +5775,8 @@ namespace tsl {
                     return;
                 }
             
-                const std::string indexStr = std::to_string(m_index);
-                const std::string valueStr = m_usingNamedStepTrackbar ? m_selection : std::to_string(m_value);
+                const std::string indexStr = ult::to_string(m_index);
+                const std::string valueStr = m_usingNamedStepTrackbar ? m_selection : ult::to_string(m_value);
             
                 if (updateIni) {
                     const std::string configPath = m_packagePath + "config.ini";
@@ -5865,10 +6078,10 @@ namespace tsl {
                 ult::removeTag(labelPart);
                 //labelPart += " ";
 
-                //std::string valuePart = m_usingNamedStepTrackbar ? this->m_selection : std::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                //std::string valuePart = m_usingNamedStepTrackbar ? this->m_selection : ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
                 std::string valuePart;
                 if (!m_usingNamedStepTrackbar)
-                    valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? std::to_string(this->m_value) + this->m_units : std::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                    valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? ult::to_string(this->m_value) + this->m_units : ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
                 else
                     valuePart = this->m_selection;
 
@@ -5910,7 +6123,7 @@ namespace tsl {
             
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((std::sin(2.0 * ult::_M_PI * fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = ((STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
                 
                 static std::chrono::steady_clock::time_point clickStartTime;
                 static bool clickActive = false;

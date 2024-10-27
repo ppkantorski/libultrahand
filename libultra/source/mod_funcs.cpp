@@ -453,7 +453,7 @@ namespace ult {
             }
             
             for (size_t i = 0; i < valueStr.length(); i += 2) {
-                byte = std::stoi(valueStr.substr(i, 2), nullptr, 16);
+                byte = ult::stoi(valueStr.substr(i, 2), nullptr, 16);
                 valueBytes.push_back(byte);
             }
             
@@ -522,7 +522,7 @@ namespace ult {
             }
     
             for (size_t i = 0; i < valueStr.length(); i += 2) {
-                byte = std::stoi(valueStr.substr(i, 2), nullptr, 16);
+                byte = ult::stoi(valueStr.substr(i, 2), nullptr, 16);
                 valueBytes.push_back(byte);
             }
     

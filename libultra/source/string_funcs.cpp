@@ -2,21 +2,39 @@
 
 namespace ult {
     
+    // Custom string conversion methods in place of std::
+    std::string to_string(int value) {
+        char buffer[12]; // Sufficient for 32-bit int
+        snprintf(buffer, sizeof(buffer), "%d", value);
+        return std::string(buffer);
+    }
+    
+    int stoi(const std::string& str, std::size_t* pos, int base) {
+        char* end;
+        long result = std::strtol(str.c_str(), &end, base);
+    
+        if (pos) {
+            *pos = end - str.c_str();  // Set the position to the last character processed
+        }
+    
+        // Handle out-of-range or conversion issues here if needed
+        return static_cast<int>(result);
+    }
 
-    // Default constructor
-    //StringStream::StringStream() : position(0) {}
-    //
-    //// Constructor that takes a string reference to process
-    //StringStream::StringStream(const std::string& input) : data(input), position(0) {}
+    
+    float stof(const std::string& str) {
+        return strtof(str.c_str(), nullptr);
+    }
+
 
     // Mimics std::getline() with a delimiter
     bool StringStream::getline(std::string& output, char delimiter) {
         if (position >= data.size()) {
             return false;  // End of string
         }
-    
+        
         size_t nextPos = data.find(delimiter, position);
-    
+        
         if (nextPos != std::string::npos) {
             output = data.substr(position, nextPos - position);  // Extract the token
             position = nextPos + 1;  // Move past the delimiter
@@ -78,8 +96,14 @@ namespace ult {
             sprintf(buffer, "%x", input);  // Convert integer to hex string
             data += buffer;
         } else {
-            data += std::to_string(input);
+            data += ult::to_string(input);
         }
+        return *this;
+    }
+
+    // Define the new overload for long long
+    StringStream& StringStream::operator<<(long long input) {
+        data += std::to_string(input);
         return *this;
     }
     
@@ -469,7 +493,7 @@ namespace ult {
     
     
     std::string customAlign(int number) {
-        std::string numStr = std::to_string(number);
+        std::string numStr = ult::to_string(number);
         int missingDigits = 4 - numStr.length();
         return std::string(missingDigits * 2, ' ') + numStr;
     }
