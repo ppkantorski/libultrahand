@@ -50,6 +50,7 @@ namespace ult {
         }
         
         std::string line;
+        std::string newLine;
 
         std::map<std::string, std::string*> fieldMap;
         while (getline(file, line)) {
@@ -67,7 +68,7 @@ namespace ult {
             };
     
             size_t startPos, endPos;
-    
+            
             // Process each prefix in the map
             for (const auto& [prefix, field] : fieldMap) {
                 startPos = line.find(prefix);
@@ -77,7 +78,7 @@ namespace ult {
                     if (endPos == std::string::npos) {
                         endPos = line.length();
                     }
-                    std::string newLine = line.substr(startPos, endPos - startPos);
+                    newLine = line.substr(startPos, endPos - startPos);
                     trim(newLine);
                     removeQuotes(newLine);
                     *field = newLine;
@@ -483,10 +484,12 @@ namespace ult {
     
         char line[1024];
         bool isNewSection = false;
-    
+
+        std::string lineStr;
+
         while (fgets(line, sizeof(line), inputFile)) {
             line[strcspn(line, "\n")] = 0; // Remove newline character
-            std::string lineStr(line); // Create a std::string from the C-style string
+            lineStr = line; // Create a std::string from the C-style string
             trim(lineStr); // Pass the std::string to the trim function
     
             if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.size() - 1] == ']') {
@@ -575,10 +578,12 @@ namespace ult {
         bool keyFound = false;
         bool firstSection = true;  // Flag to control new line before first section
         std::string currentSection;
-    
+
+        std::string lineStr;
+
         while (fgets(line, sizeof(line), configFile)) {
             line[strcspn(line, "\n")] = 0; // Remove newline character
-            std::string lineStr(line); // Create std::string from C-style string
+            lineStr = line; // Create std::string from C-style string
             trim(lineStr); // Use the std::string with trim
     
             if (lineStr.empty()) {
@@ -881,10 +886,13 @@ namespace ult {
         }
     
         char line[1024];
+        std::string sectionName;
+        std::string lineStr;
+
         while (fgets(line, sizeof(line), configFile)) {
-            std::string lineStr(line);
+            lineStr = line;
             trim(lineStr); // Modifying lineStr directly
-            std::string sectionName;
+            sectionName.clear();
     
             if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
                 sectionName = lineStr.substr(1, lineStr.length() - 2);
@@ -979,9 +987,10 @@ namespace ult {
         char line[1024];
         std::string currentSection;
         bool inSectionToRemove = false;
-    
+
+        std::string lineStr;
         while (fgets(line, sizeof(line), configFile)) {
-            std::string lineStr(line);
+            lineStr = line;
             trim(lineStr); // Modify lineStr directly
             if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
                 currentSection = lineStr.substr(1, lineStr.length() - 2);
@@ -1076,9 +1085,10 @@ namespace ult {
         char line[1024];
         std::string currentSection;
         bool inTargetSection = false;
-    
+
+        std::string lineStr;
         while (fgets(line, sizeof(line), configFile)) {
-            std::string lineStr(line);
+            lineStr = line;
             trim(lineStr); // Trim the line
     
             if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
@@ -1201,14 +1211,15 @@ namespace ult {
         std::string part;
     
         StringStream iss(line);  // Use your custom StringStream
-    
+        
+        std::string arg;
         // Use StringStream's getline method, not std::getline
         while (iss.getline(part, '\'')) {  // Handle single quotes using custom getline
             if (inQuotes) {
                 commandParts.push_back(part);  // Inside quotes, treat as a whole argument
             } else {
                 StringStream argIss(part);
-                std::string arg;
+                arg.clear();
                 while (argIss >> arg) {  // Use custom operator >> to split by spaces
                     commandParts.push_back(arg);  // Split part outside quotes by spaces
                 }
@@ -1232,14 +1243,15 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         if (!packageFile) return {}; // Return empty vector if file can't be opened
-    
+        
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
         char line[1024];
         std::string currentSection;
         std::vector<std::vector<std::string>> sectionCommands;
-    
+
+        std::string strLine;
         while (fgets(line, sizeof(line), packageFile)) {
-            std::string strLine(line);
+            strLine = line;
             // Remove carriage returns and newlines
             strLine.erase(std::remove(strLine.begin(), strLine.end(), '\r'), strLine.end());
     
@@ -1315,9 +1327,10 @@ namespace ult {
         char line[1024];
         std::string currentSection;
         bool inTargetSection = false;
-    
+
+        std::string strLine;
         while (fgets(line, sizeof(line), packageFile)) {
-            std::string strLine(line);
+            strLine = line;
             // Remove carriage returns and newlines
             strLine.erase(std::remove(strLine.begin(), strLine.end(), '\r'), strLine.end());
     
