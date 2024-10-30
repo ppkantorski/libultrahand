@@ -4513,6 +4513,7 @@ namespace tsl {
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
                 m_isItem = true;
                 applyInitialTranslations();
+                applyInitialTranslations(true);
             }
         
             virtual ~ListItem() = default;
