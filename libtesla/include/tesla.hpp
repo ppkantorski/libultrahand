@@ -46,7 +46,7 @@
 #include <arm_neon.h>
 
 #include <strings.h>
-//#include <math.h>
+#include <math.h>
 
 #include <algorithm>
 #include <cstring>
@@ -2568,8 +2568,8 @@ namespace tsl {
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
                 
-                //half progress = half((std::sin(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
-                progress = (STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0;
+                //half progress = half((std::sin(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(), 1.0)) + 1.0) / 2.0);
+                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0;
                 
                 if (progress >= 0.5) {
                     clickColor1 = clickColor;
@@ -2664,7 +2664,7 @@ namespace tsl {
                     return;
                 
                 
-                progress = ((STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0);
+                progress = ((std::cos(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - 0.25, 1.0)) + 1.0) / 2.0);
                 if (ult::runningInterpreter.load(std::memory_order_acquire)) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -3261,9 +3261,9 @@ namespace tsl {
                         float progress;
 
                         for (char letter : ult::SPLIT_PROJECT_NAME_1) {
-                            counter = (2 * ult::_M_PI * (STBTT_fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
+                            counter = (2 * ult::_M_PI * (std::fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
                             //progress = std::sin(counter); // -1 to 1
-                            progress = STBTT_cos(counter - ult::_M_PI / 2.0); // -1 to 1
+                            progress = std::cos(counter - ult::_M_PI / 2.0); // -1 to 1
                             
                             //highlightColor = {
                             //    static_cast<u8>((std::get<0>(dynamicLogoRGB2) - std::get<0>(dynamicLogoRGB1)) * (progress + 1.0) / 2.0 + std::get<0>(dynamicLogoRGB1)),
@@ -4204,7 +4204,7 @@ namespace tsl {
                         }
                         if (_isTable) {
                             // Adjust scroll steps for this table
-                            int requiredSteps = static_cast<int>(STBTT_iceil(static_cast<float>(totalScrollableHeight) / TABLE_SCROLL_STEP_SIZE));
+                            int requiredSteps = static_cast<int>(std::ceil(static_cast<float>(totalScrollableHeight) / TABLE_SCROLL_STEP_SIZE));
                             scrollStepsInsideTable[tableIndex] = std::max(scrollStepsInsideTable[tableIndex], requiredSteps);
                         }
                     }
@@ -5400,7 +5400,7 @@ namespace tsl {
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = (STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
+                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
                 //if (ult::allowSlide || m_unlockedTrackbar) {
                 //    highlightColor = {
                 //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
@@ -6124,7 +6124,7 @@ namespace tsl {
             
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                progress = ((STBTT_cos(2.0 * ult::_M_PI * STBTT_fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
+                progress = ((std::cos(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
                 
                 static std::chrono::steady_clock::time_point clickStartTime;
                 static bool clickActive = false;
@@ -7755,6 +7755,8 @@ namespace tsl {
 
             // For handling screenshots color alpha
             Event captureButtonPressEvent = {};
+            hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
+            eventClear(&captureButtonPressEvent);
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
             eventClear(&captureButtonPressEvent);
             hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
