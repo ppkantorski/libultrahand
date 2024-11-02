@@ -30,6 +30,7 @@ namespace ult {
      */
     PackageHeader getPackageHeaderFromIni(const std::string& filePath) {
         PackageHeader packageHeader;
+        std::string newLine;
         
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
@@ -44,16 +45,16 @@ namespace ult {
         while (fgets(buffer, sizeof(buffer), file)) {
             line = std::string(buffer);
     #else
-        std::ifstream file(filePath);
-        if (!file) {
-            return packageHeader; // Return default-constructed PackageHeader if file opening fails
-        }
-        
-        std::string line;
-        std::string newLine;
+            std::ifstream file(filePath);
+            if (!file) {
+                return packageHeader; // Return default-constructed PackageHeader if file opening fails
+            }
+            
+            std::string line;
+            
 
-        std::map<std::string, std::string*> fieldMap;
-        while (getline(file, line)) {
+            std::map<std::string, std::string*> fieldMap;
+            while (getline(file, line)) {
     #endif
     
             // Map to store references to the fields of the structure
