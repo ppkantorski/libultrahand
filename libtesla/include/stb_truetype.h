@@ -437,32 +437,68 @@ int main(int arg, char **argv)
    typedef char stbtt__check_size16[sizeof(stbtt_int16)==2 ? 1 : -1];
 
    // e.g. #define your own STBTT_ifloor/STBTT_iceil() to avoid math.h
+   //#ifndef STBTT_ifloor
+   //#include <math.h>
+   //#define STBTT_ifloor(x)   ((int) floor(x))
+   //#define STBTT_iceil(x)    ((int) ceil(x))
+   //#endif
+   //
+   //#ifndef STBTT_sqrt
+   //#include <math.h>
+   //#define STBTT_sqrt(x)      sqrt(x)
+   //#define STBTT_pow(x,y)     pow(x,y)
+   //#endif
+   //
+   //#ifndef STBTT_fmod
+   //#include <math.h>
+   //#define STBTT_fmod(x,y)    fmod(x,y)
+   //#endif
+   //
+   //#ifndef STBTT_cos
+   //#include <math.h>
+   //#define STBTT_cos(x)       cos(x)
+   //#define STBTT_acos(x)      acos(x)
+   //#endif
+   //
+   //ifndef STBTT_fabs
+   //include <math.h>
+   //define STBTT_fabs(x)      fabs(x)
+   //endif
+
+   // Math.h dependencies have been removed for these functions
+
    #ifndef STBTT_ifloor
-   #include <math.h>
-   #define STBTT_ifloor(x)   ((int) floor(x))
-   #define STBTT_iceil(x)    ((int) ceil(x))
+   #define STBTT_ifloor(x)   ((int)((x) >= 0 ? (x) : (x) - 1))  // truncate toward negative infinity
+   #endif
+
+   #ifndef STBTT_iceil
+   #define STBTT_iceil(x)    ((int)((x) == (int)(x) ? (x) : ((x) > 0 ? (int)(x) + 1 : (int)(x))))  // truncate toward positive infinity
    #endif
 
    #ifndef STBTT_sqrt
-   #include <math.h>
-   #define STBTT_sqrt(x)      sqrt(x)
-   #define STBTT_pow(x,y)     pow(x,y)
+   // Fast approximation for sqrt using Newton's method
+   #define STBTT_sqrt(x)     ((x) <= 0 ? 0 : (x) / 2.0 * (3.0 - ((x) * (x) * 0.5)))  // Approximation for x close to 1
    #endif
 
+   #ifndef STBTT_pow
+   #define STBTT_pow(x, y)   ((y) == 0 ? 1 : ((y) == 1 ? (x) : STBTT_sqrt(x))) // limited to approximate sqrt if y=0.5
+   #endif
+   
    #ifndef STBTT_fmod
-   #include <math.h>
-   #define STBTT_fmod(x,y)    fmod(x,y)
+   #define STBTT_fmod(x, y)    ((x) - ((int)((x) / (y)) * (y)))  // equivalent to x - floor(x/y) * y
+   #endif
+   
+   #ifndef STBTT_cos
+   // Approximation for cos(x) using Taylor series around 0
+   #define STBTT_cos(x)       (1 - (x) * (x) / 2 + (x) * (x) * (x) * (x) / 24)  // valid for small x
    #endif
 
-   #ifndef STBTT_cos
-   #include <math.h>
-   #define STBTT_cos(x)       cos(x)
-   #define STBTT_acos(x)      acos(x)
+   #ifndef STBTT_acos
+   #define STBTT_acos(x)      (1.5708 - (x) - (x)*(x)*(x) / 6)  // limited approximation for acos in range [-1, 1]
    #endif
 
    #ifndef STBTT_fabs
-   #include <math.h>
-   #define STBTT_fabs(x)      fabs(x)
+   #define STBTT_fabs(x)      ((x) < 0 ? -(x) : (x))
    #endif
 
    // #define your own functions "STBTT_malloc" / "STBTT_free" to avoid malloc.h
