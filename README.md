@@ -178,6 +178,8 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
 
+- [DNS-MITM_Manager](https://github.com/ppkantorski/DNS-MITM_Manager)
+
 ## Contributing
 
 Contributions are welcome! If you have any ideas, suggestions, or bug reports, please raise an [issue](https://github.com/ppkantorski/libultrahand/issues/new/choose), submit a [pull request](https://github.com/ppkantorski/libultrahand/compare) or reach out to me directly on [GBATemp](https://gbatemp.net/threads/ultrahand-overlay-the-fully-craft-able-overlay-executor.633560/).
