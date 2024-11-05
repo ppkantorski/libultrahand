@@ -3164,7 +3164,6 @@ namespace tsl {
             std::string m_colorSelection; // CUSTOM MODIFICATION
             std::string m_pageLeftName; // CUSTOM MODIFICATION
             std::string m_pageRightName; // CUSTOM MODIFICATION
-            
 
             //tsl::Color handColor = RGB888("#F7253E");
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
@@ -3446,10 +3445,18 @@ namespace tsl {
                     menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
 
             #if IS_LAUNCHER_DIRECTIVE
-                if (this->m_menuMode == "packages") {
-                    menuBottomLine += "\uE0ED"+ult::GAP_2+ult::OVERLAYS;
-                } else if (this->m_menuMode == "overlays") {
-                    menuBottomLine += "\uE0EE"+ult::GAP_2+ult::PACKAGES;
+                if (!ult::usePageSwap) {
+                    if (this->m_menuMode == "packages") {
+                        menuBottomLine += "\uE0ED"+ult::GAP_2+ult::OVERLAYS;
+                    } else if (this->m_menuMode == "overlays") {
+                        menuBottomLine += "\uE0EE"+ult::GAP_2+ult::PACKAGES;
+                    }
+                } else {
+                    if (this->m_menuMode == "packages") {
+                        menuBottomLine += "\uE0EE"+ult::GAP_2+ult::OVERLAYS;
+                    } else if (this->m_menuMode == "overlays") {
+                        menuBottomLine += "\uE0ED"+ult::GAP_2+ult::PACKAGES;
+                    }
                 }
                 
                 

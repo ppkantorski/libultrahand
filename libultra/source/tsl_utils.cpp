@@ -176,7 +176,8 @@ namespace ult {
     bool internalTouchReleased = true;
     u32 layerEdge = 0;
     bool useRightAlignment = false;
-    bool useSwipeToOpen = false;
+    bool useSwipeToOpen = true;
+    bool usePageSwap = false;
     bool noClickableItems = false;
     
     
@@ -381,7 +382,8 @@ namespace ult {
     std::string OVERLAY_VERSIONS = "Overlay Versions";
     std::string PACKAGE_VERSIONS = "Package Versions";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-
+    std::string PAGE_SWAP = "Page Swap";
+    
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
     std::string _VERSION= "Version";
@@ -545,6 +547,7 @@ namespace ult {
         OVERLAY_VERSIONS = "Overlay Versions";
         PACKAGE_VERSIONS = "Package Versions";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
+        PAGE_SWAP = "Page Swap";
         ON = "On";
         OFF = "Off";
         PACKAGE_INFO = "Package Info";
@@ -712,6 +715,7 @@ namespace ult {
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
             {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
+            {"PAGE_SWAP", &PAGE_SWAP},
 
             {"PACKAGE_INFO", &PACKAGE_INFO},
             {"TITLE", &_TITLE},
