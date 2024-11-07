@@ -234,10 +234,10 @@ namespace tsl {
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
 
-    #if IS_LAUNCHER_DIRECTIVE
+    
     static Color logoColor1 = RGB888(ult::whiteColor);
     static Color logoColor2 = RGB888("F7253E");
-    #endif
+    
 
     static size_t defaultBackgroundAlpha = 13;
     
