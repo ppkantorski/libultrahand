@@ -3044,18 +3044,19 @@ namespace tsl {
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
-                ult::backWidth = tsl::gfx::calculateStringWidth(ult::BACK, 23);
-                if (ult::touchingBack) {
-                    renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
-                }
+                if (FullMode && !deactivateOriginalFooter) {
+                    ult::backWidth = tsl::gfx::calculateStringWidth(ult::BACK, 23);
+                    if (ult::touchingBack) {
+                        renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    }
 
-                ult::selectWidth = tsl::gfx::calculateStringWidth(ult::OK, 23);
-                if (ult::touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    ult::selectWidth = tsl::gfx::calculateStringWidth(ult::OK, 23);
+                    if (ult::touchingSelect && !m_noClickableItems) {
+                        renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    }
                 }
-                
 
                 if (m_noClickableItems)
                     menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1;
@@ -3091,7 +3092,7 @@ namespace tsl {
             
             virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased)
+                if (!this->m_contentElement->inBounds(currX, currY))
                     return false;
                 
                 if (this->m_contentElement != nullptr)
@@ -7035,6 +7036,24 @@ namespace tsl {
             //    //}
             //}
 
+            if (FullMode && !deactivateOriginalFooter) {
+                if (ult::simulatedBack) {
+                    //keysDown |= KEY_B;
+                    ult::simulatedBack = false;
+                    ult::simulatedBackComplete = true;
+                    ult::stillTouching = false;
+                    this->goBack();
+                    return;
+                }
+                //if (keysDown & KEY_B) {
+                //    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
+                //        this->goBack();
+                //    return;
+                //}
+            } else {
+                ult::simulatedBack = false;
+                ult::simulatedBackComplete = true;
+            }
             
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
