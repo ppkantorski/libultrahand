@@ -793,6 +793,8 @@ namespace tsl {
 
         static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers); // forward declaration
 
+        static std::pair<int, int> getUnderscanPixels();
+
         /**
          * @brief Manages the Tesla layer and draws raw data to the screen
          */
@@ -2074,41 +2076,6 @@ namespace tsl {
 
             
 
-            std::pair<int, int> getUnderscanPixels() {
-                if (!ult::consoleIsDocked()) {
-                    return {0, 0};
-                }
-                
-                // Retrieve the TV settings
-                SetSysTvSettings tvSettings;
-                Result res = setsysGetTvSettings(&tvSettings);
-                if (R_FAILED(res)) {
-                    // Handle error: return default underscan or log error
-                    return {0, 0};
-                }
-                
-                // The underscan value might not be a percentage, we need to interpret it correctly
-                u32 underscanValue = tvSettings.underscan;
-                
-                // Convert the underscan value to a fraction. Assuming 0 means no underscan and larger values represent
-                // greater underscan. Adjust this formula based on actual observed behavior or documentation.
-                float underscanPercentage = 1.0f - (underscanValue / 100.0f);
-                
-                // Original dimensions of the full 720p image (1280x720)
-                int originalWidth = cfg::ScreenWidth;
-                int originalHeight = cfg::ScreenHeight;
-            
-                // Adjust the width and height based on the underscan percentage
-                int adjustedWidth = static_cast<int>(originalWidth * underscanPercentage);
-                int adjustedHeight = static_cast<int>(originalHeight * underscanPercentage);
-                
-                // Calculate the underscan in pixels (left/right and top/bottom)
-                int horizontalUnderscanPixels = (originalWidth - adjustedWidth) / 2;
-                int verticalUnderscanPixels = (originalHeight - adjustedHeight) / 2;
-                
-                return {horizontalUnderscanPixels, verticalUnderscanPixels};
-            }
-
 
 
             
@@ -2138,7 +2105,10 @@ namespace tsl {
                 cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
 
                 // Apply underscanning offset
-                cfg::LayerWidth += horizontalUnderscanPixels;
+                if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) // for status monitor micro mode
+                    cfg::LayerHeight += 1.99*verticalUnderscanPixels;
+                else
+                    cfg::LayerWidth += horizontalUnderscanPixels;
 
                 
                 if (this->m_initialized)
@@ -2284,6 +2254,42 @@ namespace tsl {
                 this->m_currentFramebuffer = nullptr;
             }
         };
+
+        static std::pair<int, int> getUnderscanPixels() {
+            if (!ult::consoleIsDocked()) {
+                return {0, 0};
+            }
+            
+            // Retrieve the TV settings
+            SetSysTvSettings tvSettings;
+            Result res = setsysGetTvSettings(&tvSettings);
+            if (R_FAILED(res)) {
+                // Handle error: return default underscan or log error
+                return {0, 0};
+            }
+            
+            // The underscan value might not be a percentage, we need to interpret it correctly
+            u32 underscanValue = tvSettings.underscan;
+            
+            // Convert the underscan value to a fraction. Assuming 0 means no underscan and larger values represent
+            // greater underscan. Adjust this formula based on actual observed behavior or documentation.
+            float underscanPercentage = 1.0f - (underscanValue / 100.0f);
+            
+            // Original dimensions of the full 720p image (1280x720)
+            float originalWidth = cfg::ScreenWidth;
+            float originalHeight = cfg::ScreenHeight;
+            
+            // Adjust the width and height based on the underscan percentage
+            float adjustedWidth = (originalWidth * underscanPercentage);
+            float adjustedHeight = (originalHeight * underscanPercentage);
+            
+            // Calculate the underscan in pixels (left/right and top/bottom)
+            int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
+            int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
+            
+            return {horizontalUnderscanPixels, verticalUnderscanPixels};
+        }
+
 
         // Helper function to calculate string width
         static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
