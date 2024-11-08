@@ -368,7 +368,7 @@ namespace ult {
     std::string STORAGE = "Storage";
     std::string NOTICE = "Notice";
     std::string UTILIZES = "Utilizes";
-    std::string FREE = "free";
+
     std::string MEMORY_EXPANSION = "Memory Expansion";
     std::string REBOOT_REQUIRED = "*Reboot required.";
     std::string LOCAL_IP = "Local IP";
@@ -383,7 +383,7 @@ namespace ult {
     std::string PACKAGE_VERSIONS = "Package Versions";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
     std::string PAGE_SWAP = "Page Swap";
-    
+
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
     std::string _VERSION= "Version";
@@ -410,6 +410,7 @@ namespace ult {
     std::string BOOT_ENTRY = "Boot Entry";
     #endif
 
+    std::string FREE = "free";
 
     std::string DEFAULT_CHAR_WIDTH = "0.33";
     std::string UNAVAILABLE_SELECTION = "Not available";
@@ -701,7 +702,7 @@ namespace ult {
             {"STORAGE", &STORAGE},
             {"NOTICE", &NOTICE},
             {"UTILIZES", &UTILIZES},
-            {"FREE", &FREE},
+
             {"MEMORY_EXPANSION", &MEMORY_EXPANSION},
             {"REBOOT_REQUIRED", &REBOOT_REQUIRED},
             {"LOCAL_IP", &LOCAL_IP},
@@ -743,7 +744,8 @@ namespace ult {
             {"BOOT_ENTRY", &BOOT_ENTRY},
             #endif
 
-
+            {"FREE", &FREE},
+            
             {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
             {"UNAVAILABLE_SELECTION", &UNAVAILABLE_SELECTION},
 
