@@ -326,7 +326,7 @@ namespace ult {
     extern std::string STORAGE;
     extern std::string NOTICE;
     extern std::string UTILIZES;
-    extern std::string FREE;
+
     extern std::string MEMORY_EXPANSION;
     extern std::string REBOOT_REQUIRED;
     extern std::string LOCAL_IP;
@@ -367,6 +367,8 @@ namespace ult {
     extern std::string SHUTDOWN;
     extern std::string BOOT_ENTRY;
     #endif
+
+    extern std::string FREE;
 
     extern std::string DEFAULT_CHAR_WIDTH;
     extern std::string UNAVAILABLE_SELECTION;
