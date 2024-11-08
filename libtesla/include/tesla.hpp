@@ -7318,17 +7318,18 @@ namespace tsl {
 
             #if IS_LAUNCHER_DIRECTIVE
             #else
-            if (currentFocus == nullptr) {
-                if (ult::simulatedBack) {
-                    keysDown |= KEY_B;
-                    ult::simulatedBack = false;
-                }
-                if (keysDown & KEY_B) {
-                    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
-                        this->goBack();
-                    return;
-                }
+            //if (currentFocus == nullptr) {
+            if (ult::simulatedBack) {
+                keysDown |= KEY_B;
+                ult::simulatedBack = false;
+                ult::simulatedBackComplete = true;
             }
+            if (keysDown & KEY_B) {
+                if (!currentGui->handleInput(KEY_B,0,{},{},{}))
+                    this->goBack();
+                return;
+            }
+            //}
             #endif
             
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
