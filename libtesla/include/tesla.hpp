@@ -7341,7 +7341,10 @@ namespace tsl {
                 //}
             }
 
-            #if IS_LAUNCHER_DIRECTIVE
+        #if IS_LAUNCHER_DIRECTIVE
+        #else
+            #if NO_BACK_KEY_DIRECTIVE
+
             #else
             //if (currentFocus == nullptr) {
             if (ult::simulatedBack) {
@@ -7354,8 +7357,9 @@ namespace tsl {
                     this->goBack();
                 return;
             }
-            //}
             #endif
+            //}
+        #endif
             
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
