@@ -1182,7 +1182,7 @@ namespace ult {
     
     // Define variables to store previous battery charge and time
     uint32_t prevBatteryCharge = 0;
-    s64 timeOut = 0;
+    //s64 timeOut = 0;
     
     
     uint32_t batteryCharge;
