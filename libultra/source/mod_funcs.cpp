@@ -283,17 +283,26 @@ namespace ult {
         }
     
         int offset = 0;
-        bool enabled = true;
         StringStream iss(pchtxt);  // Use your custom StringStream
         std::string line;
         
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
+
+            // strip inline C++-style comments
+            auto slashPos = line.find("//");
+            if (slashPos != std::string::npos)
+                line = line.substr(0, slashPos);
+            
+            // strip inline hash comments (but leave full-line # for headers)
+            auto hashPos = line.find('#');
+            if (hashPos != std::string::npos && hashPos > 0)
+                line = line.substr(0, hashPos);
+            
             trim(line);
-            if (line.empty() || line[0] == '#') {
-                continue;
-            }
-    
+            if (line.empty() || line[0] == '#') continue;
+
+
             if (line.find("@flag offset_shift ") == 0) {
                 std::string offsetStr = line.substr(19);
                 offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10)) - 0x100;
@@ -301,21 +310,11 @@ namespace ult {
             }
     
             if (line.find("@enabled") == 0) {
-                enabled = true;
-                continue;
-            }
-
-            if (line.find("@disabled") == 0) {
-                enabled = false;
                 continue;
             }
     
             if (line.find("@stop") == 0) {
                 break;
-            }
-
-            if (!enabled) {
-                continue;
             }
     
             size_t spacePos = line.find(' ');
@@ -429,7 +428,6 @@ namespace ult {
         uint32_t lineNum = 0;
         std::string nsobid;
         int offset = 0; // Default offset
-        bool enabled = true;
     
         uint32_t address;
         uint8_t byte;
@@ -437,21 +435,13 @@ namespace ult {
     
         while (fgets(&line[0], line.size(), pchtxtFile) != nullptr) {
             ++lineNum;
-            if (line.empty() || line.front() == '@' || !enabled) {
+            if (line.empty() || line.front() == '@') {
                 if (line.find("@nsobid-") == 0) {
                     nsobid = line.substr(8);
                 }
                 if (line.find("@flag offset_shift ") == 0) {
                     std::string offsetStr = line.substr(19);
                     offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10));
-                }
-                if (line.find("@enabled") == 0) {
-                    enabled = true;
-                    continue;
-                }
-                if (line.find("@disabled") == 0) {
-                    enabled = false;
-                    continue;
                 }
                 if (line.find("@stop") == 0) {
                     break;
@@ -507,7 +497,6 @@ namespace ult {
         uint32_t lineNum = 0;
         std::string nsobid;
         int offset = 0; // Default offset
-        bool enabled = true;
     
         uint32_t address;
         uint8_t byte;
@@ -515,7 +504,7 @@ namespace ult {
     
         while (std::getline(pchtxtFile, line)) {
             ++lineNum;
-            if (line.empty() || line.front() == '@' || !enabled) {
+            if (line.empty() || line.front() == '@') {
                 if (line.find("@nsobid-") == 0) {
                     nsobid = line.substr(8);
                 }
@@ -525,14 +514,6 @@ namespace ult {
                 }
                 if (line.find("@stop") == 0) {
                     break;
-                }
-                if (line.find("@enabled") == 0) {
-                    enabled = true;
-                    continue;
-                }
-                if (line.find("@disabled") == 0) {
-                    enabled = false;
-                    continue;
                 }
                 continue;  // Skip empty lines and lines starting with '@'
             }
