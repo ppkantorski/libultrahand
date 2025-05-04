@@ -177,6 +177,7 @@ namespace ult {
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
+    bool useDynamicLogo = true;
     bool usePageSwap = false;
     bool noClickableItems = false;
     
@@ -383,6 +384,7 @@ namespace ult {
     std::string PACKAGE_VERSIONS = "Package Versions";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
     std::string PAGE_SWAP = "Page Swap";
+    std::string DYNAMIC_LOGO = "Dynamic Logo";
 
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
@@ -549,6 +551,7 @@ namespace ult {
         PACKAGE_VERSIONS = "Package Versions";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
         PAGE_SWAP = "Page Swap";
+        DYNAMIC_LOGO = "Dynamic Logo";
         ON = "On";
         OFF = "Off";
         PACKAGE_INFO = "Package Info";
@@ -717,6 +720,7 @@ namespace ult {
             {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
             {"PAGE_SWAP", &PAGE_SWAP},
+            {"DYNAMIC_LOGO", &DYNAMIC_LOGO},
 
             {"PACKAGE_INFO", &PACKAGE_INFO},
             {"TITLE", &_TITLE},
