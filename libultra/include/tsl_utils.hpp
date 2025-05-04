@@ -533,7 +533,7 @@ namespace ult {
     
     // Define variables to store previous battery charge and time
     extern uint32_t prevBatteryCharge;
-    extern s64 timeOut;
+    //extern s64 timeOut;
     
     
     extern uint32_t batteryCharge;
