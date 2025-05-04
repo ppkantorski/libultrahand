@@ -1887,8 +1887,10 @@ namespace tsl {
         
                 size_t statusChange = size_t(ult::hideSOCTemp) + size_t(ult::hidePCBTemp) + size_t(ult::hideBattery);
                 static size_t lastStatusChange = 0;
+
+                static auto timeOut = currentTime.tv_sec - currentTime.tv_sec;
                 
-                if ((currentTime.tv_sec - ult::timeOut) >= 1 || statusChange != lastStatusChange) {
+                if ((currentTime.tv_sec - timeOut) >= 1 || statusChange != lastStatusChange) {
                     if (!ult::hideSOCTemp) {
                         ult::ReadSocTemperature(&ult::SOC_temperature);
                         snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
@@ -1911,7 +1913,7 @@ namespace tsl {
                         strcpy(chargeString, "");
                         ult::batteryCharge=0;
                     }
-                    ult::timeOut = int(currentTime.tv_sec);
+                    timeOut = currentTime.tv_sec;
                 }
                 
                 lastStatusChange = statusChange;
@@ -7341,10 +7343,7 @@ namespace tsl {
                 //}
             }
 
-        #if IS_LAUNCHER_DIRECTIVE
-        #else
-            #if NO_BACK_KEY_DIRECTIVE
-
+            #if IS_LAUNCHER_DIRECTIVE
             #else
             //if (currentFocus == nullptr) {
             if (ult::simulatedBack) {
@@ -7357,9 +7356,8 @@ namespace tsl {
                     this->goBack();
                 return;
             }
-            #endif
             //}
-        #endif
+            #endif
             
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
@@ -7719,9 +7717,15 @@ namespace tsl {
         static void parseOverlaySettings() {
             hlp::ini::IniData parsedConfig = hlp::ini::readOverlaySettings(ULTRAHAND_CONFIG_FILE);
             
-            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR ]); // CUSTOM MODIFICATION
+            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR]); // CUSTOM MODIFICATION
             if (decodedKeys)
                 tsl::cfg::launchCombo = decodedKeys;
+            else {
+                parsedConfig = hlp::ini::readOverlaySettings(TESLA_CONFIG_FILE);
+                decodedKeys = hlp::comboStringToKeys(parsedConfig["tesla"][ult::KEY_COMBO_STR]);
+                if (decodedKeys)
+                    tsl::cfg::launchCombo = decodedKeys;
+            }
             
             #if USING_WIDGET_DIRECTIVE
             ult::datetimeFormat = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
