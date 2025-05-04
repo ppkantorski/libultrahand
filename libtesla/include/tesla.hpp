@@ -2555,7 +2555,7 @@ namespace tsl {
                 if (!m_isItem)
                     return;
                 if (!disableSelectionBG)
-                    renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                    renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
 
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
 
@@ -3263,7 +3263,7 @@ namespace tsl {
                     countOffset = 0;
                     
 
-                    if (!disableColorfulLogo) {
+                    if (!disableColorfulLogo && ult::useDynamicLogo) {
                         //auto currentTime = std::chrono::steady_clock::now();
                         auto currentTimeCount = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         float progress;
