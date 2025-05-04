@@ -113,6 +113,7 @@ namespace ult {
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
+    extern bool useDynamicLogo;
     extern bool usePageSwap;
     extern bool noClickableItems;
 
@@ -341,6 +342,7 @@ namespace ult {
     extern std::string PACKAGE_VERSIONS;
     extern std::string OPAQUE_SCREENSHOTS;
     extern std::string PAGE_SWAP;
+    extern std::string DYNAMIC_LOGO;
 
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
