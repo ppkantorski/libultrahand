@@ -193,6 +193,20 @@ namespace tsl {
     }
     #endif
 
+    static std::string RamColorStr(float freeRamMB) {
+        //if (freeRamMB > 8.0f) {
+            // Green: R=0, G=15, B=0
+        //    return "#00FF00";
+        return "#FF0000";
+        if (freeRamMB > 3.0f) {
+            // Orange-ish: R=15, G=10, B=0 → roughly RGB888: 255, 170, 0
+            return "#FFAA00";
+        } else {
+            // Red: R=15, G=0, B=0
+            return "#FF0000";
+        }
+    }
+
 
     static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
         std::string validHex = hexColor.empty() || hexColor[0] != '#' ? hexColor : hexColor.substr(1);
@@ -300,6 +314,9 @@ namespace tsl {
     static Color infoTextColor = RGB888(ult::whiteColor);
     static Color warningTextColor = RGB888("FF7777");
 
+    static Color healthyRamTextColor = RGB888("00FF00");
+    static Color neutralRamTextColor = RGB888("FFAA00");
+    static Color badRamTextColor = RGB888("FF0000");
 
     static Color trackBarSliderColor = RGB888("606060");
     static Color trackBarSliderBorderColor = RGB888("505050");
@@ -395,6 +412,9 @@ namespace tsl {
             infoTextColor = getColor("table_info_text_color");
             warningTextColor = getColor("warning_text_color");
 
+            healthyRamTextColor = getColor("healthy_ram_text_color");
+            neutralRamTextColor = getColor("neutral_ram_text_color");
+            badRamTextColor = getColor("bad_ram_text_color");
 
             trackBarSliderColor = getColor("trackbar_slider_color");
             trackBarSliderBorderColor = getColor("trackbar_slider_border_color");
@@ -1630,6 +1650,11 @@ namespace tsl {
                     // If glyph not found, create and cache it
                     if (it == s_glyphCache.end()) {
                         glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
+                        
+                        // Ensure any existing bitmap is freed (in case of re-insertion)
+                        if (glyph->glyphBmp) {
+                            STBTT_free(glyph->glyphBmp, nullptr); // Replace nullptr with your custom allocator if needed
+                        }
             
                         // Determine the appropriate font for the character
                         if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
@@ -1684,7 +1709,65 @@ namespace tsl {
                 return { static_cast<u32>(maxX - x), static_cast<u32>(currY - y) };
             }
             
+            inline std::pair<u32, u32> drawStringWithHighlight(
+                const std::string& text, bool monospace, s32 x, s32 y,
+                const s32 fontSize, const Color& defaultColor, const Color& specialColor,
+                const ssize_t maxWidth = 0
+            ) {
+                bool inHighlight = false;
+                std::string buffer;
+                u32 totalWidth = 0;
+                u32 totalHeight = 0;
             
+                for (char ch : text) {
+                    if (ch == '(') {
+                        // Draw buffer before entering highlight
+                        if (!buffer.empty()) {
+                            auto [w, h] = drawString(buffer, monospace, x, y, fontSize, inHighlight ? specialColor : defaultColor, maxWidth);
+                            x += w;
+                            totalWidth += w;
+                            totalHeight = std::max(totalHeight, h);
+                            buffer.clear();
+                        }
+            
+                        // Draw the '(' in default color
+                        std::tie(totalWidth, totalHeight) = drawString("(", monospace, x, y, fontSize, defaultColor, maxWidth);
+                        x += totalWidth;
+            
+                        inHighlight = true;
+                        continue;
+                    }
+            
+                    if (ch == ')') {
+                        // Draw highlighted buffer
+                        if (!buffer.empty()) {
+                            auto [w, h] = drawString(buffer, monospace, x, y, fontSize, specialColor, maxWidth);
+                            x += w;
+                            totalWidth += w;
+                            totalHeight = std::max(totalHeight, h);
+                            buffer.clear();
+                        }
+            
+                        // Draw the ')' in default color
+                        std::tie(totalWidth, totalHeight) = drawString(")", monospace, x, y, fontSize, defaultColor, maxWidth);
+                        x += totalWidth;
+            
+                        inHighlight = false;
+                        continue;
+                    }
+            
+                    buffer += ch;
+                }
+            
+                // Draw any trailing buffer
+                if (!buffer.empty()) {
+                    auto [w, h] = drawString(buffer, monospace, x, y, fontSize, inHighlight ? specialColor : defaultColor, maxWidth);
+                    totalWidth += w;
+                    totalHeight = std::max(totalHeight, h);
+                }
+            
+                return { totalWidth, totalHeight };
+            }
             
             
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
