@@ -193,20 +193,6 @@ namespace tsl {
     }
     #endif
 
-    static std::string RamColorStr(float freeRamMB) {
-        //if (freeRamMB > 8.0f) {
-            // Green: R=0, G=15, B=0
-        //    return "#00FF00";
-        return "#FF0000";
-        if (freeRamMB > 3.0f) {
-            // Orange-ish: R=15, G=10, B=0 → roughly RGB888: 255, 170, 0
-            return "#FFAA00";
-        } else {
-            // Red: R=15, G=0, B=0
-            return "#FF0000";
-        }
-    }
-
 
     static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
         std::string validHex = hexColor.empty() || hexColor[0] != '#' ? hexColor : hexColor.substr(1);
@@ -1651,11 +1637,7 @@ namespace tsl {
                     if (it == s_glyphCache.end()) {
                         glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
                         
-                        // Ensure any existing bitmap is freed (in case of re-insertion)
-                        if (glyph->glyphBmp) {
-                            STBTT_free(glyph->glyphBmp, nullptr); // Replace nullptr with your custom allocator if needed
-                        }
-            
+                        
                         // Determine the appropriate font for the character
                         if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
                             glyph->currFont = &this->m_extFont;
