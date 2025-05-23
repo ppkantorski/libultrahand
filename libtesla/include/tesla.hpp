@@ -48,7 +48,6 @@
 #include <strings.h>
 #include <math.h>
 
-#include <filesystem> // unused, but preserved for projects that might need it
 #include <algorithm>
 #include <cstring>
 #include <cwctype>
@@ -103,6 +102,39 @@ u8 TeslaFPS = 60;
 u8 alphabackground = 0xD;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
+bool fontCache = true;
+
+
+struct GlyphInfo {
+    u8* pointer;
+    int width;
+    int height;
+};
+
+struct KeyPairHash {
+    std::size_t operator()(const std::pair<int, float>& key) const {
+        // Combine hashes of both components
+        union returnValue {
+            char c[8];
+            std::size_t s;
+        } value;
+        memcpy(&value.c[0], &key.first, 4);
+        memcpy(&value.c[4], &key.second, 4);
+        return value.s;
+    }
+};
+
+// Custom equality comparison for int-float pairs
+struct KeyPairEqual {
+    bool operator()(const std::pair<int, float>& lhs, const std::pair<int, float>& rhs) const {
+        const float epsilon = 0.00001f;
+        return lhs.first == rhs.first && 
+            std::abs(lhs.second - rhs.second) < epsilon;
+    }
+};
+
+std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
+
 #endif
 
 
@@ -2320,6 +2352,54 @@ namespace tsl {
                 framebufferEnd(&this->m_framebuffer);
                 
                 this->m_currentFramebuffer = nullptr;
+            }
+
+            /**
+             * @brief Draws a single font glyph
+             * 
+             * @param codepoint Unicode codepoint to draw
+             * @param x X pos
+             * @param y Y pos
+             * @param color Color
+             * @param font STB Font to use
+             * @param fontSize Font size
+             */
+
+            inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
+                int width = 10, height = 10;
+
+                u8* glyphBmp = nullptr;
+
+                if (fontCache) {
+                    auto pair = std::make_pair(codepoint, fontSize);
+                    auto found = cache.find(pair);
+                    if (found != cache.end()) {
+                        glyphBmp = found -> second.pointer;
+                        width = found -> second.width;
+                        height = found -> second.height;
+                    }
+                    else {
+                        glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+                        if (glyphBmp) cache[pair] = GlyphInfo{glyphBmp, width, height};
+                    }
+                }
+                else {
+                    glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+                }
+                
+                if (glyphBmp == nullptr)
+                    return;
+
+                for (s16 bmpY = 0; bmpY < height; bmpY++) {
+                    for (s16 bmpX = 0; bmpX < width; bmpX++) {
+                        Color tmpColor = color;
+                        tmpColor.a = (glyphBmp[width * bmpY + bmpX] >> 4) * (float(tmpColor.a) / 0xF);
+                        this->setPixelBlendSrc(x + bmpX, y + bmpY, tmpColor);
+                    }
+                }
+
+                if (!fontCache) std::free(glyphBmp);
+
             }
         };
 
