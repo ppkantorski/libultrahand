@@ -48,6 +48,7 @@
 #include <strings.h>
 #include <math.h>
 
+#include <filesystem> // unused, but preserved for projects that might need it
 #include <algorithm>
 #include <cstring>
 #include <cwctype>
