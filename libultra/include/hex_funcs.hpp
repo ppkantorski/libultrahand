@@ -70,7 +70,7 @@ namespace ult {
      * @param decimalStr The decimal string to convert.
      * @return The corresponding hexadecimal string.
      */
-    std::string decimalToHex(const std::string& decimalStr);
+    std::string decimalToHex(const std::string& decimalStr, int order = 2);
     
     
     /**
