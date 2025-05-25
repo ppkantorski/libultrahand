@@ -52,39 +52,38 @@ namespace ult {
     }
     
     /**
-     * @brief Converts a decimal string to a hexadecimal string.
-     *
-     * This function takes a decimal string as input and converts it into a hexadecimal string.
+     * @brief Converts a decimal string to a fixed-width hexadecimal string.
      *
      * @param decimalStr The decimal string to convert.
-     * @return The corresponding hexadecimal string.
+     * @param order The number of hex digits to output (must be even for byte alignment).
+     * @return Hex string of exactly 'order' digits, or empty string if value doesn't fit.
      */
-    std::string decimalToHex(const std::string& decimalStr) {
-        // Convert decimal string to integer
+    std::string decimalToHex(const std::string& decimalStr, int order) {
         int decimalValue = ult::stoi(decimalStr);
-        
-        // If decimalValue is 0, return "00"
+    
+        // If zero, return all '0's of length = order
         if (decimalValue == 0) {
-            return "00";
+            return std::string(order, '0');
         }
-        
-        // Convert decimal to hexadecimal
-        std::string hexadecimal;
-        hexadecimal.reserve(8); // Reserve space for up to 8 hex digits
-        
+    
+        // Convert to hex
+        std::string hex;
         while (decimalValue > 0) {
             int remainder = decimalValue % 16;
             char hexChar = (remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10);
-            hexadecimal.insert(hexadecimal.begin(), hexChar);  // Insert at the beginning
+            hex.insert(hex.begin(), hexChar);
             decimalValue /= 16;
         }
-        
-        // If the length is odd, add a leading '0'
-        if (hexadecimal.length() % 2 != 0) {
-            hexadecimal.insert(hexadecimal.begin(), '0');
+    
+        // If hex string too long, can't fit in order digits
+        if ((int)hex.length() > order) {
+            return "";  // too large to encode in given order
         }
+    
+        // Pad with leading zeros if needed
+        hex.insert(0, order - hex.length(), '0');
         
-        return hexadecimal;
+        return hex;
     }
     
     
@@ -149,7 +148,7 @@ namespace ult {
      * @return The reversed hexadecimal string.
      */
     std::string decimalToReversedHex(const std::string& decimalStr, int order) {
-        std::string hexadecimal = decimalToHex(decimalStr);
+        std::string hexadecimal = decimalToHex(decimalStr, order);
         
         // Reverse the hexadecimal string in groups of order
         //std::string reversedHex;
@@ -157,7 +156,7 @@ namespace ult {
         //    reversedHex += hexadecimal.substr(i, order);
         //}
         
-        return hexToReversedHex(hexadecimal);
+        return hexToReversedHex(hexadecimal, order);
     }
     
     
