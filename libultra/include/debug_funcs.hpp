@@ -32,7 +32,7 @@ namespace ult {
     #if USING_LOGGING_DIRECTIVE
 
     // Specify the log file path
-    const std::string defaultLogFilePath;
+    const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
     
     extern std::string logFilePath;  // Declare logFilePath as extern
     extern bool disableLogging;        // Declare disableLogging as extern
