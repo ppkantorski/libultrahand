@@ -70,7 +70,7 @@ namespace ult {
      * @param decimalStr The decimal string to convert.
      * @return The corresponding hexadecimal string.
      */
-    std::string decimalToHex(const std::string& decimalStr, int order = 2);
+    std::string decimalToHex(const std::string& decimalStr, int byteGroupSize = 2);
     
     
     /**
@@ -85,19 +85,19 @@ namespace ult {
     
     
     
-    std::string hexToReversedHex(const std::string& hexadecimal, int order = 2);
+    std::string hexToReversedHex(const std::string& hexadecimal, int byteGroupSize = 2);
     
     /**
      * @brief Converts a decimal string to a reversed hexadecimal string.
      *
      * This function takes a decimal string as input, converts it into a hexadecimal
-     * string, and reverses the resulting hexadecimal string in groups of order.
+     * string, and reverses the resulting hexadecimal string in groups of byteGroupSize.
      *
      * @param decimalStr The decimal string to convert.
-     * @param order The grouping order for reversing the hexadecimal string.
+     * @param byteGroupSize The grouping byteGroupSize for reversing the hexadecimal string.
      * @return The reversed hexadecimal string.
      */
-    std::string decimalToReversedHex(const std::string& decimalStr, int order = 2);
+    std::string decimalToReversedHex(const std::string& decimalStr, int byteGroupSize = 2);
     
     
     
