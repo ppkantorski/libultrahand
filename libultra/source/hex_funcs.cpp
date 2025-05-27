@@ -127,7 +127,7 @@ namespace ult {
     
     
     
-    std::string hexToReversedHex(const std::string& hexStr, int byteGroupSize = 2) {
+    std::string hexToReversedHex(const std::string& hexStr, int byteGroupSize) {
         if (hexStr.size() % byteGroupSize != 0) {
             // pad with leading zeros if misaligned
             std::string padded = std::string(byteGroupSize - (hexStr.size() % byteGroupSize), '0') + hexStr;
