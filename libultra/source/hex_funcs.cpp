@@ -55,15 +55,15 @@ namespace ult {
      * @brief Converts a decimal string to a fixed-width hexadecimal string.
      *
      * @param decimalStr The decimal string to convert.
-     * @param order The number of hex digits to output (must be even for byte alignment).
-     * @return Hex string of exactly 'order' digits, or empty string if value doesn't fit.
+     * @param byteGroupSize The number of hex digits to output (must be even for byte alignment).
+     * @return Hex string of exactly 'byteGroupSize' digits, or empty string if value doesn't fit.
      */
-    std::string decimalToHex(const std::string& decimalStr, int order) {
+    std::string decimalToHex(const std::string& decimalStr, int byteGroupSize) {
         int decimalValue = ult::stoi(decimalStr);
     
-        // If zero, return all '0's of length = order
+        // If zero, return all '0's of length = byteGroupSize
         if (decimalValue == 0) {
-            return std::string(order, '0');
+            return std::string(byteGroupSize, '0');
         }
     
         // Convert to hex
@@ -75,13 +75,13 @@ namespace ult {
             decimalValue /= 16;
         }
     
-        // If hex string too long, can't fit in order digits
-        if ((int)hex.length() > order) {
-            return "";  // too large to encode in given order
+        // If hex string too long, can't fit in byteGroupSize digits
+        if ((int)hex.length() > byteGroupSize) {
+            return "";  // too large to encode in given byteGroupSize
         }
     
         // Pad with leading zeros if needed
-        hex.insert(0, order - hex.length(), '0');
+        hex.insert(0, byteGroupSize - hex.length(), '0');
         
         return hex;
     }
@@ -127,13 +127,17 @@ namespace ult {
     
     
     
-    std::string hexToReversedHex(const std::string& hexadecimal, int order) {
-        // Reverse the hexadecimal string in groups of order
-        std::string reversedHex;
-        for (int i = hexadecimal.length() - order; i >= 0; i -= order) {
-            reversedHex += hexadecimal.substr(i, order);
+    std::string hexToReversedHex(const std::string& hexStr, int byteGroupSize = 2) {
+        if (hexStr.size() % byteGroupSize != 0) {
+            // pad with leading zeros if misaligned
+            std::string padded = std::string(byteGroupSize - (hexStr.size() % byteGroupSize), '0') + hexStr;
+            return hexToReversedHex(padded, byteGroupSize);
         }
-        
+    
+        std::string reversedHex;
+        for (int i = hexStr.size() - byteGroupSize; i >= 0; i -= byteGroupSize) {
+            reversedHex += hexStr.substr(i, byteGroupSize);
+        }
         return reversedHex;
     }
     
@@ -141,22 +145,22 @@ namespace ult {
      * @brief Converts a decimal string to a reversed hexadecimal string.
      *
      * This function takes a decimal string as input, converts it into a hexadecimal
-     * string, and reverses the resulting hexadecimal string in groups of order.
+     * string, and reverses the resulting hexadecimal string in groups of byteGroupSize.
      *
      * @param decimalStr The decimal string to convert.
-     * @param order The grouping order for reversing the hexadecimal string.
+     * @param byteGroupSize The grouping byteGroupSize for reversing the hexadecimal string.
      * @return The reversed hexadecimal string.
      */
-    std::string decimalToReversedHex(const std::string& decimalStr, int order) {
-        std::string hexadecimal = decimalToHex(decimalStr, order);
+    std::string decimalToReversedHex(const std::string& decimalStr, int byteGroupSize) {
+        std::string hexadecimal = decimalToHex(decimalStr, byteGroupSize);
         
-        // Reverse the hexadecimal string in groups of order
+        // Reverse the hexadecimal string in groups of byteGroupSize
         //std::string reversedHex;
-        //for (int i = hexadecimal.length() - order; i >= 0; i -= order) {
-        //    reversedHex += hexadecimal.substr(i, order);
+        //for (int i = hexadecimal.length() - byteGroupSize; i >= 0; i -= byteGroupSize) {
+        //    reversedHex += hexadecimal.substr(i, byteGroupSize);
         //}
         
-        return hexToReversedHex(hexadecimal, order);
+        return hexToReversedHex(hexadecimal, byteGroupSize);
     }
     
     
