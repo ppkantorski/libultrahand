@@ -61,12 +61,10 @@ namespace ult {
     std::string decimalToHex(const std::string& decimalStr, int byteGroupSize) {
         int decimalValue = ult::stoi(decimalStr);
     
-        // If zero, return all '0's of length = byteGroupSize
         if (decimalValue == 0) {
             return std::string(byteGroupSize, '0');
         }
     
-        // Convert to hex
         std::string hex;
         int tempValue = decimalValue;
         while (tempValue > 0) {
@@ -76,17 +74,18 @@ namespace ult {
             tempValue /= 16;
         }
     
-        // If too long, adapt byteGroupSize to fit
-        if ((int)hex.length() > byteGroupSize) {
-            byteGroupSize = hex.length();  // auto-grow the width
+        // Pad with leading zeros if too short
+        if ((int)hex.size() < byteGroupSize) {
+            hex.insert(hex.begin(), byteGroupSize - hex.size(), '0');
         }
     
-        // Pad with leading zeros if needed
-        hex.insert(0, byteGroupSize - hex.length(), '0');
+        // If too long to fit, return empty
+        if ((int)hex.size() > byteGroupSize) {
+            return "";
+        }
     
         return hex;
     }
-    
     
     /**
      * @brief Converts a hexadecimal string to a decimal string.
