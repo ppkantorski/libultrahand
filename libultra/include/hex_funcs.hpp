@@ -85,7 +85,7 @@ namespace ult {
     
     
     
-    std::string hexToReversedHex(const std::string& hexadecimal, int byteGroupSize = 2);
+    std::string hexToReversedHex(const std::string& hexadecimal, int order = 2);
     
     /**
      * @brief Converts a decimal string to a reversed hexadecimal string.
