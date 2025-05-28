@@ -60,11 +60,17 @@ namespace ult {
      */
     std::string decimalToHex(const std::string& decimalStr, int byteGroupSize) {
         int decimalValue = ult::stoi(decimalStr);
+        if (decimalValue < 0 || byteGroupSize <= 0 || (byteGroupSize % 2) != 0) {
+            // Invalid input: negative number, or byteGroupSize <= 0, or odd byteGroupSize
+            return "";
+        }
     
+        // Special case: zero
         if (decimalValue == 0) {
             return std::string(byteGroupSize, '0');
         }
     
+        // Convert decimalValue to hex (uppercase, minimal length)
         std::string hex;
         int tempValue = decimalValue;
         while (tempValue > 0) {
@@ -74,18 +80,35 @@ namespace ult {
             tempValue /= 16;
         }
     
-        // Pad with leading zeros if too short
-        if ((int)hex.size() < byteGroupSize) {
-            hex.insert(hex.begin(), byteGroupSize - hex.size(), '0');
+        // Ensure hex length is even by adding leading zero if needed
+        if (hex.length() % 2 != 0) {
+            hex.insert(hex.begin(), '0');
         }
     
-        // If too long to fit, return empty
-        if ((int)hex.size() > byteGroupSize) {
-            return "";
+        // Minimum size needed to fit hex string
+        size_t hexLen = hex.length();
+    
+        // Adjust minimum byteGroupSize to be at least hexLen
+        size_t minByteGroupSize = std::max(static_cast<size_t>(byteGroupSize), hexLen);
+    
+        // If byteGroupSize was too small, adjust to hex length (must be even)
+        if (minByteGroupSize % 2 != 0) {
+            minByteGroupSize++;
+        }
+    
+        // If minByteGroupSize is less than hex length, number doesn't fit
+        if (minByteGroupSize < hexLen) {
+            return ""; // can't fit
+        }
+    
+        // Pad with leading zeros to match minByteGroupSize
+        if (hexLen < minByteGroupSize) {
+            hex.insert(hex.begin(), minByteGroupSize - hexLen, '0');
         }
     
         return hex;
     }
+    
     
     /**
      * @brief Converts a hexadecimal string to a decimal string.
