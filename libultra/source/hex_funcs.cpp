@@ -68,21 +68,22 @@ namespace ult {
     
         // Convert to hex
         std::string hex;
-        while (decimalValue > 0) {
-            int remainder = decimalValue % 16;
+        int tempValue = decimalValue;
+        while (tempValue > 0) {
+            int remainder = tempValue % 16;
             char hexChar = (remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10);
             hex.insert(hex.begin(), hexChar);
-            decimalValue /= 16;
+            tempValue /= 16;
         }
     
-        // If hex string too long, can't fit in byteGroupSize digits
+        // If too long, adapt byteGroupSize to fit
         if ((int)hex.length() > byteGroupSize) {
-            return "";  // too large to encode in given byteGroupSize
+            byteGroupSize = hex.length();  // auto-grow the width
         }
     
         // Pad with leading zeros if needed
         hex.insert(0, byteGroupSize - hex.length(), '0');
-        
+    
         return hex;
     }
     
