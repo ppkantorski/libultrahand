@@ -127,17 +127,13 @@ namespace ult {
     
     
     
-    std::string hexToReversedHex(const std::string& hexStr, int byteGroupSize) {
-        if (hexStr.size() % byteGroupSize != 0) {
-            // pad with leading zeros if misaligned
-            std::string padded = std::string(byteGroupSize - (hexStr.size() % byteGroupSize), '0') + hexStr;
-            return hexToReversedHex(padded, byteGroupSize);
-        }
-    
+    std::string hexToReversedHex(const std::string& hexadecimal, int order) {
+        // Reverse the hexadecimal string in groups of order
         std::string reversedHex;
-        for (int i = hexStr.size() - byteGroupSize; i >= 0; i -= byteGroupSize) {
-            reversedHex += hexStr.substr(i, byteGroupSize);
+        for (int i = hexadecimal.length() - order; i >= 0; i -= order) {
+            reversedHex += hexadecimal.substr(i, order);
         }
+        
         return reversedHex;
     }
     
@@ -160,7 +156,7 @@ namespace ult {
         //    reversedHex += hexadecimal.substr(i, byteGroupSize);
         //}
         
-        return hexToReversedHex(hexadecimal, byteGroupSize);
+        return hexToReversedHex(hexadecimal);
     }
     
     
