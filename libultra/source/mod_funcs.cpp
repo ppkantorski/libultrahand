@@ -604,6 +604,36 @@ namespace ult {
     
         fwrite(IPS32_FOOT_MAGIC, sizeof(char), std::strlen(IPS32_FOOT_MAGIC), ipsFile);
         fclose(ipsFile);
+
+
+        FILE* _pchtxtFile = fopen(pchtxtPath.c_str(), "r");
+        if (!_pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
+        }
+    
+        // Read the entire file into a string
+        std::string pchtxt;
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), _pchtxtFile)) {
+            pchtxt += buffer;
+        }
+        fclose(_pchtxtFile);
+
+
+        std::string tid = findTitleID(pchtxt);
+        if (!tid.empty()) {
+            std::string tidFilePath = outputFolder + tid;
+            FILE* tidFile = fopen(tidFilePath.c_str(), "w");
+            if (tidFile) {
+                fclose(tidFile);  // Creates an empty file
+            }
+        } else {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Warning: Could not find Title ID in " + pchtxtPath);
+            #endif
+        }
     #else
         // Use fstream for writing
         std::ofstream ipsFile(ipsFilePath, std::ios::binary);
@@ -629,6 +659,27 @@ namespace ult {
     
         ipsFile.write(IPS32_FOOT_MAGIC, std::strlen(IPS32_FOOT_MAGIC));
         ipsFile.close();
+
+
+        std::ifstream _pchtxtFile(pchtxtPath);
+        if (!_pchtxtFile) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error: Unable to open file " + pchtxtPath);
+            #endif
+        }
+    
+        std::string pchtxt((std::istreambuf_iterator<char>(_pchtxtFile)), std::istreambuf_iterator<char>());
+
+        std::string tid = findTitleID(pchtxt);
+        if (!tid.empty()) {
+            std::string tidFilePath = outputFolder + tid;
+            std::ofstream tidFile(tidFilePath);
+            tidFile.close();  // Creates an empty file
+        } else {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Warning: Could not find Title ID in " + pchtxtPath);
+            #endif
+        }
     #endif
     
         return true;
