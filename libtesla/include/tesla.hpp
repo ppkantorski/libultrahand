@@ -7548,16 +7548,16 @@ namespace tsl {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, false);
                             //shouldShake = currentGui->getFocusedElement() != currentFocus;
                         }
-                    } else {
-                        // Handle the rest of the input
-                        if (ult::simulatedBack) {
-                            keysDown |= KEY_B;
-                            ult::simulatedBack = false;
-                        }
-
-                        if (keysDown & KEY_B)
-                            this->goBack();
-                        singlePressHandled = false;
+                    //} else {
+                    //    // Handle the rest of the input
+                    //    if (ult::simulatedBack) {
+                    //        keysDown |= KEY_B;
+                    //        ult::simulatedBack = false;
+                    //    }
+                    //    
+                    //    if (keysDown & KEY_B)
+                    //        this->goBack();
+                    //    singlePressHandled = false;
                     }
                 }
             }
