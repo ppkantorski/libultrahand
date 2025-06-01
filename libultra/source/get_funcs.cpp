@@ -101,8 +101,14 @@ namespace ult {
      * @param fileName The name of the file.
      * @return The destination path as a string.
      */
-    std::string getDestinationPath(const std::string& destinationDir, const std::string& fileName) {
-        return destinationDir + "/" + fileName;
+    std::string getDestinationPath(const std::string& destinationDir,
+                                   const std::string& fileName)
+    {
+        // e.g. "foo/bar" + "/" + "baz.txt"  → "foo/bar/baz.txt", but if destinationDir ended in '/',
+        // you’d get "foo/bar//baz.txt" → collapse again:
+        std::string combined = destinationDir + "/" + fileName;
+        preprocessPath(combined);
+        return combined;
     }
     
     /**
@@ -363,7 +369,7 @@ namespace ult {
         size_t prefixEnd = pathPattern.find(":/") + 2;
         std::string basePath = pathPattern.substr(0, prefixEnd);
         std::vector<std::string> parts;
-    
+        
         size_t start = prefixEnd, pos;
         while ((pos = pathPattern.find('/', start)) != std::string::npos) {
             parts.push_back(pathPattern.substr(start, pos - start));
