@@ -317,39 +317,39 @@ namespace ult {
     }
 
     
-    void compareWildcardFilesLists(const std::string& wildcardPatternFilePath, const std::string& txtFilePath, const std::string& outputTxtFilePath) {
-        //logMessage("Comparing wildcard files with: " + txtFilePath);
-        
-        // Get the list of files matching the wildcard pattern
+    void compareWildcardFilesLists(
+        const std::string& wildcardPatternFilePath,
+        const std::string& txtFilePath,
+        const std::string& outputTxtFilePath
+    ) {
+        // 1) Find *all* files matching the wildcard (e.g. both ".../Graphics Pack/location_on.txt"
+        //    and ".../Graphics Pack 2/location_on.txt")
         std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
     
-        // Convert the wildcard files to a set for efficient comparison
-        std::unordered_set<std::string> wildcardFileSet(wildcardFiles.begin(), wildcardFiles.end());
+        // 2) Read every matching file's *contents* into one big set of strings,
+        //    but first skip any entry that is exactly the same as txtFilePath.
+        std::unordered_set<std::string> allWildcardLines;
+        for (const auto& singlePath : wildcardFiles) {
+            // Skip the case where the wildcard match is literally the same path we’re comparing to:
+            if (singlePath == txtFilePath) {
+                continue;
+            }
     
-        // Remove txtFilePath from the wildcardFileSet if it exists
-        wildcardFileSet.erase(txtFilePath);
-        
-        // Log the wildcard file set
-        //for (const auto& file : wildcardFileSet) {
-        //    logMessage("Wildcard File: " + file);
-        //}
-        
-        // Set to store duplicates
-        std::unordered_set<std::string> duplicateFiles;
+            // readSetFromFile loads every line of 'singlePath' into a set
+            std::unordered_set<std::string> thisFileLines = readSetFromFile(singlePath);
+            allWildcardLines.insert(thisFileLines.begin(), thisFileLines.end());
+        }
     
-        // Stream through the text file and check for duplicates
+        // 3) Read the second file (txtFilePath) line by line, checking if each line also
+        //    exists in allWildcardLines.
+        std::unordered_set<std::string> duplicateLines;
         processFileLines(txtFilePath, [&](const std::string& entry) {
-            if (wildcardFileSet.find(entry) != wildcardFileSet.end()) {
-                duplicateFiles.insert(entry);
+            if (allWildcardLines.find(entry) != allWildcardLines.end()) {
+                duplicateLines.insert(entry);
             }
         });
     
-        // Log duplicates
-        //for (const auto& duplicate : duplicateFiles) {
-        //    logMessage("Duplicate File: " + duplicate);
-        //}
-    
-        // Write the duplicates to the output file
-        writeSetToFile(duplicateFiles, outputTxtFilePath);
+        // 4) Write any “duplicate” lines to outputTxtFilePath
+        writeSetToFile(duplicateLines, outputTxtFilePath);
     }
 }
