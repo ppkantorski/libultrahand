@@ -1116,4 +1116,49 @@ namespace ult {
         //fileList.clear();
     }
     
+    /**
+     * @brief For each match of the wildcard pattern, creates an empty text file
+     *        named basename.txt inside the output directory.
+     *        Uses FILE* if NO_FSTREAM_DIRECTIVE is defined, otherwise uses std::ofstream.
+     *
+     * @param wildcardPattern A path with a wildcard, such as /some/path/[*].
+     *                        Each match results in a file named after the basename.
+     * @param outputDir       Directory where the output files will be written.
+     *                        Created if it doesn't already exist.
+     */
+    void createFlagFiles(const std::string& wildcardPattern,
+                         const std::string& outputDir)
+    {
+        // 1) Gather all matches from the wildcard pattern
+        std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
+        if (allMatches.empty()) {
+            return; // No matches, nothing to do
+        }
+    
+        // 2) Ensure the output directory exists
+        createDirectory(outputDir);
+    
+        // 3) Generate empty .txt files for each matched path
+        std::string outputPrefix = outputDir;
+        if (!outputPrefix.empty() && outputPrefix.back() != '/')
+            outputPrefix.push_back('/');
+    
+        for (const auto& fullPath : allMatches) {
+            std::string baseName = ult::getNameFromPath(fullPath);
+            if (baseName.empty()) continue;
+    
+            std::string outFile = outputPrefix + baseName + ".txt";
+    
+        #if defined(NO_FSTREAM_DIRECTIVE)
+            FILE* fp = std::fopen(outFile.c_str(), "wb");
+            if (fp) {
+                std::fclose(fp);
+            }
+        #else
+            std::ofstream ofs(outFile, std::ios::binary | std::ios::trunc);
+            ofs.close();
+        #endif
+        }
+    }
+    
 }
