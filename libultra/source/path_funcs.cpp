@@ -1142,12 +1142,13 @@ namespace ult {
         std::string outputPrefix = outputDir;
         if (!outputPrefix.empty() && outputPrefix.back() != '/')
             outputPrefix.push_back('/');
-    
+        
+        std::string baseName, outFile;
         for (const auto& fullPath : allMatches) {
-            std::string baseName = ult::getNameFromPath(fullPath);
+            baseName = ult::getNameFromPath(fullPath);
             if (baseName.empty()) continue;
     
-            std::string outFile = outputPrefix + baseName + ".txt";
+            outFile = outputPrefix + baseName;
     
         #if defined(NO_FSTREAM_DIRECTIVE)
             FILE* fp = std::fopen(outFile.c_str(), "wb");
