@@ -244,6 +244,18 @@ namespace ult {
      */
     void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode);
     
+
+    /**
+     * @brief For each match of the wildcard pattern, creates an empty text file
+     *        named basename.txt inside the output directory.
+     *        Uses FILE* if NO_FSTREAM_DIRECTIVE is defined, otherwise uses std::ofstream.
+     *
+     * @param wildcardPattern A path with a wildcard, such as /some/path/[*].
+     *                        Each match results in a file named after the basename.
+     * @param outputDir       Directory where the output files will be written.
+     *                        Created if it doesn't already exist.
+     */
+    void createFlagFiles(const std::string& wildcardPattern, const std::string& outputDir);
 }
 
 #endif
