@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include <dirent.h>
+#include "global_vars.hpp"
 #include "debug_funcs.hpp"
 
 namespace ult {
@@ -190,6 +191,9 @@ namespace ult {
     // Helper function to check if a string is a valid integer
     bool isValidNumber(const std::string& str);
     
+    // For properly handling placeholder replacements
+    std::string returnOrNull(const std::string& value);
+
     
     // Function to slice a string from start to end index
     std::string sliceString(const std::string& str, size_t start, size_t end);
