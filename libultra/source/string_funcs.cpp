@@ -300,6 +300,10 @@ namespace ult {
         return true;
     }
     
+    std::string returnOrNull(const std::string& value) {
+        return value.empty() ? NULL_STR : value;
+    }
+
     
     // Function to slice a string from start to end index
     std::string sliceString(const std::string& str, size_t start, size_t end) {
