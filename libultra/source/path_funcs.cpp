@@ -442,8 +442,13 @@ namespace ult {
                 name = entry->d_name;
                 if (name == "." || name == "..") continue;
     
-                fullPathSrc = currentSource + '/' + name;
-                fullPathDst = currentDestination + '/' + name;
+                fullPathSrc = (!currentSource.empty() && currentSource.back() == '/' 
+                               ? currentSource.substr(0, currentSource.size() - 1) 
+                               : currentSource) + "/" + name;
+                
+                fullPathDst = (!currentDestination.empty() && currentDestination.back() == '/' 
+                               ? currentDestination.substr(0, currentDestination.size() - 1) 
+                               : currentDestination) + "/" + name;
     
                 if (entry->d_type == DT_DIR) {
                     if (mkdir(fullPathDst.c_str(), 0777) != 0 && errno != EEXIST) {
@@ -679,7 +684,7 @@ namespace ult {
      */
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
         const std::string& logSource, const std::string& logDestination) {
-    
+        
         std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
         
         //std::string fileListAsString;
