@@ -964,7 +964,7 @@ namespace ult {
         {"table_bg_alpha", "10"},
         {"table_section_text_color", whiteColor},
         //{"table_info_text_color", "00FFDD"},
-        {"table_info_text_color", "73bbff"},
+        {"table_info_text_color", "85c4ff"},
         {"warning_text_color", "FF7777"},
         {"healthy_ram_text_color", "00FF00"},
         {"neutral_ram_text_color", "FFAA00"},
