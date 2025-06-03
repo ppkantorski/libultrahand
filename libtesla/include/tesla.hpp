@@ -146,7 +146,7 @@ namespace tsl {
         
     };
     
-    #if USING_WIDGET_DIRECTIVE
+    //#if USING_WIDGET_DIRECTIVE
     static Color GradientColor(float temperature) {
         // Ensure temperature is within the range [0, 100]
         temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
@@ -192,7 +192,7 @@ namespace tsl {
         
         return Color(r, g, b, a);
     }
-    #endif
+    //#endif
 
 
     static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
@@ -297,8 +297,8 @@ namespace tsl {
 
     static size_t tableBGAlpha = 10;
     static Color tableBGColor = RGB888("303030", tableBGAlpha);
-    static Color sectionTextColor = RGB888("e9ff40");
-    static Color infoTextColor = RGB888(ult::whiteColor);
+    static Color sectionTextColor = RGB888(ult::whiteColor);
+    static Color infoTextColor = RGB888("00FFDD");
     static Color warningTextColor = RGB888("FF7777");
 
     static Color healthyRamTextColor = RGB888("00FF00");
