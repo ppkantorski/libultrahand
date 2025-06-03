@@ -299,7 +299,7 @@ namespace tsl {
     static Color tableBGColor = RGB888("303030", tableBGAlpha);
     static Color sectionTextColor = RGB888(ult::whiteColor);
     //static Color infoTextColor = RGB888("00FFDD");
-    static Color infoTextColor =RGB888("73bbff");
+    static Color infoTextColor =RGB888("85c4ff");
     static Color warningTextColor = RGB888("FF7777");
 
     static Color healthyRamTextColor = RGB888("00FF00");
