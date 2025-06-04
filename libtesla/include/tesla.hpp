@@ -4591,13 +4591,21 @@ namespace tsl {
         public:
             u32 width, height;
             std::chrono::steady_clock::time_point m_touchStartTime;
-        
-            ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
+        #if IS_LAUNCHER_DIRECTIVE
+            ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey=false)
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey) {
                 m_isItem = true;
                 applyInitialTranslations();
                 applyInitialTranslations(true);
             }
+        #else
+            ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
+                m_isItem = true;
+                applyInitialTranslations();
+                applyInitialTranslations(true);
+            }
+        #endif
         
             virtual ~ListItem() = default;
         
@@ -4660,12 +4668,20 @@ namespace tsl {
                 if (event == TouchEvent::Release && m_touched) {
                     m_touched = false;
         
+                #if IS_LAUNCHER_DIRECTIVE
                     if (Element::getInputMode() == InputMode::Touch) {
-                        s64 keyToUse = determineKeyOnTouchRelease();
+                        s64 keyToUse = determineKeyOnTouchRelease(m_useScriptKey);
                         bool handled = onClick(keyToUse);
                         m_clickAnimationProgress = 0;
                         return handled;
                     }
+                #else
+                    if (Element::getInputMode() == InputMode::Touch) {
+                        bool handled = onClick(KEY_A);
+                        m_clickAnimationProgress = 0;
+                        return handled;
+                    }
+                #endif
                 }
                 return false;
             }
@@ -4709,6 +4725,10 @@ namespace tsl {
             std::string m_scrollText;
             std::string m_ellipsisText;
             u32 m_listItemHeight;
+
+        #if IS_LAUNCHER_DIRECTIVE
+            bool m_useScriptKey = false;
+        #endif
         
             bool m_scroll = false;
             bool m_truncated = false;
@@ -4814,15 +4834,13 @@ namespace tsl {
                 renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
             }
         
-            s64 determineKeyOnTouchRelease() const {
         #if IS_LAUNCHER_DIRECTIVE
+            s64 determineKeyOnTouchRelease(bool useScriptKey) const {
                 auto touchDuration = std::chrono::steady_clock::now() - m_touchStartTime;
                 auto touchDurationInSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(touchDuration).count();
-                return (touchDurationInSeconds >= 1.0f) ? STAR_KEY : ((touchDurationInSeconds >= 0.3f) ? SETTINGS_KEY : KEY_A);
-        #else
-                return KEY_A;
-        #endif
+                return (touchDurationInSeconds >= 1.0f) ? (useScriptKey ? SCRIPT_KEY : STAR_KEY) : ((touchDurationInSeconds >= 0.3f) ? (useScriptKey ? SCRIPT_KEY : SETTINGS_KEY) : KEY_A);
             }
+        #endif
         
             void resetTextProperties() {
                 m_scrollText.clear();
@@ -5102,6 +5120,9 @@ namespace tsl {
             std::string m_ellipsisText = "";
             u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
 
+        #if IS_LAUNCHER_DIRECTIVE
+            bool m_useScriptKey = false;
+        #endif
             Color m_valueColor;
             Color m_faintColor;
 
