@@ -6855,8 +6855,6 @@ namespace tsl {
          */
         Overlay() {}
     public:
-        bool m_shouldHide = false;
-        bool m_shouldClose = false;
 
         /**
          * @brief Deconstructor
@@ -7011,7 +7009,8 @@ namespace tsl {
         u8 m_animationCounter = 0;
         const int MAX_ANIMATION_COUNTER = 5; // Define the maximum animation counter value
 
-        
+        bool m_shouldHide = false;
+        bool m_shouldClose = false;
         
         bool m_disableNextAnimation = false;
         
