@@ -98,6 +98,8 @@ namespace ult {
     extern std::unordered_map<std::string, std::string> translationCache;
     extern std::map<u64, std::string> overlayKeyCombos;
     extern bool launchingOverlay;
+    extern bool currentForeground;
+
     //void loadOverlayKeyCombos();
     //std::string getOverlayForKeyCombo(u64 keys);
 
