@@ -96,6 +96,11 @@ namespace ult {
     extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
 
     extern std::unordered_map<std::string, std::string> translationCache;
+    extern std::map<u64, std::string> overlayKeyCombos;
+    extern bool launchingOverlay;
+    //void loadOverlayKeyCombos();
+    //std::string getOverlayForKeyCombo(u64 keys);
+
     bool readFileContent(const std::string& filePath, std::string& content);
     void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result);
     bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result);
