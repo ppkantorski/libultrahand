@@ -784,6 +784,28 @@ namespace tsl {
         
             return result;
         }
+        // Function to load key combo mappings from overlays.ini
+        static void loadOverlayKeyCombos() {
+            ult::overlayKeyCombos.clear();
+            auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+            
+            for (const auto& [overlayFileName, settings] : overlaysIniData) {
+                auto keyComboIt = settings.find("key_combo");
+                if (keyComboIt != settings.end() && !keyComboIt->second.empty()) {
+                    u64 keys = hlp::comboStringToKeys(keyComboIt->second);
+                    if (keys != 0) {
+                        ult::overlayKeyCombos[keys] = ult::OVERLAY_PATH + overlayFileName;
+                    }
+                }
+            }
+        }
+        
+        // Function to check if a key combination matches any overlay key combo
+        static std::string getOverlayForKeyCombo(u64 keys) {
+            auto it = ult::overlayKeyCombos.find(keys);
+            return (it != ult::overlayKeyCombos.end()) ? it->second : "";
+        }
+
         
     }
     
@@ -927,6 +949,7 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixelBlendDst(const s32 x, const s32 y, const Color& color) {
+
                 //if (x < 0 || y < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight)
                 //    return;
                 
@@ -1539,7 +1562,7 @@ namespace tsl {
              *
              */
             inline void clearScreen() {
-                this->fillScreen({ 0x00, 0x00, 0x00, 0x00 });
+                this->fillScreen(Color(0x0, 0x0, 0x0, 0x0)); // Fully transparent
             }
             
             struct Glyph {
@@ -2186,6 +2209,7 @@ namespace tsl {
                 //s32 layerZ = 0;
                 
                 tsl::hlp::doWithSmSession([this, horizontalUnderscanPixels]{
+
                     ASSERT_FATAL(viInitialize(ViServiceType_Manager));
                     ASSERT_FATAL(viOpenDefaultDisplay(&this->m_display));
                     ASSERT_FATAL(viGetDisplayVsyncEvent(&this->m_display, &this->m_vsyncEvent));
@@ -4792,7 +4816,6 @@ namespace tsl {
                     }
                 }
             }
-
         
             void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 s32 xPosition = getX() + m_maxWidth + 44 +3;
@@ -6888,7 +6911,6 @@ namespace tsl {
          *
          */
         void show() {
-            
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -7085,8 +7107,13 @@ namespace tsl {
          *
          */
         void loop() {
+
             auto& renderer = gfx::Renderer::get();
             
+        #if IS_LAUNCHER_DIRECTIVE
+            if (ult::launchingOverlay)
+                return;
+        #endif
             renderer.startFrame();
             
             this->animationLoop();
@@ -7878,19 +7905,20 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
+
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
             
             // To prevent focus glitchout, close the overlay immediately when the home button gets pressed
             Event homeButtonPressEvent = {};
             hidsysAcquireHomeButtonEventHandle(&homeButtonPressEvent, false);
             eventClear(&homeButtonPressEvent);
-            hlp::ScopeGuard homeButtonEventGuard([&] { eventClose(&homeButtonPressEvent); });
+            tsl::hlp::ScopeGuard homeButtonEventGuard([&] { eventClose(&homeButtonPressEvent); });
             
             // To prevent focus glitchout, close the overlay immediately when the power button gets pressed
             Event powerButtonPressEvent = {};
             hidsysAcquireSleepButtonEventHandle(&powerButtonPressEvent, false);
             eventClear(&powerButtonPressEvent);
-            hlp::ScopeGuard powerButtonEventGuard([&] { eventClose(&powerButtonPressEvent); });
+            tsl::hlp::ScopeGuard powerButtonEventGuard([&] { eventClose(&powerButtonPressEvent); });
             
 
             // For handling screenshots color alpha
@@ -7899,10 +7927,13 @@ namespace tsl {
             eventClear(&captureButtonPressEvent);
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
             eventClear(&captureButtonPressEvent);
-            hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
+            tsl::hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
 
             // Parse Tesla settings
             impl::parseOverlaySettings();
+            
+            // Load overlay key combos
+            tsl::hlp::loadOverlayKeyCombos();
             
             // Configure input to take all controllers and up to 8
             padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
@@ -7942,6 +7973,10 @@ namespace tsl {
 
             s32 idx;
             Result rc;
+
+        #if IS_LAUNCHER_DIRECTIVE
+            ult::launchingOverlay = false;
+        #endif
 
             while (shData->running) {
                 // Scan for input changes
@@ -8005,6 +8040,7 @@ namespace tsl {
                     }
                     
 
+                    // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                         #if IS_LAUNCHER_DIRECTIVE
                         if (ult::updateMenuCombos) {
@@ -8031,6 +8067,49 @@ namespace tsl {
                         ult::updateMenuCombos = false;
                     }
                     #endif
+                    // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)
+                    else if (!shData->overlayOpen && shData->keysDown != 0) {
+                        // Make sure this isn't a subset of the main launch combos
+                        bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
+                        #if IS_LAUNCHER_DIRECTIVE
+                        //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
+
+                        if (!isMainComboMatch) {
+                            std::string overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
+                            if (!overlayPath.empty() && (shData->keysHeld)) {
+                                // Validate overlay file exists
+                                if (ult::isFileOrDirectory(overlayPath)) {
+                                    ult::launchingOverlay = true;
+                                    //svcSleepThread(500'000'000); // 50ms delay
+                                    // Get overlay settings
+                                    std::string overlayFileName = ult::getNameFromPath(overlayPath);
+                                    std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        overlayFileName, ult::USE_LAUNCH_ARGS_STR);
+                                    std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        overlayFileName, ult::LAUNCH_ARGS_STR);
+                                    ult::removeQuotes(overlayLaunchArgs);
+                                    
+                                    // Set the next overlay directly
+                                    if (useOverlayLaunchArgs == ult::TRUE_STR)
+                                        tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
+                                    else
+                                        tsl::setNextOverlay(overlayPath);
+                                    
+                                    // Properly close the overlay to trigger the launch
+                                    tsl::Overlay::get()->close();
+                                    eventFire(&shData->comboEvent);
+                                    break;
+                                    // DON'T set shData->running = false here!
+                                }
+                            }
+                        }
+
+                        #else
+                        //bool isMainCombo2Match = false;
+                        #endif
+                        
+
+                    }
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
