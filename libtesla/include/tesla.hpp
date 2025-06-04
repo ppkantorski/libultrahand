@@ -106,7 +106,6 @@ bool deactivateOriginalFooter = false;
 #endif
 
 
-
 namespace tsl {
 
     // Constants
@@ -6856,6 +6855,9 @@ namespace tsl {
          */
         Overlay() {}
     public:
+        bool m_shouldHide = false;
+        bool m_shouldClose = false;
+
         /**
          * @brief Deconstructor
          * @note Called once when the Overlay exits
@@ -7010,9 +7012,6 @@ namespace tsl {
         const int MAX_ANIMATION_COUNTER = 5; // Define the maximum animation counter value
 
         
-
-        bool m_shouldHide = false;
-        bool m_shouldClose = false;
         
         bool m_disableNextAnimation = false;
         
@@ -7427,6 +7426,7 @@ namespace tsl {
          * @return Whether or not the input has been consumed
          */
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
+
             // Static variables to maintain state between function calls
             static HidTouchState initialTouchPos = { 0 };
             static HidTouchState oldTouchPos = { 0 };
@@ -7471,6 +7471,7 @@ namespace tsl {
 
             #if IS_LAUNCHER_DIRECTIVE
             #else
+
             //if (currentFocus == nullptr) {
             if (ult::simulatedBack) {
                 keysDown |= KEY_B;
@@ -7977,8 +7978,41 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
             ult::launchingOverlay = false;
         #endif
-
+            std::string currentTitleID;
+            u64 now, elapsedNs, resetElapsedNs;
             while (shData->running) {
+                static u64 lastPollTime = 0;
+                static std::string lastTitleID = ult::getTitleIdAsString();
+                static bool resetCheck = false;
+                static u64 resetStartTime = 0;
+            
+                now = armGetSystemTick();
+                elapsedNs = armTicksToNs(now - lastPollTime);
+            
+                // Poll Title ID every 3 seconds
+                if (elapsedNs >= 2'000'000'000ULL) {
+                    lastPollTime = now;
+            
+                    currentTitleID = ult::getTitleIdAsString();
+                    if (currentTitleID != lastTitleID) {
+                        lastTitleID = currentTitleID;
+                        resetCheck = true;
+                        resetStartTime = now;
+                    }
+                }
+            
+                // If a reset is scheduled, trigger after 3s delay
+                if (resetCheck) {
+                    resetElapsedNs = armTicksToNs(now - resetStartTime);
+                    if (resetElapsedNs >= 3'000'000'000ULL) {
+                        if (shData->overlayOpen) {
+                            hlp::requestForeground(true);
+                        }
+                        resetCheck = false;
+                    }
+                }
+
+
                 // Scan for input changes
                 padUpdate(&pad);
                 
@@ -8210,7 +8244,7 @@ namespace tsl {
     template<typename TOverlay, impl::LaunchFlags launchFlags>
     static inline int loop(int argc, char** argv) {
         static_assert(std::is_base_of_v<tsl::Overlay, TOverlay>, "tsl::loop expects a type derived from tsl::Overlay");
-        
+
         // CUSTOM SECTION START
         // Argument parsing
         #if IS_LAUNCHER_DIRECTIVE
@@ -8280,9 +8314,9 @@ namespace tsl {
         }
 
         overlay->disableNextAnimation();
-        
+
+
         while (shData.running) {
-            
             eventWait(&shData.comboEvent, UINT64_MAX);
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
@@ -8302,6 +8336,23 @@ namespace tsl {
                     }
                     shData.keysDownPending = 0;
                 }
+
+               //currentTitleID = ult::getTitleIdAsString();
+               //if (lastTitleID != currentTitleID) {
+               //    lastTitleID = currentTitleID;
+               //
+               //    // Wait for title to fully load
+               //    overlay->clearScreen();
+               //    overlay->resetFlags();
+               //    hlp::requestForeground(false);
+               //    
+               //    shData.overlayOpen = false;
+               //    
+               //    eventClear(&shData.comboEvent);
+               //    svcSleepThread(200'000'000); 
+               //    
+               //    eventFire(&shData.comboEvent);
+               //}
                 
                 if (overlay->shouldHide()) {
                     break;
