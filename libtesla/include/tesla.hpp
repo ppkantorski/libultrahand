@@ -7981,11 +7981,13 @@ namespace tsl {
         #endif
             std::string currentTitleID;
             u64 now, elapsedNs, resetElapsedNs;
+
+            static u64 lastPollTime = 0;
+            static std::string lastTitleID = ult::getTitleIdAsString();
+            static bool resetCheck = false;
+            static u64 resetStartTime = 0;
+            
             while (shData->running) {
-                static u64 lastPollTime = 0;
-                static std::string lastTitleID = ult::getTitleIdAsString();
-                static bool resetCheck = false;
-                static u64 resetStartTime = 0;
             
                 now = armGetSystemTick();
                 elapsedNs = armTicksToNs(now - lastPollTime);
@@ -8093,7 +8095,7 @@ namespace tsl {
                             eventFire(&shData->comboEvent);
                         }
                     }
-                    #if IS_LAUNCHER_DIRECTIVE
+                #if IS_LAUNCHER_DIRECTIVE
                     else if (ult::updateMenuCombos && (((shData->keysHeld & tsl::cfg::launchCombo2) == tsl::cfg::launchCombo2) && shData->keysDown & tsl::cfg::launchCombo2)) {
                         std::swap(tsl::cfg::launchCombo, tsl::cfg::launchCombo2); // Swap the two launch combos
                         ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
@@ -8101,12 +8103,12 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
                     }
-                    #endif
+                #endif
                     // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)
                     else if (!shData->overlayOpen && shData->keysDown != 0) {
                         // Make sure this isn't a subset of the main launch combos
                         bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
-                        #if IS_LAUNCHER_DIRECTIVE
+                    #if IS_LAUNCHER_DIRECTIVE
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
 
                         if (!isMainComboMatch) {
@@ -8139,9 +8141,9 @@ namespace tsl {
                             }
                         }
 
-                        #else
+                    #else
                         //bool isMainCombo2Match = false;
-                        #endif
+                    #endif
                         
 
                     }
@@ -8248,9 +8250,9 @@ namespace tsl {
 
         // CUSTOM SECTION START
         // Argument parsing
-        #if IS_LAUNCHER_DIRECTIVE
+    #if IS_LAUNCHER_DIRECTIVE
         const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
-        #endif
+    #endif
 
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
@@ -8284,15 +8286,15 @@ namespace tsl {
         tsl::hlp::doWithSmSession([&overlay]{
             overlay->initServices();
         });
-        #if IS_LAUNCHER_DIRECTIVE
-        #else
+    #if IS_LAUNCHER_DIRECTIVE
+    #else
         tsl::initializeUltrahandSettings(); // for initializing settings
-        #endif
+    #endif
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
 
 
-        #if IS_LAUNCHER_DIRECTIVE
+    #if IS_LAUNCHER_DIRECTIVE
         bool inOverlay;
         if (ult::inputExists(settings)
             != "}nwmD9myxpsq9\x7fv~|krkxn9"
@@ -8303,9 +8305,9 @@ namespace tsl {
             inOverlay = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR) != ult::FALSE_STR);
         }
 
-        #else
+    #else
         bool inOverlay = true;
-        #endif
+    #endif
 
         if (inOverlay && skipCombo) {
             #if IS_LAUNCHER_DIRECTIVE
@@ -8337,23 +8339,6 @@ namespace tsl {
                     }
                     shData.keysDownPending = 0;
                 }
-
-               //currentTitleID = ult::getTitleIdAsString();
-               //if (lastTitleID != currentTitleID) {
-               //    lastTitleID = currentTitleID;
-               //
-               //    // Wait for title to fully load
-               //    overlay->clearScreen();
-               //    overlay->resetFlags();
-               //    hlp::requestForeground(false);
-               //    
-               //    shData.overlayOpen = false;
-               //    
-               //    eventClear(&shData.comboEvent);
-               //    svcSleepThread(200'000'000); 
-               //    
-               //    eventFire(&shData.comboEvent);
-               //}
                 
                 if (overlay->shouldHide()) {
                     break;
