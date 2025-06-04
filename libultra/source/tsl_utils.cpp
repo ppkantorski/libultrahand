@@ -38,6 +38,7 @@ namespace ult {
     
     std::map<u64, std::string> overlayKeyCombos;
     bool launchingOverlay = false;
+    bool currentForeground = false;
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
@@ -151,7 +152,7 @@ namespace ult {
         if (R_FAILED(rc)) {
             return NULL_STR;
         }
-    
+        
         rc = pminfoInitialize();
         if (R_FAILED(rc)) {
             return NULL_STR;
