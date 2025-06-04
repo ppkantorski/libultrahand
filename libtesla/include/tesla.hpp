@@ -579,6 +579,8 @@ namespace tsl {
          * @param enabled Focus Tesla?
          */
         static void requestForeground(bool enabled) {
+            ult::currentForeground = enabled;
+
             u64 applicationAruid = 0, appletAruid = 0;
             
             for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
@@ -8004,7 +8006,7 @@ namespace tsl {
                 if (resetCheck) {
                     resetElapsedNs = armTicksToNs(now - resetStartTime);
                     if (resetElapsedNs >= 3'000'000'000ULL) {
-                        if (shData->overlayOpen) {
+                        if (shData->overlayOpen && ult::currentForeground) {
                             hlp::requestForeground(true);
                         }
                         resetCheck = false;
