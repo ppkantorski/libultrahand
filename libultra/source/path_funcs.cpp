@@ -2,10 +2,11 @@
  * File: path_funcs.cpp
  * Author: ppkantorski
  * Description:
- *   This header file contains function declarations and utility functions related
- *   to file and directory path manipulation. These functions are used in the
- *   Ultrahand Overlay project to handle file operations, such as creating
- *   directories, moving files, and more.
+ *   This source file implements the functions declared in path_funcs.hpp.
+ *   These utility functions are focused on file and directory path manipulation
+ *   for the Ultrahand Overlay project. Functionality includes creating directories,
+ *   checking existence of files or paths, moving or copying files, and normalizing
+ *   file system paths for cross-platform compatibility.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
