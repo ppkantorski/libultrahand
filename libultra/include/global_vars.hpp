@@ -42,7 +42,7 @@ namespace ult {
     extern std::string WALLPAPER_PATH;
 
 
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
     extern const std::string SPLIT_PROJECT_NAME_1;
     extern const std::string SPLIT_PROJECT_NAME_2;
     extern const std::string BOOT_PACKAGE_FILENAME;
@@ -70,7 +70,7 @@ namespace ult {
     extern const std::string USE_EXIT_PACKAGE_STR;
     extern const std::string USE_LOGGING_STR;
 
-    #endif
+    //#endif
 
     extern const std::string TESLA_COMBO_STR;
     extern const std::string ULTRAHAND_COMBO_STR;
