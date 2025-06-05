@@ -2,9 +2,10 @@
  * File: ini_funcs.cpp
  * Author: ppkantorski
  * Description:
- *   This header file provides functions for working with INI (Initialization) files
- *   in C++. It includes functions for reading, parsing, and editing INI files,
- *   as well as cleaning INI file formatting.
+ *   This source file implements the functions declared in ini_funcs.hpp.
+ *   These functions provide support for working with INI (Initialization) files
+ *   in C++. Functionality includes reading and parsing INI files, editing values,
+ *   and cleaning formatting to ensure consistent structure.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
