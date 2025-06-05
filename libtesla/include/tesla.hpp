@@ -785,6 +785,8 @@ namespace tsl {
         
             return result;
         }
+
+    #if IS_LAUNCHER_DIRECTIVE
         // Function to load key combo mappings from overlays.ini
         static void loadOverlayKeyCombos() {
             ult::overlayKeyCombos.clear();
@@ -806,7 +808,7 @@ namespace tsl {
             auto it = ult::overlayKeyCombos.find(keys);
             return (it != ult::overlayKeyCombos.end()) ? it->second : "";
         }
-
+    #endif
         
     }
     
@@ -7934,8 +7936,10 @@ namespace tsl {
             // Parse Tesla settings
             impl::parseOverlaySettings();
             
+        #if IS_LAUNCHER_DIRECTIVE
             // Load overlay key combos
             tsl::hlp::loadOverlayKeyCombos();
+        #endif
             
             // Configure input to take all controllers and up to 8
             padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
@@ -7986,7 +7990,7 @@ namespace tsl {
             static std::string lastTitleID = ult::getTitleIdAsString();
             static bool resetCheck = false;
             static u64 resetStartTime = 0;
-            
+
             while (shData->running) {
             
                 now = armGetSystemTick();
@@ -8079,13 +8083,13 @@ namespace tsl {
 
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
-                        #if IS_LAUNCHER_DIRECTIVE
+                    #if IS_LAUNCHER_DIRECTIVE
                         if (ult::updateMenuCombos) {
                             ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR , ult::ULTRAHAND_COMBO_STR);
                             ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR , ult::ULTRAHAND_COMBO_STR);
                             ult::updateMenuCombos = false;
                         }
-                        #endif
+                    #endif
                         
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
