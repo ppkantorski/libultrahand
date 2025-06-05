@@ -8189,12 +8189,10 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
                     }
-                #endif
                     // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)
                     else if (!shData->overlayOpen && shData->keysDown != 0) {
                         // Make sure this isn't a subset of the main launch combos
                         bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
-                    #if IS_LAUNCHER_DIRECTIVE
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
 
                         if (!isMainComboMatch) {
@@ -8226,13 +8224,9 @@ namespace tsl {
                                 }
                             }
                         }
-
-                    #else
                         //bool isMainCombo2Match = false;
-                    #endif
-                        
-
                     }
+                #endif
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
