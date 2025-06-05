@@ -1,11 +1,12 @@
 /********************************************************************************
- * File: get_funcs.hpp
+ * File: get_funcs.cpp
  * Author: ppkantorski
  * Description:
- *   This header file contains functions for retrieving information and data
- *   from various sources, including file system and JSON files. It includes
- *   functions for obtaining overlay module information, reading file contents,
- *   and parsing JSON data.
+ *   This source file provides the implementations of functions declared in
+ *   get_funcs.hpp. These functions are responsible for retrieving and handling
+ *   data from the file system and JSON files, including parsing overlay module
+ *   information, reading file contents, and accessing structured data used
+ *   in the Ultrahand Overlay project.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
