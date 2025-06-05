@@ -103,6 +103,7 @@ u8 TeslaFPS = 60;
 u8 alphabackground = 0xD;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
+bool fontCache = true;
 #endif
 
 
@@ -809,7 +810,7 @@ namespace tsl {
             return (it != ult::overlayKeyCombos.end()) ? it->second : "";
         }
     #endif
-        
+
     }
     
     // Renderer
@@ -2349,6 +2350,56 @@ namespace tsl {
                 
                 this->m_currentFramebuffer = nullptr;
             }
+
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            /**
+             * @brief Draws a single font glyph
+             * 
+             * @param codepoint Unicode codepoint to draw
+             * @param x X pos
+             * @param y Y pos
+             * @param color Color
+             * @param font STB Font to use
+             * @param fontSize Font size
+             */
+
+            inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
+                int width = 10, height = 10;
+
+                u8* glyphBmp = nullptr;
+
+                if (fontCache) {
+                    auto pair = std::make_pair(codepoint, fontSize);
+                    auto found = cache.find(pair);
+                    if (found != cache.end()) {
+                        glyphBmp = found -> second.pointer;
+                        width = found -> second.width;
+                        height = found -> second.height;
+                    }
+                    else {
+                        glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+                        if (glyphBmp) cache[pair] = GlyphInfo{glyphBmp, width, height};
+                    }
+                }
+                else {
+                    glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+                }
+                
+                if (glyphBmp == nullptr)
+                    return;
+
+                for (s16 bmpY = 0; bmpY < height; bmpY++) {
+                    for (s16 bmpX = 0; bmpX < width; bmpX++) {
+                        Color tmpColor = color;
+                        tmpColor.a = (glyphBmp[width * bmpY + bmpX] >> 4) * (float(tmpColor.a) / 0xF);
+                        this->setPixelBlendSrc(x + bmpX, y + bmpY, tmpColor);
+                    }
+                }
+
+                if (!fontCache) std::free(glyphBmp);
+
+            }
+        #endif
         };
 
         static std::pair<int, int> getUnderscanPixels() {
