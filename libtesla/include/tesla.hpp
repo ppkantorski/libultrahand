@@ -99,11 +99,42 @@ using namespace std::literals::string_literals;
 using namespace std::literals::chrono_literals;
 
 #if IS_STATUS_MONITOR_DIRECTIVE
+struct GlyphInfo {
+    u8* pointer;
+    int width;
+    int height;
+};
+
+struct KeyPairHash {
+    std::size_t operator()(const std::pair<int, float>& key) const {
+        // Combine hashes of both components
+        union returnValue {
+            char c[8];
+            std::size_t s;
+        } value;
+        memcpy(&value.c[0], &key.first, 4);
+        memcpy(&value.c[4], &key.second, 4);
+        return value.s;
+    }
+};
+
+// Custom equality comparison for int-float pairs
+struct KeyPairEqual {
+    bool operator()(const std::pair<int, float>& lhs, const std::pair<int, float>& rhs) const {
+        const float epsilon = 0.00001f;
+        return lhs.first == rhs.first && 
+            std::abs(lhs.second - rhs.second) < epsilon;
+    }
+};
+
+std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
+
 u8 TeslaFPS = 60;
 u8 alphabackground = 0xD;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
 bool fontCache = true;
+
 #endif
 
 
