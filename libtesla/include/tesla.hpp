@@ -138,6 +138,8 @@ bool fontCache = true;
 #endif
 
 
+
+
 namespace tsl {
 
     // Constants
@@ -262,6 +264,7 @@ namespace tsl {
         }
     }
 
+    static bool overrideBackButton = false; // for proprerly overriding the automatic "go back" functionality of KEY_B button presses
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
@@ -7554,22 +7557,20 @@ namespace tsl {
                 //}
             }
 
-            #if IS_LAUNCHER_DIRECTIVE
-            #else
-
-            //if (currentFocus == nullptr) {
-            if (ult::simulatedBack) {
-                keysDown |= KEY_B;
-                ult::simulatedBack = false;
-                ult::simulatedBackComplete = true;
+            if (!overrideBackButton) {
+                //if (currentFocus == nullptr) {
+                if (ult::simulatedBack) {
+                    keysDown |= KEY_B;
+                    ult::simulatedBack = false;
+                    ult::simulatedBackComplete = true;
+                }
+                if (keysDown & KEY_B) {
+                    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
+                        this->goBack();
+                    return;
+                }
             }
-            if (keysDown & KEY_B) {
-                if (!currentGui->handleInput(KEY_B,0,{},{},{}))
-                    this->goBack();
-                return;
-            }
-            //}
-            #endif
+            
             
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
