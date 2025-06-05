@@ -1,3 +1,21 @@
+/********************************************************************************
+ * File: download_funcs.cpp
+ * Author: ppkantorski
+ * Description:
+ *   This source file provides implementations for the functions declared in
+ *   download_funcs.hpp. These functions utilize libcurl for downloading files
+ *   from the internet and zlib (via minizip) for extracting ZIP archives.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2024 ppkantorski
+ ********************************************************************************/
+
 #include "download_funcs.hpp"
 
 namespace ult {
