@@ -613,8 +613,9 @@ namespace tsl {
          *
          * @param enabled Focus Tesla?
          */
-        static void requestForeground(bool enabled) {
-            ult::currentForeground = enabled;
+        static void requestForeground(bool enabled, bool updateGlobalFlag = true) {
+            if (updateGlobalFlag)
+                ult::currentForeground = enabled;
 
             u64 applicationAruid = 0, appletAruid = 0;
             
@@ -8071,8 +8072,8 @@ namespace tsl {
 
             static u64 lastPollTime = 0;
             static std::string lastTitleID = ult::getTitleIdAsString();
-            static bool resetCheck = false;
-            static u64 resetStartTime = 0;
+            static bool resetCheck = true; // initialize as true
+            static u64 resetStartTime = armGetSystemTick();
 
             while (shData->running) {
             
@@ -8080,7 +8081,7 @@ namespace tsl {
                 elapsedNs = armTicksToNs(now - lastPollTime);
             
                 // Poll Title ID every 3 seconds
-                if (elapsedNs >= 2'000'000'000ULL) {
+                if (!resetCheck && elapsedNs >= 2'000'000'000ULL) {
                     lastPollTime = now;
             
                     currentTitleID = ult::getTitleIdAsString();
@@ -8096,7 +8097,7 @@ namespace tsl {
                     resetElapsedNs = armTicksToNs(now - resetStartTime);
                     if (resetElapsedNs >= 3'000'000'000ULL) {
                         if (shData->overlayOpen && ult::currentForeground) {
-                            hlp::requestForeground(true);
+                            hlp::requestForeground(true, false);
                         }
                         resetCheck = false;
                     }
