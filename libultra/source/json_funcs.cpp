@@ -2,7 +2,7 @@
  * File: json_funcs.cpp
  * Author: ppkantorski
  * Description:
- * This source file provides functions for working with JSON files in C++ using
+ *   This source file provides functions for working with JSON files in C++ using
  *   the `jansson` library. It includes a function to read JSON data from a file.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
