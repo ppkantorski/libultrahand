@@ -1,10 +1,11 @@
 /********************************************************************************
- * File: mod_funcs.hpp
+ * File: mod_funcs.cpp
  * Author: ppkantorski
  * Description:
- *   This header file contains function declarations and utility functions for IPS
- *   binary generations. These functions are used in the Ultrahand Overlay project
- *   to convert `.pchtxt` mods into `.ips` binaries.
+ *   This source file provides the implementations of functions declared in
+ *   mod_funcs.hpp. These functions handle the conversion of `.pchtxt` mod files
+ *   into `.ips` binary patches used by the Ultrahand Overlay project. This includes
+ *   parsing, validating, and encoding patch data into the IPS format.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
