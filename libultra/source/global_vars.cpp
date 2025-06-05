@@ -36,7 +36,7 @@ namespace ult {
     std::string WALLPAPER_PATH = SETTINGS_PATH + "wallpaper.rgba";
     
     
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
     const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
     const std::string SPLIT_PROJECT_NAME_2 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(5);
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
@@ -64,7 +64,7 @@ namespace ult {
     const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
     const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
     const std::string USE_LOGGING_STR = "use_logging";
-    #endif
+    //#endif
     
     const std::string TESLA_COMBO_STR = "L+DDOWN+RS";
     const std::string ULTRAHAND_COMBO_STR = "ZL+ZR+DDOWN";
