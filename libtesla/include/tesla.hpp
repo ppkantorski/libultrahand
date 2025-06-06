@@ -137,9 +137,11 @@ bool fontCache = true;
 
 #endif
 
+#if USING_FPS_INDICATOR_DIRECTIVE
 float fps = 0.0;
 int frameCount = 0;
 double elapsedTime;
+#endif
 
 namespace tsl {
 
@@ -3871,7 +3873,7 @@ namespace tsl {
                     delete this->m_contentElement;
             }
 
-            
+        #if USING_FPS_INDICATOR_DIRECTIVE
             // Function to calculate FPS
             void updateFPS(double currentTimeCount) {
                 static double lastUpdateTime = currentTimeCount;
@@ -3885,6 +3887,7 @@ namespace tsl {
                     frameCount = 0;
                 }
             }
+        #endif
             
             // CUSTOM SECTION START
             virtual void draw(gfx::Renderer *renderer) override {
@@ -4143,6 +4146,8 @@ namespace tsl {
                 // Render the text with special character handling
                 renderer->drawStringWithColoredSections(menuBottomLine, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
                 
+
+            #if USING_FPS_INDICATOR_DIRECTIVE
                 if (true) {
                     // Update FPS
                     updateFPS(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -4170,6 +4175,7 @@ namespace tsl {
                     //
                     //renderer->drawString(ramString.c_str(), false, 130, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF))); // Adjust position and color as needed
                 }
+            #endif
 
                 
                 if (this->m_contentElement != nullptr)
