@@ -115,6 +115,10 @@ namespace ult {
     
     std::string getTitleIdAsString();
     
+    extern std::string lastTitleID;
+    extern bool resetForegroundCheck;
+
+
     //extern bool isLauncher;
     extern bool internalTouchReleased;
     extern u32 layerEdge;
