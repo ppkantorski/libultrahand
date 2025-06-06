@@ -851,10 +851,7 @@ namespace tsl {
 
     }
     
-    // Pre-computed lookup table for 4-bit to 8-bit conversion
-    static const u8 expand4to8[16] = {
-        0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
-    };
+
 
     // Renderer
     
@@ -903,7 +900,7 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
+                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
                 return (c.rgba & 0x0FFF) | (alpha << 12);
             }
             
@@ -957,7 +954,8 @@ namespace tsl {
              * @return Blended color
              */
             inline u8 blendColor(const u8 src, const u8 dst, const u8 alpha) {
-                return (dst * alpha + src * (0x0F - alpha)) >> 4;
+                const u8 inv_alpha = 15 - alpha;
+                return (dst * alpha + src * inv_alpha) >> 4;
             }
             
             /**
@@ -1687,6 +1685,10 @@ namespace tsl {
             // Fixed compilation errors - simplified SIMD version
             const uint8x16_t lut = {0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255};
             const uint8x16_t mask_low = vdupq_n_u8(0x0F);
+            // Pre-computed lookup table for 4-bit to 8-bit conversion
+            const u8 expand4to8[16] = {
+                0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
+            };
             
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
                                        const s32 startRow, const s32 endRow) {
@@ -1829,11 +1831,102 @@ namespace tsl {
              * @param bmp Pointer to bitmap data
              */
             inline void drawBitmap(s32 x, s32 y, s32 w, s32 h, const u8 *bmp) {
-                for (s32 y1 = 0; y1 < h; y1++) {
-                    for (s32 x1 = 0; x1 < w; x1++) {
-                        const Color color = { static_cast<u8>(bmp[0] >> 4), static_cast<u8>(bmp[1] >> 4), static_cast<u8>(bmp[2] >> 4), static_cast<u8>(bmp[3] >> 4) };
-                        setPixelBlendSrc(x + x1, y + y1, a(color));
-                        bmp += 4;
+                if (w <= 0 || h <= 0) [[unlikely]] return;
+                
+                const u8* __restrict__ src = bmp;
+                
+                // Completely unroll small bitmaps for maximum speed
+                if (w <= 8 && h <= 8) [[likely]] {
+                    // Specialized path for small bitmaps (icons, etc.)
+                    for (s32 py = 0; py < h; ++py) {
+                        const s32 rowY = y + py;
+                        s32 px = x;
+                        
+                        // Unroll inner loop completely for small widths
+                        switch(w) {
+                            case 8: goto pixel8;
+                            case 7: goto pixel7;
+                            case 6: goto pixel6;
+                            case 5: goto pixel5;
+                            case 4: goto pixel4;
+                            case 3: goto pixel3;
+                            case 2: goto pixel2;
+                            case 1: goto pixel1;
+                            default: break;
+                        }
+                        
+                        pixel8: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel7: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel6: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel5: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel4: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel3: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel2: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                        }
+                        pixel1: {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px, rowY, a(c)); src += 4;
+                        }
+                    }
+                    return;
+                }
+                
+                // Fallback to vectorized version for larger bitmaps
+                const s32 vectorWidth = w & ~7; // Process 8 pixels at a time
+                const s32 remainder = w & 7;
+                
+                for (s32 py = 0; py < h; ++py) {
+                    const s32 rowY = y + py;
+                    s32 px = x;
+                    
+                    // Process 8 pixels at once (cache-friendly)
+                    for (s32 i = 0; i < vectorWidth; i += 8) {
+                        // Prefetch next cache line
+                        __builtin_prefetch(src + 64, 0, 3);
+                        
+                        // Process 8 pixels with minimal overhead
+                        for (int j = 0; j < 8; ++j) {
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                            setPixelBlendSrc(px++, rowY, a(c));
+                            src += 4;
+                        }
+                    }
+                    
+                    // Handle remainder
+                    for (s32 i = 0; i < remainder; ++i) {
+                        const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                       static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                        setPixelBlendSrc(px++, rowY, a(c));
+                        src += 4;
                     }
                 }
             }
