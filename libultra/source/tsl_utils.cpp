@@ -172,7 +172,8 @@ namespace ult {
         return std::string(titleIdStr);
     }
     
-    //bool isLauncher = false;
+    std::string lastTitleID;
+    bool resetForegroundCheck = false; // initialize as true
 
 
 
