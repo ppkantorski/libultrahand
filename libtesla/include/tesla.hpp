@@ -143,6 +143,8 @@ int frameCount = 0;
 double elapsedTime;
 #endif
 
+static u32 offsetWidthVar;
+
 namespace tsl {
 
     // Constants
@@ -1015,7 +1017,6 @@ namespace tsl {
                     this->setPixel(baseX + i, baseY, end, offset);
                 }
             }
-
 
             
             /**
@@ -2762,8 +2763,8 @@ namespace tsl {
              * @param y Y Pos
              * @return Offset
              */
-            
-            inline u32 getPixelOffset(const s32 x, const s32 y) {
+
+            inline u32 getPixelOffset(const u32 x, const u32 y) {
                 // Check for scissoring boundaries
                 if (!this->m_scissoringStack.empty()) {
                     const auto& currScissorConfig = this->m_scissoringStack.top();
@@ -2783,7 +2784,15 @@ namespace tsl {
                 //       ((y & 1) << 3) +             // (y % 2) * 8
                 //       (x & 7);                     // x % 8
 
-                return ((((y & 127) >> 4) + ((x >> 5) << 3) + ((y >> 7) * (((cfg::FramebufferWidth / 2) >> 4) << 3))) << 9) +  // *512 = <<9
+                //return ((((y & 127) >> 4) + ((x >> 5) << 3) + ((y >> 7) * (((cfg::FramebufferWidth / 2) >> 4) << 3))) << 9) +  // *512 = <<9
+                //       (((y & 15) >> 3) << 8) +     // ((y % 16) / 8) * 256
+                //       (((x & 31) >> 4) << 7) +     // ((x % 32) / 16) * 128
+                //       (((y & 7) >> 1) << 5) +      // ((y % 8) / 2) * 32
+                //       (((x & 15) >> 3) << 4) +     // ((x % 16) / 8) * 16
+                //       ((y & 1) << 3) +             // (y % 2) * 8
+                //       (x & 7);                     // x % 8
+
+                return ((((y & 127) >> 4) + ((x >> 5) << 3) + ((y >> 7) * offsetWidthVar)) << 9) +  // *512 = <<9
                        (((y & 15) >> 3) << 8) +     // ((y % 16) / 8) * 256
                        (((x & 31) >> 4) << 7) +     // ((x % 32) / 16) * 128
                        (((y & 7) >> 1) << 5) +      // ((y % 8) / 2) * 32
@@ -2791,10 +2800,6 @@ namespace tsl {
                        ((y & 1) << 3) +             // (y % 2) * 8
                        (x & 7);                     // x % 8
             }
-
-            
-
-
 
             
             /**
@@ -2812,6 +2817,8 @@ namespace tsl {
                 cfg::LayerPosY = 0;
                 cfg::FramebufferWidth  = ult::DefaultFramebufferWidth;
                 cfg::FramebufferHeight = ult::DefaultFramebufferHeight;
+
+                offsetWidthVar = (((cfg::FramebufferWidth / 2) >> 4) << 3);
 
                 ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
                 if (ult::useRightAlignment && ult::correctFrameSize) {
