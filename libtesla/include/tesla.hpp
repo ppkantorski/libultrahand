@@ -127,7 +127,7 @@ struct KeyPairEqual {
     }
 };
 
-std::unordered_map<std::pair<u32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
+std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
 
 u8 TeslaFPS = 60;
 u8 alphabackground = 0xD;
@@ -1094,17 +1094,17 @@ namespace tsl {
                 if (w <= 0 || h <= 0) return;
                 
                 // Calculate clipped bounds
-                const u32 x_start = x < 0 ? 0 : x;
-                const u32 y_start = y < 0 ? 0 : y;
-                const u32 x_end = (x + w > cfg::FramebufferWidth) ? cfg::FramebufferWidth : x + w;
-                const u32 y_end = (y + h > cfg::FramebufferHeight) ? cfg::FramebufferHeight : y + h;
+                const s32 x_start = x < 0 ? 0 : x;
+                const s32 y_start = y < 0 ? 0 : y;
+                const s32 x_end = (x + w > cfg::FramebufferWidth) ? cfg::FramebufferWidth : x + w;
+                const s32 y_end = (y + h > cfg::FramebufferHeight) ? cfg::FramebufferHeight : y + h;
                 
                 // Early exit if completely outside bounds
                 if (x_start >= x_end || y_start >= y_end) return;
                 
                 // Draw row by row for better cache locality
-                for (u32 yi = y_start; yi < y_end; ++yi) {
-                    for (u32 xi = x_start; xi < x_end; ++xi) {
+                for (s32 yi = y_start; yi < y_end; ++yi) {
+                    for (s32 xi = x_start; xi < x_end; ++xi) {
                         this->setPixelBlendDst(xi, yi, color);
                     }
                 }
@@ -1281,7 +1281,7 @@ namespace tsl {
                     
             }
             
-            inline void drawCircle(const s32 centerX, const s32 centerY, const s16 radius, const bool filled, const Color& color) {
+            inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
                 s32 x = radius;
                 s32 y = 0;
                 s32 radiusError = 0;
@@ -1984,7 +1984,7 @@ namespace tsl {
                 Glyph* glyph;
                 const uint8_t* bmpPtr;
                 float xPos, yPos;
-                u32 width, height;
+                s32 width, height;
                 uint8_t alpha;
                 
                 // Ultra-fast ASCII detection using 64-bit word scanning
@@ -2093,17 +2093,17 @@ namespace tsl {
                         xPos = currX + glyph->bounds[0];
                         yPos = currY + glyph->bounds[1];
                         bmpPtr = glyph->glyphBmp;
-                        width = static_cast<u32>(glyph->width);
-                        height = static_cast<u32>(glyph->height);
+                        width = glyph->width;
+                        height = glyph->height;
                         
                         // Optimized pixel blitting with manual vectorization and loop unrolling
-                        for (u32 row = 0; row < height; ++row) {
+                        for (s32 row = 0; row < height; ++row) {
                             const float currentY = yPos + row;
                             const uint8_t* rowPtr = bmpPtr + (row * width);
                             
                             // Process 8 pixels at once for maximum throughput
-                            u32 col = 0;
-                            const u32 simdWidth = width & ~7; // Round down to multiple of 8
+                            s32 col = 0;
+                            const s32 simdWidth = width & ~7; // Round down to multiple of 8
                             
                             // Aggressive loop unrolling - process 8 pixels per iteration
                             for (; col < simdWidth; col += 8) {
@@ -2221,7 +2221,7 @@ namespace tsl {
             }
             
             // Consolidated drawString using renderTextSegment
-            inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const u32 x, const u32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+            inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const s32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
                 #ifdef UI_OVERRIDE_PATH
                 // Optimized translation lookup with hint
@@ -2350,7 +2350,7 @@ namespace tsl {
             
             // Streamlined drawStringWithColoredSections using renderTextSegment
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, 
-                                                     u32 x, const u32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
+                                                     s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
                 // Early exits
                 if (text.empty() || fontSize <= 0) [[unlikely]] {
                     return;
@@ -2461,7 +2461,7 @@ namespace tsl {
              * @param fontSize Size of the font
              * @param maxLength Maximum length of the string in terms of width
              */
-            inline std::string limitStringLength(const std::string& originalString, const bool monospace, const u32 fontSize, const u32 maxLength) {
+            inline std::string limitStringLength(const std::string& originalString, const bool monospace, const s32 fontSize, const s32 maxLength) {
                 #ifdef UI_OVERRIDE_PATH
                 // Check for translation in the cache
                 auto translatedIt = ult::translationCache.find(originalString);
@@ -2992,7 +2992,7 @@ namespace tsl {
              * @param fontSize Font size
              */
 
-            inline void drawGlyph(s32 codepoint, u32 x, u32 y, Color color, stbtt_fontinfo *font, float fontSize) {
+            inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
                 int width = 10, height = 10;
 
                 u8* glyphBmp = nullptr;
@@ -3175,8 +3175,8 @@ namespace tsl {
             u8 saturation;
             float progress;
             
-            u32 x, y;
-            u32 amplitude;
+            s32 x, y;
+            s32 amplitude;
             std::chrono::steady_clock::time_point m_animationStartTime; // Start time of the animation
             
             virtual bool isTable() const {
@@ -3533,7 +3533,7 @@ namespace tsl {
              * @param width Width
              * @param height Height
              */
-            inline void setBoundaries(u32 x, u32 y, u32 width, u32 height) {
+            inline void setBoundaries(s32 x, s32 y, s32 width, s32 height) {
                 this->m_x = x;
                 this->m_y = y;
                 this->m_width = width;
@@ -3655,7 +3655,7 @@ namespace tsl {
         private:
             friend class Gui;
             
-            u32 m_x = 0, m_y = 0, m_width = 0, m_height = 0;
+            s32 m_x = 0, m_y = 0, m_width = 0, m_height = 0;
             Element *m_parent = nullptr;
             std::vector<Element*> m_children;
             std::function<bool(u64 keys)> m_clickListener = [](u64) { return false; };
@@ -3698,7 +3698,7 @@ namespace tsl {
              *
              * @param renderFunc Callback that will be called once every frame to draw this view
              */
-            CustomDrawer(std::function<void(gfx::Renderer* r, u32 x, u32 y, u32 w, u32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {
+            CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {
                 m_isItem = false;
             }
 
@@ -3715,7 +3715,7 @@ namespace tsl {
             }
             
         private:
-            std::function<void(gfx::Renderer*, u32 x, u32 y, u32 w, u32 h)> m_renderFunc;
+            std::function<void(gfx::Renderer*, s32 x, s32 y, s32 w, s32 h)> m_renderFunc;
         };
     #endif
 
@@ -3724,7 +3724,7 @@ namespace tsl {
          */
         class TableDrawer : public Element {
         public:
-            TableDrawer(std::function<void(gfx::Renderer* r, u32 x, u32 y, u32 w, u32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
+            TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
                 : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable) {
                     m_isTable = isScrollable;  // Mark this element as a table
                     m_isItem = false;
@@ -3756,7 +3756,7 @@ namespace tsl {
             }
         
         private:
-            std::function<void(gfx::Renderer*, u32 x, u32 y, u32 w, u32 h)> m_renderFunc;
+            std::function<void(gfx::Renderer*, s32 x, s32 y, s32 w, s32 h)> m_renderFunc;
             bool hideTableBackground = false;
             size_t endGap = 3;
             bool isScrollable = false;
@@ -4547,10 +4547,10 @@ namespace tsl {
                 this->m_clearList = false;
             }
             
-            s32 scrollbarHeight;
-            s32 scrollbarOffset;
-            s32 offset;
-            s32 prevOffset;
+            u32 scrollbarHeight;
+            u32 scrollbarOffset;
+            u32 offset;
+            u32 prevOffset;
             s32 y;
             bool handled;
             u16 i;
@@ -4571,14 +4571,16 @@ namespace tsl {
             std::vector<int> scrollStepsInsideTable;  // This will track scroll steps for each table
             
             static constexpr float TABLE_SCROLL_STEP_SIZE = 40.0f; // Fixed scroll step size
+
             
-                        
             virtual void draw(gfx::Renderer* renderer) override {
-                const s32 rightBound = this->getRightBound();
+                // Precompute frequently used values
+                const u32 rightBound = this->getRightBound();
                 const s32 topBound = this->getTopBound();
                 const s32 bottomBound = this->getBottomBound();
                 const s32 width = this->getWidth();
                 const s32 height = this->getHeight();
+                
             
                 if (this->m_clearList) {
                     for (auto& item : this->m_items) {
@@ -4604,9 +4606,9 @@ namespace tsl {
                     this->invalidate();
                     this->updateScrollOffset();
                 }
-            
+                
                 if (!this->m_itemsToRemove.empty()) {
-                    auto it = this->m_items.cend();
+                    auto it = this->m_items.cend(); // Start with end iterator to ensure it's valid
                     for (auto* element : this->m_itemsToRemove) {
                         it = std::find(this->m_items.cbegin(), this->m_items.cend(), element);
                         if (it != this->m_items.cend()) {
@@ -4622,54 +4624,70 @@ namespace tsl {
                     this->updateScrollOffset();
                 }
             
-                renderer->enableScissoring(this->getLeftBound(), topBound, width + 8, height + 4);
+                renderer->enableScissoring(this->getLeftBound(), topBound, width + 4 +4, height + 4);
             
                 for (auto& entry : this->m_items) {
                     if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
                         entry->frame(renderer);
                     }
                 }
-            
+                
                 renderer->disableScissoring();
-            
+
+
                 if (this->m_listHeight > height) {
                     const u32 viewHeight = height - 12;
                     const u32 totalHeight = this->m_listHeight + 24;
-                    const s32 maxScrollableHeight = std::max<s32>(static_cast<s32>(totalHeight - viewHeight), 1);
-            
+                    const u32 maxScrollableHeight = std::max(totalHeight - viewHeight, 1u);
+                    
                     u32 scrollbarHeight = (viewHeight * viewHeight) / totalHeight;
                     scrollbarHeight = std::min(scrollbarHeight, viewHeight);
+                    
+                    u32 scrollbarOffset = (this->m_offset / maxScrollableHeight) * (viewHeight - scrollbarHeight);
+                    scrollbarOffset = std::min(scrollbarOffset, viewHeight - scrollbarHeight) + 4;
             
-                    s32 scrollbarOffset = (this->m_offset / static_cast<float>(maxScrollableHeight)) * (viewHeight - scrollbarHeight);
-                    scrollbarOffset = std::min(scrollbarOffset, static_cast<s32>(viewHeight - scrollbarHeight)) + 4;
-            
+                    //const u32 offset = 10;
                     const u32 scrollbarX = rightBound + 20;
                     const u32 scrollbarY = this->getY() + scrollbarOffset;
+                    //const u32 scrollbarWidth = 5;
             
                     renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
                     renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
                     renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
-            
+                    
+
                     if (Element::getInputMode() == InputMode::Controller) {
+                        //static float lastOffset = 0.0f;
                         static float velocity = 0.0f;
-            
+                    
+                        // Calculate the difference between the next and current offsets
+                        //float deltaOffset = this->m_nextOffset - this->m_offset;
+                    
+                        // Apply smoothing to the velocity
                         velocity = velocity * dampingFactor + (this->m_nextOffset - this->m_offset) * smoothingFactor;
-            
-                        if (std::fabs(velocity) < 0.2f) {
+                    
+
+                    
+                        // If the velocity is small, snap to the target offset
+                        if (std::abs(velocity) < 0.2f) {
                             this->m_offset = this->m_nextOffset;
                             velocity = 0.0f;
                         } else {
+                            // Update the offset with the smoothed velocity
                             this->m_offset += velocity;
                         }
-            
+                    
+                        // Update the last offset for the next frame
+                        //lastOffset = this->m_offset;
+                    
+
                     } else if (Element::getInputMode() == InputMode::TouchScroll) {
-                        this->m_offset += (this->m_nextOffset - this->m_offset);
+                        this->m_offset += ((this->m_nextOffset) - this->m_offset);
                     }
-            
+                    
                     if (prevOffset != this->m_offset) {
                         this->invalidate();
                     }
-            
                     prevOffset = this->m_offset;
                 }
             }
@@ -4736,7 +4754,7 @@ namespace tsl {
                     // Check if the list is empty and the first element being added is a ListItem
                     if (actualItemCount == 0 && element->m_isItem) {
                         // Add a CustomDrawer to occupy the same space as an empty CategoryHeader
-                        auto* customDrawer = new tsl::elm::CustomDrawer([](gfx::Renderer* r, u32 x, u32 y, u32 w, u32 h) {
+                        auto* customDrawer = new tsl::elm::CustomDrawer([](gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h) {
                             // Leave empty to just occupy space without rendering anything
                         });
                         customDrawer->setBoundaries(this->getX(), this->getY(), this->getWidth(), tsl::style::ListItemDefaultHeight / 2); // Set same size as CategoryHeader
@@ -4802,7 +4820,7 @@ namespace tsl {
                 if (direction == FocusDirection::None) {
                     size_t i = 0;
                     if (oldFocus == nullptr) {
-                        u32 elementHeight = 0;
+                        s32 elementHeight = 0;
                         while (elementHeight < this->m_offset && i < this->m_items.size() - 1) {
                             i++;
                             elementHeight += this->m_items[i]->getHeight();
@@ -5121,7 +5139,7 @@ namespace tsl {
              * @param element Element to check
              * @return Index in list. -1 for if the element isn't a member of the list
              */
-            virtual u32 getIndexInList(Element *element) {
+            virtual s32 getIndexInList(Element *element) {
                 auto it = std::find(this->m_items.begin(), this->m_items.end(), element);
                 
                 if (it == this->m_items.end())
@@ -5136,8 +5154,8 @@ namespace tsl {
              * @param element Element to check
              * @return Index in list. -1 for if the element isn't a member of the list
              */
-            virtual u32 getLastIndex() {
-                return this->m_items.empty() ? 0 : static_cast<u32>(this->m_items.size() - 1);
+            virtual s32 getLastIndex() {
+                return this->m_items.size() -1;
             }
 
             
@@ -5309,7 +5327,7 @@ namespace tsl {
                     renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
                 }
         
-                u32 yOffset = (tsl::style::ListItemDefaultHeight - m_listItemHeight) / 2;
+                s32 yOffset = (tsl::style::ListItemDefaultHeight - m_listItemHeight) / 2;
         
                 if (m_maxWidth == 0) {
                     calculateWidths(renderer);
@@ -5444,7 +5462,11 @@ namespace tsl {
             }
         
             void calculateWidths(gfx::Renderer* renderer) {
-                m_maxWidth = getWidth() - tsl::gfx::calculateStringWidth(m_value, 20) - 66;
+                if (!m_value.empty()) {
+                    m_maxWidth = getWidth() - tsl::gfx::calculateStringWidth(m_value, 20) - 66;
+                } else {
+                    m_maxWidth = getWidth() - 62;
+                }
         
                 u32 width = tsl::gfx::calculateStringWidth(m_text, 23);
                 m_truncated = width > m_maxWidth + 20;
@@ -5459,7 +5481,7 @@ namespace tsl {
                 }
             }
         
-            void drawTruncatedText(gfx::Renderer* renderer, u32 yOffset, bool useClickTextColor) {
+            void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 30-3), tsl::cfg::FramebufferHeight - 170);
                     renderer->drawString(m_scrollText, false, getX() + 19 - m_scrollOffset, getY() + 45 - yOffset, 23, a(selectedTextColor));
@@ -5482,11 +5504,11 @@ namespace tsl {
                 }
             }
         
-            void drawValue(gfx::Renderer* renderer, u32 yOffset, bool useClickTextColor) {
-                u32 xPosition = getX() + m_maxWidth + 44 +3;
-                s32 yPosition = getY() + (45 - yOffset);
-                u32 fontSize = 20;
-                
+            void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+                s32 xPosition = getX() + m_maxWidth + 44 +3;
+                s32 yPosition = getY() + 45 - yOffset;
+                s32 fontSize = 20;
+        
                 static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
                 auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
         
@@ -5515,7 +5537,7 @@ namespace tsl {
                 }
             }
         
-            void drawThrobber(gfx::Renderer* renderer, u32 xPosition, u32 yPosition, u32 fontSize, Color textColor) {
+            void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
                 static size_t throbberCounter = 0;
                 const std::string* stringPtr = &ult::THROBBER_SYMBOLS[(throbberCounter / 10) % ult::THROBBER_SYMBOLS.size()];
                 throbberCounter = (throbberCounter + 1) % (10 * ult::THROBBER_SYMBOLS.size());
@@ -5585,7 +5607,7 @@ namespace tsl {
                 }
 
                 // Calculate vertical offset to center the text
-                u32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
+                s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
 
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
@@ -5652,9 +5674,9 @@ namespace tsl {
                 
                 // CUSTOM SECTION START (modification for submenu footer color)
                 //const std::string& value = this->m_value;
-                u32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
-                u32 yPosition = this->getY() + 45 - yOffset;
-                u32 fontSize = 20;
+                s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
+                s32 yPosition = this->getY() + 45 - yOffset;
+                s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
 
@@ -6090,10 +6112,7 @@ namespace tsl {
                 s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 s32 circleRadius = 16;
                 
-                s32 deltaX = (initialX > circleCenterX) ? (initialX - circleCenterX) : (circleCenterX - initialX);
-                s32 deltaY = (initialY > circleCenterY) ? (initialY - circleCenterY) : (circleCenterY - initialY);
-                
-                bool touchInCircle = (deltaX <= circleRadius) && (deltaY <= circleRadius);
+                bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
 
                 if (event == TouchEvent::Release) {
@@ -6129,7 +6148,7 @@ namespace tsl {
 
 
             // Define drawBar function outside the draw method
-            void drawBar(gfx::Renderer *renderer, u32 x, u32 y, u16 width, Color& color, bool isRounded = true) {
+            void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
                 if (isRounded) {
                     renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
                 } else {
@@ -6140,19 +6159,19 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 static float lastBottomBound;
                 
-                u32 xPos = this->getX() + 59;
-                u32 yPos = this->getY() + 40 + 16 - 1;
-                u32 width = this->getWidth() - 95;
+                s32 xPos = this->getX() + 59;
+                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 width = this->getWidth() - 95;
                 u16 handlePos = width * (this->m_value) / (100);
 
                 if (!m_usingNamedStepTrackbar) {
                     yPos -= 11;
                 }
 
-                u32 iconOffset;
+                s32 iconOffset;
 
                 if (m_icon[0] != '\0') {
-                    u32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
+                    s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
                     width -= iconOffset;
@@ -6438,10 +6457,10 @@ namespace tsl {
                 u16 baseX = this->getX() + 59;
                 u16 baseY = this->getY() + 44; // 50 - 3
                 
-                u32 iconOffset;
+                s32 iconOffset;
                 
                 if (m_icon[0] != '\0') {
-                    u32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
+                    s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     baseX += iconOffset;
                     trackBarWidth -= iconOffset;
@@ -6518,8 +6537,8 @@ namespace tsl {
             Color highlightColor = {0xf, 0xf, 0xf, 0xf};
             float progress;
             float counter = 0.0;
-            u32 x, y;
-            u32 amplitude;
+            s32 x, y;
+            s32 amplitude;
             u32 descWidth, descHeight;
             
             // Add setScriptKeyListener function
@@ -6792,10 +6811,7 @@ namespace tsl {
                 s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 s32 circleRadius = 16;
                 
-                s32 deltaX = (initialX > circleCenterX) ? (initialX - circleCenterX) : (circleCenterX - initialX);
-                s32 deltaY = (initialY > circleCenterY) ? (initialY - circleCenterY) : (circleCenterY - initialY);
-                
-                bool touchInCircle = (deltaX <= circleRadius) && (deltaY <= circleRadius);
+                bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
                 //static std::chrono::steady_clock::time_point touchStartTime;
                 //static bool holdingPosition = false;
@@ -6852,7 +6868,7 @@ namespace tsl {
 
 
             // Define drawBar function outside the draw method
-            void drawBar(gfx::Renderer *renderer, u32 x, u32 y, u16 width, Color& color, bool isRounded = true) {
+            void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
                 if (isRounded) {
                     renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
                 } else {
@@ -6863,9 +6879,9 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 static float lastBottomBound;
                 u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
-                u32 xPos = this->getX() + 59;
-                u32 yPos = this->getY() + 40 + 16 - 1;
-                u32 width = this->getWidth() - 95;
+                s32 xPos = this->getX() + 59;
+                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 width = this->getWidth() - 95;
 
 
                 // Draw track bar background
@@ -8013,13 +8029,8 @@ namespace tsl {
             if (touchDetected) {
                 if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
-                u32 xDistance = (initialTouchPos.x > touchPos.x)
-                              ? (initialTouchPos.x - touchPos.x)
-                              : (touchPos.x - initialTouchPos.x);
-                
-                u32 yDistance = (initialTouchPos.y > touchPos.y)
-                              ? (initialTouchPos.y - touchPos.y)
-                              : (touchPos.y - initialTouchPos.y);
+                u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
+                u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
                 
                 bool isScroll = (xDistance * xDistance + yDistance * yDistance) > 1000;
                 if (isScroll) {
@@ -8314,14 +8325,9 @@ namespace tsl {
             if (touchDetected) {
                 if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
-                u32 xDistance = (initialTouchPos.x > touchPos.x)
-                              ? (initialTouchPos.x - touchPos.x)
-                              : (touchPos.x - initialTouchPos.x);
+                u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
+                u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
                 
-                u32 yDistance = (initialTouchPos.y > touchPos.y)
-                              ? (initialTouchPos.y - touchPos.y)
-                              : (touchPos.y - initialTouchPos.y);
-                                
                 bool isScroll = (xDistance * xDistance + yDistance * yDistance) > 1000;
                 if (isScroll) {
                     elm::Element::setInputMode(InputMode::TouchScroll);
