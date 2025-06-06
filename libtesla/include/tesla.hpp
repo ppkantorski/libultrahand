@@ -8071,35 +8071,39 @@ namespace tsl {
             u64 now, elapsedNs, resetElapsedNs;
 
             static u64 lastPollTime = 0;
-            static std::string lastTitleID = ult::getTitleIdAsString();
-            static bool resetCheck = true; // initialize as true
             static u64 resetStartTime = armGetSystemTick();
+            static bool runOnce = true;
+
+            if (runOnce) {
+                ult::lastTitleID = ult::getTitleIdAsString();
+                runOnce = false;
+            }
 
             while (shData->running) {
             
                 now = armGetSystemTick();
                 elapsedNs = armTicksToNs(now - lastPollTime);
-            
+
                 // Poll Title ID every 3 seconds
-                if (!resetCheck && elapsedNs >= 2'000'000'000ULL) {
+                if (!ult::resetForegroundCheck && elapsedNs >= 2'000'000'000ULL) {
                     lastPollTime = now;
             
                     currentTitleID = ult::getTitleIdAsString();
-                    if (currentTitleID != lastTitleID) {
-                        lastTitleID = currentTitleID;
-                        resetCheck = true;
+                    if (currentTitleID != ult::lastTitleID) {
+                        ult::lastTitleID = currentTitleID;
+                        ult::resetForegroundCheck = true;
                         resetStartTime = now;
                     }
                 }
             
                 // If a reset is scheduled, trigger after 3s delay
-                if (resetCheck) {
+                if (ult::resetForegroundCheck) {
                     resetElapsedNs = armTicksToNs(now - resetStartTime);
                     if (resetElapsedNs >= 3'000'000'000ULL) {
                         if (shData->overlayOpen && ult::currentForeground) {
                             hlp::requestForeground(true, false);
                         }
-                        resetCheck = false;
+                        ult::resetForegroundCheck = false;
                     }
                 }
 
@@ -8300,18 +8304,52 @@ namespace tsl {
         Overlay::get()->pop();
     }
 
-
+    
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
-        // std::string args = std::filesystem::path(ovlPath).filename();
-        std::string args = ult::getNameFromPath(ovlPath); // CUSTOM MODIFICATION
-        args += " " + origArgs;
-    
-        // Check if "--skipCombo" is already in origArgs
-        if (origArgs.find("--skipCombo") == std::string::npos) {
-            args += " --skipCombo";
+        bool hasSkipCombo = origArgs.find("--skipCombo") != std::string::npos;
+        bool fixForeground = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString());
+        
+        char buffer[1024]; // Adjust size as needed
+        char* p = buffer;
+        
+        // Copy filename
+        const char* filename = ult::getNameFromPath(ovlPath).c_str();
+        while (*filename) *p++ = *filename++;
+        *p++ = ' ';
+        
+        // Copy origArgs while filtering --foregroundFix
+        const char* src = origArgs.c_str();
+        const char* flagPos = strstr(src, "--foregroundFix");
+        
+        if (flagPos) {
+            // Copy before flag
+            while (src < flagPos) *p++ = *src++;
+            
+            // Skip "--foregroundFix X"
+            src = flagPos + 15;
+            while (*src == ' ') src++; // Skip spaces
+            if (*src == '0' || *src == '1') src++; // Skip single digit
+            
+            // Copy rest
+            while (*src) *p++ = *src++;
+        } else {
+            // No flag to filter, copy all
+            while (*src) *p++ = *src++;
         }
-    
-        envSetNextLoad(ovlPath.c_str(), args.c_str());
+        
+        // Add flags
+        if (!hasSkipCombo) {
+            memcpy(p, " --skipCombo", 12);
+            p += 12;
+        }
+        
+        // Add foreground flag (fastest possible)
+        memcpy(p, " --foregroundFix ", 17);
+        p += 17;
+        *p++ = fixForeground ? '1' : '0';
+        *p = '\0';
+        
+        envSetNextLoad(ovlPath.c_str(), buffer);
     }
     
     
@@ -8338,16 +8376,17 @@ namespace tsl {
 
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
-            //if ((strcasecmp(argv[arg], "ovlmenu.ovl") == 0)) {
-            //    isLauncher = true;
-            //}
-            if ((strcasecmp(argv[arg], "--skipCombo") == 0)) {
-                skipCombo = true;
-                //logMessage("Skip combo is present.");
-                ult::firstBoot = false;
-                break;
+            const char* s = argv[arg];
+            
+            if (s[0] == '-' && s[1] == '-') {
+                if (s[2] == 's' && !strcmp(s, "--skipCombo")) {
+                    skipCombo = true;
+                    ult::firstBoot = false;
+                }
+                else if (s[2] == 'f' && !strcmp(s, "--foregroundFix") && arg + 1 < argc) {
+                    ult::resetForegroundCheck = (argv[++arg][0] == '1'); // Just check for '1'
+                }
             }
-            //std::memset(argv[arg], 0, std::strlen(argv[arg]));
         }
 
         impl::SharedThreadData shData;
