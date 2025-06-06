@@ -8068,7 +8068,8 @@ namespace tsl {
             ult::launchingOverlay = false;
         #endif
             std::string currentTitleID;
-            u64 now, elapsedNs, resetElapsedNs;
+            u64 now, resetElapsedNs;
+            u64 elapsedNs;
 
             static u64 lastPollTime = 0;
             static u64 resetStartTime = armGetSystemTick();
@@ -8084,10 +8085,10 @@ namespace tsl {
                 now = armGetSystemTick();
                 elapsedNs = armTicksToNs(now - lastPollTime);
 
-                // Poll Title ID every 3 seconds
-                if (!ult::resetForegroundCheck && elapsedNs >= 2'000'000'000ULL) {
+                // Poll Title ID every 1 seconds
+                if (!ult::resetForegroundCheck && elapsedNs >= 1'000'000'000ULL) {
                     lastPollTime = now;
-            
+                
                     currentTitleID = ult::getTitleIdAsString();
                     if (currentTitleID != ult::lastTitleID) {
                         ult::lastTitleID = currentTitleID;
@@ -8095,11 +8096,18 @@ namespace tsl {
                         resetStartTime = now;
                     }
                 }
+
+                //currentTitleID = ult::getTitleIdAsString();
+                //if (currentTitleID != ult::lastTitleID) {
+                //    ult::lastTitleID = currentTitleID;
+                //    ult::resetForegroundCheck = true;
+                //    resetStartTime = now;
+                //}
             
                 // If a reset is scheduled, trigger after 3s delay
                 if (ult::resetForegroundCheck) {
                     resetElapsedNs = armTicksToNs(now - resetStartTime);
-                    if (resetElapsedNs >= 3'000'000'000ULL) {
+                    if (resetElapsedNs >= 3'500'000'000ULL) {
                         if (shData->overlayOpen && ult::currentForeground) {
                             hlp::requestForeground(true, false);
                         }
@@ -8307,7 +8315,8 @@ namespace tsl {
     
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         bool hasSkipCombo = origArgs.find("--skipCombo") != std::string::npos;
-        bool fixForeground = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString());
+        //bool fixForeground = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString());
+        //std::string currentTitleID = ult::getTitleIdAsString();
         
         char buffer[1024]; // Adjust size as needed
         char* p = buffer;
@@ -8317,24 +8326,44 @@ namespace tsl {
         while (*filename) *p++ = *filename++;
         *p++ = ' ';
         
-        // Copy origArgs while filtering --foregroundFix
+        // Copy origArgs while filtering --foregroundFix and --lastTitleID
         const char* src = origArgs.c_str();
-        const char* flagPos = strstr(src, "--foregroundFix");
+        const char* end = src + origArgs.length();
         
-        if (flagPos) {
-            // Copy before flag
-            while (src < flagPos) *p++ = *src++;
+        while (src < end) {
+            const char* fgPos = strstr(src, "--foregroundFix");
+            const char* titlePos = strstr(src, "--lastTitleID");
             
-            // Skip "--foregroundFix X"
-            src = flagPos + 15;
-            while (*src == ' ') src++; // Skip spaces
-            if (*src == '0' || *src == '1') src++; // Skip single digit
+            // Find the earliest flag to remove
+            const char* nextFlag = nullptr;
+            if (fgPos && titlePos) {
+                nextFlag = (fgPos < titlePos) ? fgPos : titlePos;
+            } else if (fgPos) {
+                nextFlag = fgPos;
+            } else if (titlePos) {
+                nextFlag = titlePos;
+            }
             
-            // Copy rest
-            while (*src) *p++ = *src++;
-        } else {
-            // No flag to filter, copy all
-            while (*src) *p++ = *src++;
+            if (nextFlag) {
+                // Copy before flag
+                while (src < nextFlag) *p++ = *src++;
+                
+                if (nextFlag == fgPos) {
+                    // Skip "--foregroundFix X"
+                    src = nextFlag + 15; // length of "--foregroundFix"
+                    while (src < end && *src == ' ') src++; // Skip spaces
+                    if (src < end && (*src == '0' || *src == '1')) src++; // Skip single digit
+                } else {
+                    // Skip "--lastTitleID XXXXXXXXXXXXXXXX"
+                    src = nextFlag + 13; // length of "--lastTitleID"
+                    while (src < end && *src == ' ') src++; // Skip spaces
+                    while (src < end && *src != ' ') src++; // Skip title ID value
+                }
+            } else {
+                // No more flags to filter, copy rest
+                while (src < end) *p++ = *src++;
+                break;
+            }
         }
         
         // Add flags
@@ -8343,10 +8372,17 @@ namespace tsl {
             p += 12;
         }
         
-        // Add foreground flag (fastest possible)
+        // Add foreground flag
         memcpy(p, " --foregroundFix ", 17);
         p += 17;
-        *p++ = fixForeground ? '1' : '0';
+        *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+        
+        // Add last title ID
+        memcpy(p, " --lastTitleID ", 15);
+        p += 15;
+        const char* titleId = ult::lastTitleID.c_str();
+        while (*titleId) *p++ = *titleId++;
+        
         *p = '\0';
         
         envSetNextLoad(ovlPath.c_str(), buffer);
@@ -8377,14 +8413,20 @@ namespace tsl {
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
             const char* s = argv[arg];
-            
+        
             if (s[0] == '-' && s[1] == '-') {
                 if (s[2] == 's' && !strcmp(s, "--skipCombo")) {
                     skipCombo = true;
                     ult::firstBoot = false;
                 }
                 else if (s[2] == 'f' && !strcmp(s, "--foregroundFix") && arg + 1 < argc) {
-                    ult::resetForegroundCheck = (argv[++arg][0] == '1'); // Just check for '1'
+                    ult::resetForegroundCheck = ult::resetForegroundCheck || (argv[++arg][0] == '1'); // Just check for '1'
+                }
+                else if (s[2] == 'l' && !strcmp(s, "--lastTitleID") && arg + 1 < argc) {
+                    const char* providedID = argv[++arg];
+                    if (ult::getTitleIdAsString() != providedID) {
+                        ult::resetForegroundCheck = true;
+                    }
                 }
             }
         }
