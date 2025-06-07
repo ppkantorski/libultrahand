@@ -914,7 +914,7 @@ namespace tsl {
              * @param w Width
              * @param h Height
              */
-            inline void enableScissoring(const s32 x, const s32 y, const s32 w, const s32 h) {
+            inline void enableScissoring(const u32 x, const u32 y, const u32 w, const u32 h) {
                 this->m_scissoringStack.emplace(x, y, w, h);
             }
             
@@ -935,7 +935,7 @@ namespace tsl {
              * @param y Y pos
              * @param color Color
              */
-            inline void setPixel(const s32 x, const s32 y, const Color& color, const u32 offset) {
+            inline void setPixel(const u32 x, const u32 y, const Color& color, const u32 offset) {
                 //if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
                 //u32 offset = this->getPixelOffset(x, y);
                 if (offset != UINT32_MAX) {
@@ -967,7 +967,7 @@ namespace tsl {
              * @param y Y pos
              * @param color Color
              */
-            inline void setPixelBlendSrc(const s32 x, const s32 y, const Color& color) {
+            inline void setPixelBlendSrc(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset == UINT32_MAX)
                     return;
@@ -991,7 +991,7 @@ namespace tsl {
             }
 
             // Alternative batch version for processing multiple pixels at once
-            inline void setPixelBlendSrcBatch(const s32 baseX, const s32 baseY, 
+            inline void setPixelBlendSrcBatch(const u32 baseX, const u32 baseY, 
                                               const u8 red[16], const u8 green[16], 
                                               const u8 blue[16], const u8 alpha[16], 
                                               const s32 count) {
@@ -1026,7 +1026,7 @@ namespace tsl {
              * @param y Y pos
              * @param color Color
              */
-            inline void setPixelBlendDst(const s32 x, const s32 y, const Color& color) {
+            inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset == UINT32_MAX)
                     return;
@@ -1051,7 +1051,7 @@ namespace tsl {
             }
             
             // Batch version for setPixelBlendDst
-            inline void setPixelBlendDstBatch(const s32 baseX, const s32 baseY, 
+            inline void setPixelBlendDstBatch(const u32 baseX, const u32 baseY, 
                                               const u8 red[16], const u8 green[16], 
                                               const u8 blue[16], const u8 alpha[16], 
                                               const s32 count) {
@@ -2737,7 +2737,7 @@ namespace tsl {
                 // Initialize rendering state
                 float currX = x;
                 float currY = y;
-                bool inSpecialMode = false;
+                //bool inSpecialMode = false;
                 
                 // Pre-calculate constants
                 const u64 keyBase = (static_cast<u64>(false) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
