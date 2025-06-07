@@ -121,12 +121,18 @@ void cleanupCurl() {
  * @return True if the download was successful, false otherwise.
  */
 bool downloadFile(const std::string& url, const std::string& toDestination) {
+    socketInitializeDefault();
+    initializeCurl();
+    svcSleepThread(100'000'000u);
+
     abortDownload.store(false);
 
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Invalid URL: " + url);
         #endif
+        cleanupCurl();
+        socketExit();
         return false;
     }
 
@@ -140,6 +146,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Invalid URL: " + url);
             #endif
+            cleanupCurl();
+            socketExit();
             return false;
         }
     } else {
@@ -155,6 +163,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
         #endif
+        cleanupCurl();
+        socketExit();
         return false;
     }
 #else
@@ -164,6 +174,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
         #endif
+        cleanupCurl();
+        socketExit();
         return false;
     }
 #endif
@@ -178,6 +190,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #else
         close(file);
 #endif
+        cleanupCurl();
+        socketExit();
         return false;
     }
 
@@ -215,6 +229,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
+        cleanupCurl();
+        socketExit();
         return false;
     }
 
@@ -227,6 +243,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
         checkFile.close();
+        cleanupCurl();
+        socketExit();
         return false;
     }
     checkFile.close();
@@ -239,6 +257,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
+        cleanupCurl();
+        socketExit();
         return false;
     }
 #endif
@@ -246,6 +266,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     downloadPercentage.store(100, std::memory_order_release);
     moveFile(tempFilePath, destination);
 
+    cleanupCurl();
+    socketExit();
     return true;
 }
 
