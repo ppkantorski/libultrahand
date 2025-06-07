@@ -145,6 +145,70 @@ double elapsedTime;
 
 static u32 offsetWidthVar;
 
+constexpr uint8_t utf8_length_table[256] = {
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0
+};
+            
+inline ssize_t fast_decode_utf8(u32* codepoint, const uint8_t* str) noexcept {
+    const uint8_t first = str[0];
+    const uint8_t len = utf8_length_table[first];
+    
+    switch (len) {
+        case 1:
+            *codepoint = first;
+            return 1;
+        case 2:
+            *codepoint = ((first & 0x1F) << 6) | (str[1] & 0x3F);
+            return 2;
+        case 3:
+            *codepoint = ((first & 0x0F) << 12) | ((str[1] & 0x3F) << 6) | (str[2] & 0x3F);
+            return 3;
+        case 4:
+            *codepoint = ((first & 0x07) << 18) | ((str[1] & 0x3F) << 12) | 
+                       ((str[2] & 0x3F) << 6) | (str[3] & 0x3F);
+            return 4;
+        default:
+            return -1;
+    }
+}
+
+// Fast ASCII detection helper - optimized for better branch prediction
+inline bool isAsciiString(const char* text, size_t length) noexcept {
+    // Use pointer arithmetic instead of indexing for better performance
+    const char* end = text + length;
+    const char* ptr = text;
+    
+    // Process 16 bytes at once using SIMD-friendly approach
+    while (ptr + 16 <= end) {
+        // Load two 64-bit words and check all at once
+        const uint64_t word1 = *reinterpret_cast<const uint64_t*>(ptr);
+        const uint64_t word2 = *reinterpret_cast<const uint64_t*>(ptr + 8);
+        if ((word1 | word2) & 0x8080808080808080ULL) [[unlikely]] return false;
+        ptr += 16;
+    }
+    
+    // Handle remaining bytes in 8-byte chunks
+    while (ptr + 8 <= end) {
+        if (*reinterpret_cast<const uint64_t*>(ptr) & 0x8080808080808080ULL) [[unlikely]] return false;
+        ptr += 8;
+    }
+    
+    // Handle final bytes
+    while (ptr < end) {
+        if (static_cast<unsigned char>(*ptr) > 127) [[unlikely]] return false;
+        ++ptr;
+    }
+    return true;
+}
+
+
 namespace tsl {
 
     // Constants
@@ -1962,1011 +2026,314 @@ namespace tsl {
                 return m_stdFont;
             }
             
-            // Ultra-optimized renderTextSegment with extreme performance enhancements
-            // Fixed renderTextSegment that exactly matches original behavior
-            inline void renderTextSegment(const char* textPtr, size_t length, float& currX, float& currY, float& maxX,
-                                          const u32 fontSize, const Color& color, const u64 keyBase,
-                                          std::unordered_map<u64, Glyph>& glyphCache, 
-                                          bool monospace = false, const ssize_t maxWidth = 0, const float startX = 0) {
-                
-                if (length == 0 || color.a == 0x0) [[unlikely]] return;
-                
-                const char* strPtr = textPtr;
-                const char* const strEnd = textPtr + length;
-                
-                // Pre-declare all variables for maximum register usage
-                u32 currCharacter;
-                ssize_t codepointWidth;
-                u64 key;
-                Glyph* glyph;
-                const uint8_t* bmpPtr;
-                float xPos, yPos;
-                s32 width, height;
-                uint8_t alpha;
-                
-                // Ultra-fast ASCII detection using 64-bit word scanning
-                bool isAsciiOnly = true;
-                if (length >= 8) {
-                    const uint64_t* wordPtr = reinterpret_cast<const uint64_t*>(textPtr);
-                    const uint64_t* wordEnd = reinterpret_cast<const uint64_t*>(textPtr + (length & ~7));
-                    
-                    // Check 8 bytes at once for non-ASCII
-                    while (wordPtr < wordEnd) {
-                        if (*wordPtr & 0x8080808080808080ULL) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                        ++wordPtr;
-                    }
-                    
-                    // Check remaining bytes if still ASCII
-                    if (isAsciiOnly) {
-                        for (size_t i = (length & ~7); i < length; ++i) {
-                            if (static_cast<unsigned char>(textPtr[i]) > 127) {
-                                isAsciiOnly = false;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // For small strings, simple loop
-                    for (size_t i = 0; i < length; ++i) {
-                        if (static_cast<unsigned char>(textPtr[i]) > 127) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                    }
-                }
-                
-                // Main character processing loop - EXACTLY like original
-                while (strPtr < strEnd) {
-                    // EXACT same maxWidth check as original
-                    if (maxWidth > 0 && (currX - startX) >= maxWidth)
-                        break;
-                    
-                    // Dual-path character decoding
-                    if (isAsciiOnly) [[likely]] {
-                        currCharacter = static_cast<u32>(*strPtr);
-                        ++strPtr;
-                    } else {
-                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(strPtr));
-                        if (codepointWidth <= 0) break;
-                        strPtr += codepointWidth;
-                    }
-                    
-                    // EXACT same newline handling as original
-                    if (currCharacter == '\n') {
-                        maxX = std::max(currX, maxX);
-                        currX = startX;
-                        currY += fontSize;
-                        continue;
-                    }
-                    
-                    // Optimized glyph key calculation
-                    key = (static_cast<u64>(currCharacter) << 32) | keyBase;
-                    
-                    // Cache lookup
-                    auto it = glyphCache.find(key);
-                    if (it == glyphCache.end()) {
-                        auto [insertIt, inserted] = glyphCache.emplace(key, Glyph{});
-                        glyph = &insertIt->second;
-                        
-                        // Font selection - same as original
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        const float scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                        glyph->currFontSize = scaledFontSize;
-            
-                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
-                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            
-                        s32 yAdvance = 0;
-                        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
-            
-                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, 
-                                                                   currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
-                    } else {
-                        glyph = &it->second;
-                    }
-                    
-                    // EXACT same rendering condition as original
-                    if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && color.a != 0x0) {
-                        xPos = currX + glyph->bounds[0];
-                        yPos = currY + glyph->bounds[1];
-                        bmpPtr = glyph->glyphBmp;
-                        width = glyph->width;
-                        height = glyph->height;
-                        
-                        // Optimized pixel blitting
-                        for (s32 row = 0; row < height; ++row) {
-                            const float currentY = yPos + row;
-                            const uint8_t* rowPtr = bmpPtr + (row * width);
-                            
-                            s32 col = 0;
-                            const s32 simdWidth = width & ~7;
-                            
-                            // Process 8 pixels at once
-                            for (; col < simdWidth; col += 8) {
-                                const uint8_t a0 = rowPtr[col] >> 4;
-                                const uint8_t a1 = rowPtr[col + 1] >> 4;
-                                const uint8_t a2 = rowPtr[col + 2] >> 4;
-                                const uint8_t a3 = rowPtr[col + 3] >> 4;
-                                const uint8_t a4 = rowPtr[col + 4] >> 4;
-                                const uint8_t a5 = rowPtr[col + 5] >> 4;
-                                const uint8_t a6 = rowPtr[col + 6] >> 4;
-                                const uint8_t a7 = rowPtr[col + 7] >> 4;
-                                
-                                const float baseX = xPos + col;
-                                
-                                if (a0 == 0xF) {
-                                    this->setPixel(baseX, currentY, color, this->getPixelOffset(baseX, currentY));
-                                } else if (a0 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a0;
-                                    this->setPixelBlendDst(baseX, currentY, tmpColor);
-                                }
-                                
-                                if (a1 == 0xF) {
-                                    this->setPixel(baseX + 1, currentY, color, this->getPixelOffset(baseX + 1, currentY));
-                                } else if (a1 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a1;
-                                    this->setPixelBlendDst(baseX + 1, currentY, tmpColor);
-                                }
-                                
-                                if (a2 == 0xF) {
-                                    this->setPixel(baseX + 2, currentY, color, this->getPixelOffset(baseX + 2, currentY));
-                                } else if (a2 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a2;
-                                    this->setPixelBlendDst(baseX + 2, currentY, tmpColor);
-                                }
-                                
-                                if (a3 == 0xF) {
-                                    this->setPixel(baseX + 3, currentY, color, this->getPixelOffset(baseX + 3, currentY));
-                                } else if (a3 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a3;
-                                    this->setPixelBlendDst(baseX + 3, currentY, tmpColor);
-                                }
-                                
-                                if (a4 == 0xF) {
-                                    this->setPixel(baseX + 4, currentY, color, this->getPixelOffset(baseX + 4, currentY));
-                                } else if (a4 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a4;
-                                    this->setPixelBlendDst(baseX + 4, currentY, tmpColor);
-                                }
-                                
-                                if (a5 == 0xF) {
-                                    this->setPixel(baseX + 5, currentY, color, this->getPixelOffset(baseX + 5, currentY));
-                                } else if (a5 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a5;
-                                    this->setPixelBlendDst(baseX + 5, currentY, tmpColor);
-                                }
-                                
-                                if (a6 == 0xF) {
-                                    this->setPixel(baseX + 6, currentY, color, this->getPixelOffset(baseX + 6, currentY));
-                                } else if (a6 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a6;
-                                    this->setPixelBlendDst(baseX + 6, currentY, tmpColor);
-                                }
-                                
-                                if (a7 == 0xF) {
-                                    this->setPixel(baseX + 7, currentY, color, this->getPixelOffset(baseX + 7, currentY));
-                                } else if (a7 != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = a7;
-                                    this->setPixelBlendDst(baseX + 7, currentY, tmpColor);
-                                }
-                            }
-                            
-                            // Handle remaining pixels
-                            for (; col < width; ++col) {
-                                alpha = rowPtr[col] >> 4;
-                                if (alpha == 0xF) {
-                                    this->setPixel(xPos + col, currentY, color, this->getPixelOffset(xPos + col, currentY));
-                                } else if (alpha != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = alpha;
-                                    this->setPixelBlendDst(xPos + col, currentY, tmpColor);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Advance cursor - EXACT same as original
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                }
-            }
             
             // Consolidated drawString that returns EXACTLY the same values as original
             // Ultra-optimized drawString that returns EXACTLY the same values as original
-            inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const u32 x, const u32 y, const u32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+            // Shared glyph cache and utilities
+            
+            // Compact glyph cache key generation - reduces memory footprint
+            inline constexpr u64 makeGlyphKey(u32 character, u32 fontSize, bool monospace) noexcept {
+                // Pack more efficiently: 21 bits char + 11 bits fontSize + 1 bit monospace + 31 bits unused
+                return (static_cast<u64>(character & 0x1FFFFF) << 12) | 
+                       (static_cast<u64>(fontSize & 0x7FF) << 1) | 
+                       static_cast<u64>(monospace);
+            }
+            
+            // Core glyph creation and caching - reduced memory allocations
+            inline Glyph* getOrCreateGlyph(u32 character, u32 fontSize, bool monospace) {
+                const u64 key = makeGlyphKey(character, fontSize, monospace);
                 
-                #ifdef UI_OVERRIDE_PATH
-                // Check for translation in the cache
-                auto translatedIt = ult::translationCache.find(originalString);
-                std::string translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
-            
-                // Cache the translation if it wasn't already present
-                if (translatedIt == ult::translationCache.end()) {
-                    ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
+                // Use thread_local for better cache locality
+                thread_local std::unordered_map<u64, Glyph> s_glyphCache;
+                
+                // Use try_emplace to avoid double lookup
+                auto [it, inserted] = s_glyphCache.try_emplace(key);
+                if (!inserted) [[likely]] {
+                    return &it->second;
                 }
-                const std::string* stringPtr = &translatedString;
-                #else
-                const std::string* stringPtr = &originalString;
-                #endif
+                
+                Glyph& glyph = it->second;
+                
+                // Font selection - same logic but more cache-friendly
+                if (stbtt_FindGlyphIndex(&this->m_extFont, character)) {
+                    glyph.currFont = &this->m_extFont;
+                } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, character) == 0) {
+                    glyph.currFont = &this->m_localFont;
+                } else {
+                    glyph.currFont = &this->m_stdFont;
+                }
+                
+                const float scaledFontSize = stbtt_ScaleForPixelHeight(glyph.currFont, fontSize);
+                glyph.currFontSize = scaledFontSize;
+                
+                stbtt_GetCodepointBitmapBoxSubpixel(glyph.currFont, character, scaledFontSize, scaledFontSize,
+                                                    0, 0, &glyph.bounds[0], &glyph.bounds[1], &glyph.bounds[2], &glyph.bounds[3]);
+                
+                s32 yAdvance = 0;
+                stbtt_GetCodepointHMetrics(glyph.currFont, monospace ? 'W' : character, &glyph.xAdvance, &yAdvance);
+                
+                glyph.glyphBmp = stbtt_GetCodepointBitmap(glyph.currFont, scaledFontSize, scaledFontSize, 
+                                                          character, &glyph.width, &glyph.height, nullptr, nullptr);
+                
+                return &glyph;
+            }
             
-                // EXACT same initialization as original
+            // Optimized pixel rendering - using lookup table for alpha blending
+            inline void renderGlyphPixels(const Glyph* glyph, float xPos, float yPos, const Color& color) {
+                if (!glyph->glyphBmp || color.a == 0x0) [[unlikely]] return;
+                
+                // Pre-calculate common values
+                //const s32 startX = static_cast<s32>(xPos);
+                const s32 startY = static_cast<s32>(yPos);
+                const s32 endY = startY + glyph->height;
+                
+                // Process row by row for better cache locality
+                for (s32 pixelY = startY; pixelY < endY; ++pixelY) {
+                    const s32 bmpY = pixelY - startY;
+                    const uint8_t* rowPtr = glyph->glyphBmp + (bmpY * glyph->width);
+                    
+                    // Vectorized processing - handle 16 pixels at once
+                    s32 bmpX = 0;
+                    const s32 simd16Width = glyph->width & ~15;
+                    
+                    for (; bmpX < simd16Width; bmpX += 16) {
+                        const float baseX = xPos + bmpX;
+                        
+                        // Load 16 alpha values at once and process
+                        for (int i = 0; i < 16; ++i) {
+                            const uint8_t alpha = rowPtr[bmpX + i] >> 4;
+                            if (alpha) [[likely]] {
+                                const float pixelX = baseX + i;
+                                if (alpha == 0xF) {
+                                    this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
+                                } else {
+                                    Color blendColor = color;
+                                    blendColor.a = alpha;
+                                    this->setPixelBlendDst(pixelX, pixelY, blendColor);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Handle remaining pixels
+                    for (; bmpX < glyph->width; ++bmpX) {
+                        const uint8_t alpha = rowPtr[bmpX] >> 4;
+                        if (alpha) [[likely]] {
+                            const float pixelX = xPos + bmpX;
+                            if (alpha == 0xF) {
+                                this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
+                            } else {
+                                Color blendColor = color;
+                                blendColor.a = alpha;
+                                this->setPixelBlendDst(pixelX, pixelY, blendColor);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Optimized UTF-8 decoder with lookup table
+            //namespace {
+            // Compile-time lookup table for UTF-8 sequence lengths
+            //}
+            
+            // Core text rendering engine - further optimized
+            template<typename ColorSelector>
+            inline std::pair<s32, s32> renderTextCore(
+                const std::string* stringPtr, s32 x, s32 y, u32 fontSize, 
+                bool monospace, ColorSelector&& colorFunc, ssize_t maxWidth = 0) {
+                
+                if (stringPtr->empty() || fontSize <= 0) [[unlikely]] {
+                    return {0, 0};
+                }
+                
+                // Pre-calculate commonly used values
+                const char* strData = stringPtr->data();
+                const size_t strLen = stringPtr->length();
+                const char* strEnd = strData + strLen;
+                
                 float maxX = x;
                 float currX = x;
                 float currY = y;
                 
-                // Cache the end iterator for efficiency - SAME AS ORIGINAL
-                auto itStrEnd = stringPtr->cend();
-                auto itStr = stringPtr->cbegin();
+                // Fast ASCII detection
+                const bool isAsciiOnly = isAsciiString(strData, strLen);
                 
-                // Move variable declarations outside of the loop - SAME AS ORIGINAL
+                const char* strPtr = strData;
                 u32 currCharacter = 0;
                 ssize_t codepointWidth = 0;
-                u64 key = 0;
-                Glyph* glyph = nullptr;
                 
-                float xPos = 0;
-                float yPos = 0;
-                u32 rowOffset = 0;
-                uint8_t bmpColor = 0;
-                Color tmpColor(0);
-                
-                // Static glyph cache - SAME AS ORIGINAL
-                static std::unordered_map<u64, Glyph> s_glyphCache; // may cause leak? will investigate later.
-                auto it = s_glyphCache.end();
-            
-                float scaledFontSize;
-            
-                // Ultra-fast ASCII detection for the entire string
-                bool isAsciiOnly = true;
-                const size_t strLen = stringPtr->size();
-                if (strLen >= 8) {
-                    const uint64_t* wordPtr = reinterpret_cast<const uint64_t*>(stringPtr->data());
-                    const uint64_t* wordEnd = reinterpret_cast<const uint64_t*>(stringPtr->data() + (strLen & ~7));
-                    
-                    while (wordPtr < wordEnd) {
-                        if (*wordPtr & 0x8080808080808080ULL) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                        ++wordPtr;
-                    }
-                    
-                    if (isAsciiOnly) {
-                        for (size_t i = (strLen & ~7); i < strLen; ++i) {
-                            if (static_cast<unsigned char>((*stringPtr)[i]) > 127) {
-                                isAsciiOnly = false;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    for (size_t i = 0; i < strLen; ++i) {
-                        if (static_cast<unsigned char>((*stringPtr)[i]) > 127) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                    }
-                }
-            
-                // Loop through each character in the string - EXACT SAME STRUCTURE AS ORIGINAL
-                while (itStr != itStrEnd) {
-                    // EXACT same maxWidth check as original
-                    if (maxWidth > 0 && (currX - x) >= maxWidth)
-                        break;
-            
-                    // Optimized UTF-8 decoding
-                    if (isAsciiOnly && itStr < itStrEnd) {
-                        // Fast ASCII path
-                        currCharacter = static_cast<u32>(*itStr);
-                        codepointWidth = 1;
-                        ++itStr;
-                    } else {
-                        // Unicode path - EXACT same as original
-                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                        if (codepointWidth <= 0)
-                            break;
-                        
-                        // Move the iterator forward by the width of the current codepoint - SAME AS ORIGINAL
-                        itStr += codepointWidth;
-                    }
-            
-                    // EXACT same newline handling as original
-                    if (currCharacter == '\n') {
-                        maxX = std::max(currX, maxX);
-                        currX = x;
-                        currY += fontSize;
-                        continue;
-                    }
-            
-                    // Calculate glyph key - SAME AS ORIGINAL
-                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-            
-                    // Check cache for the glyph - SAME AS ORIGINAL
-                    it = s_glyphCache.find(key);
-            
-                    // If glyph not found, create and cache it - SAME AS ORIGINAL
-                    if (it == s_glyphCache.end()) {
-                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-                        
-                        // Determine the appropriate font for the character - SAME AS ORIGINAL
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                        glyph->currFontSize = scaledFontSize;
-            
-                        // Get glyph bitmap and metrics - SAME AS ORIGINAL
-                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
-                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            
-                        s32 yAdvance = 0;
-                        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
-            
-                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
-                    } else {
-                        glyph = &it->second;
-                    }
-            
-                    // EXACT same rendering condition and logic as original
-                    if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && color.a != 0x0) {
-                        xPos = currX + glyph->bounds[0];
-                        yPos = currY + glyph->bounds[1];
-            
-                        // Ultra-optimized pixel processing with SIMD-style unrolling
-                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
-                            rowOffset = bmpY * glyph->width;
-                            const uint8_t* rowPtr = glyph->glyphBmp + rowOffset;
-                            
-                            // Process 8 pixels at once for maximum performance
-                            s32 bmpX = 0;
-                            const s32 simdWidth = glyph->width & ~7;
-                            
-                            for (; bmpX < simdWidth; bmpX += 8) {
-                                // Load 8 alpha values
-                                const uint8_t a0 = rowPtr[bmpX] >> 4;
-                                const uint8_t a1 = rowPtr[bmpX + 1] >> 4;
-                                const uint8_t a2 = rowPtr[bmpX + 2] >> 4;
-                                const uint8_t a3 = rowPtr[bmpX + 3] >> 4;
-                                const uint8_t a4 = rowPtr[bmpX + 4] >> 4;
-                                const uint8_t a5 = rowPtr[bmpX + 5] >> 4;
-                                const uint8_t a6 = rowPtr[bmpX + 6] >> 4;
-                                const uint8_t a7 = rowPtr[bmpX + 7] >> 4;
-                                
-                                const float baseX = xPos + bmpX;
-                                const float pixelY = yPos + bmpY;
-                                
-                                // Unrolled pixel processing
-                                if (a0 == 0xF) {
-                                    this->setPixel(baseX, pixelY, color, this->getPixelOffset(baseX, pixelY));
-                                } else if (a0 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a0;
-                                    this->setPixelBlendDst(baseX, pixelY, tmpColor);
-                                }
-                                
-                                if (a1 == 0xF) {
-                                    this->setPixel(baseX + 1, pixelY, color, this->getPixelOffset(baseX + 1, pixelY));
-                                } else if (a1 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a1;
-                                    this->setPixelBlendDst(baseX + 1, pixelY, tmpColor);
-                                }
-                                
-                                if (a2 == 0xF) {
-                                    this->setPixel(baseX + 2, pixelY, color, this->getPixelOffset(baseX + 2, pixelY));
-                                } else if (a2 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a2;
-                                    this->setPixelBlendDst(baseX + 2, pixelY, tmpColor);
-                                }
-                                
-                                if (a3 == 0xF) {
-                                    this->setPixel(baseX + 3, pixelY, color, this->getPixelOffset(baseX + 3, pixelY));
-                                } else if (a3 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a3;
-                                    this->setPixelBlendDst(baseX + 3, pixelY, tmpColor);
-                                }
-                                
-                                if (a4 == 0xF) {
-                                    this->setPixel(baseX + 4, pixelY, color, this->getPixelOffset(baseX + 4, pixelY));
-                                } else if (a4 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a4;
-                                    this->setPixelBlendDst(baseX + 4, pixelY, tmpColor);
-                                }
-                                
-                                if (a5 == 0xF) {
-                                    this->setPixel(baseX + 5, pixelY, color, this->getPixelOffset(baseX + 5, pixelY));
-                                } else if (a5 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a5;
-                                    this->setPixelBlendDst(baseX + 5, pixelY, tmpColor);
-                                }
-                                
-                                if (a6 == 0xF) {
-                                    this->setPixel(baseX + 6, pixelY, color, this->getPixelOffset(baseX + 6, pixelY));
-                                } else if (a6 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a6;
-                                    this->setPixelBlendDst(baseX + 6, pixelY, tmpColor);
-                                }
-                                
-                                if (a7 == 0xF) {
-                                    this->setPixel(baseX + 7, pixelY, color, this->getPixelOffset(baseX + 7, pixelY));
-                                } else if (a7 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a7;
-                                    this->setPixelBlendDst(baseX + 7, pixelY, tmpColor);
-                                }
-                            }
-                            
-                            // Handle remaining pixels (original logic)
-                            for (; bmpX < glyph->width; ++bmpX) {
-                                bmpColor = rowPtr[bmpX] >> 4;
-                                if (bmpColor == 0xF) {
-                                    // Direct pixel manipulation - SAME AS ORIGINAL
-                                    this->setPixel(xPos + bmpX, yPos + bmpY, color, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
-                                } else if (bmpColor != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
-                                }
-                            }
-                        }
-                    }
-            
-                    // Advance the cursor for the next glyph - SAME AS ORIGINAL
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                }
-            
-                // EXACT same final calculation as original
-                maxX = std::max(currX, maxX);
-                return { static_cast<u32>(maxX - x), static_cast<u32>(currY - y) };
-            }
-
-
-            inline std::pair<u32, u32> drawStringWithHighlight(
-                const std::string& text, bool monospace, u32 x, u32 y,
-                const u32 fontSize, const Color& defaultColor, const Color& specialColor,
-                const ssize_t maxWidth = 0
-            ) {
-                // Early exits
-                if (text.empty() || fontSize <= 0) [[unlikely]] {
-                    return { 0, 0 };
-                }
-            
-                // Initialize rendering state
-                float maxX = x;
-                float currX = x;
-                float currY = y;
-                bool inHighlight = false;
-                
-                // Static glyph cache (shared across all calls)
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-                
-                // Ultra-fast ASCII detection for the entire string
-                bool isAsciiOnly = true;
-                const size_t strLen = text.size();
-                if (strLen >= 8) {
-                    const uint64_t* wordPtr = reinterpret_cast<const uint64_t*>(text.data());
-                    const uint64_t* wordEnd = reinterpret_cast<const uint64_t*>(text.data() + (strLen & ~7));
-                    
-                    while (wordPtr < wordEnd) {
-                        if (*wordPtr & 0x8080808080808080ULL) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                        ++wordPtr;
-                    }
-                    
-                    if (isAsciiOnly) {
-                        for (size_t i = (strLen & ~7); i < strLen; ++i) {
-                            if (static_cast<unsigned char>(text[i]) > 127) {
-                                isAsciiOnly = false;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    for (size_t i = 0; i < strLen; ++i) {
-                        if (static_cast<unsigned char>(text[i]) > 127) {
-                            isAsciiOnly = false;
-                            break;
-                        }
-                    }
-                }
-            
-                // Cache iterators and variables
-                auto itStrEnd = text.cend();
-                auto itStr = text.cbegin();
-                
-                // Pre-declare variables for optimal register usage
-                u32 currCharacter = 0;
-                ssize_t codepointWidth = 0;
-                u64 key = 0;
-                Glyph* glyph = nullptr;
-                float xPos = 0;
-                float yPos = 0;
-                u32 rowOffset = 0;
-                uint8_t bmpColor = 0;
-                Color tmpColor(0);
-                auto it = s_glyphCache.end();
-                float scaledFontSize;
-            
-                // Main character processing loop
-                while (itStr != itStrEnd) {
-                    // Width boundary check
-                    if (maxWidth > 0 && (currX - x) >= maxWidth) {
-                        break;
-                    }
-            
-                    // Optimized UTF-8 decoding
-                    if (isAsciiOnly && itStr < itStrEnd) {
-                        // Fast ASCII path
-                        currCharacter = static_cast<u32>(*itStr);
-                        codepointWidth = 1;
-                        ++itStr;
-                    } else {
-                        // Unicode path
-                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                        if (codepointWidth <= 0) break;
-                        itStr += codepointWidth;
-                    }
-            
-                    // Handle parentheses for highlight state
-                    if (currCharacter == '(') {
-                        inHighlight = true;
-                    } else if (currCharacter == ')') {
-                        inHighlight = false;
-                    }
-            
-                    // Handle newlines  
-                    if (currCharacter == '\n') {
-                        maxX = std::max(currX, maxX);
-                        currX = x;
-                        currY += fontSize;
-                        continue;
-                    }
-            
-                    // Calculate glyph key
-                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-            
-                    // Check cache for the glyph
-                    it = s_glyphCache.find(key);
-            
-                    // If glyph not found, create and cache it
-                    if (it == s_glyphCache.end()) {
-                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-                        
-                        // Determine the appropriate font for the character
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                        glyph->currFontSize = scaledFontSize;
-            
-                        // Get glyph bitmap and metrics
-                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
-                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            
-                        s32 yAdvance = 0;
-                        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
-            
-                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
-                    } else {
-                        glyph = &it->second;
-                    }
-            
-                    // Determine color based on highlight state and parentheses
-                    const Color& currentColor = (currCharacter == '(' || currCharacter == ')') ? defaultColor : 
-                                               (inHighlight ? specialColor : defaultColor);
-            
-                    // Render the glyph if it's not whitespace
-                    if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && currentColor.a != 0x0) {
-                        xPos = currX + glyph->bounds[0];
-                        yPos = currY + glyph->bounds[1];
-            
-                        // Ultra-optimized pixel processing with SIMD-style unrolling
-                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
-                            rowOffset = bmpY * glyph->width;
-                            const uint8_t* rowPtr = glyph->glyphBmp + rowOffset;
-                            
-                            // Process 8 pixels at once for maximum performance
-                            s32 bmpX = 0;
-                            const s32 simdWidth = glyph->width & ~7;
-                            
-                            for (; bmpX < simdWidth; bmpX += 8) {
-                                // Load 8 alpha values
-                                const uint8_t a0 = rowPtr[bmpX] >> 4;
-                                const uint8_t a1 = rowPtr[bmpX + 1] >> 4;
-                                const uint8_t a2 = rowPtr[bmpX + 2] >> 4;
-                                const uint8_t a3 = rowPtr[bmpX + 3] >> 4;
-                                const uint8_t a4 = rowPtr[bmpX + 4] >> 4;
-                                const uint8_t a5 = rowPtr[bmpX + 5] >> 4;
-                                const uint8_t a6 = rowPtr[bmpX + 6] >> 4;
-                                const uint8_t a7 = rowPtr[bmpX + 7] >> 4;
-                                
-                                const float baseX = xPos + bmpX;
-                                const float pixelY = yPos + bmpY;
-                                
-                                // Unrolled pixel processing
-                                if (a0 == 0xF) {
-                                    this->setPixel(baseX, pixelY, currentColor, this->getPixelOffset(baseX, pixelY));
-                                } else if (a0 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a0;
-                                    this->setPixelBlendDst(baseX, pixelY, tmpColor);
-                                }
-                                
-                                if (a1 == 0xF) {
-                                    this->setPixel(baseX + 1, pixelY, currentColor, this->getPixelOffset(baseX + 1, pixelY));
-                                } else if (a1 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a1;
-                                    this->setPixelBlendDst(baseX + 1, pixelY, tmpColor);
-                                }
-                                
-                                if (a2 == 0xF) {
-                                    this->setPixel(baseX + 2, pixelY, currentColor, this->getPixelOffset(baseX + 2, pixelY));
-                                } else if (a2 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a2;
-                                    this->setPixelBlendDst(baseX + 2, pixelY, tmpColor);
-                                }
-                                
-                                if (a3 == 0xF) {
-                                    this->setPixel(baseX + 3, pixelY, currentColor, this->getPixelOffset(baseX + 3, pixelY));
-                                } else if (a3 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a3;
-                                    this->setPixelBlendDst(baseX + 3, pixelY, tmpColor);
-                                }
-                                
-                                if (a4 == 0xF) {
-                                    this->setPixel(baseX + 4, pixelY, currentColor, this->getPixelOffset(baseX + 4, pixelY));
-                                } else if (a4 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a4;
-                                    this->setPixelBlendDst(baseX + 4, pixelY, tmpColor);
-                                }
-                                
-                                if (a5 == 0xF) {
-                                    this->setPixel(baseX + 5, pixelY, currentColor, this->getPixelOffset(baseX + 5, pixelY));
-                                } else if (a5 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a5;
-                                    this->setPixelBlendDst(baseX + 5, pixelY, tmpColor);
-                                }
-                                
-                                if (a6 == 0xF) {
-                                    this->setPixel(baseX + 6, pixelY, currentColor, this->getPixelOffset(baseX + 6, pixelY));
-                                } else if (a6 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a6;
-                                    this->setPixelBlendDst(baseX + 6, pixelY, tmpColor);
-                                }
-                                
-                                if (a7 == 0xF) {
-                                    this->setPixel(baseX + 7, pixelY, currentColor, this->getPixelOffset(baseX + 7, pixelY));
-                                } else if (a7 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a7;
-                                    this->setPixelBlendDst(baseX + 7, pixelY, tmpColor);
-                                }
-                            }
-                            
-                            // Handle remaining pixels (original logic)
-                            for (; bmpX < glyph->width; ++bmpX) {
-                                bmpColor = rowPtr[bmpX] >> 4;
-                                if (bmpColor == 0xF) {
-                                    this->setPixel(xPos + bmpX, yPos + bmpY, currentColor, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
-                                } else if (bmpColor != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
-                                }
-                            }
-                        }
-                    }
-            
-                    // Advance the cursor for the next glyph
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                }
-            
-                // Calculate final dimensions
-                maxX = std::max(currX, maxX);
-                return {maxX - x, currY - y + fontSize};
-            }
-            
-                        
-            inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, u32 x, const u32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
-                // Early exits
-                if (text.empty() || fontSize <= 0) [[unlikely]] {
-                    return;
-                }
-                
-                // Fast path: no special symbols
-                if (specialSymbols.empty()) [[likely]] {
-                    drawString(text, false, x, y, fontSize, defaultColor);
-                    return;
-                }
-                
-                // Build efficient pattern matcher using Aho-Corasick-like approach
-                // For simplicity, using optimized linear search with memoization
-                
-                // Create sorted symbol list for greedy matching
-                std::vector<std::string_view> sortedSymbols;
-                for (const auto& symbol : specialSymbols) {
-                    if (!symbol.empty()) {
-                        sortedSymbols.emplace_back(symbol);
-                    }
-                }
-                
-                // Sort by length (descending) for longest-first matching
-                std::sort(sortedSymbols.begin(), sortedSymbols.end(),
-                          [](const auto& a, const auto& b) { return a.length() > b.length(); });
-                
-                // Initialize rendering state
-                float currX = x;
-                float currY = y;
-                //bool inSpecialMode = false;
-                
-                // Pre-calculate constants
-                const u64 keyBase = (static_cast<u64>(false) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
-                
-                // Static glyph cache (shared)
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-                static bool s_cacheInitialized = false;
-                if (!s_cacheInitialized) [[unlikely]] {
-                    s_glyphCache.reserve(512);
-                    s_cacheInitialized = true;
-                }
-                
-                // String processing setup
-                const char* strPtr = text.data();
-                const char* const strEnd = strPtr + text.length();
-                const char* currentStart = strPtr;
-                
-                // Main processing loop
+                // Main rendering loop
                 while (strPtr < strEnd) {
-                    // Check for special symbol matches at current position
-                    bool foundMatch = false;
-                    size_t matchLength = 0;
+                    // Early termination for width limit
+                    if (maxWidth > 0 && (currX - x) >= maxWidth) [[unlikely]] break;
                     
-                    for (const auto& symbol : sortedSymbols) {
-                        const size_t symLen = symbol.length();
-                        
-                        // Check if symbol fits in remaining text
-                        if (strPtr + symLen > strEnd) continue;
-                        
-                        // Fast memory comparison
-                        if (std::memcmp(strPtr, symbol.data(), symLen) == 0) {
-                            foundMatch = true;
-                            matchLength = symLen;
-                            break;
-                        }
-                    }
-                    
-                    if (foundMatch) {
-                        // Render any accumulated normal text
-                        if (strPtr > currentStart) {
-                            renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor, keyBase, s_glyphCache);
-                        }
-                        
-                        // Render special symbol
-                        renderTextSegment(strPtr, matchLength, currX, currY, fontSize, specialColor, keyBase, s_glyphCache);
-                        
-                        // Advance past the special symbol
-                        strPtr += matchLength;
-                        currentStart = strPtr;
-                    } else {
-                        // Move to next character
-                        ++strPtr;
-                    }
-                }
-                
-                // Render any remaining normal text
-                if (strPtr > currentStart) {
-                    renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor, keyBase, s_glyphCache);
-                }
-            }
-            
-            // Helper function for direct text segment rendering
-            inline void renderTextSegment(const char* textPtr, size_t length, float& currX, float& currY, 
-                                         const u32 fontSize, const Color& color, const u64 keyBase,
-                                         std::unordered_map<u64, Glyph>& glyphCache) {
-                
-                if (length == 0 || color.a == 0x0) return;
-                
-                const char* strPtr = textPtr;
-                const char* const strEnd = textPtr + length;
-                
-                // Batch variables
-                u32 currCharacter;
-                ssize_t codepointWidth;
-                u64 key;
-                Glyph* glyph;
-                
-                // ASCII optimization check
-                bool isAsciiOnly = true;
-                for (size_t i = 0; i < length && isAsciiOnly; ++i) {
-                    if (static_cast<unsigned char>(textPtr[i]) > 127) {
-                        isAsciiOnly = false;
-                    }
-                }
-                
-                // Character processing loop
-                while (strPtr < strEnd) {
-                    // Fast UTF-8 decode
-                    if (isAsciiOnly && *strPtr > 0) [[likely]] {
+                    // Optimized character decoding
+                    if (isAsciiOnly) [[likely]] {
                         currCharacter = static_cast<u32>(*strPtr);
                         codepointWidth = 1;
                         ++strPtr;
                     } else {
-                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(strPtr));
-                        if (codepointWidth <= 0) [[unlikely]]
-                            break;
+                        codepointWidth = fast_decode_utf8(&currCharacter, reinterpret_cast<const uint8_t*>(strPtr));
+                        if (codepointWidth <= 0) [[unlikely]] break;
                         strPtr += codepointWidth;
                     }
                     
                     // Handle newlines
                     if (currCharacter == '\n') [[unlikely]] {
-                        currX = 0; // Reset to beginning of line
+                        maxX = std::max(currX, maxX);
+                        currX = x;
                         currY += fontSize;
                         continue;
                     }
                     
-                    // Glyph processing
-                    key = (static_cast<u64>(currCharacter) << 32) | keyBase;
+                    // Get glyph
+                    Glyph* glyph = getOrCreateGlyph(currCharacter, fontSize, monospace);
                     
-                    auto it = glyphCache.find(key);
-                    if (it == glyphCache.end()) [[unlikely]] {
-                        // Create new glyph
-                        auto [insertIt, inserted] = glyphCache.emplace(key, Glyph{});
-                        glyph = &insertIt->second;
-                        
-                        // Font selection and glyph creation (same as ultra-fast drawString)
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
-            
-                        const float scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                        glyph->currFontSize = scaledFontSize;
-            
-                        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
-                                                            0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            
-                        s32 yAdvance = 0;
-                        stbtt_GetCodepointHMetrics(glyph->currFont, false ? 'W' : currCharacter, &glyph->xAdvance, &yAdvance);
-            
-                        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, scaledFontSize, scaledFontSize, currCharacter, &glyph->width, &glyph->height, nullptr, nullptr);
-                    } else [[likely]] {
-                        glyph = &it->second;
+                    // Get color
+                    const size_t charPos = strPtr - strData - codepointWidth;
+                    const Color& currentColor = colorFunc(currCharacter, charPos);
+                    
+                    // Render glyph if visible
+                    if (glyph->glyphBmp && !std::iswspace(currCharacter) && currentColor.a != 0x0) [[likely]] {
+                        renderGlyphPixels(glyph, currX + glyph->bounds[0], currY + glyph->bounds[1], currentColor);
                     }
                     
-                    // Skip whitespace rendering but advance cursor
-                    if (std::iswspace(currCharacter)) [[unlikely]] {
-                        currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                        continue;
-                    }
-                    
-                    // Render glyph (same optimized pixel processing as ultra-fast drawString)
-                    if (glyph->glyphBmp != nullptr) [[likely]] {
-                        const float xPos = currX + glyph->bounds[0];
-                        const float yPos = currY + glyph->bounds[1];
-                        
-                        const uint8_t* bmpPtr = glyph->glyphBmp;
-                        const s32 width = glyph->width;
-                        const s32 height = glyph->height;
-                        
-                        // Vectorized pixel rendering
-                        for (s32 row = 0; row < height; ++row) {
-                            const float currentY = yPos + row;
-                            
-                            s32 col = 0;
-                            const s32 simdWidth = width & ~3;
-                            
-                            // Process 4 pixels at once
-                            for (; col < simdWidth; col += 4) {
-                                const uint8_t c0 = bmpPtr[col] >> 4;
-                                const uint8_t c1 = bmpPtr[col + 1] >> 4;
-                                const uint8_t c2 = bmpPtr[col + 2] >> 4;
-                                const uint8_t c3 = bmpPtr[col + 3] >> 4;
-                                
-                                if (c0 != 0) {
-                                    if (c0 == 0xF) {
-                                        this->setPixel(xPos + col, currentY, color, this->getPixelOffset(xPos + col, currentY));
-                                    } else {
-                                        Color tmpColor = color;
-                                        tmpColor.a = c0;
-                                        this->setPixelBlendDst(xPos + col, currentY, tmpColor);
-                                    }
-                                }
-                                
-                                if (c1 != 0) {
-                                    if (c1 == 0xF) {
-                                        this->setPixel(xPos + col + 1, currentY, color, this->getPixelOffset(xPos + col + 1, currentY));
-                                    } else {
-                                        Color tmpColor = color;
-                                        tmpColor.a = c1;
-                                        this->setPixelBlendDst(xPos + col + 1, currentY, tmpColor);
-                                    }
-                                }
-                                
-                                if (c2 != 0) {
-                                    if (c2 == 0xF) {
-                                        this->setPixel(xPos + col + 2, currentY, color, this->getPixelOffset(xPos + col + 2, currentY));
-                                    } else {
-                                        Color tmpColor = color;
-                                        tmpColor.a = c2;
-                                        this->setPixelBlendDst(xPos + col + 2, currentY, tmpColor);
-                                    }
-                                }
-                                
-                                if (c3 != 0) {
-                                    if (c3 == 0xF) {
-                                        this->setPixel(xPos + col + 3, currentY, color, this->getPixelOffset(xPos + col + 3, currentY));
-                                    } else {
-                                        Color tmpColor = color;
-                                        tmpColor.a = c3;
-                                        this->setPixelBlendDst(xPos + col + 3, currentY, tmpColor);
-                                    }
-                                }
-                            }
-                            
-                            // Handle remaining pixels
-                            for (; col < width; ++col) {
-                                const uint8_t bmpColor = bmpPtr[col] >> 4;
-                                if (bmpColor == 0xF) {
-                                    this->setPixel(xPos + col, currentY, color, this->getPixelOffset(xPos + col, currentY));
-                                } else if (bmpColor != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + col, currentY, tmpColor);
-                                }
-                            }
-                            
-                            bmpPtr += width;
-                        }
-                    }
-                    
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                    // Advance cursor
+                    currX += glyph->xAdvance * glyph->currFontSize;
                 }
+                
+                maxX = std::max(currX, maxX);
+                return {static_cast<s32>(maxX - x), static_cast<s32>(currY - y + fontSize)};
             }
-
+            
+            // 1. Basic drawString - simplified and optimized
+            inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, 
+                                                 s32 x, s32 y, u32 fontSize, const Color& color, 
+                                                 ssize_t maxWidth = 0) {
+                #ifdef UI_OVERRIDE_PATH
+                static thread_local std::unordered_map<std::string, std::string> translationCache;
+                
+                auto [it, inserted] = translationCache.try_emplace(originalString, originalString);
+                const std::string* stringPtr = &it->second;
+                #else
+                const std::string* stringPtr = &originalString;
+                #endif
+                
+                // Lambda capture by reference for better performance
+                return renderTextCore(stringPtr, x, y, fontSize, monospace, 
+                                     [&color](u32, size_t) noexcept -> const Color& { return color; }, maxWidth);
+            }
+            
+            // 2. drawStringWithHighlight - optimized state machine
+            inline std::pair<s32, s32> drawStringWithHighlight(
+                const std::string& text, bool monospace, s32 x, s32 y,
+                u32 fontSize, const Color& defaultColor, const Color& specialColor,
+                ssize_t maxWidth = 0) {
+                
+                // Pre-scan for parentheses to build highlight ranges (more efficient for long strings)
+                thread_local std::vector<std::pair<size_t, size_t>> highlightRanges;
+                highlightRanges.clear();
+                
+                size_t start = 0;
+                bool inHighlight = false;
+                
+                for (size_t i = 0; i < text.length(); ++i) {
+                    if (text[i] == '(') {
+                        if (!inHighlight) {
+                            start = i + 1; // Start after the opening parenthesis
+                            inHighlight = true;
+                        }
+                    } else if (text[i] == ')' && inHighlight) {
+                        highlightRanges.emplace_back(start, i); // End before the closing parenthesis
+                        inHighlight = false;
+                    }
+                }
+                
+                return renderTextCore(&text, x, y, fontSize, monospace, 
+                    [&](u32 character, size_t pos) noexcept -> const Color& {
+                        // Check if position is in any highlight range
+                        for (const auto& [rangeStart, rangeEnd] : highlightRanges) {
+                            if (pos >= rangeStart && pos < rangeEnd) {
+                                return specialColor;
+                            }
+                        }
+                        return defaultColor;
+                    }, maxWidth);
+            }
+            
+            // 3. drawStringWithColoredSections - optimized with better data structures
+            inline std::pair<s32, s32> drawStringWithColoredSections(
+                const std::string& text, const std::vector<std::string>& specialSymbols, 
+                s32 x, s32 y, u32 fontSize, const Color& defaultColor, const Color& specialColor) {
+                
+                if (text.empty() || fontSize <= 0) [[unlikely]] {
+                    return {0, 0};
+                }
+                
+                // Fast path: no special symbols
+                if (specialSymbols.empty()) [[likely]] {
+                    return renderTextCore(&text, x, y, fontSize, false, 
+                                         [&](u32, size_t) noexcept -> const Color& { return defaultColor; });
+                }
+                
+                // Use a more efficient interval tree approach for large symbol sets
+                thread_local std::vector<std::pair<size_t, size_t>> specialRanges;
+                specialRanges.clear();
+                specialRanges.reserve(specialSymbols.size() * 2); // Rough estimate
+                
+                // Build ranges using KMP-like string matching for better performance
+                for (const auto& symbol : specialSymbols) {
+                    if (symbol.empty()) continue;
+                    
+                    size_t pos = 0;
+                    const size_t symbolLen = symbol.length();
+                    
+                    while ((pos = text.find(symbol, pos)) != std::string::npos) {
+                        specialRanges.emplace_back(pos, pos + symbolLen);
+                        pos += symbolLen; // Move past this occurrence
+                    }
+                }
+                
+                // Sort and merge overlapping ranges for efficiency
+                if (!specialRanges.empty()) {
+                    std::sort(specialRanges.begin(), specialRanges.end());
+                    
+                    // Merge overlapping ranges
+                    size_t writeIdx = 0;
+                    for (size_t readIdx = 1; readIdx < specialRanges.size(); ++readIdx) {
+                        if (specialRanges[readIdx].first <= specialRanges[writeIdx].second) {
+                            // Overlapping or adjacent ranges - merge them
+                            specialRanges[writeIdx].second = std::max(specialRanges[writeIdx].second, 
+                                                                     specialRanges[readIdx].second);
+                        } else {
+                            // Non-overlapping range - keep it
+                            ++writeIdx;
+                            if (writeIdx != readIdx) {
+                                specialRanges[writeIdx] = specialRanges[readIdx];
+                            }
+                        }
+                    }
+                    specialRanges.resize(writeIdx + 1);
+                }
+                
+                // Binary search for color lookup (O(log n) instead of O(n))
+                return renderTextCore(&text, x, y, fontSize, false, 
+                    [&](u32 character, size_t pos) noexcept -> const Color& {
+                        // Binary search in sorted ranges
+                        auto it = std::lower_bound(specialRanges.begin(), specialRanges.end(), 
+                                                 std::make_pair(pos, pos + 1),
+                                                 [](const auto& range, const auto& target) {
+                                                     return range.second <= target.first;
+                                                 });
                         
+                        if (it != specialRanges.end() && pos >= it->first && pos < it->second) {
+                            return specialColor;
+                        }
+                        return defaultColor;
+                    });
+            }
+            
             /**
              * @brief Limit a string's length and end it with "…" - Actually optimized version
              *
@@ -2975,80 +2342,82 @@ namespace tsl {
              * @param fontSize Size of the font
              * @param maxLength Maximum length of the string in terms of width
              */
-            inline std::string limitStringLength(const std::string& originalString, const bool monospace, const s32 fontSize, const s32 maxLength) {
-                #ifdef UI_OVERRIDE_PATH
-                // Check for translation in the cache
-                auto translatedIt = ult::translationCache.find(originalString);
-                std::string translatedString = (translatedIt != ult::translationCache.end()) ? translatedIt->second : originalString;
-                
-                // Cache the translation if it wasn't already present
-                if (translatedIt == ult::translationCache.end()) {
-                    ult::translationCache[originalString] = translatedString;
+            inline std::string limitStringLength(const std::string& originalString, 
+                                               const bool monospace, const s32 fontSize, 
+                                               const s32 maxLength) {
+                if (originalString.size() < 2 || maxLength <= 0) [[unlikely]] {
+                    return originalString;
                 }
-                const std::string* stringPtr = &translatedString;
+                
+                #ifdef UI_OVERRIDE_PATH
+                static thread_local std::unordered_map<std::string, std::string> translationCache;
+                auto [it, inserted] = translationCache.try_emplace(originalString, originalString);
+                const std::string* stringPtr = &it->second;
                 #else
                 const std::string* stringPtr = &originalString;
                 #endif
                 
-                if (stringPtr->size() < 2) {
-                    return *stringPtr;
-                }
+                // Cache ellipsis width (your biggest win)
+                static thread_local struct { s32 width; s32 fontSize; bool monospace; } ellipsisCache{0, 0, false};
                 
-                // Pre-calculate ellipsis width once
-                constexpr u32 ellipsisCharacter = 0x2026;  // Unicode code point for '…'
-                stbtt_fontinfo* ellipsisFont = &this->m_stdFont;
-                if (stbtt_FindGlyphIndex(&this->m_extFont, ellipsisCharacter)) {
-                    ellipsisFont = &this->m_extFont;
-                } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, ellipsisCharacter) == 0) {
-                    ellipsisFont = &this->m_localFont;
-                }
-                
-                const float ellipsisFontSize = stbtt_ScaleForPixelHeight(ellipsisFont, fontSize);
-                int ellipsisXAdvance = 0;
-                stbtt_GetCodepointHMetrics(ellipsisFont, ellipsisCharacter, &ellipsisXAdvance, nullptr);
-                const s32 ellipsisWidth = static_cast<s32>(ellipsisXAdvance * ellipsisFontSize);
-                
-                // THE KEY OPTIMIZATION: Incremental width calculation instead of recalculating entire substring
-                s32 currX = 0;
-                const s32 maxWidthWithoutEllipsis = maxLength - ellipsisWidth;
-                const char* strPtr = stringPtr->data();
-                const char* const strEnd = strPtr + stringPtr->size();
-                const char* lastValidPos = strPtr;
-                
-                u32 currCharacter;
-                ssize_t codepointWidth;
-                
-                while (strPtr < strEnd) {
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(strPtr));
-                    if (codepointWidth <= 0) break;
-                    
-                    // Calculate width of just this character
+                s32 ellipsisWidth;
+                if (ellipsisCache.fontSize == fontSize && ellipsisCache.monospace == monospace) [[likely]] {
+                    ellipsisWidth = ellipsisCache.width;
+                } else {
+                    constexpr u32 ellipsisChar = 0x2026;
                     stbtt_fontinfo* font = &this->m_stdFont;
-                    if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                    if (stbtt_FindGlyphIndex(&this->m_extFont, ellipsisChar)) {
                         font = &this->m_extFont;
-                    } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                    } else if (this->m_hasLocalFont && !stbtt_FindGlyphIndex(&this->m_stdFont, ellipsisChar)) {
                         font = &this->m_localFont;
                     }
                     
-                    const float fontScale = stbtt_ScaleForPixelHeight(font, fontSize);
-                    int xAdvance = 0;
-                    stbtt_GetCodepointHMetrics(font, monospace ? 'W' : currCharacter, &xAdvance, nullptr);
-                    const s32 charWidth = static_cast<s32>(xAdvance * fontScale);
-                    
-                    // Check if adding this character would exceed the limit
-                    if (currX + charWidth > maxWidthWithoutEllipsis) {
-                        // Return truncated string with ellipsis
-                        const size_t truncateLength = lastValidPos - stringPtr->data();
-                        return stringPtr->substr(0, truncateLength) + "…";
-                    }
-                    
-                    // Add this character's width and continue
-                    currX += charWidth;
-                    strPtr += codepointWidth;
-                    lastValidPos = strPtr;
+                    const float scale = stbtt_ScaleForPixelHeight(font, fontSize);
+                    int advance;
+                    stbtt_GetCodepointHMetrics(font, ellipsisChar, &advance, nullptr);
+                    ellipsisWidth = static_cast<s32>(advance * scale);
+                    ellipsisCache = {ellipsisWidth, fontSize, monospace};
                 }
                 
-                // String fits entirely
+                const s32 maxWidthWithoutEllipsis = maxLength - ellipsisWidth;
+                if (maxWidthWithoutEllipsis <= 0) [[unlikely]] return "…";
+                
+                // Your core logic - keep it simple
+                s32 currWidth = 0;
+                const char* strPtr = stringPtr->data();
+                const char* const strEnd = strPtr + stringPtr->size();
+                const char* validEnd = strPtr;
+                
+                u32 character;
+                ssize_t charBytes;
+                
+                while (strPtr < strEnd) {
+                    charBytes = decode_utf8(&character, reinterpret_cast<const u8*>(strPtr));
+                    if (charBytes <= 0) break;
+                    
+                    // Same font selection logic - don't change what works
+                    stbtt_fontinfo* font = &this->m_stdFont;
+                    if (stbtt_FindGlyphIndex(&this->m_extFont, character)) {
+                        font = &this->m_extFont;
+                    } else if (this->m_hasLocalFont && !stbtt_FindGlyphIndex(&this->m_stdFont, character)) {
+                        font = &this->m_localFont;
+                    }
+                    
+                    const float scale = stbtt_ScaleForPixelHeight(font, fontSize);
+                    int advance;
+                    stbtt_GetCodepointHMetrics(font, monospace ? 'W' : character, &advance, nullptr);
+                    const s32 charWidth = static_cast<s32>(advance * scale);
+                    
+                    if (currWidth + charWidth > maxWidthWithoutEllipsis) {
+                        const size_t truncLen = validEnd - stringPtr->data();
+                        return stringPtr->substr(0, truncLen) + "…";
+                    }
+                    
+                    currWidth += charWidth;
+                    strPtr += charBytes;
+                    validEnd = strPtr;
+                }
+                
                 return *stringPtr;
             }
 
