@@ -141,36 +141,64 @@ namespace ult {
         return false;  // Not docked (normal mode or handheld)
     }
     
+    //static bool pminfoInitialized = false;
+    //static u64 lastPid = 0;
+    //static u64 lastTid = 0;
+    //
+    //std::string getTitleIdAsString() {
+    //    Result rc;
+    //    u64 pid = 0;
+    //    u64 tid = 0;
+    //
+    //    // Get the current application PID
+    //    rc = pmdmntGetApplicationProcessId(&pid);
+    //    if (R_FAILED(rc) || pid == 0) {
+    //        return NULL_STR;
+    //    }
+    //
+    //    // If it's the same PID as last time, return cached TID
+    //    if (pid == lastPid && lastTid != 0) {
+    //        char cachedTidStr[17];
+    //        snprintf(cachedTidStr, sizeof(cachedTidStr), "%016lX", lastTid);
+    //        return std::string(cachedTidStr);
+    //    }
+    //
+    //    // Initialize pminfo if not already
+    //    if (!pminfoInitialized) {
+    //        rc = pminfoInitialize();
+    //        if (R_FAILED(rc)) {
+    //            return NULL_STR;
+    //        }
+    //        pminfoInitialized = true;
+    //    }
+    //
+    //    // Retrieve the TID (Program ID)
+    //    rc = pminfoGetProgramId(&tid, pid);
+    //    if (R_FAILED(rc)) {
+    //        return NULL_STR;
+    //    }
+    //
+    //    lastPid = pid;
+    //    lastTid = tid;
+    //
+    //    char titleIdStr[17];
+    //    snprintf(titleIdStr, sizeof(titleIdStr), "%016lX", tid);
+    //    return std::string(titleIdStr);
+    //}
+
     std::string getTitleIdAsString() {
-        Result rc;
-        u64 pid = 0;
-        u64 tid = 0;
-    
-        // The Process Management service is initialized before (as per your setup)
-        // Get the current application process ID
-        rc = pmdmntGetApplicationProcessId(&pid);
-        if (R_FAILED(rc)) {
+        u64 pid = 0, tid = 0;
+        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
             return NULL_STR;
-        }
-        
-        rc = pminfoInitialize();
-        if (R_FAILED(rc)) {
-            return NULL_STR;
-        }
     
-        // Use pminfoGetProgramId to retrieve the Title ID (Program ID)
-        rc = pminfoGetProgramId(&tid, pid);
-        if (R_FAILED(rc)) {
-            pminfoExit();
+        if (R_FAILED(pmdmntGetProgramId(&tid, pid)))
             return NULL_STR;
-        }
-        pminfoExit();
     
-        // Convert the Title ID to a string and return it
-        char titleIdStr[17];  // 16 characters for the Title ID + null terminator
-        snprintf(titleIdStr, sizeof(titleIdStr), "%016lX", tid);
-        return std::string(titleIdStr);
+        char tidStr[17];
+        snprintf(tidStr, sizeof(tidStr), "%016lX", tid);
+        return std::string(tidStr);
     }
+
     
     std::string lastTitleID;
     bool resetForegroundCheck = false; // initialize as true
