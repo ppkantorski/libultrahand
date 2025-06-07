@@ -2190,7 +2190,7 @@ namespace tsl {
             
             // Consolidated drawString that returns EXACTLY the same values as original
             // Ultra-optimized drawString that returns EXACTLY the same values as original
-            inline std::pair<u32, u32> drawString(const std::string& originalString, bool monospace, const u32 x, const u32 y, const u32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
+            inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const u32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
                 #ifdef UI_OVERRIDE_PATH
                 // Check for translation in the cache
@@ -2444,12 +2444,12 @@ namespace tsl {
             
                 // EXACT same final calculation as original
                 maxX = std::max(currX, maxX);
-                return { static_cast<u32>(maxX - x), static_cast<u32>(currY - y) };
+                return {maxX - x, currY - y};
             }
 
 
-            inline std::pair<u32, u32> drawStringWithHighlight(
-                const std::string& text, bool monospace, u32 x, u32 y,
+            inline std::pair<s32, s32> drawStringWithHighlight(
+                const std::string& text, bool monospace, s32 x, s32 y,
                 const u32 fontSize, const Color& defaultColor, const Color& specialColor,
                 const ssize_t maxWidth = 0
             ) {
@@ -2698,7 +2698,7 @@ namespace tsl {
                     }
             
                     // Advance the cursor for the next glyph
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                    currX += glyph->xAdvance * glyph->currFontSize;
                 }
             
                 // Calculate final dimensions
@@ -2707,7 +2707,7 @@ namespace tsl {
             }
             
                         
-            inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, u32 x, const u32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
+            inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
                 // Early exits
                 if (text.empty() || fontSize <= 0) [[unlikely]] {
                     return;
