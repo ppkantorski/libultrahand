@@ -936,13 +936,13 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixel(const u32 x, const u32 y, const Color& color, const u32 offset) {
-                //if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
-                //u32 offset = this->getPixelOffset(x, y);
-                if (offset != UINT32_MAX) {
-                    Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
-                    framebuffer[offset] = color;
+                if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
+                    //u32 offset = this->getPixelOffset(x, y);
+                    if (offset != UINT32_MAX) {
+                        Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                        framebuffer[offset] = color;
+                    }
                 }
-                //}
             }
 
 
