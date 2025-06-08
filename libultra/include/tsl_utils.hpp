@@ -48,7 +48,7 @@
 #include <type_traits>
 #include <mutex>
 #include <memory>
-#include <chrono>
+//#include <chrono>
 #include <list>
 #include <stack>
 #include <map>
@@ -136,12 +136,13 @@ namespace ult {
     //extern const std::chrono::milliseconds transitionPoint; // Point at which the shortest interval is reached
     
 
-    constexpr std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
-    constexpr std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
-    constexpr std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
+
+    //constexpr std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
+    //constexpr std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
+    //constexpr std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
 
     // Function to interpolate between two durations
-    std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t);
+    //std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t);
     
     
     
@@ -552,7 +553,7 @@ namespace ult {
     extern uint32_t batteryCharge;
     extern bool isCharging;
     
-    constexpr std::chrono::seconds min_delay = std::chrono::seconds(3); // Minimum delay between checks
+    //constexpr std::chrono::seconds min_delay = std::chrono::seconds(3); // Minimum delay between checks
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging);
     
