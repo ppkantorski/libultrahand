@@ -8890,14 +8890,15 @@ namespace tsl {
     
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         bool hasSkipCombo = origArgs.find("--skipCombo") != std::string::npos;
-        //bool fixForeground = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString());
-        //std::string currentTitleID = ult::getTitleIdAsString();
         
         char buffer[1024]; // Adjust size as needed
         char* p = buffer;
         
+        // Store the filename in a string to keep it alive
+        std::string filenameStr = ult::getNameFromPath(ovlPath);
+        const char* filename = filenameStr.c_str();
+        
         // Copy filename
-        const char* filename = ult::getNameFromPath(ovlPath).c_str();
         while (*filename) *p++ = *filename++;
         *p++ = ' ';
         
