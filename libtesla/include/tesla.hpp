@@ -143,7 +143,7 @@ int frameCount = 0;
 double elapsedTime;
 #endif
 
-static u32 offsetWidthVar;
+static u32 offsetWidthVar = 112;
 
 namespace tsl {
 
