@@ -40,6 +40,7 @@ namespace ult {
     bool launchingOverlay = false;
     bool currentForeground = false;
 
+
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
         #if NO_FSTREAM_DIRECTIVE
@@ -220,11 +221,11 @@ namespace ult {
     //const std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
     
     // Function to interpolate between two durations
-    std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t) {
-        using namespace std::chrono;
-        auto interpolated = start.count() + static_cast<long long>((end.count() - start.count()) * t);
-        return milliseconds(interpolated);
-    }
+    //std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t) {
+    //    using namespace std::chrono;
+    //    auto interpolated = start.count() + static_cast<long long>((end.count() - start.count()) * t);
+    //    return milliseconds(interpolated);
+    //}
     
     
     
@@ -1232,18 +1233,21 @@ namespace ult {
     
     
     bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging) {
-        static auto last_call = std::chrono::steady_clock::now();
-    
+        static uint64_t last_call_ns = 0;
+        
         // Ensure power system is initialized
         if (!powerInitialized) {
             return false;
         }
-    
-        // Get the current time
-        auto now = std::chrono::steady_clock::now();
-    
+        
+        // Get the current time in nanoseconds
+        uint64_t now_ns = armTicksToNs(armGetSystemTick());
+        
+        // 3 seconds in nanoseconds
+        constexpr uint64_t min_delay_ns = 3000000000ULL;
+        
         // Check if enough time has elapsed or if cache is not initialized
-        bool useCache = (now - last_call <= min_delay) && powerCacheInitialized;
+        bool useCache = (now_ns - last_call_ns <= min_delay_ns) && powerCacheInitialized;
         if (!useCache) {
             PsmChargerType charger = PsmChargerType_Unconnected;
             Result rc = psmGetBatteryChargePercentage(batteryCharge);
@@ -1259,7 +1263,7 @@ namespace ult {
                     powerCacheCharge = *batteryCharge;
                     powerCacheIsCharging = *isCharging;
                     powerCacheInitialized = true;
-                    last_call = now; // Update last call time after successful hardware read
+                    last_call_ns = now_ns; // Update last call time after successful hardware read
                     return true;
                 }
             }
@@ -1278,7 +1282,6 @@ namespace ult {
         // Use cached values if not enough time has passed
         *batteryCharge = powerCacheCharge;
         *isCharging = powerCacheIsCharging;
-
         return true; // Return true as cache is used
     }
     
