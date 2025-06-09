@@ -5799,8 +5799,9 @@ namespace tsl {
         
                 if (m_truncated) [[unlikely]] {
                     m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate
-                    m_scrollText = m_text + "        " + m_text;
+                    m_scrollText = m_text + "        ";
                     m_textWidth = tsl::gfx::calculateStringWidth(m_scrollText, 23);
+                    m_scrollText += m_text;
                     m_ellipsisText = renderer->limitStringLength(m_text, false, 23, m_maxWidth);
                 } else {
                     m_textWidth = width;
