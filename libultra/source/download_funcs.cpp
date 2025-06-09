@@ -201,6 +201,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_BUFFER_SIZE); // Increase buffer size
 
+    // Add timeout options
+    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);  // 10 seconds to establish connection
+    curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 300L);        // 5 minutes total timeout
+    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1024L); // Minimum 1KB/s
+    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 4L);   // For 4 seconds
+
     CURLcode result = curl_easy_perform(curl.get());
 
 #ifndef NO_FSTREAM_DIRECTIVE
@@ -211,7 +217,13 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        if (result == CURLE_OPERATION_TIMEDOUT) {
+            logMessage("Download timed out: " + url);
+        } else if (result == CURLE_COULDNT_CONNECT) {
+            logMessage("Could not connect to: " + url);
+        } else {
+            logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        }
         #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_release);
@@ -248,7 +260,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     return true;
 }
-
 
 
 // Define a custom deleter for the unique_ptr to properly close the ZZIP_DIR handle
