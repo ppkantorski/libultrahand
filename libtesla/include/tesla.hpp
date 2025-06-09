@@ -936,13 +936,13 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixel(const u32 x, const u32 y, const Color& color, const u32 offset) {
-                if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
-                    //u32 offset = this->getPixelOffset(x, y);
-                    if (offset != UINT32_MAX) {
-                        Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
-                        framebuffer[offset] = color;
-                    }
+                //if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
+                //u32 offset = this->getPixelOffset(x, y);
+                if (offset != UINT32_MAX) {
+                    Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                    framebuffer[offset] = color;
                 }
+                //}
             }
 
 
@@ -2188,8 +2188,7 @@ namespace tsl {
                 }
             }
             
-            // Consolidated drawString that returns EXACTLY the same values as original
-            // Ultra-optimized drawString that returns EXACTLY the same values as original
+            // Optimized drawString that returns EXACTLY the same values as original
             inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const u32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
                 #ifdef UI_OVERRIDE_PATH
@@ -2199,7 +2198,7 @@ namespace tsl {
             
                 // Cache the translation if it wasn't already present
                 if (translatedIt == ult::translationCache.end()) {
-                    ult::translationCache[originalString] = translatedString; // You would normally use some translation function here
+                    ult::translationCache[originalString] = translatedString;
                 }
                 const std::string* stringPtr = &translatedString;
                 #else
@@ -2211,11 +2210,11 @@ namespace tsl {
                 float currX = x;
                 float currY = y;
                 
-                // Cache the end iterator for efficiency - SAME AS ORIGINAL
+                // Cache the end iterator for efficiency
                 auto itStrEnd = stringPtr->cend();
                 auto itStr = stringPtr->cbegin();
                 
-                // Move variable declarations outside of the loop - SAME AS ORIGINAL
+                // Move variable declarations outside of the loop
                 u32 currCharacter = 0;
                 ssize_t codepointWidth = 0;
                 u64 key = 0;
@@ -2224,11 +2223,11 @@ namespace tsl {
                 float xPos = 0;
                 float yPos = 0;
                 u32 rowOffset = 0;
-                uint8_t bmpColor = 0;
+                //uint8_t bmpColor = 0;
                 Color tmpColor(0);
                 
-                // Static glyph cache - SAME AS ORIGINAL
-                static std::unordered_map<u64, Glyph> s_glyphCache; // may cause leak? will investigate later.
+                // Static glyph cache
+                static std::unordered_map<u64, Glyph> s_glyphCache;
                 auto it = s_glyphCache.end();
             
                 float scaledFontSize;
@@ -2265,7 +2264,7 @@ namespace tsl {
                     }
                 }
             
-                // Loop through each character in the string - EXACT SAME STRUCTURE AS ORIGINAL
+                // Loop through each character in the string
                 while (itStr != itStrEnd) {
                     // EXACT same maxWidth check as original
                     if (maxWidth > 0 && (currX - x) >= maxWidth)
@@ -2278,12 +2277,12 @@ namespace tsl {
                         codepointWidth = 1;
                         ++itStr;
                     } else {
-                        // Unicode path - EXACT same as original
+                        // Unicode path
                         codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
                         if (codepointWidth <= 0)
                             break;
                         
-                        // Move the iterator forward by the width of the current codepoint - SAME AS ORIGINAL
+                        // Move the iterator forward by the width of the current codepoint
                         itStr += codepointWidth;
                     }
             
@@ -2295,17 +2294,17 @@ namespace tsl {
                         continue;
                     }
             
-                    // Calculate glyph key - SAME AS ORIGINAL
+                    // Calculate glyph key
                     key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
             
-                    // Check cache for the glyph - SAME AS ORIGINAL
+                    // Check cache for the glyph
                     it = s_glyphCache.find(key);
             
-                    // If glyph not found, create and cache it - SAME AS ORIGINAL
+                    // If glyph not found, create and cache it
                     if (it == s_glyphCache.end()) {
                         glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
                         
-                        // Determine the appropriate font for the character - SAME AS ORIGINAL
+                        // Determine the appropriate font for the character
                         if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
                             glyph->currFont = &this->m_extFont;
                         } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
@@ -2317,7 +2316,7 @@ namespace tsl {
                         scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
                         glyph->currFontSize = scaledFontSize;
             
-                        // Get glyph bitmap and metrics - SAME AS ORIGINAL
+                        // Get glyph bitmap and metrics
                         stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, currCharacter, scaledFontSize, scaledFontSize,
                                                             0, 0, &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
             
@@ -2329,21 +2328,68 @@ namespace tsl {
                         glyph = &it->second;
                     }
             
-                    // EXACT same rendering condition and logic as original
+                    // Rendering with glyph-level bounds checking
                     if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && color.a != 0x0) {
                         xPos = currX + glyph->bounds[0];
                         yPos = currY + glyph->bounds[1];
             
-                        // Ultra-optimized pixel processing with SIMD-style unrolling
-                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
+                        // Calculate glyph bounds for clipping
+                        const s32 glyphLeft = static_cast<s32>(xPos);
+                        const s32 glyphTop = static_cast<s32>(yPos);
+                        const s32 glyphRight = glyphLeft + glyph->width;
+                        const s32 glyphBottom = glyphTop + glyph->height;
+                        
+                        // Early rejection if glyph is completely outside framebuffer
+                        if (glyphRight <= 0 || glyphBottom <= 0 || 
+                            glyphLeft >= static_cast<s32>(cfg::FramebufferWidth) || 
+                            glyphTop >= static_cast<s32>(cfg::FramebufferHeight)) {
+                            // Skip rendering but still advance cursor
+                            currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                            continue;
+                        }
+                        
+                        // Calculate clipping bounds
+                        const s32 clipLeft = std::max(glyphLeft, 0);
+                        const s32 clipTop = std::max(glyphTop, 0);
+                        const s32 clipRight = std::min(glyphRight, static_cast<s32>(cfg::FramebufferWidth));
+                        const s32 clipBottom = std::min(glyphBottom, static_cast<s32>(cfg::FramebufferHeight));
+                        
+                        // Convert back to glyph-relative coordinates
+                        const s32 startX = clipLeft - glyphLeft;
+                        const s32 startY = clipTop - glyphTop;
+                        const s32 endX = clipRight - glyphLeft;
+                        const s32 endY = clipBottom - glyphTop;
+            
+                        // Ultra-optimized pixel processing with bounds-safe rendering
+                        for (s32 bmpY = startY; bmpY < endY; ++bmpY) {
                             rowOffset = bmpY * glyph->width;
                             const uint8_t* rowPtr = glyph->glyphBmp + rowOffset;
                             
-                            // Process 8 pixels at once for maximum performance
-                            s32 bmpX = 0;
-                            const s32 simdWidth = glyph->width & ~7;
+                            const float pixelY = yPos + bmpY;
                             
-                            for (; bmpX < simdWidth; bmpX += 8) {
+                            // Process 8 pixels at once for maximum performance
+                            s32 bmpX = startX;
+                            const s32 simdEnd = std::min(endX, (startX + 7) & ~7);
+                            
+                            // Handle initial unaligned pixels
+                            for (; bmpX < simdEnd; ++bmpX) {
+                                const uint8_t alpha = rowPtr[bmpX] >> 4;
+                                if (alpha != 0x0) {
+                                    const float pixelX = xPos + bmpX;
+                                    const u32 offset = this->getPixelOffset(pixelX, pixelY);
+                                    if (alpha == 0xF) {
+                                        this->setPixel(pixelX, pixelY, color, offset);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = alpha;
+                                        this->setPixelBlendDst(pixelX, pixelY, tmpColor);
+                                    }
+                                }
+                            }
+                            
+                            // Process 8-pixel chunks
+                            const s32 vectorEnd = endX & ~7;
+                            for (; bmpX < vectorEnd; bmpX += 8) {
                                 // Load 8 alpha values
                                 const uint8_t a0 = rowPtr[bmpX] >> 4;
                                 const uint8_t a1 = rowPtr[bmpX + 1] >> 4;
@@ -2355,90 +2401,116 @@ namespace tsl {
                                 const uint8_t a7 = rowPtr[bmpX + 7] >> 4;
                                 
                                 const float baseX = xPos + bmpX;
-                                const float pixelY = yPos + bmpY;
                                 
-                                // Unrolled pixel processing
-                                if (a0 == 0xF) {
-                                    this->setPixel(baseX, pixelY, color, this->getPixelOffset(baseX, pixelY));
-                                } else if (a0 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a0;
-                                    this->setPixelBlendDst(baseX, pixelY, tmpColor);
+                                // Unrolled pixel processing - no bounds checking needed since we pre-clipped
+                                if (a0 != 0x0) {
+                                    const u32 offset0 = this->getPixelOffset(baseX, pixelY);
+                                    if (a0 == 0xF) {
+                                        this->setPixel(baseX, pixelY, color, offset0);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a0;
+                                        this->setPixelBlendDst(baseX, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a1 == 0xF) {
-                                    this->setPixel(baseX + 1, pixelY, color, this->getPixelOffset(baseX + 1, pixelY));
-                                } else if (a1 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a1;
-                                    this->setPixelBlendDst(baseX + 1, pixelY, tmpColor);
+                                if (a1 != 0x0) {
+                                    const u32 offset1 = this->getPixelOffset(baseX + 1, pixelY);
+                                    if (a1 == 0xF) {
+                                        this->setPixel(baseX + 1, pixelY, color, offset1);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a1;
+                                        this->setPixelBlendDst(baseX + 1, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a2 == 0xF) {
-                                    this->setPixel(baseX + 2, pixelY, color, this->getPixelOffset(baseX + 2, pixelY));
-                                } else if (a2 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a2;
-                                    this->setPixelBlendDst(baseX + 2, pixelY, tmpColor);
+                                if (a2 != 0x0) {
+                                    const u32 offset2 = this->getPixelOffset(baseX + 2, pixelY);
+                                    if (a2 == 0xF) {
+                                        this->setPixel(baseX + 2, pixelY, color, offset2);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a2;
+                                        this->setPixelBlendDst(baseX + 2, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a3 == 0xF) {
-                                    this->setPixel(baseX + 3, pixelY, color, this->getPixelOffset(baseX + 3, pixelY));
-                                } else if (a3 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a3;
-                                    this->setPixelBlendDst(baseX + 3, pixelY, tmpColor);
+                                if (a3 != 0x0) {
+                                    const u32 offset3 = this->getPixelOffset(baseX + 3, pixelY);
+                                    if (a3 == 0xF) {
+                                        this->setPixel(baseX + 3, pixelY, color, offset3);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a3;
+                                        this->setPixelBlendDst(baseX + 3, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a4 == 0xF) {
-                                    this->setPixel(baseX + 4, pixelY, color, this->getPixelOffset(baseX + 4, pixelY));
-                                } else if (a4 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a4;
-                                    this->setPixelBlendDst(baseX + 4, pixelY, tmpColor);
+                                if (a4 != 0x0) {
+                                    const u32 offset4 = this->getPixelOffset(baseX + 4, pixelY);
+                                    if (a4 == 0xF) {
+                                        this->setPixel(baseX + 4, pixelY, color, offset4);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a4;
+                                        this->setPixelBlendDst(baseX + 4, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a5 == 0xF) {
-                                    this->setPixel(baseX + 5, pixelY, color, this->getPixelOffset(baseX + 5, pixelY));
-                                } else if (a5 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a5;
-                                    this->setPixelBlendDst(baseX + 5, pixelY, tmpColor);
+                                if (a5 != 0x0) {
+                                    const u32 offset5 = this->getPixelOffset(baseX + 5, pixelY);
+                                    if (a5 == 0xF) {
+                                        this->setPixel(baseX + 5, pixelY, color, offset5);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a5;
+                                        this->setPixelBlendDst(baseX + 5, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a6 == 0xF) {
-                                    this->setPixel(baseX + 6, pixelY, color, this->getPixelOffset(baseX + 6, pixelY));
-                                } else if (a6 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a6;
-                                    this->setPixelBlendDst(baseX + 6, pixelY, tmpColor);
+                                if (a6 != 0x0) {
+                                    const u32 offset6 = this->getPixelOffset(baseX + 6, pixelY);
+                                    if (a6 == 0xF) {
+                                        this->setPixel(baseX + 6, pixelY, color, offset6);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a6;
+                                        this->setPixelBlendDst(baseX + 6, pixelY, tmpColor);
+                                    }
                                 }
                                 
-                                if (a7 == 0xF) {
-                                    this->setPixel(baseX + 7, pixelY, color, this->getPixelOffset(baseX + 7, pixelY));
-                                } else if (a7 != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = a7;
-                                    this->setPixelBlendDst(baseX + 7, pixelY, tmpColor);
+                                if (a7 != 0x0) {
+                                    const u32 offset7 = this->getPixelOffset(baseX + 7, pixelY);
+                                    if (a7 == 0xF) {
+                                        this->setPixel(baseX + 7, pixelY, color, offset7);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = a7;
+                                        this->setPixelBlendDst(baseX + 7, pixelY, tmpColor);
+                                    }
                                 }
                             }
                             
-                            // Handle remaining pixels (original logic)
-                            for (; bmpX < glyph->width; ++bmpX) {
-                                bmpColor = rowPtr[bmpX] >> 4;
-                                if (bmpColor == 0xF) {
-                                    // Direct pixel manipulation - SAME AS ORIGINAL
-                                    this->setPixel(xPos + bmpX, yPos + bmpY, color, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
-                                } else if (bmpColor != 0x0) {
-                                    tmpColor = color;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
+                            // Handle remaining pixels
+                            for (; bmpX < endX; ++bmpX) {
+                                const uint8_t alpha = rowPtr[bmpX] >> 4;
+                                if (alpha != 0x0) {
+                                    const float pixelX = xPos + bmpX;
+                                    const u32 offset = this->getPixelOffset(pixelX, pixelY);
+                                    if (alpha == 0xF) {
+                                        this->setPixel(pixelX, pixelY, color, offset);
+                                    } else {
+                                        tmpColor = color;
+                                        tmpColor.a = alpha;
+                                        this->setPixelBlendDst(pixelX, pixelY, tmpColor);
+                                    }
                                 }
                             }
                         }
                     }
             
-                    // Advance the cursor for the next glyph - SAME AS ORIGINAL
+                    // Advance the cursor for the next glyph
                     currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                 }
             
@@ -2589,109 +2661,53 @@ namespace tsl {
                     const Color& currentColor = (currCharacter == '(' || currCharacter == ')') ? defaultColor : 
                                                (inHighlight ? specialColor : defaultColor);
             
-                    // Render the glyph if it's not whitespace
+                    // Render the glyph if it's not whitespace with bounds checking
                     if (glyph->glyphBmp != nullptr && !std::iswspace(currCharacter) && fontSize > 0 && currentColor.a != 0x0) {
                         xPos = currX + glyph->bounds[0];
                         yPos = currY + glyph->bounds[1];
             
-                        // Ultra-optimized pixel processing with SIMD-style unrolling
-                        for (s32 bmpY = 0; bmpY < glyph->height; ++bmpY) {
-                            rowOffset = bmpY * glyph->width;
-                            const uint8_t* rowPtr = glyph->glyphBmp + rowOffset;
+                        // Calculate glyph bounds for clipping
+                        const s32 glyphLeft = static_cast<s32>(xPos);
+                        const s32 glyphTop = static_cast<s32>(yPos);
+                        const s32 glyphRight = glyphLeft + glyph->width;
+                        const s32 glyphBottom = glyphTop + glyph->height;
+                        
+                        // Early rejection if glyph is completely outside framebuffer
+                        if (glyphRight > 0 && glyphBottom > 0 && 
+                            glyphLeft < static_cast<s32>(cfg::FramebufferWidth) && 
+                            glyphTop < static_cast<s32>(cfg::FramebufferHeight)) {
                             
-                            // Process 8 pixels at once for maximum performance
-                            s32 bmpX = 0;
-                            const s32 simdWidth = glyph->width & ~7;
+                            // Calculate clipping bounds
+                            const s32 clipLeft = std::max(glyphLeft, 0);
+                            const s32 clipTop = std::max(glyphTop, 0);
+                            const s32 clipRight = std::min(glyphRight, static_cast<s32>(cfg::FramebufferWidth));
+                            const s32 clipBottom = std::min(glyphBottom, static_cast<s32>(cfg::FramebufferHeight));
                             
-                            for (; bmpX < simdWidth; bmpX += 8) {
-                                // Load 8 alpha values
-                                const uint8_t a0 = rowPtr[bmpX] >> 4;
-                                const uint8_t a1 = rowPtr[bmpX + 1] >> 4;
-                                const uint8_t a2 = rowPtr[bmpX + 2] >> 4;
-                                const uint8_t a3 = rowPtr[bmpX + 3] >> 4;
-                                const uint8_t a4 = rowPtr[bmpX + 4] >> 4;
-                                const uint8_t a5 = rowPtr[bmpX + 5] >> 4;
-                                const uint8_t a6 = rowPtr[bmpX + 6] >> 4;
-                                const uint8_t a7 = rowPtr[bmpX + 7] >> 4;
+                            // Convert back to glyph-relative coordinates
+                            const s32 startX = clipLeft - glyphLeft;
+                            const s32 startY = clipTop - glyphTop;
+                            const s32 endX = clipRight - glyphLeft;
+                            const s32 endY = clipBottom - glyphTop;
+            
+                            // Render clipped pixels
+                            for (s32 bmpY = startY; bmpY < endY; ++bmpY) {
+                                rowOffset = bmpY * glyph->width;
+                                const uint8_t* rowPtr = glyph->glyphBmp + rowOffset;
                                 
-                                const float baseX = xPos + bmpX;
-                                const float pixelY = yPos + bmpY;
-                                
-                                // Unrolled pixel processing
-                                if (a0 == 0xF) {
-                                    this->setPixel(baseX, pixelY, currentColor, this->getPixelOffset(baseX, pixelY));
-                                } else if (a0 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a0;
-                                    this->setPixelBlendDst(baseX, pixelY, tmpColor);
-                                }
-                                
-                                if (a1 == 0xF) {
-                                    this->setPixel(baseX + 1, pixelY, currentColor, this->getPixelOffset(baseX + 1, pixelY));
-                                } else if (a1 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a1;
-                                    this->setPixelBlendDst(baseX + 1, pixelY, tmpColor);
-                                }
-                                
-                                if (a2 == 0xF) {
-                                    this->setPixel(baseX + 2, pixelY, currentColor, this->getPixelOffset(baseX + 2, pixelY));
-                                } else if (a2 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a2;
-                                    this->setPixelBlendDst(baseX + 2, pixelY, tmpColor);
-                                }
-                                
-                                if (a3 == 0xF) {
-                                    this->setPixel(baseX + 3, pixelY, currentColor, this->getPixelOffset(baseX + 3, pixelY));
-                                } else if (a3 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a3;
-                                    this->setPixelBlendDst(baseX + 3, pixelY, tmpColor);
-                                }
-                                
-                                if (a4 == 0xF) {
-                                    this->setPixel(baseX + 4, pixelY, currentColor, this->getPixelOffset(baseX + 4, pixelY));
-                                } else if (a4 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a4;
-                                    this->setPixelBlendDst(baseX + 4, pixelY, tmpColor);
-                                }
-                                
-                                if (a5 == 0xF) {
-                                    this->setPixel(baseX + 5, pixelY, currentColor, this->getPixelOffset(baseX + 5, pixelY));
-                                } else if (a5 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a5;
-                                    this->setPixelBlendDst(baseX + 5, pixelY, tmpColor);
-                                }
-                                
-                                if (a6 == 0xF) {
-                                    this->setPixel(baseX + 6, pixelY, currentColor, this->getPixelOffset(baseX + 6, pixelY));
-                                } else if (a6 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a6;
-                                    this->setPixelBlendDst(baseX + 6, pixelY, tmpColor);
-                                }
-                                
-                                if (a7 == 0xF) {
-                                    this->setPixel(baseX + 7, pixelY, currentColor, this->getPixelOffset(baseX + 7, pixelY));
-                                } else if (a7 != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = a7;
-                                    this->setPixelBlendDst(baseX + 7, pixelY, tmpColor);
-                                }
-                            }
-                            
-                            // Handle remaining pixels (original logic)
-                            for (; bmpX < glyph->width; ++bmpX) {
-                                bmpColor = rowPtr[bmpX] >> 4;
-                                if (bmpColor == 0xF) {
-                                    this->setPixel(xPos + bmpX, yPos + bmpY, currentColor, this->getPixelOffset(xPos + bmpX, yPos + bmpY));
-                                } else if (bmpColor != 0x0) {
-                                    tmpColor = currentColor;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + bmpX, yPos + bmpY, tmpColor);
+                                for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
+                                    bmpColor = rowPtr[bmpX] >> 4;
+                                    if (bmpColor != 0x0) {
+                                        const float pixelX = xPos + bmpX;
+                                        const float pixelY = yPos + bmpY;
+                                        const u32 offset = this->getPixelOffset(pixelX, pixelY);
+                                        if (bmpColor == 0xF) {
+                                            this->setPixel(pixelX, pixelY, currentColor, offset);
+                                        } else {
+                                            tmpColor = currentColor;
+                                            tmpColor.a = bmpColor;
+                                            this->setPixelBlendDst(pixelX, pixelY, tmpColor);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2705,8 +2721,8 @@ namespace tsl {
                 maxX = std::max(currX, maxX);
                 return {maxX - x, currY - y + fontSize};
             }
-            
-                        
+
+                                    
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
                 // Early exits
                 if (text.empty() || fontSize <= 0) [[unlikely]] {
@@ -2737,7 +2753,6 @@ namespace tsl {
                 // Initialize rendering state
                 float currX = x;
                 float currY = y;
-                //bool inSpecialMode = false;
                 
                 // Pre-calculate constants
                 const u64 keyBase = (static_cast<u64>(false) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
@@ -2799,7 +2814,7 @@ namespace tsl {
                 }
             }
             
-            // Helper function for direct text segment rendering
+            // Helper function for direct text segment rendering with optimized bounds checking
             inline void renderTextSegment(const char* textPtr, size_t length, float& currX, float& currY, 
                                          const u32 fontSize, const Color& color, const u64 keyBase,
                                          std::unordered_map<u64, Glyph>& glyphCache) {
@@ -2882,79 +2897,100 @@ namespace tsl {
                         continue;
                     }
                     
-                    // Render glyph (same optimized pixel processing as ultra-fast drawString)
+                    // Render glyph (ultra-fast with minimal bounds checking)
                     if (glyph->glyphBmp != nullptr) [[likely]] {
-                        const float xPos = currX + glyph->bounds[0];
-                        const float yPos = currY + glyph->bounds[1];
+                        const s32 xPos = static_cast<s32>(currX + glyph->bounds[0]);
+                        const s32 yPos = static_cast<s32>(currY + glyph->bounds[1]);
+                        
+                        // Quick reject if glyph is completely off-screen
+                        if (xPos >= static_cast<s32>(cfg::FramebufferWidth) || yPos >= static_cast<s32>(cfg::FramebufferHeight) ||
+                            xPos + glyph->width <= 0 || yPos + glyph->height <= 0) [[unlikely]] {
+                            currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                            continue;
+                        }
                         
                         const uint8_t* bmpPtr = glyph->glyphBmp;
                         const s32 width = glyph->width;
                         const s32 height = glyph->height;
                         
-                        // Vectorized pixel rendering
+                        // Simple, fast pixel rendering with inline bounds checks
                         for (s32 row = 0; row < height; ++row) {
-                            const float currentY = yPos + row;
+                            const s32 currentY = yPos + row;
+                            
+                            // Skip rows that are off-screen
+                            if (currentY < 0 || currentY >= static_cast<s32>(cfg::FramebufferHeight)) {
+                                bmpPtr += width;
+                                continue;
+                            }
                             
                             s32 col = 0;
                             const s32 simdWidth = width & ~3;
                             
                             // Process 4 pixels at once
                             for (; col < simdWidth; col += 4) {
+                                const s32 x0 = xPos + col;
+                                const s32 x1 = x0 + 1;
+                                const s32 x2 = x0 + 2;
+                                const s32 x3 = x0 + 3;
+                                
                                 const uint8_t c0 = bmpPtr[col] >> 4;
                                 const uint8_t c1 = bmpPtr[col + 1] >> 4;
                                 const uint8_t c2 = bmpPtr[col + 2] >> 4;
                                 const uint8_t c3 = bmpPtr[col + 3] >> 4;
                                 
-                                if (c0 != 0) {
+                                if (c0 != 0 && x0 >= 0 && x0 < static_cast<s32>(cfg::FramebufferWidth)) {
                                     if (c0 == 0xF) {
-                                        this->setPixel(xPos + col, currentY, color, this->getPixelOffset(xPos + col, currentY));
+                                        this->setPixel(x0, currentY, color, this->getPixelOffset(x0, currentY));
                                     } else {
                                         Color tmpColor = color;
                                         tmpColor.a = c0;
-                                        this->setPixelBlendDst(xPos + col, currentY, tmpColor);
+                                        this->setPixelBlendDst(x0, currentY, tmpColor);
                                     }
                                 }
                                 
-                                if (c1 != 0) {
+                                if (c1 != 0 && x1 >= 0 && x1 < static_cast<s32>(cfg::FramebufferWidth)) {
                                     if (c1 == 0xF) {
-                                        this->setPixel(xPos + col + 1, currentY, color, this->getPixelOffset(xPos + col + 1, currentY));
+                                        this->setPixel(x1, currentY, color, this->getPixelOffset(x1, currentY));
                                     } else {
                                         Color tmpColor = color;
                                         tmpColor.a = c1;
-                                        this->setPixelBlendDst(xPos + col + 1, currentY, tmpColor);
+                                        this->setPixelBlendDst(x1, currentY, tmpColor);
                                     }
                                 }
                                 
-                                if (c2 != 0) {
+                                if (c2 != 0 && x2 >= 0 && x2 < static_cast<s32>(cfg::FramebufferWidth)) {
                                     if (c2 == 0xF) {
-                                        this->setPixel(xPos + col + 2, currentY, color, this->getPixelOffset(xPos + col + 2, currentY));
+                                        this->setPixel(x2, currentY, color, this->getPixelOffset(x2, currentY));
                                     } else {
                                         Color tmpColor = color;
                                         tmpColor.a = c2;
-                                        this->setPixelBlendDst(xPos + col + 2, currentY, tmpColor);
+                                        this->setPixelBlendDst(x2, currentY, tmpColor);
                                     }
                                 }
                                 
-                                if (c3 != 0) {
+                                if (c3 != 0 && x3 >= 0 && x3 < static_cast<s32>(cfg::FramebufferWidth)) {
                                     if (c3 == 0xF) {
-                                        this->setPixel(xPos + col + 3, currentY, color, this->getPixelOffset(xPos + col + 3, currentY));
+                                        this->setPixel(x3, currentY, color, this->getPixelOffset(x3, currentY));
                                     } else {
                                         Color tmpColor = color;
                                         tmpColor.a = c3;
-                                        this->setPixelBlendDst(xPos + col + 3, currentY, tmpColor);
+                                        this->setPixelBlendDst(x3, currentY, tmpColor);
                                     }
                                 }
                             }
                             
                             // Handle remaining pixels
                             for (; col < width; ++col) {
-                                const uint8_t bmpColor = bmpPtr[col] >> 4;
-                                if (bmpColor == 0xF) {
-                                    this->setPixel(xPos + col, currentY, color, this->getPixelOffset(xPos + col, currentY));
-                                } else if (bmpColor != 0x0) {
-                                    Color tmpColor = color;
-                                    tmpColor.a = bmpColor;
-                                    this->setPixelBlendDst(xPos + col, currentY, tmpColor);
+                                const s32 currentX = xPos + col;
+                                if (currentX >= 0 && currentX < static_cast<s32>(cfg::FramebufferWidth)) {
+                                    const uint8_t bmpColor = bmpPtr[col] >> 4;
+                                    if (bmpColor == 0xF) {
+                                        this->setPixel(currentX, currentY, color, this->getPixelOffset(currentX, currentY));
+                                    } else if (bmpColor != 0x0) {
+                                        Color tmpColor = color;
+                                        tmpColor.a = bmpColor;
+                                        this->setPixelBlendDst(currentX, currentY, tmpColor);
+                                    }
                                 }
                             }
                             
