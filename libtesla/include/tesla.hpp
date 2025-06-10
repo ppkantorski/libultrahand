@@ -1660,11 +1660,11 @@ namespace tsl {
                         
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
                 // Early exit for degenerate cases
-                if (w <= 0 || h <= 0) return;
+                //if (w <= 0 || h <= 0) return;
                 
                 // Radius is half of height to create perfect half circles on each side
                 const s32 radius = h / 2;
-                if (radius <= 0) return;
+                //if (radius <= 0) return;
                 
                 const s32 x_start = x + radius;
                 const s32 x_end = x + w - radius;
@@ -2275,9 +2275,9 @@ namespace tsl {
                 #endif
             
                 // Early exit optimizations
-                if (stringPtr->empty() || fontSize == 0 || color.a == 0x0) {
-                    return {0, 0};
-                }
+                //if (stringPtr->empty() || fontSize == 0 || color.a == 0x0) {
+                //    return {0, 0};
+                //}
             
                 // Variable declarations moved outside loops
                 float maxX = x;
@@ -2608,9 +2608,9 @@ namespace tsl {
                 const ssize_t maxWidth = 0
             ) {
                 // Early exits
-                if (text.empty() || fontSize <= 0) [[unlikely]] {
-                    return { 0, 0 };
-                }
+                //if (text.empty() || fontSize <= 0) [[unlikely]] {
+                //    return { 0, 0 };
+                //}
             
                 // Static glyph cache (shared across all calls)
                 static std::unordered_map<u64, Glyph> s_glyphCache;
@@ -2843,15 +2843,15 @@ namespace tsl {
                                     
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
                 // Early exits
-                if (text.empty() || fontSize <= 0) [[unlikely]] {
-                    return;
-                }
+                //if (text.empty() || fontSize <= 0) [[unlikely]] {
+                //    return;
+                //}
                 
                 // Fast path: no special symbols
-                if (specialSymbols.empty()) [[likely]] {
-                    drawString(text, false, x, y, fontSize, defaultColor);
-                    return;
-                }
+                //if (specialSymbols.empty()) [[likely]] {
+                //    drawString(text, false, x, y, fontSize, defaultColor);
+                //    return;
+                //}
                 
                 // Build efficient pattern matcher using Aho-Corasick-like approach
                 // For simplicity, using optimized linear search with memoization
@@ -2888,14 +2888,19 @@ namespace tsl {
                 const char* const strEnd = strPtr + text.length();
                 const char* currentStart = strPtr;
                 
+                bool foundMatch;
+                size_t matchLength;
+                size_t symLen;
+
                 // Main processing loop
                 while (strPtr < strEnd) {
                     // Check for special symbol matches at current position
-                    bool foundMatch = false;
-                    size_t matchLength = 0;
+                    foundMatch = false;
+                    matchLength = 0;
                     
                     for (const auto& symbol : specialSymbols) {
-                        const size_t symLen = symbol.length();
+                        //const size_t symLen = symbol.length();
+                        symLen = symbol.length();
                         
                         // Check if symbol fits in remaining text
                         if (strPtr + symLen > strEnd) continue;
@@ -3152,7 +3157,7 @@ namespace tsl {
                 }
             }
 
-                        
+                                    
             /**
              * @brief Limit a string's length and end it with "…" - Actually optimized version
              *
@@ -3201,31 +3206,56 @@ namespace tsl {
                 const char* const strEnd = strPtr + stringPtr->size();
                 const char* lastValidPos = strPtr;
                 
+                // MOVED OUTSIDE LOOP: Pre-declare variables used in loop
                 u32 currCharacter;
                 ssize_t codepointWidth;
+                stbtt_fontinfo* font;
+                float fontScale;
+                int xAdvance;
+                s32 charWidth;
+                
+                // Pre-calculate monospace character width if needed
+                s32 monospaceCharWidth = 0;
+                if (monospace) {
+                    stbtt_fontinfo* monoFont = &this->m_stdFont;
+                    if (stbtt_FindGlyphIndex(&this->m_extFont, 'W')) {
+                        monoFont = &this->m_extFont;
+                    } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, 'W') == 0) {
+                        monoFont = &this->m_localFont;
+                    }
+                    const float monoFontScale = stbtt_ScaleForPixelHeight(monoFont, fontSize);
+                    int monoXAdvance = 0;
+                    stbtt_GetCodepointHMetrics(monoFont, 'W', &monoXAdvance, nullptr);
+                    monospaceCharWidth = static_cast<s32>(monoXAdvance * monoFontScale);
+                }
                 
                 while (strPtr < strEnd) {
                     codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(strPtr));
                     if (codepointWidth <= 0) break;
                     
-                    // Calculate width of just this character
-                    stbtt_fontinfo* font = &this->m_stdFont;
-                    if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                        font = &this->m_extFont;
-                    } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                        font = &this->m_localFont;
+                    if (monospace) {
+                        // Use pre-calculated monospace width
+                        charWidth = monospaceCharWidth;
+                    } else {
+                        // Calculate width of just this character
+                        font = &this->m_stdFont;
+                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                            font = &this->m_extFont;
+                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                            font = &this->m_localFont;
+                        }
+                        
+                        fontScale = stbtt_ScaleForPixelHeight(font, fontSize);
+                        xAdvance = 0;
+                        stbtt_GetCodepointHMetrics(font, currCharacter, &xAdvance, nullptr);
+                        charWidth = static_cast<s32>(xAdvance * fontScale);
                     }
-                    
-                    const float fontScale = stbtt_ScaleForPixelHeight(font, fontSize);
-                    int xAdvance = 0;
-                    stbtt_GetCodepointHMetrics(font, monospace ? 'W' : currCharacter, &xAdvance, nullptr);
-                    const s32 charWidth = static_cast<s32>(xAdvance * fontScale);
                     
                     // Check if adding this character would exceed the limit
                     if (currX + charWidth > maxWidthWithoutEllipsis) {
                         // Return truncated string with ellipsis
-                        const size_t truncateLength = lastValidPos - stringPtr->data();
-                        return stringPtr->substr(0, truncateLength) + "…";
+                        //const size_t truncateLength = lastValidPos - stringPtr->data();
+                        return stringPtr->substr(0, lastValidPos - stringPtr->data()) + "…";
                     }
                     
                     // Add this character's width and continue
@@ -3239,10 +3269,10 @@ namespace tsl {
             }
 
             inline void setLayerPos(u32 x, u32 y) {
-                float ratio = 1.5;
-                u32 maxX = cfg::ScreenWidth - (int)(ratio * cfg::FramebufferWidth);
-                u32 maxY = cfg::ScreenHeight - (int)(ratio * cfg::FramebufferHeight);
-                if (x > maxX || y > maxY) {
+                //const float ratio = 1.5;
+                //u32 maxX = cfg::ScreenWidth - (int)(ratio * cfg::FramebufferWidth);
+                //u32 maxY = cfg::ScreenHeight - (int)(ratio * cfg::FramebufferHeight);
+                if (x > cfg::ScreenWidth - (int)(1.5 * cfg::FramebufferWidth) || y > cfg::ScreenHeight - (int)(1.5 * cfg::FramebufferHeight)) {
                     return;
                 }
                 setLayerPosImpl(x, y);
