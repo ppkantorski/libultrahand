@@ -3223,10 +3223,10 @@ namespace tsl {
                     } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, 'W') == 0) {
                         monoFont = &this->m_localFont;
                     }
-                    const float monoFontScale = stbtt_ScaleForPixelHeight(monoFont, fontSize);
+                    //const float monoFontScale = stbtt_ScaleForPixelHeight(monoFont, fontSize);
                     int monoXAdvance = 0;
                     stbtt_GetCodepointHMetrics(monoFont, 'W', &monoXAdvance, nullptr);
-                    monospaceCharWidth = static_cast<s32>(monoXAdvance * monoFontScale);
+                    monospaceCharWidth = static_cast<s32>(monoXAdvance * stbtt_ScaleForPixelHeight(monoFont, fontSize));
                 }
                 
                 while (strPtr < strEnd) {
@@ -7013,9 +7013,9 @@ namespace tsl {
                 u8 halfNumSteps = (this->m_numSteps - 1) / 2;
 
                 // Draw step rectangles
-                //u16 stepX;
+                u16 stepX;
                 for (u8 i = 0; i < this->m_numSteps; i++) {
-                    u16 stepX = baseX + std::round(i * stepSpacing);
+                    stepX = baseX + std::round(i * stepSpacing);
                     
                     // Subtract 1 from the X position for steps on the right side of the center
                     if (i > halfNumSteps) {
@@ -7813,9 +7813,9 @@ namespace tsl {
                 u8 halfNumSteps = (this->m_numSteps - 1) / 2;
 
                 // Draw step rectangles
-                //u16 stepX;
+                u16 stepX;
                 for (u8 i = 0; i < this->m_numSteps; i++) {
-                    u16 stepX = baseX + std::round(i * stepSpacing);
+                    stepX = baseX + std::round(i * stepSpacing);
                     
                     // Subtract 1 from the X position for steps on the right side of the center
                     if (i > halfNumSteps) {
