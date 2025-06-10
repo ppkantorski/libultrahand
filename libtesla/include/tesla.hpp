@@ -96,7 +96,7 @@
     })
 
 using namespace std::literals::string_literals;
-//using namespace std::literals::chrono_literals;
+using namespace std::literals::chrono_literals; // potentially unused, restored for softare compatibility
 
 #if IS_STATUS_MONITOR_DIRECTIVE
 struct GlyphInfo {
