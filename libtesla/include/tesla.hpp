@@ -902,8 +902,8 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
-                return (c.rgba & 0x0FFF) | (alpha << 12);
+                //u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
+                return (c.rgba & 0x0FFF) | ((ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity))) << 12);
             }
             
             /**
@@ -936,13 +936,10 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixel(const u32 x, const u32 y, const Color& color, const u32 offset) {
-                //if (x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
-                //u32 offset = this->getPixelOffset(x, y);
-                if (offset != UINT32_MAX) {
+                if (offset != UINT32_MAX) [[likely]] {
                     Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
                     framebuffer[offset] = color;
                 }
-                //}
             }
 
 
@@ -968,26 +965,25 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixelBlendSrc(const u32 x, const u32 y, const Color& color) {
-                const u32 offset = this->getPixelOffset(x, y);
-                if (offset == UINT32_MAX)
-                    return;
-                
                 // Early exit for fully transparent pixels
-                if (color.a == 0)
+                //if (color.a == 0)
+                //    return;
+                const u32 offset = this->getPixelOffset(x, y);
+                if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                const Color src(framebuffer[offset]);
+                //const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+                const Color src(static_cast<const u16*>(this->getCurrentFramebuffer())[offset]);
                 
                 // Inline the blending and Color construction
-                const Color end = {
-                    blendColor(src.r, color.r, color.a),
-                    blendColor(src.g, color.g, color.a), 
-                    blendColor(src.b, color.b, color.a),
-                    src.a
-                };
+                //const Color end = {
+                //    blendColor(src.r, color.r, color.a),
+                //    blendColor(src.g, color.g, color.a), 
+                //    blendColor(src.b, color.b, color.a),
+                //    src.a
+                //};
             
-                this->setPixel(x, y, end, offset);
+                this->setPixel(x, y, {blendColor(src.r, color.r, color.a), blendColor(src.g, color.g, color.a),  blendColor(src.b, color.b, color.a), src.a}, offset);
             }
 
             // Alternative batch version for processing multiple pixels at once
@@ -995,26 +991,34 @@ namespace tsl {
                                               const u8 red[16], const u8 green[16], 
                                               const u8 blue[16], const u8 alpha[16], 
                                               const s32 count) {
+                // All variables moved outside the loop
                 const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+                u32 offset;
+                u8 currentAlpha;
+                Color src = {0}, end = {0};
+                u32 currentX;
                 
                 for (s32 i = 0; i < count; ++i) {
                     // Early exit for transparent pixels
-                    if (alpha[i] == 0)
-                        continue;
-                        
-                    const u32 offset = this->getPixelOffset(baseX + i, baseY);
-                    if (offset == UINT32_MAX)
+                    currentAlpha = alpha[i];
+                    if (currentAlpha == 0)
                         continue;
                     
-                    const Color src(framebuffer[offset]);
-                    const Color end = {
-                        blendColor(src.r, red[i], alpha[i]),
-                        blendColor(src.g, green[i], alpha[i]),
-                        blendColor(src.b, blue[i], alpha[i]),
-                        src.a
-                    };
+                    currentX = baseX + i;
+                    offset = this->getPixelOffset(currentX, baseY);
+                    if (offset == UINT32_MAX) [[unlikely]]
+                        continue;
                     
-                    this->setPixel(baseX + i, baseY, end, offset);
+                    // Direct framebuffer access and color construction
+                    src = Color(framebuffer[offset]);
+                    
+                    // Direct member assignment instead of constructor
+                    end.r = blendColor(src.r, red[i], currentAlpha);
+                    end.g = blendColor(src.g, green[i], currentAlpha);
+                    end.b = blendColor(src.b, blue[i], currentAlpha);
+                    end.a = src.a;
+                    
+                    this->setPixel(currentX, baseY, end, offset);
                 }
             }
 
@@ -1028,12 +1032,12 @@ namespace tsl {
              */
             inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
-                if (offset == UINT32_MAX)
+                if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
                 // Early exit for fully transparent pixels
-                if (color.a == 0)
-                    return;
+                //if (color.a == 0)
+                //    return;
                 
                 const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
                 const Color src(framebuffer[offset]);
@@ -1055,27 +1059,36 @@ namespace tsl {
                                               const u8 red[16], const u8 green[16], 
                                               const u8 blue[16], const u8 alpha[16], 
                                               const s32 count) {
+                // All variables moved outside the loop
                 const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+                u32 offset;
+                u8 currentAlpha;
+                u8 invAlpha;
+                Color src = {0}, end = {0};
+                u32 currentX;
                 
                 for (s32 i = 0; i < count; ++i) {
                     // Early exit for transparent pixels
-                    if (alpha[i] == 0)
-                        continue;
-                        
-                    const u32 offset = this->getPixelOffset(baseX + i, baseY);
-                    if (offset == UINT32_MAX)
+                    currentAlpha = alpha[i];
+                    if (currentAlpha == 0)
                         continue;
                     
-                    const Color src(framebuffer[offset]);
-                    const u8 invAlpha = 0xF - alpha[i];
-                    const Color end = {
-                        blendColor(src.r, red[i], alpha[i]),
-                        blendColor(src.g, green[i], alpha[i]),
-                        blendColor(src.b, blue[i], alpha[i]),
-                        static_cast<u8>(alpha[i] + (src.a * invAlpha >> 4))
-                    };
+                    currentX = baseX + i;
+                    offset = this->getPixelOffset(currentX, baseY);
+                    if (offset == UINT32_MAX) [[unlikely]]
+                        continue;
                     
-                    this->setPixel(baseX + i, baseY, end, offset);
+                    // Direct framebuffer access and color construction
+                    src = Color(framebuffer[offset]);
+                    invAlpha = 0xF - currentAlpha;
+                    
+                    // Direct member assignment instead of constructor
+                    end.r = blendColor(src.r, red[i], currentAlpha);
+                    end.g = blendColor(src.g, green[i], currentAlpha);
+                    end.b = blendColor(src.b, blue[i], currentAlpha);
+                    end.a = static_cast<u8>(currentAlpha + (src.a * invAlpha >> 4));
+                    
+                    this->setPixel(currentX, baseY, end, offset);
                 }
             }
 
@@ -1100,8 +1113,9 @@ namespace tsl {
                 const s32 y_end = (y + h > cfg::FramebufferHeight) ? cfg::FramebufferHeight : y + h;
                 
                 // Early exit if completely outside bounds
-                if (x_start >= x_end || y_start >= y_end) return;
+                if (x_start >= x_end || y_start >= y_end) [[unlikely]] return;
                 
+
                 // Draw row by row for better cache locality
                 for (s32 yi = y_start; yi < y_end; ++yi) {
                     for (s32 xi = x_start; xi < x_end; ++xi) {
@@ -1120,49 +1134,58 @@ namespace tsl {
              * @param color Color
              */
             inline void drawEmptyRect(s32 x, s32 y, s32 w, s32 h, Color color) {
-                // Early exit for invalid dimensions
-                //if (w <= 0 || h <= 0) return;
+                // Only precompute values that are actually reused
+                const s32 x_end = x + w - 1;
+                const s32 y_end = y + h - 1;
                 
-                const s32 x_end = x + w - 1;  // Inclusive end point
-                const s32 y_end = y + h - 1;  // Inclusive end point
-                
-                // Bounds check for the entire rectangle
-                if (x_end < 0 || y_end < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight) {
+                // Early exit for completely out-of-bounds rectangles
+                if (x_end < 0 || y_end < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight) [[unlikely]] {
                     return;
                 }
                 
-                // Draw top and bottom horizontal lines
+                // Early exit for degenerate rectangles
+                //if (w <= 0 || h <= 0) {
+                //    return;
+                //}
+                
+                // These are reused for both horizontal lines
+                const s32 line_x_start = x < 0 ? 0 : x;
+                const s32 line_x_end = x_end >= cfg::FramebufferWidth ? cfg::FramebufferWidth - 1 : x_end;
+                
+                // Draw top horizontal line
                 if (y >= 0 && y < cfg::FramebufferHeight) {
-                    const s32 line_x_start = x < 0 ? 0 : x;
-                    const s32 line_x_end = x_end >= cfg::FramebufferWidth ? cfg::FramebufferWidth - 1 : x_end;
                     for (s32 xi = line_x_start; xi <= line_x_end; ++xi) {
                         this->setPixelBlendDst(xi, y, color);
                     }
                 }
                 
+                // Draw bottom horizontal line (only if different from top)
                 if (h > 1 && y_end >= 0 && y_end < cfg::FramebufferHeight) {
-                    const s32 line_x_start = x < 0 ? 0 : x;
-                    const s32 line_x_end = x_end >= cfg::FramebufferWidth ? cfg::FramebufferWidth - 1 : x_end;
                     for (s32 xi = line_x_start; xi <= line_x_end; ++xi) {
                         this->setPixelBlendDst(xi, y_end, color);
                     }
                 }
                 
-                // Draw left and right vertical lines (excluding corners already drawn)
-                if (h > 2) {  // Only draw sides if height > 2 to avoid overdrawing corners
-                    if (x >= 0 && x < cfg::FramebufferWidth) {
-                        const s32 line_y_start = (y + 1) < 0 ? 0 : (y + 1);
-                        const s32 line_y_end = (y_end - 1) >= cfg::FramebufferHeight ? cfg::FramebufferHeight - 1 : (y_end - 1);
-                        for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
-                            this->setPixelBlendDst(x, yi, color);
-                        }
-                    }
+                // Draw vertical lines only if there's space between horizontal lines
+                if (h > 2) {
+                    // These are reused for both vertical lines
+                    const s32 line_y_start = (y + 1) < 0 ? 0 : (y + 1);
+                    const s32 line_y_end = (y_end - 1) >= cfg::FramebufferHeight ? cfg::FramebufferHeight - 1 : (y_end - 1);
                     
-                    if (w > 1 && x_end >= 0 && x_end < cfg::FramebufferWidth) {
-                        const s32 line_y_start = (y + 1) < 0 ? 0 : (y + 1);
-                        const s32 line_y_end = (y_end - 1) >= cfg::FramebufferHeight ? cfg::FramebufferHeight - 1 : (y_end - 1);
-                        for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
-                            this->setPixelBlendDst(x_end, yi, color);
+                    // Only proceed if there are actually vertical pixels to draw
+                    if (line_y_start <= line_y_end) {
+                        // Left vertical line
+                        if (x >= 0 && x < cfg::FramebufferWidth) {
+                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
+                                this->setPixelBlendDst(x, yi, color);
+                            }
+                        }
+                        
+                        // Right vertical line (only if different from left)
+                        if (w > 1 && x_end >= 0 && x_end < cfg::FramebufferWidth) {
+                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
+                                this->setPixelBlendDst(x_end, yi, color);
+                            }
                         }
                     }
                 }
@@ -1199,7 +1222,8 @@ namespace tsl {
                 // Bresenham's algorithm
                 s32 x = x0, y = y0;
                 s32 error = abs_dx - abs_dy;
-                
+                s32 error2;
+
                 while (true) {
                     // Bounds check and draw pixel
                     if (x >= 0 && y >= 0 && x < cfg::FramebufferWidth && y < cfg::FramebufferHeight) {
@@ -1210,7 +1234,7 @@ namespace tsl {
                     if (x == x1 && y == y1) break;
                     
                     // Calculate error and step
-                    s32 error2 = error << 1;  // error * 2
+                    error2 = error << 1;  // error * 2
                     
                     if (error2 > -abs_dy) {
                         error -= abs_dy;
@@ -1236,10 +1260,10 @@ namespace tsl {
             inline void drawDashedLine(s32 x0, s32 y0, s32 x1, s32 y1, s32 line_width, Color color) {
                 // Source of formula: https://www.cc.gatech.edu/grads/m/Aaron.E.McClennen/Bresenham/code.html
 
-               const s32 x_min = std::min(x0, x1);
-               const s32 x_max = std::max(x0, x1);
-               const s32 y_min = std::min(y0, y1);
-               const s32 y_max = std::max(y0, y1);
+                const s32 x_min = std::min(x0, x1);
+                const s32 x_max = std::max(x0, x1);
+                const s32 y_min = std::min(y0, y1);
+                const s32 y_max = std::max(y0, y1);
 
                 if (x_min < 0 || y_min < 0 || x_min >= cfg::FramebufferWidth || y_min >= cfg::FramebufferHeight)
                     return;
@@ -1478,64 +1502,82 @@ namespace tsl {
 
             // Define processChunk as a static member function
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 x_end, const s32 y_end, const s32 r2, const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
+                // All constant calculations moved outside loops
                 const s32 x_left = x + radius;
                 const s32 x_right = x_end - radius;
                 const s32 y_top = y + radius;
                 const s32 y_bottom = y_end - radius;
-                
-                
                 const s32 total_height = y_end - y;
-                std::vector<HorizontalSpan> spans(total_height);
+                
+                // Pre-computed color arrays (moved outside all loops)
+                alignas(64) u8 redArray[256], greenArray[256], blueArray[256], alphaArray[256];
+                const u8 red = color.r;
+                const u8 green = color.g;
+                const u8 blue = color.b;
+                const u8 alpha = color.a;
+                
+                // Vectorized color array initialization
+                for (s32 i = 0; i < 256; ++i) {
+                    redArray[i] = red;
+                    greenArray[i] = green;
+                    blueArray[i] = blue;
+                    alphaArray[i] = alpha;
+                }
+                
+                // Pre-allocate spans vector
+                std::vector<HorizontalSpan> spans;
+                spans.reserve(total_height);
+                spans.resize(total_height);
+                
+                // Variables for span computation loop (moved outside)
+                s32 y1, corner_y, dy, dy2, max_dx;
+                bool isTopSection;
                 
                 // Pre-compute spans for each row
                 for (s32 row_idx = 0; row_idx < total_height; ++row_idx) {
-                    const s32 y1 = y + row_idx;
+                    y1 = y + row_idx;
                     
                     if (y1 >= y_top && y1 < y_bottom) {
-                        // Middle section
-                        spans[row_idx] = {x, x_end};
+                        // Middle section - direct assignment
+                        spans[row_idx].start_x = x;
+                        spans[row_idx].end_x = x_end;
                     } else {
                         // Corner section
-                        const bool isTopSection = (y1 < y_top);
-                        const s32 corner_y = isTopSection ? y_top : y_bottom;
-                        const s32 dy = abs(y1 - corner_y);
-                        const s32 dy2 = dy * dy;
+                        isTopSection = (y1 < y_top);
+                        corner_y = isTopSection ? y_top : y_bottom;
+                        dy = abs(y1 - corner_y);
+                        dy2 = dy * dy;
                         
                         if (dy2 > r2) {
-                            spans[row_idx] = {0, 0}; // Empty span
+                            spans[row_idx].start_x = 0;
+                            spans[row_idx].end_x = 0; // Empty span
                         } else {
-                            const s32 max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
-                            spans[row_idx] = {
-                                std::max(x_left - max_dx, x),
-                                std::min(x_right + max_dx, x_end)
-                            };
+                            max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
+                            spans[row_idx].start_x = std::max(x_left - max_dx, x);
+                            spans[row_idx].end_x = std::min(x_right + max_dx, x_end);
                         }
                     }
                 }
                 
-                // Now render only the requested rows using pre-computed spans
-                alignas(64) u8 redArray[256], greenArray[256], blueArray[256], alphaArray[256];
-                for (s32 i = 0; i < 256; ++i) {
-                    redArray[i] = color.r;
-                    greenArray[i] = color.g;
-                    blueArray[i] = color.b;
-                    alphaArray[i] = color.a;
-                }
+                // Variables for rendering loop (moved outside)
+                s32 row_idx, x_pos, remaining, batch_size;
+                const HorizontalSpan* span;
                 
-                for (s32 y1 = startRow; y1 < endRow; ++y1) {
-                    const s32 row_idx = y1 - y;
+                // Render only the requested rows using pre-computed spans
+                for (s32 y_current = startRow; y_current < endRow; ++y_current) {
+                    row_idx = y_current - y;
                     if (row_idx < 0 || row_idx >= total_height) continue;
                     
-                    const auto& span = spans[row_idx];
-                    if (span.start_x >= span.end_x) continue;
+                    span = &spans[row_idx];
+                    if (span->start_x >= span->end_x) continue;
                     
                     // Draw with maximum batch size
-                    s32 x_pos = span.start_x;
-                    while (x_pos < span.end_x) {
-                        const s32 remaining = span.end_x - x_pos;
-                        const s32 batch_size = std::min(remaining, 256);
+                    x_pos = span->start_x;
+                    while (x_pos < span->end_x) {
+                        remaining = span->end_x - x_pos;
+                        batch_size = std::min(remaining, 256);
                         
-                        self->setPixelBlendDstBatch(x_pos, y1, redArray, greenArray, blueArray, alphaArray, batch_size);
+                        self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, batch_size);
                         x_pos += batch_size;
                     }
                 }
@@ -1572,9 +1614,9 @@ namespace tsl {
                 std::atomic<s32> currentRow(y);
                 
                 auto threadTask = [&]() {
-                    s32 startRow;
+                    s32 startRow, endRow;
                     while ((startRow = currentRow.fetch_add(chunkSize)) < y_end) {
-                        s32 endRow = std::min(startRow + chunkSize, y_end);
+                        endRow = std::min(startRow + chunkSize, y_end);
                         processRoundedRectChunk(this, x, y, x_end, y_end, r2, radius, color, startRow, endRow);
                     }
                 };
@@ -1594,12 +1636,12 @@ namespace tsl {
 
 
             inline void drawRoundedRectSingleThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
-                const s32 x_end = x + w;
+                //const s32 x_end = x + w;
                 const s32 y_end = y + h;
-                const s32 r2 = radius * radius;
+                //const s32 r2 = radius * radius;
                 
                 // Call the processRoundedRectChunk function directly for the entire rectangle
-                processRoundedRectChunk(this, x, y, x_end, y_end, r2, radius, color, y, y_end);
+                processRoundedRectChunk(this, x, y, x + w, y_end, radius * radius, radius, color, y, y_end);
             }
 
             std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
@@ -1615,42 +1657,59 @@ namespace tsl {
                 }
             }
             
-            
+                        
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
+                // Early exit for degenerate cases
+                if (w <= 0 || h <= 0) return;
+                
                 // Radius is half of height to create perfect half circles on each side
                 const s32 radius = h / 2;
+                if (radius <= 0) return;
+                
                 const s32 x_start = x + radius;
                 const s32 x_end = x + w - radius;
                 const s32 radius_sq = radius * radius;
+                const s32 center_y = y + radius;
                 
-                // Early exit for degenerate cases
-                if (w <= 0 || h <= 0 || radius <= 0) return;
+                // Pre-declare all loop variables outside loops
+                s32 y1, x1, x_offset;
+                s32 dy, dy_sq, dist_sq;
+                s32 max_x_offset_for_row;
+                s32 left_x, right_x;
                 
                 // Draw the central rectangle (unchanged - this is already optimal)
-                for (s32 y1 = y; y1 < y + h; ++y1) {
-                    for (s32 x1 = x_start; x1 < x_end; ++x1) {
+                for (y1 = y; y1 < y + h; ++y1) {
+                    for (x1 = x_start; x1 < x_end; ++x1) {
                         this->setPixelBlendDst(x1, y1, color);
                     }
                 }
                 
-                // Optimized semicircle drawing - avoid redundant calculations
-                const s32 center_y = y + radius;
-                
-                for (s32 y1 = y; y1 < y + h; ++y1) {
-                    const s32 dy = y1 - center_y;
-                    const s32 dy_sq = dy * dy;
+                // Optimized semicircle drawing with precomputed values
+                for (y1 = y; y1 < y + h; ++y1) {
+                    dy = y1 - center_y;
+                    dy_sq = dy * dy;
                     
-                    // Only process x values that could possibly be inside the circle
-                    const s32 max_x_offset = radius; // Conservative bound
+                    // Calculate the exact maximum x_offset for this row to avoid unnecessary iterations
+                    // max_x_offset^2 + dy^2 = radius^2, so max_x_offset = sqrt(radius^2 - dy^2)
+                    if (dy_sq >= radius_sq) continue; // Skip rows completely outside the circle
                     
-                    for (s32 x_offset = 0; x_offset < max_x_offset; ++x_offset) {
-                        const s32 dist_sq = x_offset * x_offset + dy_sq;
+                    // Use integer square root approximation or simple bound
+                    max_x_offset_for_row = radius; // Conservative bound, could be optimized further
+                    
+                    // Precompute the x coordinates
+                    left_x = x + radius;
+                    right_x = x + w - radius;
+                    
+                    for (x_offset = 0; x_offset < max_x_offset_for_row; ++x_offset) {
+                        dist_sq = x_offset * x_offset + dy_sq;
                         
                         if (dist_sq <= radius_sq) {
                             // Left semicircle
-                            this->setPixelBlendDst(x + radius - x_offset, y1, color);
-                            // Right semicircle
-                            this->setPixelBlendDst(x + w - radius + x_offset, y1, color);
+                            this->setPixelBlendDst(left_x - x_offset, y1, color);
+                            // Right semicircle (only if x_offset > 0 to avoid double-drawing center)
+                            if (x_offset > 0) {
+                                this->setPixelBlendDst(right_x + x_offset, y1, color);
+                            }
                         } else {
                             // Once we're outside the circle, no need to check further x values
                             break;
@@ -1658,7 +1717,7 @@ namespace tsl {
                     }
                 }
             }
-            
+                        
             // Struct for batch pixel processing with better alignment
             struct alignas(64) PixelBatch {
                 s32 baseX, baseY;
@@ -1702,7 +1761,7 @@ namespace tsl {
                 s32 baseX;
                 s32 pixelX;
                 u32 offset;
-                Color color{0, 0, 0, 0}, src{0, 0, 0, 0}, end{0, 0, 0, 0};
+                Color color = {0}, src = {0}, end = {0};
                 const u16* framebuffer;
                 u8 p1, p2;
                 
@@ -1793,15 +1852,16 @@ namespace tsl {
              */
 
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
+                s32 startRow;
 
                 // Divide rows among ult::threads
                 //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
-                    s32 startRow = i * ult::bmpChunkSize;
-                    s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
+                    startRow = i * ult::bmpChunkSize;
+                    //s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
                     
                     // Bind the member function and create the thread
-                    ult::threads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, endRow));
+                    ult::threads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
                 }
             
                 // Join all ult::threads
