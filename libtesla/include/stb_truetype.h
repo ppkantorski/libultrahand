@@ -1214,41 +1214,53 @@ static stbtt_uint32 stbtt__cff_int(stbtt__buf *b)
 }
 
 static void stbtt__cff_skip_operand(stbtt__buf *b) {
-   int v, b0 = stbtt__buf_peek8(b);
-   //STBTT_assert(b0 >= 28);
-   if (b0 == 30) {
-      stbtt__buf_skip(b, 1);
-      while (b->cursor < b->size) {
+   if (stbtt__buf_peek8(b) == 30) {
+      ++b->cursor;  // Direct increment instead of skip
+      int v;
+      do {
          v = stbtt__buf_get8(b);
-         if ((v & 0xF) == 0xF || (v >> 4) == 0xF)
-            break;
-      }
+      } while ((v & 0xF) != 0xF && (v >> 4) != 0xF && b->cursor < b->size);
    } else {
       stbtt__cff_int(b);
    }
 }
 
-static stbtt__buf stbtt__dict_get(stbtt__buf *b, int key)
-{
-   stbtt__buf_seek(b, 0);
+static stbtt__buf stbtt__dict_get(stbtt__buf *b, int key) {
+   b->cursor = 0;  // Direct assignment instead of seek
+   
    while (b->cursor < b->size) {
-      int start = b->cursor, end, op;
+      int start = b->cursor;
+      
       while (stbtt__buf_peek8(b) >= 28)
          stbtt__cff_skip_operand(b);
-      end = b->cursor;
-      op = stbtt__buf_get8(b);
-      if (op == 12)  op = stbtt__buf_get8(b) | 0x100;
-      if (op == key) return stbtt__buf_range(b, start, end-start);
+      
+      int end = b->cursor;  // Capture end BEFORE reading operator
+      int op = stbtt__buf_get8(b);
+      if (op == 12) op = stbtt__buf_get8(b) | 0x100;
+      if (op == key) return stbtt__buf_range(b, start, end - start);
    }
-   return stbtt__buf_range(b, 0, 0);
+   
+   // Return empty range
+   stbtt__buf empty = {b->data, 0, 0};
+   return empty;
 }
 
-static void stbtt__dict_get_ints(stbtt__buf *b, int key, int outcount, stbtt_uint32 *out)
-{
-   int i;
+static void stbtt__dict_get_ints(stbtt__buf *b, int key, int outcount, stbtt_uint32 *out) {
    stbtt__buf operands = stbtt__dict_get(b, key);
-   for (i = 0; i < outcount && operands.cursor < operands.size; i++)
-      out[i] = stbtt__cff_int(&operands);
+   
+   // Unroll small common cases
+   switch (outcount) {
+      case 1:
+         if (operands.cursor < operands.size) out[0] = stbtt__cff_int(&operands);
+         break;
+      case 2:
+         if (operands.cursor < operands.size) out[0] = stbtt__cff_int(&operands);
+         if (operands.cursor < operands.size) out[1] = stbtt__cff_int(&operands);
+         break;
+      default:
+         for (int i = 0; i < outcount && operands.cursor < operands.size; i++)
+            out[i] = stbtt__cff_int(&operands);
+   }
 }
 
 static int stbtt__cff_index_count(stbtt__buf *b)
