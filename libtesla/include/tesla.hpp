@@ -5766,7 +5766,7 @@ namespace tsl {
                 
                 Element* table = m_items[tableIndex];
                 // FIXED: Add buffer to ensure we can see the very bottom content
-                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
                 return tableScrollOffset < maxScroll && maxScroll > 0;
             }
         
@@ -5779,7 +5779,7 @@ namespace tsl {
                 
                 Element* table = m_items[tableIndex];
                 // FIXED: Same buffer calculation as canScrollTableDown
-                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
                 
                 tableScrollOffset = std::min(tableScrollOffset + TABLE_SCROLL_STEP_SIZE, maxScroll);
                 
@@ -5818,7 +5818,7 @@ namespace tsl {
                 } else {
                     // Enter from bottom - scroll to show the bottom of the table
                     Element* table = m_items[tableIdx];
-                    tableScrollOffset = static_cast<float>(table->getHeight() - getHeight() + 30);
+                    tableScrollOffset = static_cast<float>(table->getHeight() - getHeight() + 50);
                     if (tableScrollOffset < 0) tableScrollOffset = 0.0f;
                     
                     // FIXED: Use smooth animation when entering table from bottom
@@ -5890,7 +5890,7 @@ namespace tsl {
                     if (tableIndex >= m_items.size()) return true;
                     
                     Element* table = m_items[tableIndex];
-                    float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                    float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
                     
                     // Use a small epsilon for floating point comparison
                     bool atTableBottom = (tableScrollOffset >= maxScroll - 1.0f);
@@ -5979,7 +5979,7 @@ namespace tsl {
                         if (newFocus && newFocus != oldFocus) {
                             // FIXED: Only set target offset for smooth animation to bottom
                             if (m_listHeight > getHeight()) {
-                                m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 30);
+                                m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                                 // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
                             }
                             return newFocus;
@@ -6066,7 +6066,7 @@ namespace tsl {
                 if (isInTable && tableIndex == lastFocusableIndex) {
                     if (tableIndex < m_items.size()) {
                         Element* table = m_items[tableIndex];
-                        float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                        float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
                         if (tableScrollOffset >= maxScroll - 1.0f) {
                             return oldFocus;
                         }
@@ -6082,7 +6082,7 @@ namespace tsl {
                     if (canEnterTable(idx)) {
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
-                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 30);
+                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
                         Element* newFocus = enterTable(oldFocus, idx, false);
@@ -6092,7 +6092,7 @@ namespace tsl {
                         m_focusedIndex = idx;
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
-                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 30);
+                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
                         Element* newFocus = m_items[idx]->requestFocus(oldFocus, FocusDirection::None);
@@ -6141,7 +6141,7 @@ namespace tsl {
                 
                 m_nextOffset = std::clamp(prefixSums[m_focusedIndex] - (getHeight() / 3), 
                                         0.0f, 
-                                        static_cast<float>(m_listHeight - getHeight() + 30));
+                                        static_cast<float>(m_listHeight - getHeight() + 50));
             }
         };
 
