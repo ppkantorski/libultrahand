@@ -5249,19 +5249,10 @@ namespace tsl {
         private:
             Color m_color;
         };
-
-
-/**
-         * @brief A List containing list items
-         *
-         */
+        
         class List : public Element {
         
         public:
-            /**
-             * @brief Constructor
-             *
-             */
             List() : Element() {
                 m_isItem = false;
             }
@@ -5282,12 +5273,10 @@ namespace tsl {
             static constexpr float dampingFactor = 0.3f;
             static constexpr float TABLE_SCROLL_STEP_SIZE = 40.0f;
         
-            // Table navigation state - packed for cache efficiency
-            bool isInTable : 1;
-            bool inScrollMode : 1;
-            size_t tableIndex;
-            s32 entryOffset;
-            std::vector<int> scrollStepsInsideTable;
+            // Simplified table state - just track which table and its scroll position
+            bool isInTable = false;
+            size_t tableIndex = 0;
+            float tableScrollOffset = 0.0f;  // Offset within the table itself
             
             virtual void draw(gfx::Renderer* renderer) override {
                 // Early exit optimizations
@@ -5362,9 +5351,6 @@ namespace tsl {
                 return false;
             }
         
-            /**
-             * @brief Adds a new item to the list before the next frame starts
-             */
             inline void addItem(Element* element, u16 height = 0, ssize_t index = -1) {
                 if (!element) return;
                 
@@ -5402,15 +5388,12 @@ namespace tsl {
             virtual Element* requestFocus(Element* oldFocus, FocusDirection direction) override {
                 if (m_clearList || !m_itemsToAdd.empty()) return nullptr;
         
-                // Initial focus handling
                 if (direction == FocusDirection::None) {
                     return handleInitialFocus(oldFocus);
                 }
-                // Down direction
                 else if (direction == FocusDirection::Down) {
                     return handleDownFocus(oldFocus);
                 }
-                // Up direction  
                 else if (direction == FocusDirection::Up) {
                     return handleUpFocus(oldFocus);
                 }
@@ -5438,6 +5421,14 @@ namespace tsl {
                 }
             }
         
+            inline void onDirectionalKeyReleased() {
+                m_hasWrappedInCurrentSequence = false;
+                m_lastNavigationResult = NavigationResult::None;
+                m_isHolding = false;
+                m_stoppedAtBoundary = false;
+                m_lastNavigationTime = 0;
+            }
+        
         protected:
             std::vector<Element*> m_items;
             u16 m_focusedIndex = 0;
@@ -5450,10 +5441,27 @@ namespace tsl {
             std::vector<std::pair<ssize_t, Element*>> m_itemsToAdd;
             std::vector<float> prefixSums;
         
-        private:
-            size_t actualItemCount = 0;
+            // Enhanced navigation state tracking
+            bool m_justWrapped = false;
+            bool m_isHolding = false;
+            bool m_stoppedAtBoundary = false;
+            u64 m_lastNavigationTime = 0;
+            static constexpr u64 HOLD_THRESHOLD_NS = 150000000ULL;  // 150ms
         
-            // Optimized helper functions
+            size_t actualItemCount = 0;
+            
+            enum class NavigationResult {
+                None,
+                Success,
+                HitBoundary,
+                Wrapped
+            };
+            
+            bool m_hasWrappedInCurrentSequence = false;
+            NavigationResult m_lastNavigationResult = NavigationResult::None;
+        
+        private:
+        
             inline void clearItems() {
                 for (Element* item : m_items) delete item;
                 m_items.clear();
@@ -5462,6 +5470,7 @@ namespace tsl {
                 invalidate();
                 m_clearList = false;
                 actualItemCount = 0;
+                resetTableState();
             }
             
             inline void addPendingItems() {
@@ -5544,6 +5553,8 @@ namespace tsl {
                     }
                 }
                 
+                resetNavigationState();
+                
                 // Try backward first
                 for (ssize_t j = static_cast<ssize_t>(startIndex); j >= 0; --j) {
                     Element* newFocus = m_items[j]->requestFocus(oldFocus, FocusDirection::None);
@@ -5568,218 +5579,404 @@ namespace tsl {
                 
                 return nullptr;
             }
-        
+                                                                                            
             inline Element* handleDownFocus(Element* oldFocus) {
-                if (m_items.empty()) {
-                    m_nextOffset = std::min(m_nextOffset + TABLE_SCROLL_STEP_SIZE, 
-                                          static_cast<float>(m_listHeight - getHeight() + 50));
-                    m_offset = m_nextOffset;
-                    invalidate();
+                updateHoldState();
+                
+                // FIXED: Only stop at boundary for non-table navigation
+                if (m_isHolding && m_stoppedAtBoundary && !isInTable) {
                     return oldFocus;
                 }
                 
-                s32 accumulatedHeight = 0;
+                Element* result = navigateDown(oldFocus);
                 
-                for (size_t i = m_focusedIndex + 1; i < m_items.size(); ++i) {
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
-                    if (!isInTable && newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = i;
-                        updateScrollOffset();
-                        resetTableState();
-                        return newFocus;
-                    }
-                    
-                    if (!m_items[i]->isItem()) {
-                        accumulatedHeight += m_items[i]->getHeight();
-                    }
-                    
-                    if (m_items[i]->isTable()) {
-                        // Check if the table is fully visible (i.e., it fits in the viewport)
-                        if (accumulatedHeight <= getHeight()) {
-                            continue;  // Skip the table if it fits within the viewport
-                        }
-                        
-                        return handleTableScrollDown(oldFocus, i);
-                    }
+                if (result != oldFocus) {
+                    m_lastNavigationResult = NavigationResult::Success;
+                    m_stoppedAtBoundary = false;
+                    return result;
                 }
                 
+                // At boundary - check for wrapping
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtAbsoluteBottom()) {
+                    m_hasWrappedInCurrentSequence = true;
+                    m_lastNavigationResult = NavigationResult::Wrapped;
+                    return wrapToTop(oldFocus);
+                }
+                
+                // FIXED: Only set boundary stop for non-table items
+                if (m_isHolding && !isInTable) {
+                    m_stoppedAtBoundary = true;
+                }
+                m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
         
             inline Element* handleUpFocus(Element* oldFocus) {
-                if (m_items.empty()) {
-                    m_nextOffset = std::max(m_nextOffset - TABLE_SCROLL_STEP_SIZE, 0.0f);
-                    m_offset = m_nextOffset;
-                    invalidate();
+                updateHoldState();
+                
+                // FIXED: Only stop at boundary for non-table navigation
+                if (m_isHolding && m_stoppedAtBoundary && !isInTable) {
                     return oldFocus;
                 }
                 
-                // Check if the item we're moving to is a table and we should re-enter it
-                if (!isInTable && m_focusedIndex > 0) {
-                    // Traverse upwards to find the nearest table, skipping over non-focusable items
-                    ssize_t potentialTableIndex = m_focusedIndex - 1;
-                    int totalScrollableHeight = 0;  // To track the cumulative scrollable height
-                    
-                    bool foundTable = false;
-                    while (potentialTableIndex >= 0) {
-                        if (m_items[potentialTableIndex] != nullptr) { // Skip nullptr (non-focusable items)
-                            if (m_items[potentialTableIndex]->isItem()) { // Break early for ListItems
-                                totalScrollableHeight -= m_offset;
-                                break;
-                            } else if (m_items[potentialTableIndex]->isTable()) {
-                                // Check if the table fits within the viewport; if it does, skip re-entering
-                                int tableHeight = m_items[potentialTableIndex]->getHeight();
-                                
-                                // Set state for entering the table
-                                isInTable = true;
-                                tableIndex = potentialTableIndex;
+                Element* result = navigateUp(oldFocus);
                 
-                                // Ensure scrollStepsInsideTable has enough space for the current table index
-                                if (scrollStepsInsideTable.size() <= static_cast<size_t>(tableIndex)) {
-                                    scrollStepsInsideTable.resize(static_cast<size_t>(tableIndex) + 1, 0);
-                                }
-                
-                                // Add the current table's scrollable height to the cumulative total
-                                int scrollableHeight = tableHeight;
-                                totalScrollableHeight += std::max(0, scrollableHeight); // Accumulate scrollable height
-                                foundTable = true;
-                
-                                // Update entryOffset to reflect the current offset
-                                entryOffset = m_offset;
-                            }
-                        }
-                        potentialTableIndex--;  // Move to the next item above
-                    }
-                    if (foundTable) {
-                        // Adjust scroll steps for this table
-                        int requiredSteps = static_cast<int>(std::ceil(static_cast<float>(totalScrollableHeight) / TABLE_SCROLL_STEP_SIZE));
-                        scrollStepsInsideTable[tableIndex] = std::max(scrollStepsInsideTable[tableIndex], requiredSteps);
-                    }
+                if (result != oldFocus) {
+                    m_lastNavigationResult = NavigationResult::Success;
+                    m_stoppedAtBoundary = false;
+                    return result;
                 }
                 
-                if (isInTable) {
-                    return handleTableScrollUp(oldFocus);
+                // At boundary - check for wrapping
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtAbsoluteTop()) {
+                    m_hasWrappedInCurrentSequence = true;
+                    m_lastNavigationResult = NavigationResult::Wrapped;
+                    return wrapToBottom(oldFocus);
                 }
                 
-                // Regular upward navigation
-                for (ssize_t i = static_cast<ssize_t>(m_focusedIndex) - 1; i >= 0; --i) {
-                    if (static_cast<size_t>(i) >= m_items.size() || !m_items[i]) continue;
-                    
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
-                    if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = static_cast<size_t>(i);
-                        updateScrollOffset();
-                        isInTable = m_items[i]->isTable();
-                        tableIndex = isInTable ? i : 0;
-                        return newFocus;
-                    }
+                // FIXED: Only set boundary stop for non-table items
+                if (m_isHolding && !isInTable) {
+                    m_stoppedAtBoundary = true;
                 }
-                
-                // Elastic scroll at top
-                if (m_nextOffset > 0.0f) {
-                    m_nextOffset = std::max(m_nextOffset - TABLE_SCROLL_STEP_SIZE, 0.0f);
-                    m_offset = m_nextOffset;
-                    invalidate();
-                }
-                
+                m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
         
-            inline Element* handleTableScrollDown(Element* oldFocus, size_t i) {
-                isInTable = true;
-                tableIndex = i;
-                entryOffset = m_offset;
-                
-                // Expand scrollStepsInsideTable if necessary to track this table
-                if (scrollStepsInsideTable.size() <= tableIndex) {
-                    scrollStepsInsideTable.resize(tableIndex + 1, 0);
-                }
-                
-                // Incremental scrolling inside the table
-                if (m_offset + TABLE_SCROLL_STEP_SIZE < (m_listHeight - getHeight() + 50)) {
-                    ++scrollStepsInsideTable[tableIndex];
-                    m_nextOffset = std::min(m_nextOffset + TABLE_SCROLL_STEP_SIZE, 
-                                          static_cast<float>(m_listHeight - getHeight() + 50));
-                    m_offset = m_nextOffset;
-                    invalidate();
+            inline void updateHoldState() {
+                u64 currentTime = armTicksToNs(armGetSystemTick());
+                if (m_lastNavigationTime != 0 && (currentTime - m_lastNavigationTime) < HOLD_THRESHOLD_NS) {
+                    m_isHolding = true;
                 } else {
-                    // Reached bottom of table
-                    m_nextOffset = m_listHeight - getHeight() + 50;
-                    if (m_nextOffset - m_offset > 0) ++scrollStepsInsideTable[tableIndex];
-                    m_offset = m_nextOffset;
-                    invalidate();
-                    
-                    // After scrolling, try to focus on the next focusable item below the table
-                    for (size_t j = tableIndex + 1; j < m_items.size(); ++j) {
-                        if (!m_items[j]->isTable()) {
-                            Element* newFocus = m_items[j]->requestFocus(oldFocus, FocusDirection::Down);
-                            if (newFocus && newFocus != oldFocus) {
-                                m_focusedIndex = j;
-                                updateScrollOffset();
-                                isInTable = false;
-                                return newFocus;
-                            }
-                        }
+                    m_isHolding = false;
+                    m_stoppedAtBoundary = false;
+                    m_hasWrappedInCurrentSequence = false;
+                }
+                m_lastNavigationTime = currentTime;
+            }
+        
+            inline void resetNavigationState() {
+                m_hasWrappedInCurrentSequence = false;
+                m_lastNavigationResult = NavigationResult::None;
+                m_isHolding = false;
+                m_stoppedAtBoundary = false;
+                m_lastNavigationTime = 0;
+            }
+        
+            inline void resetTableState() {
+                isInTable = false;
+                tableIndex = 0;
+                tableScrollOffset = 0.0f;
+            }
+        
+            // Core navigation logic
+            inline Element* navigateDown(Element* oldFocus) {
+                if (isInTable) {
+                    return handleTableNavigationDown(oldFocus);
+                }
+                
+                // FIXED: Check if we just wrapped AND we're still at a boundary
+                if (m_justWrapped) {
+                    m_justWrapped = false;
+                    // Only stay put if we're actually at the first item and there's a table after us
+                    if (m_focusedIndex == 0 || (m_focusedIndex < m_items.size() - 1 && canEnterTable(m_focusedIndex + 1))) {
+                        return oldFocus; // Stay on current item for one navigation cycle
                     }
                 }
+                
+                // Look for next focusable item
+                for (size_t i = m_focusedIndex + 1; i < m_items.size(); ++i) {
+                    if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, true); // Enter from top
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
+                        updateScrollOffset();
+                        return m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                    }
+                }
+                
+                return oldFocus;
+            }
+
+                    
+            inline Element* navigateUp(Element* oldFocus) {
+                if (isInTable) {
+                    return handleTableNavigationUp(oldFocus);
+                }
+                
+                // FIXED: If we just wrapped, don't immediately enter a table
+                if (m_justWrapped) {
+                    m_justWrapped = false;
+                    return oldFocus; // Stay on current item for one navigation cycle
+                }
+                
+                // Look for previous focusable item
+                for (ssize_t i = static_cast<ssize_t>(m_focusedIndex) - 1; i >= 0; --i) {
+                    size_t idx = static_cast<size_t>(i);
+                    if (canEnterTable(idx)) {
+                        return enterTable(oldFocus, idx, false); // Enter from bottom
+                    } else if (canFocusRegularItem(idx)) {
+                        m_focusedIndex = idx;
+                        updateScrollOffset();
+                        return m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
+                    }
+                }
+                
                 return oldFocus;
             }
         
-            inline Element* handleTableScrollUp(Element* oldFocus) {
-                if (scrollStepsInsideTable[tableIndex] > 0) {
-                    // Decrease the offset and decrement steps one at a time
-                    auto preComputedNextOffset = std::min(m_nextOffset - TABLE_SCROLL_STEP_SIZE, static_cast<float>(entryOffset));
-                    
-                    // If the offset would go beyond the top, adjust and reset scroll steps to 0
-                    if (preComputedNextOffset < 0.0f) {
-                        m_nextOffset = 0.0f;
-                        scrollStepsInsideTable[tableIndex] = 0;
-                        
-                        return exitTableUp(oldFocus);
-                    } else {
-                        m_nextOffset = preComputedNextOffset;
-                    }
-                    
-                    m_offset = m_nextOffset;
-                    --scrollStepsInsideTable[tableIndex];
-                    invalidate();
-                    return oldFocus;
+            // Table navigation
+            inline Element* handleTableNavigationDown(Element* oldFocus) {
+                if (!canScrollTableDown()) {
+                    // Try to exit table downward
+                    return exitTableDown(oldFocus);
                 }
                 
-                // Once all scroll steps are undone, attempt to exit the table and move to the previous item
-                if (scrollStepsInsideTable[tableIndex] == 0) {
+                // FIXED: Don't stop at boundary when holding - allow continuous scrolling
+                scrollTableDown();
+                return oldFocus;
+            }
+
+            inline Element* handleTableNavigationUp(Element* oldFocus) {
+                if (!canScrollTableUp()) {
+                    // Try to exit table upward
                     return exitTableUp(oldFocus);
+                }
+                
+                // FIXED: Don't stop at boundary when holding - allow continuous scrolling
+                scrollTableUp();
+                return oldFocus;
+            }
+        
+            inline bool canScrollTableDown() {
+                if (tableIndex >= m_items.size()) return false;
+                
+                Element* table = m_items[tableIndex];
+                // FIXED: Add buffer to ensure we can see the very bottom content
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                return tableScrollOffset < maxScroll && maxScroll > 0;
+            }
+        
+            inline bool canScrollTableUp() {
+                return tableScrollOffset > 0.0f;
+            }
+        
+            inline void scrollTableDown() {
+                if (tableIndex >= m_items.size()) return;
+                
+                Element* table = m_items[tableIndex];
+                // FIXED: Same buffer calculation as canScrollTableDown
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                
+                tableScrollOffset = std::min(tableScrollOffset + TABLE_SCROLL_STEP_SIZE, maxScroll);
+                
+                // Update global scroll position
+                float tableStartPos = calculateTableStartPosition(tableIndex);
+                m_nextOffset = tableStartPos + tableScrollOffset;
+            }
+
+            inline void scrollTableUp() {
+                tableScrollOffset = std::max(tableScrollOffset - TABLE_SCROLL_STEP_SIZE, 0.0f);
+                
+                // Update global scroll position
+                float tableStartPos = calculateTableStartPosition(tableIndex);
+                m_nextOffset = tableStartPos + tableScrollOffset;
+            }
+        
+            inline float calculateTableStartPosition(size_t tableIdx) {
+                float pos = 0.0f;
+                for (size_t i = 0; i < tableIdx && i < m_items.size(); ++i) {
+                    pos += m_items[i]->getHeight();
+                }
+                return pos;
+            }
+            
+            inline Element* enterTable(Element* oldFocus, size_t tableIdx, bool fromTop) {
+                isInTable = true;
+                tableIndex = tableIdx;
+                m_focusedIndex = tableIdx;
+                
+                float tableStartPos = calculateTableStartPosition(tableIdx);
+                
+                if (fromTop) {
+                    tableScrollOffset = 0.0f;
+                    // FIXED: Use smooth animation when entering table from top
+                    m_nextOffset = 0;
+                } else {
+                    // Enter from bottom - scroll to show the bottom of the table
+                    Element* table = m_items[tableIdx];
+                    tableScrollOffset = static_cast<float>(table->getHeight() - getHeight() + 30);
+                    if (tableScrollOffset < 0) tableScrollOffset = 0.0f;
+                    
+                    // FIXED: Use smooth animation when entering table from bottom
+                    m_nextOffset = tableStartPos + tableScrollOffset;
+                }
+                
+                // Don't set m_offset directly - let the animation system handle it
+                return oldFocus;
+            }
+        
+            inline Element* exitTableDown(Element* oldFocus) {
+                size_t currentTableIndex = tableIndex;
+                resetTableState();
+                m_focusedIndex = currentTableIndex;
+                
+                // Look for next focusable item after current table
+                for (size_t i = currentTableIndex + 1; i < m_items.size(); ++i) {
+                    if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, true);
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
+                        updateScrollOffset();
+                        return m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                    }
                 }
                 
                 return oldFocus;
             }
         
             inline Element* exitTableUp(Element* oldFocus) {
-                // Attempt to exit the table and move to the previous item
-                for (ssize_t i = static_cast<ssize_t>(tableIndex) - 1; i >= 0; --i) {
-                    if (m_items[i]->isTable()) {
-                        continue;
-                    }
-                    
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
-                    if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = static_cast<size_t>(i);
+                size_t currentTableIndex = tableIndex;
+                resetTableState();
+                m_focusedIndex = currentTableIndex;
+                
+                // Look for previous focusable item before current table
+                for (ssize_t i = static_cast<ssize_t>(currentTableIndex) - 1; i >= 0; --i) {
+                    size_t idx = static_cast<size_t>(i);
+                    if (canEnterTable(idx)) {
+                        return enterTable(oldFocus, idx, false);
+                    } else if (canFocusRegularItem(idx)) {
+                        m_focusedIndex = idx;
                         updateScrollOffset();
-                        isInTable = false;
-                        return newFocus;
+                        return m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
                     }
                 }
                 
-                // All items before the table are non-focusable. Remaining in table.
                 return oldFocus;
             }
         
-            inline void resetTableState() {
-                isInTable = false;
-                inScrollMode = false;
-                tableIndex = 0;
+            // Boundary detection
+            inline bool isAtAbsoluteTop() {
+                if (m_items.empty()) return true;
+                
+                if (isInTable) {
+                    // Must be at top of table AND no focusable items above
+                    bool atTableTop = (tableScrollOffset <= 1.0f); // Small epsilon
+                    return atTableTop && !hasFocusableItemsBefore(tableIndex);
+                }
+                
+                // Not in table - check if at very first focusable item
+                return !hasFocusableItemsBefore(m_focusedIndex);
             }
-            
+                                
+            inline bool isAtAbsoluteBottom() {
+                if (m_items.empty()) return true;
+                
+                if (isInTable) {
+                    // Must be at bottom of table AND no focusable items below
+                    if (tableIndex >= m_items.size()) return true;
+                    
+                    Element* table = m_items[tableIndex];
+                    float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 30);
+                    
+                    // Use a small epsilon for floating point comparison
+                    bool atTableBottom = (tableScrollOffset >= maxScroll - 1.0f);
+                    return atTableBottom && !hasFocusableItemsAfter(tableIndex);
+                }
+                
+                // Not in table - check if at very last focusable item
+                return !hasFocusableItemsAfter(m_focusedIndex);
+            }
+                    
+            inline bool hasFocusableItemsBefore(size_t index) {
+                for (ssize_t i = static_cast<ssize_t>(index) - 1; i >= 0; --i) {
+                    size_t idx = static_cast<size_t>(i);
+                    if (canFocusRegularItem(idx) || canEnterTable(idx)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        
+            inline bool hasFocusableItemsAfter(size_t index) {
+                for (size_t i = index + 1; i < m_items.size(); ++i) {
+                    if (canFocusRegularItem(i) || canEnterTable(i)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        
+            // Helper functions
+            inline bool canEnterTable(size_t index) {
+                if (index >= m_items.size() || !m_items[index]) return false;
+                return m_items[index]->isTable() && (m_items[index]->getHeight() > getHeight());
+            }
+        
+            inline bool canFocusRegularItem(size_t index) {
+                if (index >= m_items.size() || !m_items[index]) return false;
+                if (m_items[index]->isTable()) return false;
+                
+                // FIXED: More robust focus testing - try both directions
+                Element* testFocus = m_items[index]->requestFocus(nullptr, FocusDirection::None);
+                if (testFocus != nullptr) return true;
+                
+                // Try with directional focus as backup
+                testFocus = m_items[index]->requestFocus(nullptr, FocusDirection::Down);
+                return (testFocus != nullptr);
+            }
+        
+            // Wrapping
+            // Fix for the wrapToTop function
+            inline Element* wrapToTop(Element* oldFocus) {
+                resetTableState();
+                
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
+                        Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                        if (newFocus && newFocus != oldFocus) {
+                            // FIXED: Only set target offset, let animation system handle the smooth transition
+                            m_nextOffset = 0.0f;
+                            // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
+                            return newFocus;
+                        }
+                    } else if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, true);
+                    }
+                }
+                
+                return oldFocus;
+            }
+
+                        
+            // Also fix wrapToBottom for consistency
+            inline Element* wrapToBottom(Element* oldFocus) {
+                resetTableState();
+                m_justWrapped = true; // Set flag
+                
+                // More thorough search for the last focusable item
+                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                    size_t idx = static_cast<size_t>(i);
+                    if (canEnterTable(idx)) {
+                        return enterTable(oldFocus, idx, false);
+                    } else if (canFocusRegularItem(idx)) {
+                        m_focusedIndex = idx;
+                        Element* newFocus = m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
+                        if (newFocus && newFocus != oldFocus) {
+                            // FIXED: Only set target offset for smooth animation to bottom
+                            if (m_listHeight > getHeight()) {
+                                m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 30);
+                                // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
+                            }
+                            return newFocus;
+                        }
+                    }
+                }
+                
+                return oldFocus;
+            }
+
+                        
             inline void initializePrefixSums() {
                 prefixSums.clear();
                 prefixSums.resize(m_items.size() + 1, 0.0f);
@@ -5797,13 +5994,22 @@ namespace tsl {
                     return;
                 }
                 
+                // If in table, don't override table scrolling
+                if (isInTable) return;
+                
                 if (prefixSums.size() != m_items.size() + 1) {
                     initializePrefixSums();
                 }
                 
+                // FIXED: If focused on first item, keep at absolute top
+                if (m_focusedIndex == 0) {
+                    m_nextOffset = 0.0f;
+                    return;
+                }
+                
                 m_nextOffset = std::clamp(prefixSums[m_focusedIndex] - (getHeight() / 3), 
                                         0.0f, 
-                                        static_cast<float>(m_listHeight - getHeight() + 50));
+                                        static_cast<float>(m_listHeight - getHeight() + 30));
             }
         };
 
