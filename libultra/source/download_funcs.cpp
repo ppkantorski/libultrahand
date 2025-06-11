@@ -205,7 +205,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);  // 10 seconds to establish connection
     curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 300L);        // 5 minutes total timeout
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1024L); // Minimum 1KB/s
-    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 4L);   // For 4 seconds
+    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 7L);   // For 7 seconds
 
     CURLcode result = curl_easy_perform(curl.get());
 
