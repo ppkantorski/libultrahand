@@ -905,8 +905,8 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                //u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
-                return (c.rgba & 0x0FFF) | ((ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : (std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity))) << 12);
+                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
+                return (c.rgba & 0x0FFF) | (alpha << 12);
             }
             
             /**
