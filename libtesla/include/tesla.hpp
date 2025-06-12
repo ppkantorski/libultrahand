@@ -5301,8 +5301,8 @@ namespace tsl {
         
                 // Optimized visibility culling
                 for (Element* entry : m_items) {
-                    const s32 entryBottom = entry->getBottomBound();
-                    if (entryBottom > topBound && entry->getTopBound() < bottomBound) {
+                    //const s32 entryBottom = entry->getBottomBound();
+                    if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
                         entry->frame(renderer);
                     }
                 }
@@ -5502,10 +5502,11 @@ namespace tsl {
             }
             
             inline void removePendingItems() {
+                size_t index;
                 for (Element* element : m_itemsToRemove) {
                     auto it = std::find(m_items.begin(), m_items.end(), element);
                     if (it != m_items.end()) {
-                        size_t index = static_cast<size_t>(it - m_items.begin());
+                        index = static_cast<size_t>(it - m_items.begin());
                         m_items.erase(it);
                         if (m_focusedIndex >= index && m_focusedIndex > 0) {
                             --m_focusedIndex;
@@ -5725,13 +5726,13 @@ namespace tsl {
                 
                 // Look for previous focusable item
                 for (ssize_t i = static_cast<ssize_t>(m_focusedIndex) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canEnterTable(idx)) {
-                        return enterTable(oldFocus, idx, false); // Enter from bottom
-                    } else if (canFocusRegularItem(idx)) {
-                        m_focusedIndex = idx;
+                    //size_t idx = static_cast<size_t>(i);
+                    if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, false); // Enter from bottom
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
                         updateScrollOffset();
-                        return m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
+                        return m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                     }
                 }
                 
@@ -5855,13 +5856,13 @@ namespace tsl {
                 
                 // Look for previous focusable item before current table
                 for (ssize_t i = static_cast<ssize_t>(currentTableIndex) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canEnterTable(idx)) {
-                        return enterTable(oldFocus, idx, false);
-                    } else if (canFocusRegularItem(idx)) {
-                        m_focusedIndex = idx;
+                    //ize_t idx = static_cast<size_t>(i);
+                    if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, false);
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
                         updateScrollOffset();
-                        return m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
+                        return m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                     }
                 }
                 
@@ -5903,8 +5904,8 @@ namespace tsl {
                     
             inline bool hasFocusableItemsBefore(size_t index) {
                 for (ssize_t i = static_cast<ssize_t>(index) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canFocusRegularItem(idx) || canEnterTable(idx)) {
+                    //size_t idx = static_cast<size_t>(i);
+                    if (canFocusRegularItem(i) || canEnterTable(i)) {
                         return true;
                     }
                 }
@@ -5968,14 +5969,15 @@ namespace tsl {
                 resetTableState();
                 // REMOVED: m_justWrapped = true; // This was causing the issue
                 
+                //size_t idx;
                 // More thorough search for the last focusable item
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canEnterTable(idx)) {
-                        return enterTable(oldFocus, idx, false);
-                    } else if (canFocusRegularItem(idx)) {
-                        m_focusedIndex = idx;
-                        Element* newFocus = m_items[idx]->requestFocus(oldFocus, FocusDirection::Up);
+                    //idx = static_cast<size_t>(i);
+                    if (canEnterTable(i)) {
+                        return enterTable(oldFocus, i, false);
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
+                        Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                         if (newFocus && newFocus != oldFocus) {
                             // FIXED: Only set target offset for smooth animation to bottom
                             if (m_listHeight > getHeight()) {
@@ -6048,10 +6050,11 @@ namespace tsl {
                 
                 // Check if already at the bottom-most focusable item
                 size_t lastFocusableIndex = SIZE_MAX;
+                //size_t idx;
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canFocusRegularItem(idx) || canEnterTable(idx)) {
-                        lastFocusableIndex = idx;
+                    //idx = static_cast<size_t>(i);
+                    if (canFocusRegularItem(i) || canEnterTable(i)) {
+                        lastFocusableIndex = i;
                         break;
                     }
                 }
@@ -6063,11 +6066,12 @@ namespace tsl {
                     return oldFocus;
                 }
                 
+                float maxScroll;
                 // If we're in a table at the last position and already at bottom of table, do nothing
                 if (isInTable && tableIndex == lastFocusableIndex) {
                     if (tableIndex < m_items.size()) {
                         Element* table = m_items[tableIndex];
-                        float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
+                        maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
                         if (tableScrollOffset >= maxScroll - 1.0f) {
                             return oldFocus;
                         }
@@ -6079,24 +6083,24 @@ namespace tsl {
                 
                 // Find the last focusable item
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    size_t idx = static_cast<size_t>(i);
-                    if (canEnterTable(idx)) {
+                    //idx = static_cast<size_t>(i);
+                    if (canEnterTable(i)) {
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
                             m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
-                        Element* newFocus = enterTable(oldFocus, idx, false);
+                        Element* newFocus = enterTable(oldFocus, i, false);
                         invalidate();
                         return newFocus ? newFocus : oldFocus;
-                    } else if (canFocusRegularItem(idx)) {
-                        m_focusedIndex = idx;
+                    } else if (canFocusRegularItem(i)) {
+                        m_focusedIndex = i;
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
                             m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
-                        Element* newFocus = m_items[idx]->requestFocus(oldFocus, FocusDirection::None);
+                        Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
                             invalidate();
                             return newFocus;
