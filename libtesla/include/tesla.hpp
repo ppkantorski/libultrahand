@@ -5460,7 +5460,7 @@ namespace tsl {
             bool m_isHolding = false;
             bool m_stoppedAtBoundary = false;
             u64 m_lastNavigationTime = 0;
-            static constexpr u64 HOLD_THRESHOLD_NS = 150000000ULL;  // 150ms
+            static constexpr u64 HOLD_THRESHOLD_NS = 100000000ULL;  // 100ms
         
             size_t actualItemCount = 0;
             
