@@ -5979,6 +5979,7 @@ namespace tsl {
                         if (newFocus && newFocus != oldFocus) {
                             // FIXED: Only set target offset for smooth animation to bottom
                             if (m_listHeight > getHeight()) {
+                                invalidate();
                                 m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                                 // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
                             }
@@ -8674,7 +8675,7 @@ namespace tsl {
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
             
             auto& currentGui = this->getCurrentGui();
-            static bool isTopElement = true;
+            //static bool isTopElement = true;
         
             // Return early if current GUI is not available
         #if !IS_STATUS_MONITOR_DIRECTIVE
@@ -8733,7 +8734,7 @@ namespace tsl {
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
-                    isTopElement = true;
+                    //isTopElement = true;
                 }
             }
             
@@ -8789,7 +8790,7 @@ namespace tsl {
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, shouldShake);
                             else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
-                                isTopElement = false;
+                                //isTopElement = false;
                             }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, shouldShake);
@@ -8824,7 +8825,7 @@ namespace tsl {
                                 currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, false);
                             else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
-                                isTopElement = false;
+                                //isTopElement = false;
                             }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
