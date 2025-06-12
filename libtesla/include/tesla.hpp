@@ -5966,7 +5966,7 @@ namespace tsl {
             // Also fix wrapToBottom for consistency
             inline Element* wrapToBottom(Element* oldFocus) {
                 resetTableState();
-                m_justWrapped = true; // Set flag
+                // REMOVED: m_justWrapped = true; // This was causing the issue
                 
                 // More thorough search for the last focusable item
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
