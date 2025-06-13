@@ -175,7 +175,7 @@ namespace ult {
             
             // Handle the last item after the last comma
             if (start < values.size()) {
-                std::string item = values.substr(start);
+                item = values.substr(start);
                 trim(item);
                 removeQuotes(item);
                 result.push_back(item);
