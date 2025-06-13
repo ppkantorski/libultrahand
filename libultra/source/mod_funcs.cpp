@@ -294,7 +294,7 @@ namespace ult {
         size_t spacePos;
         int codeOffset;
         std::string cheatLine;
-        char buffer[9];
+        char offsetBuffer[9];
 
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
@@ -350,8 +350,8 @@ namespace ult {
             }
     
             codeOffset = std::strtol(valStr.c_str(), nullptr, 16) + offset;
-            snprintf(buffer, sizeof(buffer), "%08X", codeOffset);
-            cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(buffer);
+            snprintf(offsetBuffer, sizeof(offsetBuffer), "%08X", codeOffset);
+            cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(offsetBuffer);
             
     #ifdef NO_FSTREAM_DIRECTIVE
             // Check if cheat already exists
