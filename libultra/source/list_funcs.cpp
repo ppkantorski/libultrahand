@@ -158,9 +158,10 @@ namespace ult {
             size_t start = 0;
             size_t end = 0;
             
+            std::string item;
             // Iterate through the string manually to split by commas
             while ((end = values.find(',', start)) != std::string::npos) {
-                std::string item = values.substr(start, end - start);
+                item = values.substr(start, end - start);
                 
                 // Trim leading and trailing spaces
                 trim(item);
@@ -289,10 +290,11 @@ namespace ult {
             return;  // Exit if the file cannot be opened
         }
     
+        size_t len;
         char buffer[1024];  // Buffer to store each line
         while (fgets(buffer, sizeof(buffer), file)) {
             // Remove newline character, if present
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -329,6 +331,8 @@ namespace ult {
         // 2) Read every matching file's *contents* into one big set of strings,
         //    but first skip any entry that is exactly the same as txtFilePath.
         std::unordered_set<std::string> allWildcardLines;
+        std::unordered_set<std::string> thisFileLines;
+
         for (const auto& singlePath : wildcardFiles) {
             // Skip the case where the wildcard match is literally the same path we’re comparing to:
             if (singlePath == txtFilePath) {
@@ -336,7 +340,7 @@ namespace ult {
             }
     
             // readSetFromFile loads every line of 'singlePath' into a set
-            std::unordered_set<std::string> thisFileLines = readSetFromFile(singlePath);
+            thisFileLines = readSetFromFile(singlePath);
             allWildcardLines.insert(thisFileLines.begin(), thisFileLines.end());
         }
     
