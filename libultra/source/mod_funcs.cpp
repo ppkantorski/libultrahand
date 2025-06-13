@@ -294,7 +294,7 @@ namespace ult {
         size_t spacePos;
         int codeOffset;
         std::string cheatLine;
-        char buffer[9];
+        //char buffer[9];
 
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
