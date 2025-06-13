@@ -112,8 +112,8 @@ struct KeyPairHash {
             char c[8];
             std::size_t s;
         } value;
-        memcpy(&value.c[0], &key.first, 4);
-        memcpy(&value.c[4], &key.second, 4);
+        __builtin_memcpy(&value.c[0], &key.first, 4);
+        __builtin_memcpy(&value.c[4], &key.second, 4);
         return value.s;
     }
 };
@@ -836,7 +836,7 @@ namespace tsl {
             ult::overlayKeyCombos.clear();
             auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
             u64 keys;
-            
+
             for (const auto& [overlayFileName, settings] : overlaysIniData) {
                 auto keyComboIt = settings.find("key_combo");
                 if (keyComboIt != settings.end() && !keyComboIt->second.empty()) {
@@ -3753,7 +3753,7 @@ namespace tsl {
             inline void endFrame() {
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (!FullMode || deactivateOriginalFooter) {
-                    std::memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
+                    __builtin_memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
                     svcSleepThread(1000*1000*1000 / TeslaFPS);
                 }
                 #endif
@@ -9563,17 +9563,17 @@ namespace tsl {
         
         // Add flags
         if (!hasSkipCombo) {
-            memcpy(p, " --skipCombo", 12);
+            __builtin_memcpy(p, " --skipCombo", 12);
             p += 12;
         }
         
         // Add foreground flag
-        memcpy(p, " --foregroundFix ", 17);
+        __builtin_memcpy(p, " --foregroundFix ", 17);
         p += 17;
         *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
         
         // Add last title ID
-        memcpy(p, " --lastTitleID ", 15);
+        __builtin_memcpy(p, " --lastTitleID ", 15);
         p += 15;
         const char* titleId = ult::lastTitleID.c_str();
         while (*titleId) *p++ = *titleId++;
