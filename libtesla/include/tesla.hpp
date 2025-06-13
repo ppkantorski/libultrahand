@@ -4450,7 +4450,9 @@ namespace tsl {
                  * @param renderFunc Callback that will be called once every frame to draw this view
                  */
                 CustomDrawer(std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
-                virtual ~CustomDrawer() {}
+                virtual ~CustomDrawer() {
+                    m_isTable = true;
+                }
 
                 virtual void draw(gfx::Renderer* renderer) override {
                     this->m_renderFunc(renderer, this->getX(), this->getY(), this->getWidth(), this->getHeight());
