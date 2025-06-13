@@ -2589,6 +2589,38 @@ static stbtt_int32 stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, in
    stbtt_uint16 lookupCount;
    stbtt_uint8 *data;
    stbtt_int32 i, sti;
+   
+   // Variables moved outside loops for better performance
+   stbtt_uint16 lookupOffset;
+   stbtt_uint8 *lookupTable;
+   stbtt_uint16 lookupType;
+   stbtt_uint16 subTableCount;
+   stbtt_uint8 *subTableOffsets;
+   stbtt_uint16 subtableOffset;
+   stbtt_uint8 *table;
+   stbtt_uint16 posFormat;
+   stbtt_uint16 coverageOffset;
+   stbtt_int32 coverageIndex;
+   
+   // Case 1 variables
+   stbtt_int32 l, r, m;
+   int straw, needle;
+   stbtt_uint16 valueFormat1, valueFormat2;
+   stbtt_int32 valueRecordPairSizeInBytes;
+   stbtt_uint16 pairSetCount;
+   stbtt_uint16 pairPosOffset;
+   stbtt_uint8 *pairValueTable;
+   stbtt_uint16 pairValueCount;
+   stbtt_uint8 *pairValueArray;
+   stbtt_uint16 secondGlyph;
+   stbtt_uint8 *pairValue;
+   stbtt_int16 xAdvance;
+   
+   // Case 2 variables
+   stbtt_uint16 classDef1Offset, classDef2Offset;
+   int glyph1class, glyph2class;
+   stbtt_uint16 class1Count, class2Count;
+   stbtt_uint8 *class1Records, *class2Records;
 
    if (!info->gpos) return 0;
 
@@ -2602,36 +2634,34 @@ static stbtt_int32 stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, in
    lookupCount = ttUSHORT(lookupList);
 
    for (i=0; i<lookupCount; ++i) {
-      stbtt_uint16 lookupOffset = ttUSHORT(lookupList + 2 + 2 * i);
-      stbtt_uint8 *lookupTable = lookupList + lookupOffset;
+      lookupOffset = ttUSHORT(lookupList + 2 + 2 * i);
+      lookupTable = lookupList + lookupOffset;
 
-      stbtt_uint16 lookupType = ttUSHORT(lookupTable);
-      stbtt_uint16 subTableCount = ttUSHORT(lookupTable + 4);
-      stbtt_uint8 *subTableOffsets = lookupTable + 6;
+      lookupType = ttUSHORT(lookupTable);
+      subTableCount = ttUSHORT(lookupTable + 4);
+      subTableOffsets = lookupTable + 6;
       if (lookupType != 2) // Pair Adjustment Positioning Subtable
          continue;
 
       for (sti=0; sti<subTableCount; sti++) {
-         stbtt_uint16 subtableOffset = ttUSHORT(subTableOffsets + 2 * sti);
-         stbtt_uint8 *table = lookupTable + subtableOffset;
-         stbtt_uint16 posFormat = ttUSHORT(table);
-         stbtt_uint16 coverageOffset = ttUSHORT(table + 2);
-         stbtt_int32 coverageIndex = stbtt__GetCoverageIndex(table + coverageOffset, glyph1);
+         subtableOffset = ttUSHORT(subTableOffsets + 2 * sti);
+         table = lookupTable + subtableOffset;
+         posFormat = ttUSHORT(table);
+         coverageOffset = ttUSHORT(table + 2);
+         coverageIndex = stbtt__GetCoverageIndex(table + coverageOffset, glyph1);
          if (coverageIndex == -1) continue;
 
          switch (posFormat) {
             case 1: {
-               stbtt_int32 l, r, m;
-               int straw, needle;
-               stbtt_uint16 valueFormat1 = ttUSHORT(table + 4);
-               stbtt_uint16 valueFormat2 = ttUSHORT(table + 6);
+               valueFormat1 = ttUSHORT(table + 4);
+               valueFormat2 = ttUSHORT(table + 6);
                if (valueFormat1 == 4 && valueFormat2 == 0) { // Support more formats?
-                  stbtt_int32 valueRecordPairSizeInBytes = 2;
-                  stbtt_uint16 pairSetCount = ttUSHORT(table + 8);
-                  stbtt_uint16 pairPosOffset = ttUSHORT(table + 10 + 2 * coverageIndex);
-                  stbtt_uint8 *pairValueTable = table + pairPosOffset;
-                  stbtt_uint16 pairValueCount = ttUSHORT(pairValueTable);
-                  stbtt_uint8 *pairValueArray = pairValueTable + 2;
+                  valueRecordPairSizeInBytes = 2;
+                  pairSetCount = ttUSHORT(table + 8);
+                  pairPosOffset = ttUSHORT(table + 10 + 2 * coverageIndex);
+                  pairValueTable = table + pairPosOffset;
+                  pairValueCount = ttUSHORT(pairValueTable);
+                  pairValueArray = pairValueTable + 2;
 
                   if (coverageIndex >= pairSetCount) return 0;
 
@@ -2641,8 +2671,6 @@ static stbtt_int32 stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, in
 
                   // Binary search.
                   while (l <= r) {
-                     stbtt_uint16 secondGlyph;
-                     stbtt_uint8 *pairValue;
                      m = (l + r) >> 1;
                      pairValue = pairValueArray + (2 + valueRecordPairSizeInBytes) * m;
                      secondGlyph = ttUSHORT(pairValue);
@@ -2652,7 +2680,7 @@ static stbtt_int32 stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, in
                      else if (needle > straw)
                         l = m + 1;
                      else {
-                        stbtt_int16 xAdvance = ttSHORT(pairValue + 2);
+                        xAdvance = ttSHORT(pairValue + 2);
                         return xAdvance;
                      }
                   }
@@ -2662,18 +2690,16 @@ static stbtt_int32 stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, in
             }
 
             case 2: {
-               stbtt_uint16 valueFormat1 = ttUSHORT(table + 4);
-               stbtt_uint16 valueFormat2 = ttUSHORT(table + 6);
+               valueFormat1 = ttUSHORT(table + 4);
+               valueFormat2 = ttUSHORT(table + 6);
                if (valueFormat1 == 4 && valueFormat2 == 0) { // Support more formats?
-                  stbtt_uint16 classDef1Offset = ttUSHORT(table + 8);
-                  stbtt_uint16 classDef2Offset = ttUSHORT(table + 10);
-                  int glyph1class = stbtt__GetGlyphClass(table + classDef1Offset, glyph1);
-                  int glyph2class = stbtt__GetGlyphClass(table + classDef2Offset, glyph2);
+                  classDef1Offset = ttUSHORT(table + 8);
+                  classDef2Offset = ttUSHORT(table + 10);
+                  glyph1class = stbtt__GetGlyphClass(table + classDef1Offset, glyph1);
+                  glyph2class = stbtt__GetGlyphClass(table + classDef2Offset, glyph2);
 
-                  stbtt_uint16 class1Count = ttUSHORT(table + 12);
-                  stbtt_uint16 class2Count = ttUSHORT(table + 14);
-                  stbtt_uint8 *class1Records, *class2Records;
-                  stbtt_int16 xAdvance;
+                  class1Count = ttUSHORT(table + 12);
+                  class2Count = ttUSHORT(table + 14);
 
                   if (glyph1class < 0 || glyph1class >= class1Count) return 0; // malformed
                   if (glyph2class < 0 || glyph2class >= class2Count) return 0; // malformed
@@ -2972,17 +2998,21 @@ static void stbtt__fill_active_edges(unsigned char *scanline, int len, stbtt__ac
 {
    // non-zero winding fill
    int x0=0, w=0;
+   
+   // Variables moved outside loop for better performance
+   int x1;
+   int i, j;
 
    while (e) {
       if (w == 0) {
          // if we're currently at zero, we need to record the edge start point
          x0 = e->x; w += e->direction;
       } else {
-         int x1 = e->x; w += e->direction;
+         x1 = e->x; w += e->direction;
          // if we went to zero, we need to draw
          if (w == 0) {
-            int i = x0 >> STBTT_FIXSHIFT;
-            int j = x1 >> STBTT_FIXSHIFT;
+            i = x0 >> STBTT_FIXSHIFT;
+            j = x1 >> STBTT_FIXSHIFT;
 
             if (i < len && j >= 0) {
                if (i == j) {
@@ -3019,6 +3049,14 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
    int s; // vertical subsample index
    unsigned char scanline_data[512], *scanline;
 
+   // Variables moved outside loops for better performance
+   float scan_y;
+   stbtt__active_edge **step;
+   stbtt__active_edge *z;
+   int changed;
+   stbtt__active_edge *t, *q;
+   stbtt__active_edge *p;
+
    if (result->w > 512)
       scanline = (unsigned char *) STBTT_malloc(result->w, userdata);
    else
@@ -3031,13 +3069,13 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
       STBTT_memset(scanline, 0, result->w);
       for (s=0; s < vsubsample; ++s) {
          // find center of pixel for this scanline
-         float scan_y = y + 0.5f;
-         stbtt__active_edge **step = &active;
+         scan_y = y + 0.5f;
+         step = &active;
 
          // update all active edges;
          // remove all active edges that terminate before the center of this scanline
          while (*step) {
-            stbtt__active_edge * z = *step;
+            z = *step;
             if (z->ey <= scan_y) {
                *step = z->next; // delete from list
                //STBTT_assert(z->direction);
@@ -3051,12 +3089,12 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
 
          // resort the list if needed
          for(;;) {
-            int changed=0;
+            changed=0;
             step = &active;
             while (*step && (*step)->next) {
                if ((*step)->x > (*step)->next->x) {
-                  stbtt__active_edge *t = *step;
-                  stbtt__active_edge *q = t->next;
+                  t = *step;
+                  q = t->next;
 
                   t->next = q->next;
                   q->next = t;
@@ -3071,7 +3109,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
          // insert all edges that start before the center of this scanline -- omit ones that also end on this scanline
          while (e->y0 <= scan_y) {
             if (e->y1 > scan_y) {
-               stbtt__active_edge *z = stbtt__new_active(&hh, e, off_x, scan_y, userdata);
+               z = stbtt__new_active(&hh, e, off_x, scan_y, userdata);
                if (z != NULL) {
                   // find insertion point
                   if (active == NULL)
@@ -3082,7 +3120,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
                      active = z;
                   } else {
                      // find thing to insert AFTER
-                     stbtt__active_edge *p = active;
+                     p = active;
                      while (p->next && p->next->x < z->x)
                         p = p->next;
                      // at this point, p->next->x is NOT < z->x
@@ -3171,6 +3209,19 @@ static float stbtt__sized_triangle_area(float height, float width)
 static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, int len, stbtt__active_edge *e, float y_top)
 {
    float y_bottom = y_top+1;
+   
+   // Variables moved outside loops for better performance
+   float x0, dx, xb, x_top, x_bottom;
+   float sy0, sy1, dy;
+   float height;
+   int x, x1, x2;
+   float y_crossing, y_final, step, sign, area;
+   float t;
+   float y0, y1, y2, y3;
+
+   float x1_clip;
+   float x2_clip;
+   float x3;
 
    while (e) {
       // brute force every pixel
@@ -3179,7 +3230,7 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
       //STBTT_assert(e->ey >= y_top);
 
       if (e->fdx == 0) {
-         float x0 = e->fx;
+         x0 = e->fx;
          if (x0 < len) {
             if (x0 >= 0) {
                stbtt__handle_clipped_edge(scanline,(int) x0,e, x0,y_top, x0,y_bottom);
@@ -3189,12 +3240,10 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
             }
          }
       } else {
-         float x0 = e->fx;
-         float dx = e->fdx;
-         float xb = x0 + dx;
-         float x_top, x_bottom;
-         float sy0,sy1;
-         float dy = e->fdy;
+         x0 = e->fx;
+         dx = e->fdx;
+         xb = x0 + dx;
+         dy = e->fdy;
          //STBTT_assert(e->sy <= y_bottom && e->ey >= y_top);
 
          // compute endpoints of line segment clipped to this scanline (if the
@@ -3219,27 +3268,23 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
             // from here on, we don't have to range check x values
 
             if ((int) x_top == (int) x_bottom) {
-               float height;
                // simple case, only spans one pixel
-               int x = (int) x_top;
+               x = (int) x_top;
                height = (sy1 - sy0) * e->direction;
                //STBTT_assert(x >= 0 && x < len);
                scanline[x]      += stbtt__position_trapezoid_area(height, x_top, x+1.0f, x_bottom, x+1.0f);
                scanline_fill[x] += height; // everything right of this pixel is filled
             } else {
-               int x,x1,x2;
-               float y_crossing, y_final, step, sign, area;
                // covers 2+ pixels
                if (x_top > x_bottom) {
                   // flip scanline vertically; signed area is the same
-                  float t;
                   sy0 = y_bottom - (sy0 - y_top);
                   sy1 = y_bottom - (sy1 - y_top);
-                  t = sy0, sy0 = sy1, sy1 = t;
-                  t = x_bottom, x_bottom = x_top, x_top = t;
+                  t = sy0; sy0 = sy1; sy1 = t;
+                  t = x_bottom; x_bottom = x_top; x_top = t;
                   dx = -dx;
                   dy = -dy;
-                  t = x0, x0 = xb, xb = t;
+                  t = x0; x0 = xb; xb = t;
                }
                //STBTT_assert(dy >= 0);
                //STBTT_assert(dx >= 0);
@@ -3324,7 +3369,6 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
             // note though that this does happen some of the time because
             // x_top and x_bottom can be extrapolated at the top & bottom of
             // the shape and actually lie outside the bounding box
-            int x;
             for (x=0; x < len; ++x) {
                // cases:
                //
@@ -3340,38 +3384,38 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
                // that, we need to explicitly produce segments based on x positions.
 
                // rename variables to clearly-defined pairs
-               float y0 = y_top;
-               float x1 = (float) (x);
-               float x2 = (float) (x+1);
-               float x3 = xb;
-               float y3 = y_bottom;
+               y0 = y_top;
+               x1_clip = (float) (x);
+               x2_clip = (float) (x+1);
+               x3 = xb;
+               y3 = y_bottom;
 
                // x = e->x + e->dx * (y-y_top)
                // (y-y_top) = (x - e->x) / e->dx
                // y = (x - e->x) / e->dx + y_top
-               float y1 = (x - x0) / dx + y_top;
-               float y2 = (x+1 - x0) / dx + y_top;
+               y1 = (x - x0) / dx + y_top;
+               y2 = (x+1 - x0) / dx + y_top;
 
-               if (x0 < x1 && x3 > x2) {         // three segments descending down-right
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1,y1);
-                  stbtt__handle_clipped_edge(scanline,x,e, x1,y1, x2,y2);
-                  stbtt__handle_clipped_edge(scanline,x,e, x2,y2, x3,y3);
-               } else if (x3 < x1 && x0 > x2) {  // three segments descending down-left
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2,y2);
-                  stbtt__handle_clipped_edge(scanline,x,e, x2,y2, x1,y1);
-                  stbtt__handle_clipped_edge(scanline,x,e, x1,y1, x3,y3);
-               } else if (x0 < x1 && x3 > x1) {  // two segments across x, down-right
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1,y1);
-                  stbtt__handle_clipped_edge(scanline,x,e, x1,y1, x3,y3);
-               } else if (x3 < x1 && x0 > x1) {  // two segments across x, down-left
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1,y1);
-                  stbtt__handle_clipped_edge(scanline,x,e, x1,y1, x3,y3);
-               } else if (x0 < x2 && x3 > x2) {  // two segments across x+1, down-right
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2,y2);
-                  stbtt__handle_clipped_edge(scanline,x,e, x2,y2, x3,y3);
-               } else if (x3 < x2 && x0 > x2) {  // two segments across x+1, down-left
-                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2,y2);
-                  stbtt__handle_clipped_edge(scanline,x,e, x2,y2, x3,y3);
+               if (x0 < x1_clip && x3 > x2_clip) {         // three segments descending down-right
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1_clip,y1);
+                  stbtt__handle_clipped_edge(scanline,x,e, x1_clip,y1, x2_clip,y2);
+                  stbtt__handle_clipped_edge(scanline,x,e, x2_clip,y2, x3,y3);
+               } else if (x3 < x1_clip && x0 > x2_clip) {  // three segments descending down-left
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2_clip,y2);
+                  stbtt__handle_clipped_edge(scanline,x,e, x2_clip,y2, x1_clip,y1);
+                  stbtt__handle_clipped_edge(scanline,x,e, x1_clip,y1, x3,y3);
+               } else if (x0 < x1_clip && x3 > x1_clip) {  // two segments across x, down-right
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1_clip,y1);
+                  stbtt__handle_clipped_edge(scanline,x,e, x1_clip,y1, x3,y3);
+               } else if (x3 < x1_clip && x0 > x1_clip) {  // two segments across x, down-left
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x1_clip,y1);
+                  stbtt__handle_clipped_edge(scanline,x,e, x1_clip,y1, x3,y3);
+               } else if (x0 < x2_clip && x3 > x2_clip) {  // two segments across x+1, down-right
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2_clip,y2);
+                  stbtt__handle_clipped_edge(scanline,x,e, x2_clip,y2, x3,y3);
+               } else if (x3 < x2_clip && x0 > x2_clip) {  // two segments across x+1, down-left
+                  stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x2_clip,y2);
+                  stbtt__handle_clipped_edge(scanline,x,e, x2_clip,y2, x3,y3);
                } else {  // one segment
                   stbtt__handle_clipped_edge(scanline,x,e, x0,y0, x3,y3);
                }
@@ -3390,6 +3434,14 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
    int y,j=0, i;
    float scanline_data[129], *scanline, *scanline2;
 
+   // Variables moved outside loops for better performance
+   float scan_y_top, scan_y_bottom;
+   stbtt__active_edge **step;
+   stbtt__active_edge *z;
+   float sum;
+   float k;
+   int m;
+
    STBTT__NOTUSED(vsubsample);
 
    if (result->w > 64)
@@ -3404,9 +3456,9 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
 
    while (j < result->h) {
       // find center of pixel for this scanline
-      float scan_y_top    = y + 0.0f;
-      float scan_y_bottom = y + 1.0f;
-      stbtt__active_edge **step = &active;
+      scan_y_top    = y + 0.0f;
+      scan_y_bottom = y + 1.0f;
+      step = &active;
 
       STBTT_memset(scanline , 0, result->w*sizeof(scanline[0]));
       STBTT_memset(scanline2, 0, (result->w+1)*sizeof(scanline[0]));
@@ -3414,7 +3466,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
       // update all active edges;
       // remove all active edges that terminate before the top of this scanline
       while (*step) {
-         stbtt__active_edge * z = *step;
+         z = *step;
          if (z->ey <= scan_y_top) {
             *step = z->next; // delete from list
             //STBTT_assert(z->direction);
@@ -3428,7 +3480,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
       // insert all edges that start before the bottom of this scanline
       while (e->y0 <= scan_y_bottom) {
          if (e->y0 != e->y1) {
-            stbtt__active_edge *z = stbtt__new_active(&hh, e, off_x, scan_y_top, userdata);
+            z = stbtt__new_active(&hh, e, off_x, scan_y_top, userdata);
             if (z != NULL) {
                if (j == 0 && off_y != 0) {
                   if (z->ey < scan_y_top) {
@@ -3450,10 +3502,8 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
          stbtt__fill_active_edges_new(scanline, scanline2+1, result->w, active, scan_y_top);
 
       {
-         float sum = 0;
+         sum = 0;
          for (i=0; i < result->w; ++i) {
-            float k;
-            int m;
             sum += scanline2[i];
             k = scanline[i] + sum;
             k = (float) STBTT_fabs(k)*255 + 0.5f;
@@ -3465,7 +3515,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
       // advance all the edges
       step = &active;
       while (*step) {
-         stbtt__active_edge *z = *step;
+         z = *step;
          z->fx += z->fdx; // advance to position for current scanline
          step = &((*step)->next); // advance through list
       }
@@ -3479,6 +3529,7 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
    if (scanline != scanline_data)
       STBTT_free(scanline, userdata);
 }
+
 #else
 #error "Unrecognized value of STBTT_RASTERIZER_VERSION"
 #endif
@@ -3488,12 +3539,15 @@ static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e,
 static void stbtt__sort_edges_ins_sort(stbtt__edge *p, int n)
 {
    int i,j;
+   int c;
+   stbtt__edge t;
    for (i=1; i < n; ++i) {
-      stbtt__edge t = p[i], *a = &t;
+      t = p[i];
+      stbtt__edge *a = &t;
       j = i;
       while (j > 0) {
          stbtt__edge *b = &p[j-1];
-         int c = STBTT__COMPARE(a,b);
+         c = STBTT__COMPARE(a,b);
          if (!c) break;
          p[j] = p[j-1];
          --j;
@@ -3505,11 +3559,11 @@ static void stbtt__sort_edges_ins_sort(stbtt__edge *p, int n)
 
 static void stbtt__sort_edges_quicksort(stbtt__edge *p, int n)
 {
+   stbtt__edge t;
+   int c01,c12,c,m,i,j;
+   int z;
    /* threshold for transitioning to insertion sort */
    while (n > 12) {
-      stbtt__edge t;
-      int c01,c12,c,m,i,j;
-
       /* compute median of three */
       m = n >> 1;
       c01 = STBTT__COMPARE(&p[0],&p[m]);
@@ -3517,7 +3571,7 @@ static void stbtt__sort_edges_quicksort(stbtt__edge *p, int n)
       /* if 0 >= mid >= end, or 0 < mid < end, then use mid */
       if (c01 != c12) {
          /* otherwise, we'll need to swap something else to middle */
-         int z;
+         
          c = STBTT__COMPARE(&p[0],&p[n-1]);
          /* 0>mid && mid<n:  0>n => n; 0<n => 0 */
          /* 0<mid && mid>n:  0>n => 0; 0<n => n */
@@ -4734,6 +4788,8 @@ STBTT_DEF unsigned char * stbtt_GetGlyphSDF(const stbtt_fontinfo *info, float sc
       data = (unsigned char *) STBTT_malloc(w * h, info->userdata);
       precompute = (float *) STBTT_malloc(num_verts * sizeof(float), info->userdata);
 
+      float len2;
+
       for (i=0,j=num_verts-1; i < num_verts; j=i++) {
          if (verts[i].type == STBTT_vline) {
             x0 = verts[i].x*scale_x; y0 = verts[i].y*scale_y;
@@ -4745,7 +4801,7 @@ STBTT_DEF unsigned char * stbtt_GetGlyphSDF(const stbtt_fontinfo *info, float sc
             x1 = verts[i].cx*scale_x; y1 = verts[i].cy*scale_y;
             x0 = verts[i].x *scale_x; y0 = verts[i].y *scale_y;
             bx = x0 - 2*x1 + x2; by = y0 - 2*y1 + y2;
-            float len2 = bx*bx + by*by;
+            len2 = bx*bx + by*by;
             if (len2 >= eps2)
                precompute[i] = 1.0f / len2;
             else
