@@ -1226,16 +1226,21 @@ static void stbtt__cff_skip_operand(stbtt__buf *b) {
 }
 
 static stbtt__buf stbtt__dict_get(stbtt__buf *b, int key) {
+   // Variables moved outside the loop for better performance
+   int start;
+   int end;
+   int op;
+   
    b->cursor = 0;  // Direct assignment instead of seek
    
    while (b->cursor < b->size) {
-      int start = b->cursor;
+      start = b->cursor;
       
       while (stbtt__buf_peek8(b) >= 28)
          stbtt__cff_skip_operand(b);
       
-      int end = b->cursor;  // Capture end BEFORE reading operator
-      int op = stbtt__buf_get8(b);
+      end = b->cursor;  // Capture end BEFORE reading operator
+      op = stbtt__buf_get8(b);
       if (op == 12) op = stbtt__buf_get8(b) | 0x100;
       if (op == key) return stbtt__buf_range(b, start, end - start);
    }
@@ -1320,8 +1325,9 @@ static stbtt_uint32 stbtt__find_table(stbtt_uint8 *data, stbtt_uint32 fontstart,
    stbtt_int32 num_tables = ttUSHORT(data+fontstart+4);
    stbtt_uint32 tabledir = fontstart + 12;
    stbtt_int32 i;
+   stbtt_uint32 loc;
    for (i=0; i < num_tables; ++i) {
-      stbtt_uint32 loc = tabledir + 16*i;
+      loc = tabledir + 16*i;
       if (stbtt_tag(data+loc+0, tag))
          return ttULONG(data+loc+8);
    }
@@ -1478,8 +1484,9 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
    // the same regardless of glyph.
    numTables = ttUSHORT(data + cmap + 2);
    info->index_map = 0;
+   stbtt_uint32 encoding_record;
    for (i=0; i < numTables; ++i) {
-      stbtt_uint32 encoding_record = cmap + 4 + 8 * i;
+      encoding_record = cmap + 4 + 8 * i;
       // find an encoding we understand:
       switch(ttUSHORT(data+encoding_record)) {
          case STBTT_PLATFORM_ID_MICROSOFT:
@@ -1515,6 +1522,12 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
 {
    // Read format once - single memory access
    stbtt_uint16 format = FAST_USHORT(data + index_map);
+   
+   // Variables used across multiple cases or frequently in loops
+   stbtt_uint32 low, high, mid;
+   stbtt_uint8 *group;
+   stbtt_uint32 start_char, end_char;
+   stbtt_uint32 uc;
    
    // Switch for jump table optimization
    switch (format) {
@@ -1575,21 +1588,21 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
    
    case 12: { // 32-bit format
       stbtt_uint32 ngroups = FAST_ULONG(data + index_map + 12);
-      stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
+      uc = (stbtt_uint32)unicode_codepoint;
       
       // Optimized binary search with minimal memory access
-      stbtt_uint32 low = 0, high = ngroups;
+      low = 0; high = ngroups;
       stbtt_uint8 *groups_base = data + index_map + 16;
       
       while (low < high) {
-         stbtt_uint32 mid = (low + high) >> 1;
-         stbtt_uint8 *group = groups_base + (mid * 12);
+         mid = (low + high) >> 1;
+         group = groups_base + (mid * 12);
          
-         stbtt_uint32 start_char = FAST_ULONG(group);
+         start_char = FAST_ULONG(group);
          if (uc < start_char) {
             high = mid;
          } else {
-            stbtt_uint32 end_char = FAST_ULONG(group + 4);
+            end_char = FAST_ULONG(group + 4);
             if (uc <= end_char) {
                stbtt_uint32 start_glyph = FAST_ULONG(group + 8);
                return start_glyph + uc - start_char;
@@ -1602,20 +1615,20 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
    
    case 13: { // 32-bit format, many-to-one mapping
       stbtt_uint32 ngroups = FAST_ULONG(data + index_map + 12);
-      stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
+      uc = (stbtt_uint32)unicode_codepoint;
       
-      stbtt_uint32 low = 0, high = ngroups;
+      low = 0; high = ngroups;
       stbtt_uint8 *groups_base = data + index_map + 16;
       
       while (low < high) {
-         stbtt_uint32 mid = (low + high) >> 1;
-         stbtt_uint8 *group = groups_base + (mid * 12);
+         mid = (low + high) >> 1;
+         group = groups_base + (mid * 12);
          
-         stbtt_uint32 start_char = FAST_ULONG(group);
+         start_char = FAST_ULONG(group);
          if (uc < start_char) {
             high = mid;
          } else {
-            stbtt_uint32 end_char = FAST_ULONG(group + 4);
+            end_char = FAST_ULONG(group + 4);
             if (uc <= end_char) {
                return FAST_ULONG(group + 8); // Same glyph for all chars in range
             }
@@ -1634,7 +1647,7 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
    case 6: { // Trimmed table mapping
       stbtt_uint32 first = FAST_USHORT(data + index_map + 6);
       stbtt_uint32 count = FAST_USHORT(data + index_map + 8);
-      stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
+      uc = (stbtt_uint32)unicode_codepoint;
       stbtt_uint32 offset = uc - first;
       return (offset < count) ? FAST_USHORT(data + index_map + 10 + (offset << 1)) : 0;
    }
@@ -1643,6 +1656,7 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       return 0; // Unsupported format
    }
 }
+
 
 STBTT_DEF int stbtt_FindGlyphIndex(const stbtt_fontinfo *info, int unicode_codepoint)
 {
@@ -1754,10 +1768,13 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
    numberOfContours = ttSHORT(data + g);
 
    if (numberOfContours > 0) {
+      // Variables moved outside loops for simple contours processing
       stbtt_uint8 flags=0,flagcount;
       stbtt_int32 ins, i,j=0,m,n, next_move, was_off=0, off, start_off=0;
       stbtt_int32 x,y,cx,cy,sx,sy, scx,scy;
       stbtt_uint8 *points;
+      stbtt_int16 dx, dy;  // Moved outside x/y coordinate loading loops
+      
       endPtsOfContours = (data + g + 10);
       ins = ttUSHORT(data + g + 10 + numberOfContours * 2);
       points = data + g + 10 + numberOfContours * 2 + 2 + ins;
@@ -1795,7 +1812,7 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
       for (i=0; i < n; ++i) {
          flags = vertices[off+i].type;
          if (flags & 2) {
-            stbtt_int16 dx = *points++;
+            dx = *points++;
             x += (flags & 16) ? dx : -dx; // ???
          } else {
             if (!(flags & 16)) {
@@ -1811,7 +1828,7 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
       for (i=0; i < n; ++i) {
          flags = vertices[off+i].type;
          if (flags & 4) {
-            stbtt_int16 dy = *points++;
+            dy = *points++;
             y += (flags & 32) ? dy : -dy; // ???
          } else {
             if (!(flags & 32)) {
@@ -1878,18 +1895,24 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
       num_vertices = stbtt__close_shape(vertices, num_vertices, was_off, start_off, sx,sy,scx,scy,cx,cy);
    } else if (numberOfContours < 0) {
       // Compound shapes.
+      // Variables moved outside the while loop for compound shape processing
       int more = 1;
       stbtt_uint8 *comp = data + g + 10;
+      stbtt_uint16 flags, gidx;
+      int comp_num_verts = 0, i;
+      stbtt_vertex *comp_verts = 0, *tmp = 0;
+      float mtx[6] = {1,0,0,1,0,0}, m, n;
+      stbtt_vertex* v;
+      stbtt_vertex_type vx, vy;  // Temporary variables for vertex transformation
+      
       num_vertices = 0;
       vertices = 0;
       while (more) {
-         stbtt_uint16 flags, gidx;
-         int comp_num_verts = 0, i;
-         stbtt_vertex *comp_verts = 0, *tmp = 0;
-         float mtx[6] = {1,0,0,1,0,0}, m, n;
-
          flags = ttSHORT(comp); comp+=2;
          gidx = ttSHORT(comp); comp+=2;
+
+         // Reset matrix to identity
+         mtx[0] = mtx[3] = 1; mtx[1] = mtx[2] = mtx[4] = mtx[5] = 0;
 
          if (flags & 2) { // XY values
             if (flags & 1) { // shorts
@@ -1927,14 +1950,13 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
          if (comp_num_verts > 0) {
             // Transform vertices.
             for (i = 0; i < comp_num_verts; ++i) {
-               stbtt_vertex* v = &comp_verts[i];
-               stbtt_vertex_type x,y;
-               x=v->x; y=v->y;
-               v->x = (stbtt_vertex_type)(m * (mtx[0]*x + mtx[2]*y + mtx[4]));
-               v->y = (stbtt_vertex_type)(n * (mtx[1]*x + mtx[3]*y + mtx[5]));
-               x=v->cx; y=v->cy;
-               v->cx = (stbtt_vertex_type)(m * (mtx[0]*x + mtx[2]*y + mtx[4]));
-               v->cy = (stbtt_vertex_type)(n * (mtx[1]*x + mtx[3]*y + mtx[5]));
+               v = &comp_verts[i];
+               vx=v->x; vy=v->y;
+               v->x = (stbtt_vertex_type)(m * (mtx[0]*vx + mtx[2]*vy + mtx[4]));
+               v->y = (stbtt_vertex_type)(n * (mtx[1]*vx + mtx[3]*vy + mtx[5]));
+               vx=v->cx; vy=v->cy;
+               v->cx = (stbtt_vertex_type)(m * (mtx[0]*vx + mtx[2]*vy + mtx[4]));
+               v->cy = (stbtt_vertex_type)(n * (mtx[1]*vx + mtx[3]*vy + mtx[5]));
             }
             // Append vertices.
             tmp = (stbtt_vertex*)STBTT_malloc((num_vertices+comp_num_verts)*sizeof(stbtt_vertex), info->userdata);
