@@ -835,11 +835,12 @@ namespace tsl {
         static void loadOverlayKeyCombos() {
             ult::overlayKeyCombos.clear();
             auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+            u64 keys;
             
             for (const auto& [overlayFileName, settings] : overlaysIniData) {
                 auto keyComboIt = settings.find("key_combo");
                 if (keyComboIt != settings.end() && !keyComboIt->second.empty()) {
-                    u64 keys = hlp::comboStringToKeys(keyComboIt->second);
+                    keys = hlp::comboStringToKeys(keyComboIt->second);
                     if (keys != 0) {
                         ult::overlayKeyCombos[keys] = ult::OVERLAY_PATH + overlayFileName;
                     }
