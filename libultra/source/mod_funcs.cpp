@@ -42,10 +42,11 @@ namespace ult {
             return false;  // Return false if the file cannot be opened
         }
     
+        size_t len;
         char buffer[1024];  // Buffer to store each line
         while (fgets(buffer, sizeof(buffer), cheatFile)) {
             // Remove newline character, if present
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -148,9 +149,10 @@ namespace ult {
     std::string findTitleID(const std::string &text) {
         size_t nsobidPos = text.find("@nsobid-");
         size_t startPos = (nsobidPos != std::string::npos) ? nsobidPos + 40 + 8 : 0; // Skip past @nsobid- and its value
-    
+        
+        std::string potentialID;
         for (size_t i = startPos; i <= text.length() - 16; ++i) {
-            std::string potentialID = text.substr(i, 16);
+            potentialID = text.substr(i, 16);
             if (isValidTitleID(potentialID)) {
                 return potentialID;
             }
@@ -288,6 +290,12 @@ namespace ult {
         StringStream iss(pchtxt);  // Use your custom StringStream
         std::string line;
         
+        std::string addrStr, valStr;
+        size_t spacePos;
+        int codeOffset;
+        std::string cheatLine;
+        char buffer[9];
+
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
 
@@ -329,22 +337,21 @@ namespace ult {
                 continue;
             }
     
-            size_t spacePos = line.find(' ');
+            spacePos = line.find(' ');
             if (spacePos == std::string::npos) {
                 continue;
             }
     
-            std::string addrStr = line.substr(0, spacePos);
-            std::string valStr = line.substr(spacePos + 1);
+            addrStr = line.substr(0, spacePos);
+            valStr = line.substr(spacePos + 1);
     
             if (addrStr.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos || valStr.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
                 continue;
             }
     
-            int codeOffset = std::strtol(valStr.c_str(), nullptr, 16) + offset;
-            char buffer[9];
+            codeOffset = std::strtol(valStr.c_str(), nullptr, 16) + offset;
             snprintf(buffer, sizeof(buffer), "%08X", codeOffset);
-            std::string cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(buffer);
+            cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(buffer);
             
     #ifdef NO_FSTREAM_DIRECTIVE
             // Check if cheat already exists
@@ -445,7 +452,8 @@ namespace ult {
         uint32_t address;
         uint8_t byte;
         std::vector<uint8_t> valueBytes;
-    
+        std::string offsetStr;
+
         while (fgets(&line[0], line.size(), pchtxtFile) != nullptr) {
             ++lineNum;
             if (line.empty() || line.front() == '@' || !enabled) {
@@ -453,7 +461,7 @@ namespace ult {
                     nsobid = line.substr(8);
                 }
                 if (line.find("@flag offset_shift ") == 0) {
-                    std::string offsetStr = line.substr(19);
+                    offsetStr = line.substr(19);
                     offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10));
                 }
                 if (line.find("@enabled") == 0) {
@@ -522,7 +530,8 @@ namespace ult {
         uint32_t address;
         uint8_t byte;
         std::vector<uint8_t> valueBytes;
-    
+        std::string offsetStr;
+
         while (std::getline(pchtxtFile, line)) {
             ++lineNum;
             if (line.empty() || line.front() == '@') {
@@ -530,7 +539,7 @@ namespace ult {
                     nsobid = line.substr(8);
                 }
                 if (line.find("@flag offset_shift ") == 0) {
-                    std::string offsetStr = line.substr(19);
+                    offsetStr = line.substr(19);
                     offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10));
                 }
                 if (line.find("@stop") == 0) {
@@ -593,8 +602,10 @@ namespace ult {
         fwrite(IPS32_HEAD_MAGIC, sizeof(char), std::strlen(IPS32_HEAD_MAGIC), ipsFile);
     
         uint16_t valueLength;
+        uint32_t bigEndianAddress;
+
         for (const auto& patch : patches) {
-            uint32_t bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
+            bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
             fwrite(&bigEndianAddress, sizeof(bigEndianAddress), 1, ipsFile);  // Write address
     
             valueLength = toBigEndian(static_cast<uint16_t>(patch.second.size()));  // Convert length to big-endian
@@ -648,8 +659,9 @@ namespace ult {
         ipsFile.write(IPS32_HEAD_MAGIC, std::strlen(IPS32_HEAD_MAGIC));
     
         uint16_t valueLength;
+        uint32_t bigEndianAddress;
         for (const auto& patch : patches) {
-            uint32_t bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
+            bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
             ipsFile.write(reinterpret_cast<const char*>(&bigEndianAddress), sizeof(bigEndianAddress));  // Write address
     
             valueLength = toBigEndian(static_cast<uint16_t>(patch.second.size()));  // Convert length to big-endian
