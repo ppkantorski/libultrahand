@@ -651,7 +651,10 @@ namespace ult {
         bool keyFound = false;
         bool firstSection = true;  // Flag to control new line before first section
         std::string currentSection;
-    
+        
+        size_t delimiterPos;
+        std::string key;
+
         while (std::getline(configFile, line)) {
             trim(line); // Directly trimming the std::string line
     
@@ -675,8 +678,8 @@ namespace ult {
             }
     
             if (sectionFound && !keyFound && line.find('=') != std::string::npos) {
-                size_t delimiterPos = line.find('=');
-                std::string key = line.substr(0, delimiterPos);
+                delimiterPos = line.find('=');
+                key = line.substr(0, delimiterPos);
                 trim(key);
                 if (key == desiredKey) {
                     keyFound = true;
