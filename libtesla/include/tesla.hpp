@@ -1908,12 +1908,14 @@ namespace tsl {
                 
                 const u8* __restrict__ src = bmp;
                 
+                s32 px;
+
                 // Completely unroll small bitmaps for maximum speed
                 if (w <= 8 && h <= 8) [[likely]] {
                     // Specialized path for small bitmaps (icons, etc.)
                     for (s32 py = 0; py < h; ++py) {
                         const s32 rowY = y + py;
-                        s32 px = x;
+                        px = x;
                         
                         // Unroll inner loop completely for small widths
                         switch(w) {
@@ -1978,7 +1980,7 @@ namespace tsl {
                 
                 for (s32 py = 0; py < h; ++py) {
                     const s32 rowY = y + py;
-                    s32 px = x;
+                    px = x;
                     
                     // Process 8 pixels at once (cache-friendly)
                     for (s32 i = 0; i < vectorWidth; i += 8) {
@@ -2155,12 +2157,14 @@ namespace tsl {
                         width = glyph->width;
                         height = glyph->height;
                         
+                        s32 col;
+
                         // Optimized pixel blitting
                         for (s32 row = 0; row < height; ++row) {
                             const float currentY = yPos + row;
                             const uint8_t* rowPtr = bmpPtr + (row * width);
                             
-                            s32 col = 0;
+                            col = 0;
                             const s32 simdWidth = width & ~7;
                             
                             // Process 8 pixels at once
