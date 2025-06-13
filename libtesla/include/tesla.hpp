@@ -5973,6 +5973,7 @@ namespace tsl {
             // Also fix wrapToBottom for consistency
             inline Element* wrapToBottom(Element* oldFocus) {
                 resetTableState();
+                invalidate();
                 // REMOVED: m_justWrapped = true; // This was causing the issue
                 
                 //size_t idx;
@@ -5987,7 +5988,7 @@ namespace tsl {
                         if (newFocus && newFocus != oldFocus) {
                             // FIXED: Only set target offset for smooth animation to bottom
                             if (m_listHeight > getHeight()) {
-                                invalidate();
+                                
                                 m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
                                 // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
                             }
@@ -6086,6 +6087,7 @@ namespace tsl {
                 
                 resetTableState();
                 resetNavigationState();
+                invalidate();
                 
                 // Find the last focusable item
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
