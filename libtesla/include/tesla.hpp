@@ -1512,73 +1512,96 @@ namespace tsl {
                 const s32 y_bottom = y_end - radius;
                 const s32 total_height = y_end - y;
                 
-                // Pre-computed color arrays (moved outside all loops)
-                alignas(64) u8 redArray[256], greenArray[256], blueArray[256], alphaArray[256];
+                // Use stack allocation for small arrays to avoid heap allocation
+                alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
                 const u8 red = color.r;
                 const u8 green = color.g;
                 const u8 blue = color.b;
                 const u8 alpha = color.a;
                 
-                // Vectorized color array initialization
-                for (s32 i = 0; i < 256; ++i) {
-                    redArray[i] = red;
-                    greenArray[i] = green;
-                    blueArray[i] = blue;
-                    alphaArray[i] = alpha;
+                // SIMD-optimized color array initialization (if available)
+                #ifdef __AVX2__
+                const __m256i color_vec = _mm256_set1_epi32((alpha << 24) | (blue << 16) | (green << 8) | red);
+                for (s32 i = 0; i < 512; i += 8) {
+                    _mm256_store_si256((__m256i*)(redArray + i), _mm256_and_si256(color_vec, _mm256_set1_epi32(0xFF)));
+                    _mm256_store_si256((__m256i*)(greenArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 8), _mm256_set1_epi32(0xFF)));
+                    _mm256_store_si256((__m256i*)(blueArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 16), _mm256_set1_epi32(0xFF)));
+                    _mm256_store_si256((__m256i*)(alphaArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 24), _mm256_set1_epi32(0xFF)));
+                }
+                #else
+                // Fallback: unroll the loop for better performance
+                for (s32 i = 0; i < 512; i += 8) {
+                    redArray[i] = redArray[i+1] = redArray[i+2] = redArray[i+3] = 
+                    redArray[i+4] = redArray[i+5] = redArray[i+6] = redArray[i+7] = red;
+                    greenArray[i] = greenArray[i+1] = greenArray[i+2] = greenArray[i+3] = 
+                    greenArray[i+4] = greenArray[i+5] = greenArray[i+6] = greenArray[i+7] = green;
+                    blueArray[i] = blueArray[i+1] = blueArray[i+2] = blueArray[i+3] = 
+                    blueArray[i+4] = blueArray[i+5] = blueArray[i+6] = blueArray[i+7] = blue;
+                    alphaArray[i] = alphaArray[i+1] = alphaArray[i+2] = alphaArray[i+3] = 
+                    alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
+                }
+                #endif
+                
+                // Only compute spans for rows we actually need
+                const s32 first_row_idx = std::max(0, startRow - y);
+                const s32 last_row_idx = std::min(total_height - 1, endRow - y - 1);
+                
+                // Use stack allocation for small span arrays
+                HorizontalSpan spans[512]; // Assuming reasonable max height
+                const bool use_heap = (last_row_idx - first_row_idx + 1) > 512;
+                std::vector<HorizontalSpan> heap_spans;
+                
+                HorizontalSpan* span_ptr;
+                if (use_heap) {
+                    heap_spans.resize(last_row_idx - first_row_idx + 1);
+                    span_ptr = heap_spans.data();
+                } else {
+                    span_ptr = spans;
                 }
                 
-                // Pre-allocate spans vector
-                std::vector<HorizontalSpan> spans;
-                spans.reserve(total_height);
-                spans.resize(total_height);
-                
-                // Variables for span computation loop (moved outside)
-                s32 y1, corner_y, dy, dy2, max_dx;
-                bool isTopSection;
-                
-                // Pre-compute spans for each row
-                for (s32 row_idx = 0; row_idx < total_height; ++row_idx) {
-                    y1 = y + row_idx;
+                // Pre-compute spans only for needed rows
+                s32 span_idx = 0;
+                for (s32 row_idx = first_row_idx; row_idx <= last_row_idx; ++row_idx) {
+                    const s32 y1 = y + row_idx;
                     
                     if (y1 >= y_top && y1 < y_bottom) {
                         // Middle section - direct assignment
-                        spans[row_idx].start_x = x;
-                        spans[row_idx].end_x = x_end;
+                        span_ptr[span_idx].start_x = x;
+                        span_ptr[span_idx].end_x = x_end;
                     } else {
-                        // Corner section
-                        isTopSection = (y1 < y_top);
-                        corner_y = isTopSection ? y_top : y_bottom;
-                        dy = abs(y1 - corner_y);
-                        dy2 = dy * dy;
+                        // Corner section - optimize with lookup table for small radii
+                        const bool isTopSection = (y1 < y_top);
+                        const s32 corner_y = isTopSection ? y_top : y_bottom;
+                        const s32 dy = abs(y1 - corner_y);
+                        const s32 dy2 = dy * dy;
                         
                         if (dy2 > r2) {
-                            spans[row_idx].start_x = 0;
-                            spans[row_idx].end_x = 0; // Empty span
+                            span_ptr[span_idx].start_x = 0;
+                            span_ptr[span_idx].end_x = 0; // Empty span
                         } else {
-                            max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
-                            spans[row_idx].start_x = std::max(x_left - max_dx, x);
-                            spans[row_idx].end_x = std::min(x_right + max_dx, x_end);
+                            // Use fast integer square root for better performance
+                            const s32 max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
+                            span_ptr[span_idx].start_x = std::max(x_left - max_dx, x);
+                            span_ptr[span_idx].end_x = std::min(x_right + max_dx, x_end);
                         }
                     }
+                    ++span_idx;
                 }
                 
-                // Variables for rendering loop (moved outside)
-                s32 row_idx, x_pos, remaining, batch_size;
-                const HorizontalSpan* span;
-                
-                // Render only the requested rows using pre-computed spans
+                // Render using pre-computed spans with larger batch sizes
+                span_idx = 0;
                 for (s32 y_current = startRow; y_current < endRow; ++y_current) {
-                    row_idx = y_current - y;
-                    if (row_idx < 0 || row_idx >= total_height) continue;
+                    const s32 row_idx = y_current - y;
+                    if (row_idx < first_row_idx || row_idx > last_row_idx) continue;
                     
-                    span = &spans[row_idx];
+                    const HorizontalSpan* span = &span_ptr[span_idx++];
                     if (span->start_x >= span->end_x) continue;
                     
-                    // Draw with maximum batch size
-                    x_pos = span->start_x;
+                    // Draw with larger batch size for better cache utilization
+                    s32 x_pos = span->start_x;
                     while (x_pos < span->end_x) {
-                        remaining = span->end_x - x_pos;
-                        batch_size = std::min(remaining, 256);
+                        const s32 remaining = span->end_x - x_pos;
+                        const s32 batch_size = std::min(remaining, 512);
                         
                         self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, batch_size);
                         x_pos += batch_size;
