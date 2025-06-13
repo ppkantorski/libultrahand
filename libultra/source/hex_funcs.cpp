@@ -75,9 +75,11 @@ namespace ult {
         // Convert decimalValue to hex (uppercase, minimal length)
         std::string hex;
         int tempValue = decimalValue;
+        int remainder;
+        char hexChar;
         while (tempValue > 0) {
-            int remainder = tempValue % 16;
-            char hexChar = (remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10);
+            remainder = tempValue % 16;
+            hexChar = (remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10);
             hex.insert(hex.begin(), hexChar);
             tempValue /= 16;
         }
@@ -124,11 +126,14 @@ namespace ult {
         // Convert hexadecimal string to integer
         int decimalValue = 0;
         size_t len = hexStr.length();
-    
+        
+        char hexChar;
+        int value;
+
         // Iterate over each character in the hexadecimal string
         for (size_t i = 0; i < len; ++i) {
-            char hexChar = hexStr[i];
-            int value;
+            hexChar = hexStr[i];
+            //int value;
     
             // Convert hex character to its decimal value
             if (hexChar >= '0' && hexChar <= '9') {
@@ -217,9 +222,10 @@ namespace ult {
             fclose(file);
             return offsets; // Ensure hexData has an even length
         }
-        
+
+        std::string byteString;
         for (size_t i = 0; i < hexData.length(); i += 2) {
-            std::string byteString = hexData.substr(i, 2);
+            byteString = hexData.substr(i, 2);
             binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
         }
     
@@ -256,9 +262,11 @@ namespace ult {
             file.close();
             return offsets; // Ensure hexData has an even length
         }
-    
+        
+        std::string byteString;
+
         for (size_t i = 0; i < hexData.length(); i += 2) {
-            std::string byteString = hexData.substr(i, 2);
+            byteString = hexData.substr(i, 2);
             binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
         }
     
