@@ -7515,6 +7515,7 @@ namespace tsl {
                 }
                 bool success = false;
         
+                size_t pos;
                 size_t tryCount = 0;
                 while (!success) {
                     if (interpretAndExecuteCommands) {
@@ -7528,7 +7529,7 @@ namespace tsl {
                         const size_t valuePlaceholderLength = valuePlaceholder.length();
                         const size_t indexPlaceholderLength = indexPlaceholder.length();
                         
-                        size_t pos;
+                        
                         for (auto& cmd : modifiedCmds) {
                             for (auto& arg : cmd) {
                                 pos = 0;
