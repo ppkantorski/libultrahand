@@ -1126,18 +1126,20 @@ namespace ult {
         // Compress RGBA8888 to RGBA4444
         uint8_t* input = buffer.data();
         uint8_t* output = wallpaperData.data();
+        uint8_t r1, g1, b1, a1;
+        uint8_t r2, g2, b2, a2;
     
         for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
             // Read 2 RGBA pixels (8 bytes)
-            uint8_t r1 = input[i] >> 4;
-            uint8_t g1 = input[i + 1] >> 4;
-            uint8_t b1 = input[i + 2] >> 4;
-            uint8_t a1 = input[i + 3] >> 4;
+            r1 = input[i] >> 4;
+            g1 = input[i + 1] >> 4;
+            b1 = input[i + 2] >> 4;
+            a1 = input[i + 3] >> 4;
     
-            uint8_t r2 = input[i + 4] >> 4;
-            uint8_t g2 = input[i + 5] >> 4;
-            uint8_t b2 = input[i + 6] >> 4;
-            uint8_t a2 = input[i + 7] >> 4;
+            r2 = input[i + 4] >> 4;
+            g2 = input[i + 5] >> 4;
+            b2 = input[i + 6] >> 4;
+            a2 = input[i + 7] >> 4;
     
             // Pack them into 4 bytes (2 bytes per pixel)
             output[j] = (r1 << 4) | g1;
