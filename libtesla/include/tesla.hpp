@@ -148,6 +148,7 @@ static bool jumpToTop = false;
 static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
 
+
 namespace tsl {
 
     // Constants
@@ -4463,6 +4464,10 @@ namespace tsl {
             std::vector<Element*> m_children;
             std::function<bool(u64 keys)> m_clickListener = [](u64) { return false; };
         };
+
+        static std::vector<Element*> m_lastFrameItems; // for smooth handling of jumpToItem navigation
+        static bool m_hasValidFrame = false;
+        static float m_lastFrameOffset = 0.0f;
         
     #if IS_STATUS_MONITOR_DIRECTIVE
         /**
@@ -5311,8 +5316,13 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 
-                if (m_pendingJump) // for skipping initial render during pending jumps
+                if (m_pendingJump && m_hasValidFrame) {
+                    // Render using cached frame state if available
+                    renderCachedFrame(renderer);
                     return;
+                } else {
+                    cacheCurrentFrame();
+                }
 
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
@@ -5336,6 +5346,7 @@ namespace tsl {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
+                
             }
         
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -5418,7 +5429,7 @@ namespace tsl {
                 // NEW: Handle pending jump to specific item
                 if (m_pendingJump && !delayedHandle) {
                     delayedHandle = true;
-                    return handleJumpToItem(oldFocus);
+                    return handleJumpToItem(handleJumpToItem(oldFocus));
                 } else if (m_pendingJump) {
                     m_pendingJump = false;
                     delayedHandle = false;
@@ -5478,6 +5489,7 @@ namespace tsl {
             }
         
         protected:
+
             std::vector<Element*> m_items;
             u16 m_focusedIndex = 0;
             
@@ -5528,7 +5540,35 @@ namespace tsl {
             NavigationResult m_lastNavigationResult = NavigationResult::None;
         
         private:
-        
+            void cacheCurrentFrame() {
+                m_lastFrameItems = m_items; // shallow copy of pointers
+                m_lastFrameOffset = m_offset;
+                m_hasValidFrame = true;
+            }
+            
+            void renderCachedFrame(gfx::Renderer* renderer) {
+                const s32 topBound = getTopBound();
+                const s32 bottomBound = getBottomBound();
+                const s32 height = getHeight();
+                
+                renderer->enableScissoring(getLeftBound(), topBound, getWidth() + 8, height + 4);
+            
+                // Use cached offset for positioning
+                for (Element* entry : m_lastFrameItems) {
+                    // Adjust positioning based on cached offset
+                    if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
+                        entry->frame(renderer);
+                    }
+                }
+                
+                renderer->disableScissoring();
+                
+                if (m_listHeight > height) {
+                    drawScrollbar(renderer, height);
+                }
+            }
+
+
             inline void clearItems() {
                 for (Element* item : m_items) delete item;
                 m_items.clear();
@@ -5612,7 +5652,7 @@ namespace tsl {
                 }
             }
         
-            inline Element* handleInitialFocus(Element* oldFocus) {
+            Element* handleInitialFocus(Element* oldFocus) {
 
                 size_t startIndex = 0;
                 if (!oldFocus) {
@@ -5624,22 +5664,10 @@ namespace tsl {
                 
                 resetNavigationState();
                 
-                // Try backward first
-                for (ssize_t j = static_cast<ssize_t>(startIndex); j >= 0; --j) {
-                    Element* newFocus = m_items[j]->requestFocus(oldFocus, FocusDirection::None);
+                for (size_t i = startIndex; i < m_items.size(); ++i) {
+                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = static_cast<size_t>(j);
-                        updateScrollOffset();
-                        resetTableState();
-                        return newFocus;
-                    }
-                }
-                
-                // Try forward
-                for (size_t k = startIndex + 1; k < m_items.size(); ++k) {
-                    Element* newFocus = m_items[k]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = k;
+                        m_focusedIndex = i;
                         updateScrollOffset();
                         resetTableState();
                         return newFocus;
@@ -5886,7 +5914,7 @@ namespace tsl {
                 return pos;
             }
             
-            inline Element* enterTable(Element* oldFocus, size_t tableIdx, bool fromTop) {
+            Element* enterTable(Element* oldFocus, size_t tableIdx, bool fromTop) {
                 isInTable = true;
                 tableIndex = tableIdx;
                 m_focusedIndex = tableIdx;
@@ -5911,7 +5939,7 @@ namespace tsl {
                 return oldFocus;
             }
         
-            inline Element* exitTableDown(Element* oldFocus) {
+            Element* exitTableDown(Element* oldFocus) {
                 size_t currentTableIndex = tableIndex;
                 resetTableState();
                 m_focusedIndex = currentTableIndex;
@@ -5930,7 +5958,7 @@ namespace tsl {
                 return oldFocus;
             }
         
-            inline Element* exitTableUp(Element* oldFocus) {
+            Element* exitTableUp(Element* oldFocus) {
                 size_t currentTableIndex = tableIndex;
                 resetTableState();
                 m_focusedIndex = currentTableIndex;
@@ -6023,7 +6051,7 @@ namespace tsl {
         
             // Wrapping
             // Fix for the wrapToTop function
-            inline Element* wrapToTop(Element* oldFocus) {
+            Element* wrapToTop(Element* oldFocus) {
                 resetTableState();
                 
                 for (size_t i = 0; i < m_items.size(); ++i) {
@@ -6046,7 +6074,7 @@ namespace tsl {
 
                         
             // Also fix wrapToBottom for consistency
-            inline Element* wrapToBottom(Element* oldFocus) {
+            Element* wrapToBottom(Element* oldFocus) {
                 resetTableState();
                 invalidate();
                 // REMOVED: m_justWrapped = true; // This was causing the issue
@@ -6077,7 +6105,7 @@ namespace tsl {
             
             
             // Add these methods to handle jumps with smooth scrolling
-            inline Element* handleJumpToTop(Element* oldFocus) {
+            Element* handleJumpToTop(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
                 
                 // Check if already at the top-most focusable item
@@ -6127,7 +6155,7 @@ namespace tsl {
                 return oldFocus;
             }
             
-            inline Element* handleJumpToBottom(Element* oldFocus) {
+            Element* handleJumpToBottom(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
                 
                 // Check if already at the bottom-most focusable item
