@@ -5512,6 +5512,10 @@ namespace tsl {
                     jumpToBottom = false;
                     return handleJumpToBottom(oldFocus);
                 }
+                if (jumpToTop) {
+                    jumpToTop = false;
+                    return handleJumpToTop(oldFocus);
+                }
             
                 if (direction == FocusDirection::None) {
                     return handleInitialFocus(oldFocus);
@@ -5757,29 +5761,52 @@ namespace tsl {
                     prevOffset = m_offset;
                 }
             }
-        
+                                
             Element* handleInitialFocus(Element* oldFocus) {
-                // FIXED: Always detect table state when controller mode starts
-                // This ensures we're in the right state regardless of how we got to this position
-                detectAndEnterTableAtOffset();
+                size_t startIndex = 0;
+                bool shouldDetectTable = false;
+                
+                // Calculate starting index based on current scroll position (original logic)
+                if (!oldFocus) {
+                    s32 elementHeight = 0;
+                    while (elementHeight < m_offset && startIndex < m_items.size() - 1) {
+                        elementHeight += m_items[++startIndex]->getHeight();
+                    }
+                    // Only detect table mode if we're resuming from a non-zero scroll position
+                    shouldDetectTable = (m_offset > 0);
+                }
                 
                 resetNavigationState();
                 
-                // Start from the focused index (which was set by detectAndEnterTableAtOffset)
-                for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
+                // Try to focus items starting from the calculated index
+                for (size_t i = startIndex; i < m_items.size(); ++i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = i;
-                        // Don't call updateScrollOffset() - we want to maintain current position
+                        
+                        // Only detect table mode if we're restoring from a previous scroll position
+                        if (shouldDetectTable) {
+                            detectAndEnterTableAtOffset();
+                        }
+                        
+                        // Only update scroll offset if we're not in a table
+                        if (!isInTable) {
+                            updateScrollOffset();
+                        }
+                        
                         return newFocus;
                     }
                 }
                 
-                // If nothing from focused index onwards, try from the beginning
-                for (size_t i = 0; i < m_focusedIndex && i < m_items.size(); ++i) {
+                // If nothing found from startIndex onwards, try from beginning
+                for (size_t i = 0; i < startIndex && i < m_items.size(); ++i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = i;
+                        
+                        // For items before startIndex, we're not restoring position, so no table detection
+                        updateScrollOffset();
+                        
                         return newFocus;
                     }
                 }
