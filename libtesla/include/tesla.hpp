@@ -143,7 +143,7 @@ int frameCount = 0;
 double elapsedTime;
 #endif
 
-
+//static bool jumpToListItem = false;
 static bool jumpToTop = false;
 static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
@@ -4416,6 +4416,10 @@ namespace tsl {
                 this->m_focused = focused;
                 this->m_clickAnimationProgress = 0;
             }
+
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const {
+                return false; // Default implementation for non-ListItem elements
+            }
             
             
             static InputMode getInputMode() { return Element::s_inputMode; }
@@ -4458,7 +4462,6 @@ namespace tsl {
             Element *m_parent = nullptr;
             std::vector<Element*> m_children;
             std::function<bool(u64 keys)> m_clickListener = [](u64) { return false; };
-            
         };
         
     #if IS_STATUS_MONITOR_DIRECTIVE
@@ -5282,6 +5285,8 @@ namespace tsl {
         private:
             Color m_color;
         };
+
+        class ListItem; // forward declaration
         
         class List : public Element {
         
@@ -5317,11 +5322,15 @@ namespace tsl {
                     clearItems();
                     return;
                 }
-        
+                
                 // Process pending operations in batch
                 if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
+
                 
+                if (m_pendingJump)
+                    return;
+
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
@@ -5421,10 +5430,16 @@ namespace tsl {
             virtual Element* requestFocus(Element* oldFocus, FocusDirection direction) override {
                 if (m_clearList || !m_itemsToAdd.empty()) return nullptr;
                 
-                // Handle jump requests first - these should be processed immediately
-                if (jumpToTop) {
-                    jumpToTop = false;
-                    return handleJumpToTop(oldFocus);
+                static bool delayedHandle = false;
+
+                // NEW: Handle pending jump to specific item
+                if (m_pendingJump && !delayedHandle) {
+                    delayedHandle = true;
+                    return handleJumpToItem(oldFocus);
+                } else if (m_pendingJump) {
+                    m_pendingJump = false;
+                    delayedHandle = false;
+                    return handleJumpToItem(oldFocus);
                 }
                 
                 if (jumpToBottom) {
@@ -5444,7 +5459,65 @@ namespace tsl {
             
                 return oldFocus;
             }
+
+            inline void jumpToItem(const std::string& text = "", const std::string& value = "") {
+                m_pendingJump = true;
+                //jumpToListItem = true;
+                m_jumpToText = text;
+                m_jumpToValue = value;
+                //processJumpToItem();
+            }
+                                    
+            //inline void processJumpToItem() {
+            //    resetTableState();
+            //    resetNavigationState();
+            //    invalidate();
+            //
+            //    float targetOffset = 0.0;
+            //    
+            //    // Search for matching item
+            //    for (size_t i = 0; i < m_items.size(); ++i) {
+            //        // Set the focused index
+            //        m_focusedIndex = i;
+            //        
+            //        // Check if this item matches the jump criteria first
+            //        if (m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
+            //            // Found the target item - now calculate proper scroll position
+            //            if (m_listHeight > getHeight()) {
+            //                // If focused on first item, keep at absolute top
+            //                if (i == 0) {
+            //                    targetOffset = 0.0f;
+            //                } else {
+            //                    // Calculate cumulative height up to item i, accounting for tables
+            //                    float cumulativeHeight = 0.0f;
+            //                    for (size_t j = 0; j < i; ++j) {
+            //                        cumulativeHeight += m_items[j]->getHeight();
+            //                    }
+            //                    
+            //                    if (canEnterTable(i)) {
+            //                        // Target item is a table - set up table state and position at table start
+            //                        isInTable = true;
+            //                        tableIndex = i;
+            //                        tableScrollOffset = 0.0f; // Start at top of table
+            //                        
+            //                        targetOffset = cumulativeHeight;
+            //                    } else {
+            //                        // Regular item - position to show it nicely
+            //                        targetOffset = std::clamp(cumulativeHeight - (getHeight() / 3), 
+            //                                                    0.0f, 
+            //                                                    static_cast<float>(m_listHeight - getHeight() + 50));
+            //                    }
+            //                }
+            //            }
+            //            break; // Found the target item, stop searching
+            //        }
+            //    }
+            //    
+            //    // Set both m_offset and m_nextOffset to avoid animation delay
+            //    m_offset = m_nextOffset = targetOffset;
+            //}
             
+                        
             virtual Element* getItemAtIndex(u32 index) {
                 return (m_items.size() <= index) ? nullptr : m_items[index];
             }
@@ -5493,6 +5566,11 @@ namespace tsl {
             static constexpr u64 HOLD_THRESHOLD_NS = 100000000ULL;  // 100ms
         
             size_t actualItemCount = 0;
+
+            // Jump to navigation variables
+            std::string m_jumpToText;
+            std::string m_jumpToValue;
+            bool m_pendingJump = false;
             
             enum class NavigationResult {
                 None,
@@ -5590,6 +5668,7 @@ namespace tsl {
             }
         
             inline Element* handleInitialFocus(Element* oldFocus) {
+
                 size_t startIndex = 0;
                 if (!oldFocus) {
                     s32 elementHeight = 0;
@@ -5711,6 +5790,33 @@ namespace tsl {
                 isInTable = false;
                 tableIndex = 0;
                 tableScrollOffset = 0.0f;
+            }
+
+            inline Element* handleJumpToItem(Element* oldFocus) {
+                resetTableState();
+                resetNavigationState();
+                invalidate();
+            
+                const bool needsScroll = m_listHeight > getHeight();
+                const float viewportThird = needsScroll ? getHeight() / 3.0f : 0.0f;
+                const float maxOffset = needsScroll ? m_listHeight - getHeight() + 50.0f : 0.0f;
+                
+                float h = 0.0f;
+                
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    m_focusedIndex = i;
+                    
+                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                    if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
+                        m_offset = m_nextOffset = needsScroll && i ? std::clamp(h - viewportThird, 0.0f, maxOffset) : 0.0f;
+                        return newFocus;
+                    }
+                    
+                    h += m_items[i]->getHeight();
+                }
+                
+                // No match found
+                return handleInitialFocus(oldFocus);
             }
         
             // Core navigation logic
@@ -6023,8 +6129,8 @@ namespace tsl {
                 
                 return oldFocus;
             }
-                                    
-                        
+            
+            
             // Add these methods to handle jumps with smooth scrolling
             inline Element* handleJumpToTop(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
@@ -6293,7 +6399,7 @@ namespace tsl {
                 }
                 return false;
             }
-        
+            
             virtual void setFocused(bool state) override {
                 if (state != m_focused) [[likely]] {
                     m_scroll = false;
@@ -6330,6 +6436,15 @@ namespace tsl {
         
             inline const std::string& getValue() const noexcept {
                 return m_value;
+            }
+
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const {
+                if (jumpText.empty() && jumpValue.empty()) return false;
+                
+                bool textMatches = (m_text == jumpText);
+                bool valueMatches = (m_value == jumpValue);
+                
+                return textMatches || valueMatches;
             }
         
         protected:
