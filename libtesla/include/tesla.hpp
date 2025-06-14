@@ -4465,9 +4465,10 @@ namespace tsl {
             std::function<bool(u64 keys)> m_clickListener = [](u64) { return false; };
         };
 
-        static std::vector<Element*> m_lastFrameItems; // for smooth handling of jumpToItem navigation
-        static bool m_hasValidFrame = false;
-        static float m_lastFrameOffset = 0.0f;
+        //static std::vector<Element*> m_lastFrameItems; // for smooth handling of jumpToItem navigation
+        //static bool m_hasValidFrame = false;
+        //static float m_lastFrameOffset = 0.0f;
+        // Static cache with instance validation
         
     #if IS_STATUS_MONITOR_DIRECTIVE
         /**
@@ -5292,15 +5293,24 @@ namespace tsl {
         };
 
         class ListItem; // forward declaration
-        
+
+        static std::vector<Element*> s_lastFrameItems;
+        static bool s_hasValidFrame = false;
+        static float s_lastFrameOffset = 0.0f;
+        static size_t s_cachedInstanceId = 0;
+        static size_t s_nextInstanceId = 1; 
+
         class List : public Element {
         
         public:
-            List() : Element() {
+            List() : Element(), m_instanceId(generateInstanceId()) {
                 m_isItem = false;
             }
             virtual ~List() {
                 clearItems();
+                if (s_cachedInstanceId == m_instanceId) {
+                    clearStaticCache();
+                }
             }
             
             
@@ -5316,10 +5326,10 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 
-                if (m_pendingJump && m_hasValidFrame) {
+                if (m_pendingJump && s_hasValidFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    m_hasValidFrame = false;
+                    s_hasValidFrame = false;
                     return;
                 }
 
@@ -5501,7 +5511,10 @@ namespace tsl {
             std::vector<Element*> m_itemsToRemove;
             std::vector<std::pair<ssize_t, Element*>> m_itemsToAdd;
             std::vector<float> prefixSums;
-        
+            
+            // Instance identification
+            const size_t m_instanceId;
+
             // Enhanced navigation state tracking
             bool m_justWrapped = false;
             bool m_isHolding = false;
@@ -5541,10 +5554,36 @@ namespace tsl {
             NavigationResult m_lastNavigationResult = NavigationResult::None;
         
         private:
+            // Method to explicitly preserve cache when navigating away
+            void preserveCacheForReturn() {
+                if (m_instanceId == s_cachedInstanceId && s_hasValidFrame) {
+                    // Cache is already preserved for this instance
+                    return;
+                }
+                cacheCurrentFrame();
+            }
+        
+            // Method to check if this instance has a valid cached frame
+            bool hasCachedFrame() const {
+                return s_hasValidFrame && s_cachedInstanceId == m_instanceId;
+            }
+
+            static size_t generateInstanceId() {
+                return s_nextInstanceId++;
+            }
+        
+            static void clearStaticCache() {
+                s_lastFrameItems.clear();
+                s_hasValidFrame = false;
+                s_lastFrameOffset = 0.0f;
+                s_cachedInstanceId = 0;
+            }
+        
             void cacheCurrentFrame() {
-                m_lastFrameItems = m_items; // shallow copy of pointers
-                m_lastFrameOffset = m_offset;
-                m_hasValidFrame = true;
+                s_lastFrameItems = m_items; // Cache this instance's items
+                s_lastFrameOffset = m_offset;
+                s_cachedInstanceId = m_instanceId; // Mark which instance this cache belongs to
+                s_hasValidFrame = true;
             }
             
             void renderCachedFrame(gfx::Renderer* renderer) {
@@ -5555,7 +5594,7 @@ namespace tsl {
                 renderer->enableScissoring(getLeftBound(), topBound, getWidth() + 8, height + 4);
             
                 // Use cached offset for positioning
-                for (Element* entry : m_lastFrameItems) {
+                for (Element* entry : s_lastFrameItems) {
                     // Adjust positioning based on cached offset
                     if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
                         entry->frame(renderer);
@@ -5571,8 +5610,10 @@ namespace tsl {
 
 
             inline void clearItems() {
-                m_hasValidFrame = false;
-                m_lastFrameItems.clear();
+                // Clear static cache if it belongs to this instance
+                if (s_cachedInstanceId == m_instanceId) {
+                    clearStaticCache();
+                }
 
                 for (Element* item : m_items) delete item;
                 m_items.clear();
