@@ -5351,9 +5351,17 @@ namespace tsl {
                 }
                 
                 renderer->disableScissoring();
+
+                // FIXED: Check if content actually extends beyond viewport bounds
+                // Calculate the actual bottom position of the last item
+                s32 actualContentBottom = 0;
+                if (!m_items.empty()) {
+                    Element* lastItem = m_items.back();
+                    actualContentBottom = lastItem->getBottomBound() - getTopBound();
+                }
         
                 // Draw scrollbar only when needed
-                if (m_listHeight > height) {
+                if (m_listHeight > height || actualContentBottom > height) {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
@@ -5364,17 +5372,18 @@ namespace tsl {
                 y = getY() - m_offset;
                 
                 // Calculate total height in single pass
-                m_listHeight = -32;
+                m_listHeight = 9;
                 for (Element* entry : m_items) {
                     m_listHeight += entry->getHeight();
                     entry->setBoundaries(getX(), y, getWidth(), entry->getHeight());
                     entry->invalidate();
                     y += entry->getHeight();
                 }
-                y -= 32;
+                y -= 0;
             }
-                                    
-            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+                                                
+            // Fixed onTouch method - prevents controller state corruption
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 // Quick bounds check
                 if (!inBounds(currX, currY)) return false;
                 
@@ -5390,14 +5399,66 @@ namespace tsl {
                     if (prevX && prevY) {
                         m_nextOffset += (prevY - currY);
                         m_nextOffset = std::clamp(m_nextOffset, 0.0f, 
-                            static_cast<float>(m_listHeight - getHeight() + 50));
+                            static_cast<float>(m_listHeight - getHeight()));
+                        
+                        // FIXED: Always detect table state based on current scroll position
+                        // This ensures we're in the correct table context regardless of where we scroll
+                        detectAndEnterTableAtOffset();
                     }
                     return true;
                 }
                 
                 return false;
             }
-        
+            
+            // Fixed syncTableStateFromOffset - only called during controller navigation
+            inline void syncTableStateFromOffset() {
+                // FIXED: Only sync during controller mode to prevent conflicts
+                if (Element::getInputMode() != InputMode::Controller) return;
+                if (!isInTable || tableIndex >= m_items.size()) return;
+                
+                float tableStartPos = calculateTableStartPosition(tableIndex);
+                float relativeOffset = m_offset - tableStartPos;
+                
+                Element* table = m_items[tableIndex];
+                float maxTableScroll = static_cast<float>(table->getHeight() - getHeight());
+                tableScrollOffset = std::clamp(relativeOffset, 0.0f, maxTableScroll);
+            }
+            
+            // Fixed detectAndEnterTableAtOffset - only called during controller navigation
+            inline void detectAndEnterTableAtOffset() {
+                // Always reset first, then detect based on current position
+                //bool wasInTable = isInTable;
+                //size_t oldTableIndex = tableIndex;
+                resetTableState();
+                
+                float currentPos = 0.0f;
+                float itemHeight;
+                
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    itemHeight = static_cast<float>(m_items[i]->getHeight());
+                    
+                    // Check if current offset falls within this item
+                    if (m_offset >= currentPos && m_offset < currentPos + itemHeight) {
+                        m_focusedIndex = i;
+                        
+                        // If this item is a table that can be entered
+                        if (canEnterTable(i)) {
+                            isInTable = true;
+                            tableIndex = i;
+                            tableScrollOffset = m_offset - currentPos;
+                            
+                            // Ensure table scroll offset is within bounds
+                            Element* table = m_items[i];
+                            float maxTableScroll = static_cast<float>(table->getHeight() - getHeight());
+                            tableScrollOffset = std::clamp(tableScrollOffset, 0.0f, maxTableScroll);
+                        }
+                        break;
+                    }
+                    currentPos += itemHeight;
+                }
+            }
+
             inline void addItem(Element* element, u16 height = 0, ssize_t index = -1) {
                 if (!element) return;
                 
@@ -5658,8 +5719,8 @@ namespace tsl {
             }
             
             inline void drawScrollbar(gfx::Renderer* renderer, s32 height) {
-                const float viewHeight = static_cast<float>(height - 12);
-                const float totalHeight = static_cast<float>(m_listHeight + 24);
+                const float viewHeight = static_cast<float>(height - 10);
+                const float totalHeight = static_cast<float>(m_listHeight-22);
                 const u32 maxScrollableHeight = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
                 
                 scrollbarHeight = std::min(static_cast<u32>((viewHeight * viewHeight) / totalHeight), 
@@ -5669,7 +5730,7 @@ namespace tsl {
                                          static_cast<u32>(viewHeight - scrollbarHeight)) + 4;
         
                 const u32 scrollbarX = getRightBound() + 20;
-                const u32 scrollbarY = getY() + scrollbarOffset;
+                const u32 scrollbarY = getY() + scrollbarOffset+2;
         
                 renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
                 renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
@@ -5698,23 +5759,27 @@ namespace tsl {
             }
         
             Element* handleInitialFocus(Element* oldFocus) {
-
-                size_t startIndex = 0;
-                if (!oldFocus) {
-                    s32 elementHeight = 0;
-                    while (elementHeight < m_offset && startIndex < m_items.size() - 1) {
-                        elementHeight += m_items[++startIndex]->getHeight();
-                    }
-                }
+                // FIXED: Always detect table state when controller mode starts
+                // This ensures we're in the right state regardless of how we got to this position
+                detectAndEnterTableAtOffset();
                 
                 resetNavigationState();
                 
-                for (size_t i = startIndex; i < m_items.size(); ++i) {
+                // Start from the focused index (which was set by detectAndEnterTableAtOffset)
+                for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = i;
-                        updateScrollOffset();
-                        resetTableState();
+                        // Don't call updateScrollOffset() - we want to maintain current position
+                        return newFocus;
+                    }
+                }
+                
+                // If nothing from focused index onwards, try from the beginning
+                for (size_t i = 0; i < m_focusedIndex && i < m_items.size(); ++i) {
+                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
+                    if (newFocus && newFocus != oldFocus) {
+                        m_focusedIndex = i;
                         return newFocus;
                     }
                 }
@@ -5817,7 +5882,7 @@ namespace tsl {
             
                 const bool needsScroll = m_listHeight > getHeight();
                 const float viewportThird = needsScroll ? getHeight() / 3.0f : 0.0f;
-                const float maxOffset = needsScroll ? m_listHeight - getHeight() + 50.0f : 0.0f;
+                const float maxOffset = needsScroll ? m_listHeight - getHeight() : 0.0f;
                 
                 float h = 0.0f;
                 
@@ -5921,7 +5986,7 @@ namespace tsl {
                 
                 Element* table = m_items[tableIndex];
                 // FIXED: Add buffer to ensure we can see the very bottom content
-                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight());
                 return tableScrollOffset < maxScroll && maxScroll > 0;
             }
         
@@ -5934,7 +5999,7 @@ namespace tsl {
                 
                 Element* table = m_items[tableIndex];
                 // FIXED: Same buffer calculation as canScrollTableDown
-                float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
+                float maxScroll = static_cast<float>(table->getHeight() - getHeight());
                 
                 tableScrollOffset = std::min(tableScrollOffset + TABLE_SCROLL_STEP_SIZE, maxScroll);
                 
@@ -5973,7 +6038,7 @@ namespace tsl {
                 } else {
                     // Enter from bottom - scroll to show the bottom of the table
                     Element* table = m_items[tableIdx];
-                    tableScrollOffset = static_cast<float>(table->getHeight() - getHeight() + 50);
+                    tableScrollOffset = static_cast<float>(table->getHeight() - getHeight());
                     if (tableScrollOffset < 0) tableScrollOffset = 0.0f;
                     
                     // FIXED: Use smooth animation when entering table from bottom
@@ -6045,7 +6110,7 @@ namespace tsl {
                     if (tableIndex >= m_items.size()) return true;
                     
                     Element* table = m_items[tableIndex];
-                    float maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
+                    float maxScroll = static_cast<float>(table->getHeight() - getHeight());
                     
                     // Use a small epsilon for floating point comparison
                     bool atTableBottom = (tableScrollOffset >= maxScroll - 1.0f);
@@ -6137,7 +6202,7 @@ namespace tsl {
                             // FIXED: Only set target offset for smooth animation to bottom
                             if (m_listHeight > getHeight()) {
                                 
-                                m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
+                                m_nextOffset = static_cast<float>(m_listHeight - getHeight());
                                 // Don't set m_offset - let updateScrollAnimation() handle the smooth transition
                             }
                             return newFocus;
@@ -6226,7 +6291,7 @@ namespace tsl {
                 if (isInTable && tableIndex == lastFocusableIndex) {
                     if (tableIndex < m_items.size()) {
                         Element* table = m_items[tableIndex];
-                        maxScroll = static_cast<float>(table->getHeight() - getHeight() + 50);
+                        maxScroll = static_cast<float>(table->getHeight() - getHeight());
                         if (tableScrollOffset >= maxScroll - 1.0f) {
                             return oldFocus;
                         }
@@ -6243,7 +6308,7 @@ namespace tsl {
                     if (canEnterTable(i)) {
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
-                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
+                            m_nextOffset = static_cast<float>(m_listHeight - getHeight());
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
                         Element* newFocus = enterTable(oldFocus, i, false);
@@ -6253,7 +6318,7 @@ namespace tsl {
                         m_focusedIndex = i;
                         // Set target for smooth scroll to bottom position
                         if (m_listHeight > getHeight()) {
-                            m_nextOffset = static_cast<float>(m_listHeight - getHeight() + 50);
+                            m_nextOffset = static_cast<float>(m_listHeight - getHeight());
                         }
                         // Don't set m_offset - let updateScrollAnimation() handle smooth transition
                         Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
@@ -6302,7 +6367,7 @@ namespace tsl {
                 
                 m_nextOffset = std::clamp(prefixSums[m_focusedIndex] - (getHeight() / 3), 
                                         0.0f, 
-                                        static_cast<float>(m_listHeight - getHeight() + 50));
+                                        static_cast<float>(m_listHeight - getHeight()));
             }
         };
 
