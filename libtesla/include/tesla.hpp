@@ -5319,10 +5319,11 @@ namespace tsl {
                 if (m_pendingJump && m_hasValidFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
+                    m_hasValidFrame = false;
                     return;
-                } else {
-                    cacheCurrentFrame();
                 }
+
+                cacheCurrentFrame();
 
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
@@ -5570,6 +5571,9 @@ namespace tsl {
 
 
             inline void clearItems() {
+                m_hasValidFrame = false;
+                m_lastFrameItems.clear();
+
                 for (Element* item : m_items) delete item;
                 m_items.clear();
                 m_offset = 0;
