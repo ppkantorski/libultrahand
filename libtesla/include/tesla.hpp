@@ -5298,23 +5298,6 @@ namespace tsl {
                 clearItems();
             }
             
-            // Stack variables for hot path - reused to avoid allocations
-            u32 scrollbarHeight;
-            u32 scrollbarOffset;
-            u32 offset;
-            u32 prevOffset;
-            s32 y;
-            bool handled;
-            u16 i;
-        
-            static constexpr float smoothingFactor = 0.15f;
-            static constexpr float dampingFactor = 0.3f;
-            static constexpr float TABLE_SCROLL_STEP_SIZE = 40.0f;
-        
-            // Simplified table state - just track which table and its scroll position
-            bool isInTable = false;
-            size_t tableIndex = 0;
-            float tableScrollOffset = 0.0f;  // Offset within the table itself
             
             virtual void draw(gfx::Renderer* renderer) override {
                 // Early exit optimizations
@@ -5328,7 +5311,7 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 
-                if (m_pendingJump)
+                if (m_pendingJump) // for skipping initial render during pending jumps
                     return;
 
                 // Cache bounds for hot loop
@@ -5439,7 +5422,7 @@ namespace tsl {
                 } else if (m_pendingJump) {
                     m_pendingJump = false;
                     delayedHandle = false;
-                    return handleJumpToItem(oldFocus);
+                    return handleJumpToItem(oldFocus); // needs to be handled 2x for proper rendering
                 }
                 
                 if (jumpToBottom) {
@@ -5462,61 +5445,9 @@ namespace tsl {
 
             inline void jumpToItem(const std::string& text = "", const std::string& value = "") {
                 m_pendingJump = true;
-                //jumpToListItem = true;
                 m_jumpToText = text;
                 m_jumpToValue = value;
-                //processJumpToItem();
             }
-                                    
-            //inline void processJumpToItem() {
-            //    resetTableState();
-            //    resetNavigationState();
-            //    invalidate();
-            //
-            //    float targetOffset = 0.0;
-            //    
-            //    // Search for matching item
-            //    for (size_t i = 0; i < m_items.size(); ++i) {
-            //        // Set the focused index
-            //        m_focusedIndex = i;
-            //        
-            //        // Check if this item matches the jump criteria first
-            //        if (m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
-            //            // Found the target item - now calculate proper scroll position
-            //            if (m_listHeight > getHeight()) {
-            //                // If focused on first item, keep at absolute top
-            //                if (i == 0) {
-            //                    targetOffset = 0.0f;
-            //                } else {
-            //                    // Calculate cumulative height up to item i, accounting for tables
-            //                    float cumulativeHeight = 0.0f;
-            //                    for (size_t j = 0; j < i; ++j) {
-            //                        cumulativeHeight += m_items[j]->getHeight();
-            //                    }
-            //                    
-            //                    if (canEnterTable(i)) {
-            //                        // Target item is a table - set up table state and position at table start
-            //                        isInTable = true;
-            //                        tableIndex = i;
-            //                        tableScrollOffset = 0.0f; // Start at top of table
-            //                        
-            //                        targetOffset = cumulativeHeight;
-            //                    } else {
-            //                        // Regular item - position to show it nicely
-            //                        targetOffset = std::clamp(cumulativeHeight - (getHeight() / 3), 
-            //                                                    0.0f, 
-            //                                                    static_cast<float>(m_listHeight - getHeight() + 50));
-            //                    }
-            //                }
-            //            }
-            //            break; // Found the target item, stop searching
-            //        }
-            //    }
-            //    
-            //    // Set both m_offset and m_nextOffset to avoid animation delay
-            //    m_offset = m_nextOffset = targetOffset;
-            //}
-            
                         
             virtual Element* getItemAtIndex(u32 index) {
                 return (m_items.size() <= index) ? nullptr : m_items[index];
@@ -5571,6 +5502,20 @@ namespace tsl {
             std::string m_jumpToText;
             std::string m_jumpToValue;
             bool m_pendingJump = false;
+
+            // Stack variables for hot path - reused to avoid allocations
+            u32 scrollbarHeight;
+            u32 scrollbarOffset;
+            u32 prevOffset;
+        
+            static constexpr float smoothingFactor = 0.15f;
+            static constexpr float dampingFactor = 0.3f;
+            static constexpr float TABLE_SCROLL_STEP_SIZE = 40.0f;
+        
+            // Simplified table state - just track which table and its scroll position
+            bool isInTable = false;
+            size_t tableIndex = 0;
+            float tableScrollOffset = 0.0f;  // Offset within the table itself
             
             enum class NavigationResult {
                 None,
