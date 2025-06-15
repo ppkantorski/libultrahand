@@ -3413,7 +3413,7 @@ namespace tsl {
                 if (!ult::hideBattery && ult::batteryCharge > 0) {
                     Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
                                             (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 22, y_offset, 20, a(batteryColorToUse));
+                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - calculateStringWidth(chargeString, 20, true) - 20, y_offset, 20, a(batteryColorToUse));
                 }
         
                 // Draw PCB and SOC temperatures
