@@ -5361,7 +5361,7 @@ namespace tsl {
                 }
         
                 // Draw scrollbar only when needed
-                if (m_listHeight > height || actualContentBottom > height) {
+                if (m_listHeight-20 > height || actualContentBottom-20 > height) {  // -20 fixes the alignment
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
@@ -8936,6 +8936,9 @@ namespace tsl {
             static const u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
             
+            static bool hasScrolled = false;\
+            static void* lastGuiPtr = nullptr;  // Use void* instead
+
             auto& currentGui = this->getCurrentGui();
             //static bool isTopElement = true;
         
@@ -8983,13 +8986,24 @@ namespace tsl {
                     ult::simulatedBackComplete = true;
                 }
                 if (keysDown & KEY_B) {
-                    if (!currentGui->handleInput(KEY_B,0,{},{},{}))
+                    if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
+                    }
                     return;
                 }
             }
         #endif
-            
+
+            // Reset touch state when GUI changes
+            if (currentGui.get() != lastGuiPtr) {  // or just currentGui != lastGuiPtr if it's not a smart pointer
+                hasScrolled = false;
+                oldTouchEvent = elm::TouchEvent::None;
+                oldTouchDetected = false;
+                oldTouchPos = { 0 };
+                initialTouchPos = { 0 };
+                lastGuiPtr = currentGui.get();  // or just currentGui
+            }
+                    
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
                 
@@ -9000,7 +9014,6 @@ namespace tsl {
                 }
             }
             
-            static bool hasScrolled = false;
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
                 if (!ult::simulatedBack && ult::simulatedBackComplete && topElement) {
@@ -9071,9 +9084,9 @@ namespace tsl {
                         }
         
                         // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                        const u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
-                        const u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
-                        const u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
+                        static const u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
+                        static const u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
+                        static const u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
                         
                         float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
                                  (float)durationSincePress_ns / (float)transitionPoint_ns;
@@ -9111,16 +9124,10 @@ namespace tsl {
             }
             
             if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
-                //if (!isTopElement)
-                //    currentGui->requestFocus(topElement, FocusDirection::None);
-                //isTopElement = true;
                 jumpToTop = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
             if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
-                //if (!isTopElement)
-                //    currentGui->requestFocus(topElement, FocusDirection::None);
-                //isTopElement = true;
                 jumpToBottom = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
