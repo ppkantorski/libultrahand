@@ -150,6 +150,10 @@ static bool jumpToTop = false;
 static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
 static bool hideHidden = false;
+static std::string g_overlayFilename;;
+static std::string lastOverlayName;
+static std::string lastOverlayVersion;
+
 
 namespace tsl {
 
@@ -5327,7 +5331,14 @@ namespace tsl {
                 if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
-                
+                static int tryCount = 0;
+                if (m_pendingJump && lastOverlayName != "" && tryCount < 1) {
+                    tryCount++;
+                    return;
+                } else {
+                    tryCount = 0;
+                }
+
                 if (m_pendingJump && s_hasValidFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
@@ -9776,6 +9787,11 @@ namespace tsl {
         
         // Store the filename in a string to keep it alive
         std::string filenameStr = ult::getNameFromPath(ovlPath);
+        // Check if filename is "ovlmenu" and use g_overlayFilename instead
+        //if (filenameStr == "ovlmenu.ovl") {
+        //    filenameStr = g_overlayFilename;
+        //}
+
         const char* filename = filenameStr.c_str();
         
         // Copy filename
@@ -9865,6 +9881,11 @@ namespace tsl {
     #if IS_LAUNCHER_DIRECTIVE
         const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
     #endif
+
+        if (argc > 0) {
+            //std::string overlayPath = argv[0];
+            g_overlayFilename = ult::getNameFromPath(argv[0]);
+        }
 
         bool skipCombo = false;
         for (u8 arg = 0; arg < argc; arg++) {
