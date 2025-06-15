@@ -9703,13 +9703,19 @@ namespace tsl {
                                         std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::LAUNCH_ARGS_STR);
                                         ult::removeQuotes(overlayLaunchArgs);
+                                        // Add --direct argument to launch args
+                                        if (!overlayLaunchArgs.empty()) {
+                                            overlayLaunchArgs += " --direct";
+                                        } else {
+                                            overlayLaunchArgs = "--direct";
+                                        }
                                         
                                         // Set the next overlay directly
                                         if (useOverlayLaunchArgs == ult::TRUE_STR)
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
                                         else
-                                            tsl::setNextOverlay(overlayPath);
-                                        
+                                            tsl::setNextOverlay(overlayPath, "--direct");
+
                                         // Properly close the overlay to trigger the launch
                                         tsl::Overlay::get()->close();
                                         eventFire(&shData->comboEvent);
@@ -9919,6 +9925,11 @@ namespace tsl {
                     if (ult::getTitleIdAsString() != providedID) {
                         ult::resetForegroundCheck = true;
                     }
+                }
+                else if (s[2] == 'd' && !strcmp(s, "--direct")) {
+                    g_overlayFilename = "";
+                    lastOverlayName = "";
+                    lastOverlayVersion = "";
                 }
             }
         }
