@@ -6561,13 +6561,28 @@ namespace tsl {
                 return m_value;
             }
 
-            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const {
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const override {
+                return matchesJumpCriteria(jumpText, jumpValue, true); // Default to exact match
+            }
+
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool exactMatch=true) const {
                 if (jumpText.empty() && jumpValue.empty()) return false;
                 
-                bool textMatches = (m_text == jumpText);
-                bool valueMatches = (m_value == jumpValue);
+                bool textMatches, valueMatches;
+                if (exactMatch) {
+                    textMatches = (m_text == jumpText);
+                    valueMatches = (m_value == jumpValue);
+                } else { // contains check
+                    textMatches = (m_text.find(jumpText) != std::string::npos);
+                    valueMatches = (m_value.find(jumpValue) != std::string::npos);
+                }
                 
-                return textMatches || valueMatches;
+                if (jumpText.empty() && !jumpValue.empty())
+                    return valueMatches;
+                else if (!jumpText.empty() && jumpValue.empty())
+                    return textMatches;
+
+                return (textMatches && valueMatches);
             }
         
         protected:
