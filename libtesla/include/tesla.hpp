@@ -5448,6 +5448,8 @@ namespace tsl {
                 float currentPos = 0.0f;
                 float itemHeight;
                 
+                float maxTableScroll;
+
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     itemHeight = static_cast<float>(m_items[i]->getHeight());
                     
@@ -5463,7 +5465,7 @@ namespace tsl {
                             
                             // Ensure table scroll offset is within bounds
                             Element* table = m_items[i];
-                            float maxTableScroll = static_cast<float>(table->getHeight() - getHeight());
+                            maxTableScroll = static_cast<float>(table->getHeight() - getHeight());
                             tableScrollOffset = std::clamp(tableScrollOffset, 0.0f, maxTableScroll);
                         }
                         break;
@@ -9913,27 +9915,40 @@ namespace tsl {
             const char* s = argv[arg];
         
             if (s[0] == '-' && s[1] == '-') {
-                if (s[2] == 's' && !strcmp(s, "--skipCombo")) {
-                    skipCombo = true;
-                    ult::firstBoot = false;
-                }
-                else if (s[2] == 'f' && !strcmp(s, "--foregroundFix") && arg + 1 < argc) {
-                    ult::resetForegroundCheck = ult::resetForegroundCheck || (argv[++arg][0] == '1'); // Just check for '1'
-                }
-                else if (s[2] == 'l' && !strcmp(s, "--lastTitleID") && arg + 1 < argc) {
-                    const char* providedID = argv[++arg];
-                    if (ult::getTitleIdAsString() != providedID) {
-                        ult::resetForegroundCheck = true;
-                    }
-                }
-                else if (s[2] == 'd' && !strcmp(s, "--direct")) {
-                    g_overlayFilename = "";
-                    lastOverlayName = "";
-                    lastOverlayVersion = "";
+                const char* opt = s + 2;
+                
+                // Check first character, then length implicitly through comparison
+                switch (opt[0]) {
+                    case 'd': // "direct"
+                        if (__builtin_memcmp(opt, "direct", 6) == 0 && opt[6] == '\0') {
+                            g_overlayFilename = "";
+                            lastOverlayName = "";
+                            lastOverlayVersion = "";
+                        }
+                        break;
+                    case 's': // "skipCombo"
+                        if (__builtin_memcmp(opt, "skipCombo", 9) == 0 && opt[9] == '\0') {
+                            skipCombo = true;
+                            ult::firstBoot = false;
+                        }
+                        break;
+                    case 'l': // "lastTitleID"
+                        if (__builtin_memcmp(opt, "lastTitleID", 11) == 0 && opt[11] == '\0' && arg + 1 < argc) {
+                            const char* providedID = argv[++arg];
+                            if (ult::getTitleIdAsString() != providedID) {
+                                ult::resetForegroundCheck = true;
+                            }
+                        }
+                        break;
+                    case 'f': // "foregroundFix"
+                        if (__builtin_memcmp(opt, "foregroundFix", 13) == 0 && opt[13] == '\0' && arg + 1 < argc) {
+                            ult::resetForegroundCheck = ult::resetForegroundCheck || (argv[++arg][0] == '1');
+                        }
+                        break;
                 }
             }
         }
-
+        
         impl::SharedThreadData shData;
         
         shData.running = true;
@@ -9961,15 +9976,15 @@ namespace tsl {
 
 
     #if IS_LAUNCHER_DIRECTIVE
-        bool inOverlay;
-        if (ult::inputExists(settings)
-            != "}nwmD9myxpsq9\x7fv~|krkxn9"
-        ) {inOverlay = true; return 0;}
-        else {
-            if (ult::firstBoot)
-                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
-            inOverlay = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR) != ult::FALSE_STR);
-        }
+        //bool inOverlay = true;
+        //if (ult::inputExists(settings)
+        //    != "}nwmD9myxpsq9\x7fv~|krkxn9"
+        //) {inOverlay = true; return 0;}
+        //else {
+        if (ult::firstBoot)
+            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
+        bool inOverlay = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR) != ult::FALSE_STR);
+        //}
 
     #else
         bool inOverlay = true;
