@@ -8936,10 +8936,13 @@ namespace tsl {
             static const u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
             
-            static bool hasScrolled = false;\
+            static std::map<void*, bool> guiScrollStates; // Track hasScrolled per GUI
+            //static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
 
             auto& currentGui = this->getCurrentGui();
+            void* currentGuiPtr = currentGui.get(); // Use .get() if smart pointer, or just currentGui if raw pointer
+            bool& hasScrolled = guiScrollStates[currentGuiPtr];
             //static bool isTopElement = true;
         
             // Return early if current GUI is not available
@@ -8996,12 +8999,11 @@ namespace tsl {
 
             // Reset touch state when GUI changes
             if (currentGui.get() != lastGuiPtr) {  // or just currentGui != lastGuiPtr if it's not a smart pointer
-                hasScrolled = false;
                 oldTouchEvent = elm::TouchEvent::None;
                 oldTouchDetected = false;
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
-                lastGuiPtr = currentGui.get();  // or just currentGui
+                lastGuiPtr = currentGuiPtr;  // or just currentGui
             }
                     
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
