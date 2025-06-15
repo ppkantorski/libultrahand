@@ -6824,7 +6824,7 @@ namespace tsl {
                 //const std::string& value = this->m_value;
                 s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
                 s32 yPosition = this->getY() + 45 - yOffset;
-                s32 fontSize = 20;
+                const s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
         
@@ -8816,6 +8816,9 @@ namespace tsl {
         
         bool m_closeOnExit;
         
+        bool isNavigatingBackwards = false;
+        bool justNavigated = false;
+
         /**
          * @brief Initializes the Renderer
          *
@@ -8936,13 +8939,10 @@ namespace tsl {
             static const u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
             
-            static std::map<void*, bool> guiScrollStates; // Track hasScrolled per GUI
-            //static bool hasScrolled = false;
+            static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
 
             auto& currentGui = this->getCurrentGui();
-            void* currentGuiPtr = currentGui.get(); // Use .get() if smart pointer, or just currentGui if raw pointer
-            bool& hasScrolled = guiScrollStates[currentGuiPtr];
             //static bool isTopElement = true;
         
             // Return early if current GUI is not available
@@ -8972,9 +8972,9 @@ namespace tsl {
             if (FullMode && !deactivateOriginalFooter) {
                 if (ult::simulatedBack) {
                     ult::simulatedBack = false;
-                    ult::simulatedBackComplete = true;
                     ult::stillTouching = false;
                     this->goBack();
+                    ult::simulatedBackComplete = true;
                     return;
                 }
             } else {
@@ -8986,11 +8986,11 @@ namespace tsl {
                 if (ult::simulatedBack) {
                     keysDown |= KEY_B;
                     ult::simulatedBack = false;
-                    ult::simulatedBackComplete = true;
                 }
                 if (keysDown & KEY_B) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
+                        ult::simulatedBackComplete = true;
                     }
                     return;
                 }
@@ -8999,26 +8999,36 @@ namespace tsl {
 
             // Reset touch state when GUI changes
             if (currentGui.get() != lastGuiPtr) {  // or just currentGui != lastGuiPtr if it's not a smart pointer
+                hasScrolled = false;
                 oldTouchEvent = elm::TouchEvent::None;
                 oldTouchDetected = false;
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
-                lastGuiPtr = currentGuiPtr;  // or just currentGui
+                lastGuiPtr = currentGui.get();  // or just currentGui
             }
                     
-            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !oldTouchDetected && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
                 
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
-                    //isTopElement = true;
                 }
+            }
+            if (isNavigatingBackwards && !currentFocus && topElement && keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                currentGui->requestFocus(topElement, FocusDirection::None);
+                currentGui->markInitialFocusSet();
+                isNavigatingBackwards = false;
+                
+                // Reset navigation timing to prevent fast scrolling
+                buttonPressTime_ns = armTicksToNs(armGetSystemTick());
+                lastKeyEventTime_ns = buttonPressTime_ns;
+                singlePressHandled = false;
             }
             
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!ult::simulatedBack && ult::simulatedBackComplete && topElement) {
+                if (!(isNavigatingBackwards) && !ult::simulatedBack && ult::simulatedBackComplete && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -9040,7 +9050,7 @@ namespace tsl {
             if (currentGui != this->getCurrentGui()) return;
             
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
-        
+            
             if (hasScrolled) {
                 bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                 
@@ -9049,6 +9059,7 @@ namespace tsl {
                     buttonPressTime_ns = currentTime_ns;
                     lastKeyEventTime_ns = currentTime_ns;
                     hasScrolled = false;
+                    isNavigatingBackwards = false;
                 }
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
@@ -9268,7 +9279,7 @@ namespace tsl {
             if (this->m_guiStack.top() != nullptr && this->m_guiStack.top()->m_focusedElement != nullptr)
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
-            
+            isNavigatingBackwards = false;
             // Create the top element of the new Gui
             gui->m_topElement = gui->createUI();
 
@@ -9298,6 +9309,7 @@ namespace tsl {
          * @note The Overlay gets closes once there are no more Guis on the stack
          */
         void goBack() {
+            isNavigatingBackwards = true;
             if (!this->m_closeOnExit && this->m_guiStack.size() == 1) {
                 this->hide();
                 return;
@@ -9311,6 +9323,7 @@ namespace tsl {
         }
 
         void pop() {
+            isNavigatingBackwards = true;
             if (!this->m_guiStack.empty())
                 this->m_guiStack.pop();
         }
