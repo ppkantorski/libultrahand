@@ -143,11 +143,13 @@ int frameCount = 0;
 double elapsedTime;
 #endif
 
+
+// Custom variables
 //static bool jumpToListItem = false;
 static bool jumpToTop = false;
 static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
-
+static bool hideHidden = false;
 
 namespace tsl {
 
@@ -9649,33 +9651,45 @@ namespace tsl {
                         // Make sure this isn't a subset of the main launch combos
                         bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
-
                         if (!isMainComboMatch) {
                             std::string overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
                             if (!overlayPath.empty() && (shData->keysHeld)) {
                                 // Validate overlay file exists
                                 if (ult::isFileOrDirectory(overlayPath)) {
-                                    ult::launchingOverlay = true;
-                                    //svcSleepThread(500'000'000); // 50ms delay
-                                    // Get overlay settings
                                     std::string overlayFileName = ult::getNameFromPath(overlayPath);
-                                    std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
-                                        overlayFileName, ult::USE_LAUNCH_ARGS_STR);
-                                    std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
-                                        overlayFileName, ult::LAUNCH_ARGS_STR);
-                                    ult::removeQuotes(overlayLaunchArgs);
                                     
-                                    // Set the next overlay directly
-                                    if (useOverlayLaunchArgs == ult::TRUE_STR)
-                                        tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
-                                    else
-                                        tsl::setNextOverlay(overlayPath);
+                                    // Check if hideHidden is enabled and if this overlay is hidden
+                                    bool allowLaunch = true;
+                                    if (hideHidden) {
+                                        std::string hideStatus = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                            overlayFileName, ult::HIDE_STR);
+                                        if (hideStatus == ult::TRUE_STR) {
+                                            allowLaunch = false; // Block launch for hidden overlays when hideHidden is true
+                                        }
+                                    }
                                     
-                                    // Properly close the overlay to trigger the launch
-                                    tsl::Overlay::get()->close();
-                                    eventFire(&shData->comboEvent);
-                                    break;
-                                    // DON'T set shData->running = false here!
+                                    if (allowLaunch) {
+                                        ult::launchingOverlay = true;
+                                        //svcSleepThread(500'000'000); // 50ms delay
+                                        // Get overlay settings
+                                        std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                            overlayFileName, ult::USE_LAUNCH_ARGS_STR);
+                                        std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                            overlayFileName, ult::LAUNCH_ARGS_STR);
+                                        ult::removeQuotes(overlayLaunchArgs);
+                                        
+                                        // Set the next overlay directly
+                                        if (useOverlayLaunchArgs == ult::TRUE_STR)
+                                            tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
+                                        else
+                                            tsl::setNextOverlay(overlayPath);
+                                        
+                                        // Properly close the overlay to trigger the launch
+                                        tsl::Overlay::get()->close();
+                                        eventFire(&shData->comboEvent);
+                                        break;
+                                        // DON'T set shData->running = false here!
+                                    }
                                 }
                             }
                         }
