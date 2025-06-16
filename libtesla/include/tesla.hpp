@@ -5345,6 +5345,7 @@ namespace tsl {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
                     s_hasValidFrame = false;
+                    s_lastFrameOffset = 0.0f;
                     return;
                 }
 
@@ -5518,7 +5519,7 @@ namespace tsl {
                 // NEW: Handle pending jump to specific item
                 if (m_pendingJump && !delayedHandle) {
                     delayedHandle = true;
-                    return handleJumpToItem(handleJumpToItem(oldFocus));
+                    return handleJumpToItem(oldFocus);
                 } else if (m_pendingJump) {
                     m_pendingJump = false;
                     delayedHandle = false;
@@ -5672,7 +5673,12 @@ namespace tsl {
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
                 const s32 height = getHeight();
-                
+                s32 actualContentBottom = 0;
+                if (!m_items.empty()) {
+                    Element* lastItem = m_items.back();
+                    actualContentBottom = lastItem->getBottomBound() - getTopBound();
+                }
+
                 renderer->enableScissoring(getLeftBound(), topBound, getWidth() + 8, height + 4);
             
                 // Use cached offset for positioning
@@ -5685,8 +5691,9 @@ namespace tsl {
                 
                 renderer->disableScissoring();
                 
-                if (m_listHeight > height) {
+                if (m_listHeight-20 > height || actualContentBottom-20 > height) {  // -20 fixes the alignment
                     drawScrollbar(renderer, height);
+                    updateScrollAnimation();
                 }
             }
 
