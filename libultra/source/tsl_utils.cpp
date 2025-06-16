@@ -384,6 +384,7 @@ namespace ult {
     std::string MISCELLANEOUS = "Miscellaneous";
     std::string MENU_ITEMS = "Menu Items";
     std::string USER_GUIDE = "User Guide";
+    std::string SHOW_HIDDEN = "Show Hidden";
     std::string VERSION_LABELS = "Version Labels";
     std::string KEY_COMBO = "Key Combo";
     std::string LANGUAGE = "Language";
@@ -551,6 +552,7 @@ namespace ult {
         MISCELLANEOUS = "Miscellaneous";
         MENU_ITEMS = "Menu Items";
         USER_GUIDE = "User Guide";
+        SHOW_HIDDEN = "Show Hidden";
         VERSION_LABELS = "Version Labels";
         KEY_COMBO = "Key Combo";
         LANGUAGE = "Language";
@@ -720,6 +722,7 @@ namespace ult {
             {"MISCELLANEOUS", &MISCELLANEOUS},
             {"MENU_ITEMS", &MENU_ITEMS},
             {"USER_GUIDE", &USER_GUIDE},
+            {"SHOW_HIDDEN", &SHOW_HIDDEN},
             {"VERSION_LABELS", &VERSION_LABELS},
             {"KEY_COMBO", &KEY_COMBO},
             {"LANGUAGE", &LANGUAGE},
