@@ -9457,14 +9457,29 @@ namespace tsl {
         static void parseOverlaySettings() {
             hlp::ini::IniData parsedConfig = hlp::ini::readOverlaySettings(ULTRAHAND_CONFIG_FILE);
             
-            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR]); // CUSTOM MODIFICATION
-            if (decodedKeys)
+            // Get combo string and check if it's valid before decoding
+            std::string comboStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR];
+            ult::removeQuotes(comboStr);
+            
+            u64 decodedKeys = 0;
+            if (!comboStr.empty()) {
+                decodedKeys = hlp::comboStringToKeys(comboStr);
+            }
+            
+            if (decodedKeys) {
                 tsl::cfg::launchCombo = decodedKeys;
-            else {
+            } else {
+                // Try Tesla config as fallback
                 parsedConfig = hlp::ini::readOverlaySettings(TESLA_CONFIG_FILE);
-                decodedKeys = hlp::comboStringToKeys(parsedConfig["tesla"][ult::KEY_COMBO_STR]);
-                if (decodedKeys)
-                    tsl::cfg::launchCombo = decodedKeys;
+                comboStr = parsedConfig["tesla"][ult::KEY_COMBO_STR];
+                ult::removeQuotes(comboStr);
+                
+                if (!comboStr.empty()) {
+                    decodedKeys = hlp::comboStringToKeys(comboStr);
+                    if (decodedKeys) {
+                        tsl::cfg::launchCombo = decodedKeys;
+                    }
+                }
             }
             
             #if USING_WIDGET_DIRECTIVE
@@ -9490,7 +9505,6 @@ namespace tsl {
             ult::removeQuotes(hideSOCTempStr);
             ult::hideSOCTemp = hideSOCTempStr != ult::FALSE_STR;
             #endif
-            
         }
 
         /**
