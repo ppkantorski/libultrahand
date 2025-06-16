@@ -5298,6 +5298,7 @@ namespace tsl {
             Color m_color;
         };
 
+
         class ListItem; // forward declaration
 
         static std::vector<Element*> s_lastFrameItems;
@@ -5313,8 +5314,9 @@ namespace tsl {
                 m_isItem = false;
             }
             virtual ~List() {
-                clearItems();
-                if (s_cachedInstanceId == m_instanceId) {
+                
+                if (s_cachedInstanceId == m_instanceId && lastOverlayName.empty() ) {
+                    clearItems();
                     clearStaticCache();
                 }
             }
@@ -5331,12 +5333,12 @@ namespace tsl {
                 if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
-                static int tryCount = 0;
-                if (m_pendingJump && lastOverlayName != "" && tryCount < 1) {
-                    tryCount++;
+                static bool checkOnce = true;
+                if (m_pendingJump && !s_hasValidFrame && !lastOverlayName.empty() && checkOnce) {
+                    checkOnce = false;
                     return;
                 } else {
-                    tryCount = 0;
+                    checkOnce = true;
                 }
 
                 if (m_pendingJump && s_hasValidFrame) {
@@ -6470,11 +6472,11 @@ namespace tsl {
         
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
-                    renderer->drawStringWithColoredSections(m_text, {ult::STAR_SYMBOL + "  "}, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_text, {ult::STAR_SYMBOL}, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor)),
                         a(m_focused ? starColor : selectionStarColor));
                 } else {
-                    drawTruncatedText(renderer, yOffset, useClickTextColor);
+                    drawTruncatedText(renderer, yOffset, useClickTextColor, {ult::STAR_SYMBOL});
                 }
         
                 if (!m_value.empty()) [[likely]] {
@@ -6634,15 +6636,17 @@ namespace tsl {
                 }
             }
         
-            void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+            void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
                 if (m_focused) [[likely]] {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
-                    renderer->drawString(m_scrollText, false, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23, a(selectedTextColor));
+                    //renderer->drawString(m_scrollText, false, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23, a(selectedTextColor));
+                    renderer->drawStringWithColoredSections(m_scrollText, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
+                        a(useClickTextColor ? clickTextColor : defaultTextColor), a(starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
-                    renderer->drawString(m_ellipsisText, false, getX() + 19, getY() + 45 - yOffset, 23,
-                        a(useClickTextColor ? clickTextColor : defaultTextColor));
+                    renderer->drawStringWithColoredSections(m_ellipsisText, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
+                        a(useClickTextColor ? clickTextColor : defaultTextColor), a(starColor));
                 }
             }
         
@@ -9800,80 +9804,76 @@ namespace tsl {
     static void pop() {
         Overlay::get()->pop();
     }
-
+        
     
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
-        bool hasSkipCombo = origArgs.find("--skipCombo") != std::string::npos;
-        
-        char buffer[1024]; // Adjust size as needed
+        char buffer[1024];
         char* p = buffer;
         
-        // Store the filename in a string to keep it alive
+        // Store filename and copy it
         std::string filenameStr = ult::getNameFromPath(ovlPath);
-        // Check if filename is "ovlmenu" and use g_overlayFilename instead
-        //if (filenameStr == "ovlmenu.ovl") {
-        //    filenameStr = g_overlayFilename;
-        //}
-
         const char* filename = filenameStr.c_str();
-        
-        // Copy filename
         while (*filename) *p++ = *filename++;
         *p++ = ' ';
         
-        // Copy origArgs while filtering --foregroundFix and --lastTitleID
+        // Single-pass argument filtering
         const char* src = origArgs.c_str();
         const char* end = src + origArgs.length();
+        bool hasSkipCombo = false;
         
         while (src < end) {
-            const char* fgPos = strstr(src, "--foregroundFix");
-            const char* titlePos = strstr(src, "--lastTitleID");
-            
-            // Find the earliest flag to remove
-            const char* nextFlag = nullptr;
-            if (fgPos && titlePos) {
-                nextFlag = (fgPos < titlePos) ? fgPos : titlePos;
-            } else if (fgPos) {
-                nextFlag = fgPos;
-            } else if (titlePos) {
-                nextFlag = titlePos;
+            // Skip whitespace
+            while (src < end && *src == ' ') {
+                *p++ = *src++;
             }
             
-            if (nextFlag) {
-                // Copy before flag
-                while (src < nextFlag) *p++ = *src++;
+            if (src >= end) break;
+            
+            // Check for flags to filter/detect
+            if (src[0] == '-' && src[1] == '-') {
                 
-                if (nextFlag == fgPos) {
-                    // Skip "--foregroundFix X"
-                    src = nextFlag + 15; // length of "--foregroundFix"
-                    while (src < end && *src == ' ') src++; // Skip spaces
-                    if (src < end && (*src == '0' || *src == '1')) src++; // Skip single digit
-                } else {
-                    // Skip "--lastTitleID XXXXXXXXXXXXXXXX"
-                    src = nextFlag + 13; // length of "--lastTitleID"
-                    while (src < end && *src == ' ') src++; // Skip spaces
-                    while (src < end && *src != ' ') src++; // Skip title ID value
+                // Check what flag this is
+                if (__builtin_strncmp(src, "--skipCombo", 11) == 0 && (src[11] == ' ' || src[11] == '\0')) {
+                    hasSkipCombo = true;
+                    // Copy this flag
+                    while (src < end && *src != ' ') *p++ = *src++;
                 }
-            } else {
-                // No more flags to filter, copy rest
-                while (src < end) *p++ = *src++;
-                break;
+                else if (__builtin_strncmp(src, "--foregroundFix", 15) == 0) {
+                    // Skip this flag and its value
+                    src += 15;
+                    while (src < end && *src == ' ') src++; // Skip spaces
+                    if (src < end && (*src == '0' || *src == '1')) src++; // Skip value
+                }
+                else if (__builtin_strncmp(src, "--lastTitleID", 13) == 0) {
+                    // Skip this flag and its value
+                    src += 13;
+                    while (src < end && *src == ' ') src++; // Skip spaces
+                    while (src < end && *src != ' ' && *src != '\0') src++; // Skip title ID
+                }
+                else {
+                    // Copy unknown flag
+                    while (src < end && *src != ' ') *p++ = *src++;
+                }
+            }
+            else {
+                // Copy regular argument
+                while (src < end && *src != ' ') *p++ = *src++;
             }
         }
         
-        // Add flags
+        // Add required flags
         if (!hasSkipCombo) {
-            __builtin_memcpy(p, " --skipCombo", 12);
+            memcpy(p, " --skipCombo", 12);
             p += 12;
         }
         
         // Add foreground flag
-        __builtin_memcpy(p, " --foregroundFix ", 17);
+        memcpy(p, " --foregroundFix ", 17);
         p += 17;
         *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
         
         // Add last title ID
-        __builtin_memcpy(p, " --lastTitleID ", 15);
+        memcpy(p, " --lastTitleID ", 15);
         p += 15;
         const char* titleId = ult::lastTitleID.c_str();
         while (*titleId) *p++ = *titleId++;
@@ -9884,7 +9884,21 @@ namespace tsl {
     }
     
     
+
+    struct option_entry {
+        const char* name;
+        u8 len;
+        u8 action;
+    };
     
+    static const struct option_entry options[] = {
+        {"direct", 6, 1},
+        {"skipCombo", 9, 2},
+        {"lastTitleID", 11, 3}, 
+        {"foregroundFix", 13, 4}
+    };
+
+
     /**
      * @brief libtesla's main function
      * @note Call it directly from main passing in argc and argv and returning it e.g `return tsl::loop<OverlayTest>(argc, argv);`
@@ -9911,44 +9925,52 @@ namespace tsl {
         }
 
         bool skipCombo = false;
+        
         for (u8 arg = 0; arg < argc; arg++) {
             const char* s = argv[arg];
-        
-            if (s[0] == '-' && s[1] == '-') {
-                const char* opt = s + 2;
-                
-                // Check first character, then length implicitly through comparison
-                switch (opt[0]) {
-                    case 'd': // "direct"
-                        if (__builtin_memcmp(opt, "direct", 6) == 0 && opt[6] == '\0') {
+            
+            if (s[0] != '-' || s[1] != '-') continue;
+            
+            const char* opt = s + 2;
+            
+            // Check each option directly - memcmp handles both length and content
+            for (u8 i = 0; i < 4; i++) {
+                // memcmp returns 0 for exact match, and checks the null terminator position
+                if (__builtin_memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
+                    
+                    switch (options[i].action) {
+                        case 1: // direct
                             g_overlayFilename = "";
                             lastOverlayName = "";
                             lastOverlayVersion = "";
-                        }
-                        break;
-                    case 's': // "skipCombo"
-                        if (__builtin_memcmp(opt, "skipCombo", 9) == 0 && opt[9] == '\0') {
+                            break;
+                            
+                        case 2: // skipCombo  
                             skipCombo = true;
                             ult::firstBoot = false;
-                        }
-                        break;
-                    case 'l': // "lastTitleID"
-                        if (__builtin_memcmp(opt, "lastTitleID", 11) == 0 && opt[11] == '\0' && arg + 1 < argc) {
-                            const char* providedID = argv[++arg];
-                            if (ult::getTitleIdAsString() != providedID) {
-                                ult::resetForegroundCheck = true;
+                            break;
+                            
+                        case 3: // lastTitleID
+                            if (++arg < argc) {
+                                const char* providedID = argv[arg];
+                                if (ult::getTitleIdAsString() != providedID) {
+                                    ult::resetForegroundCheck = true;
+                                }
                             }
-                        }
-                        break;
-                    case 'f': // "foregroundFix"
-                        if (__builtin_memcmp(opt, "foregroundFix", 13) == 0 && opt[13] == '\0' && arg + 1 < argc) {
-                            ult::resetForegroundCheck = ult::resetForegroundCheck || (argv[++arg][0] == '1');
-                        }
-                        break;
+                            break;
+                            
+                        case 4: // foregroundFix
+                            if (++arg < argc) {
+                                ult::resetForegroundCheck = ult::resetForegroundCheck || 
+                                                           (argv[arg][0] == '1');
+                            }
+                            break;
+                    }
+                    break; // Exit loop once found
                 }
             }
         }
-        
+
         impl::SharedThreadData shData;
         
         shData.running = true;
