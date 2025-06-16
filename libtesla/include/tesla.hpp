@@ -5306,6 +5306,16 @@ namespace tsl {
         static float s_lastFrameOffset = 0.0f;
         static size_t s_cachedInstanceId = 0;
         static size_t s_nextInstanceId = 1; 
+        static s32 s_cachedTopBound = 0;
+        static s32 s_cachedBottomBound = 0;
+        static s32 s_cachedHeight = 0;
+        static s32 s_cachedListHeight = 0;
+        static s32 s_cachedActualContentBottom = 0;
+        static bool s_shouldDrawScrollbar = false;
+        static u32 s_cachedScrollbarHeight = 0;
+        static u32 s_cachedScrollbarOffset = 0;
+        static u32 s_cachedScrollbarX = 0;
+        static u32 s_cachedScrollbarY = 0;
 
         class List : public Element {
         
@@ -5660,40 +5670,75 @@ namespace tsl {
                 s_hasValidFrame = false;
                 s_lastFrameOffset = 0.0f;
                 s_cachedInstanceId = 0;
+                s_cachedTopBound = 0;
+                s_cachedBottomBound = 0;
+                s_cachedHeight = 0;
+                s_cachedListHeight = 0;
+                s_cachedActualContentBottom = 0;
+                s_shouldDrawScrollbar = false;
+                s_cachedScrollbarHeight = 0;
+                s_cachedScrollbarOffset = 0;
+                s_cachedScrollbarX = 0;
+                s_cachedScrollbarY = 0;
             }
         
             void cacheCurrentFrame() {
-                s_lastFrameItems = m_items; // Cache this instance's items
+                s_lastFrameItems = m_items;
                 s_lastFrameOffset = m_offset;
-                s_cachedInstanceId = m_instanceId; // Mark which instance this cache belongs to
-                s_hasValidFrame = true;
-            }
-            
-            void renderCachedFrame(gfx::Renderer* renderer) {
-                const s32 topBound = getTopBound();
-                const s32 bottomBound = getBottomBound();
-                const s32 height = getHeight();
+                s_cachedInstanceId = m_instanceId;
+                
+                // Cache all the bounds and calculations
+                s_cachedTopBound = getTopBound();
+                s_cachedBottomBound = getBottomBound();
+                s_cachedHeight = getHeight();
+                s_cachedListHeight = m_listHeight;
+                
                 s32 actualContentBottom = 0;
                 if (!m_items.empty()) {
                     Element* lastItem = m_items.back();
-                    actualContentBottom = lastItem->getBottomBound() - getTopBound();
+                    actualContentBottom = lastItem->getBottomBound() - s_cachedTopBound;
                 }
-
-                renderer->enableScissoring(getLeftBound(), topBound, getWidth() + 8, height + 4);
+                s_cachedActualContentBottom = actualContentBottom;
+                
+                // Cache scrollbar parameters
+                s_shouldDrawScrollbar = (s_cachedListHeight-20 > s_cachedHeight || s_cachedActualContentBottom-20 > s_cachedHeight);
+                
+                if (s_shouldDrawScrollbar) {
+                    const float viewHeight = static_cast<float>(s_cachedHeight - 10);
+                    const float totalHeight = static_cast<float>(s_cachedListHeight-22);
+                    const u32 maxScrollableHeight = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
+                    
+                    s_cachedScrollbarHeight = std::min(static_cast<u32>((viewHeight * viewHeight) / totalHeight), 
+                                                     static_cast<u32>(viewHeight));
+                    
+                    s_cachedScrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - s_cachedScrollbarHeight)), 
+                                                     static_cast<u32>(viewHeight - s_cachedScrollbarHeight)) + 4;
             
-                // Use cached offset for positioning
+                    s_cachedScrollbarX = getRightBound() + 20;
+                    s_cachedScrollbarY = getY() + s_cachedScrollbarOffset + 2;
+                }
+                
+                s_hasValidFrame = true;
+            }
+                        
+            void renderCachedFrame(gfx::Renderer* renderer) {
+                renderer->enableScissoring(getLeftBound(), s_cachedTopBound, getWidth() + 8, s_cachedHeight + 4);
+            
                 for (Element* entry : s_lastFrameItems) {
-                    // Adjust positioning based on cached offset
-                    if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
+                    if (entry->getBottomBound() > s_cachedTopBound && entry->getTopBound() < s_cachedBottomBound) {
                         entry->frame(renderer);
                     }
                 }
                 
                 renderer->disableScissoring();
                 
-                if (m_listHeight-20 > height || actualContentBottom-20 > height) {  // -20 fixes the alignment
-                    drawScrollbar(renderer, height);
-                    updateScrollAnimation();
+                m_offset = s_lastFrameOffset;
+                
+                // Draw cached scrollbar
+                if (s_shouldDrawScrollbar) {
+                    renderer->drawRect(s_cachedScrollbarX, s_cachedScrollbarY, 5, s_cachedScrollbarHeight, a(trackBarColor));
+                    renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY, 2, true, a(trackBarColor));
+                    renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY + s_cachedScrollbarHeight, 2, true, a(trackBarColor));
                 }
             }
 
