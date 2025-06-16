@@ -321,6 +321,7 @@ namespace ult {
     extern std::string MISCELLANEOUS;
     extern std::string MENU_ITEMS;
     extern std::string USER_GUIDE;
+    extern std::string SHOW_HIDDEN;
     extern std::string VERSION_LABELS;
     extern std::string KEY_COMBO;
     extern std::string LANGUAGE;
