@@ -151,8 +151,8 @@ static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
 static bool hideHidden = false;
 static std::string g_overlayFilename;;
-static std::string lastOverlayName;
-static std::string lastOverlayVersion;
+static std::string jumpItemName;
+static std::string jumpItemValue;
 
 
 namespace tsl {
@@ -5325,7 +5325,7 @@ namespace tsl {
             }
             virtual ~List() {
                 
-                if (s_cachedInstanceId == m_instanceId && lastOverlayName.empty() ) {
+                if (s_cachedInstanceId == m_instanceId && jumpItemName.empty() ) {
                     clearItems();
                     clearStaticCache();
                 }
@@ -5344,7 +5344,7 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 static bool checkOnce = true;
-                if (m_pendingJump && !s_hasValidFrame && !lastOverlayName.empty() && checkOnce) {
+                if (m_pendingJump && !s_hasValidFrame && !jumpItemName.empty() && checkOnce) {
                     checkOnce = false;
                     return;
                 } else {
@@ -9992,8 +9992,8 @@ namespace tsl {
                     switch (options[i].action) {
                         case 1: // direct
                             g_overlayFilename = "";
-                            lastOverlayName = "";
-                            lastOverlayVersion = "";
+                            jumpItemName = "";
+                            jumpItemValue = "";
                             break;
                             
                         case 2: // skipCombo  
