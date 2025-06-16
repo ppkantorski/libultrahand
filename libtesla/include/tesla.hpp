@@ -5354,8 +5354,7 @@ namespace tsl {
                 if (m_pendingJump && s_hasValidFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    s_hasValidFrame = false;
-                    s_lastFrameOffset = 0.0f;
+                    clearStaticCache();
                     return;
                 }
 
@@ -5732,7 +5731,7 @@ namespace tsl {
                 
                 renderer->disableScissoring();
                 
-                m_offset = s_lastFrameOffset;
+                //m_offset = s_lastFrameOffset;
                 
                 // Draw cached scrollbar
                 if (s_shouldDrawScrollbar) {
