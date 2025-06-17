@@ -2295,6 +2295,16 @@ namespace tsl {
                 }
             }
 
+            // Global glyph cache - shared across all text rendering methods
+            inline static std::unordered_map<u64, Glyph> s_globalGlyphCache;
+            
+            // Static initialization for the glyph cache
+            inline static bool initializeGlyphCache() {
+                s_globalGlyphCache.reserve(1024); // Reserve space for 1024 glyphs
+                return true;
+            }
+            inline static bool s_glyphCacheInitialized = initializeGlyphCache();
+            
             // Helper function to generate consistent cache keys
             inline u64 generateGlyphCacheKey(u32 character, bool monospace, u32 fontSize, stbtt_fontinfo* font) {
                 // Use a hash of the font pointer for better distribution
@@ -2312,6 +2322,21 @@ namespace tsl {
                        (fontHash & 0xFFFF);
             }
             
+            // Optional: Method to clear the glyph cache if needed
+            inline void clearGlyphCache() {
+                s_globalGlyphCache.clear();
+            }
+            
+            // Optional: Method to reserve cache space for better performance
+            inline void reserveGlyphCache(size_t capacity) {
+                s_globalGlyphCache.reserve(capacity);
+            }
+            
+            // Optional: Get current cache size for monitoring
+            inline size_t getGlyphCacheSize() const {
+                return s_globalGlyphCache.size();
+            }
+
             // Optimized drawString that returns EXACTLY the same values as original
             inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, const s32 x, const s32 y, const u32 fontSize, const Color& color, const ssize_t maxWidth = 0) {
                 
@@ -2376,9 +2401,8 @@ namespace tsl {
                 float scaledFontSize;
                 s32 yAdvance = 0;
                 
-                // Static glyph cache
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-                auto cacheIt = s_glyphCache.end();
+                // Use global glyph cache
+                auto cacheIt = s_globalGlyphCache.end();
             
                 // Ultra-fast ASCII detection for the entire string
                 const size_t strLen = stringPtr->size();
@@ -2454,11 +2478,11 @@ namespace tsl {
                     key = generateGlyphCacheKey(currCharacter, monospace, fontSize, selectedFont);
                     
                     // Check cache for the glyph
-                    cacheIt = s_glyphCache.find(key);
+                    cacheIt = s_globalGlyphCache.find(key);
                     
                     // If glyph not found, create and cache it
-                    if (cacheIt == s_glyphCache.end()) {
-                        glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
+                    if (cacheIt == s_globalGlyphCache.end()) {
+                        glyph = &s_globalGlyphCache.emplace(key, Glyph()).first->second;
                         glyph->currFont = selectedFont;  // Use the already selected font
             
                         scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
@@ -2670,9 +2694,6 @@ namespace tsl {
                 //    return { 0, 0 };
                 //}
             
-                // Static glyph cache (shared across all calls)
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-                
                 // Pre-declare ALL variables outside loops for maximum optimization
                 const size_t strLen = text.size();
                 float maxX = x;
@@ -2808,11 +2829,11 @@ namespace tsl {
                     key = generateGlyphCacheKey(currCharacter, monospace, fontSize, selectedFont);
             
                     // Check cache for the glyph
-                    it = s_glyphCache.find(key);
+                    it = s_globalGlyphCache.find(key);
             
                     // If glyph not found, create and cache it
-                    if (it == s_glyphCache.end()) [[unlikely]] {
-                        insertResult = s_glyphCache.emplace(key, Glyph());
+                    if (it == s_globalGlyphCache.end()) [[unlikely]] {
+                        insertResult = s_globalGlyphCache.emplace(key, Glyph());
                         glyph = &insertResult.first->second;
                         
                         glyph->currFont = selectedFont;
@@ -2905,14 +2926,6 @@ namespace tsl {
                 float currX = x;
                 float currY = y;
                 
-                // Static glyph cache (shared)
-                static std::unordered_map<u64, Glyph> s_glyphCache;
-                static bool s_cacheInitialized = false;
-                if (!s_cacheInitialized) [[unlikely]] {
-                    s_glyphCache.reserve(512);
-                    s_cacheInitialized = true;
-                }
-                
                 // String processing setup
                 const char* strPtr = text.data();
                 const char* const strEnd = strPtr + text.length();
@@ -2946,11 +2959,11 @@ namespace tsl {
                     if (foundMatch) {
                         // Render any accumulated normal text
                         if (strPtr > currentStart) {
-                            renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor, s_glyphCache);
+                            renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor);
                         }
                         
                         // Render special symbol
-                        renderTextSegment(strPtr, matchLength, currX, currY, fontSize, specialColor, s_glyphCache);
+                        renderTextSegment(strPtr, matchLength, currX, currY, fontSize, specialColor);
                         
                         // Advance past the special symbol
                         strPtr += matchLength;
@@ -2963,14 +2976,13 @@ namespace tsl {
                 
                 // Render any remaining normal text
                 if (strPtr > currentStart) {
-                    renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor, s_glyphCache);
+                    renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor);
                 }
             }
                                 
             // Ultra-optimized text segment rendering with all variables hoisted outside loops
             inline void renderTextSegment(const char* textPtr, size_t length, float& currX, float& currY, 
-                                         const u32 fontSize, const Color& color,
-                                         std::unordered_map<u64, Glyph>& glyphCache) {
+                                         const u32 fontSize, const Color& color) {
                 
                 if (length == 0 || color.a == 0x0) return;
                 
@@ -3057,11 +3069,11 @@ namespace tsl {
                     // Generate consistent cache key
                     key = generateGlyphCacheKey(currCharacter, false, fontSize, selectedFont);
                     
-                    it = glyphCache.find(key);
+                    it = s_globalGlyphCache.find(key);
                     
-                    if (it == glyphCache.end()) [[unlikely]] {
+                    if (it == s_globalGlyphCache.end()) [[unlikely]] {
                         // Create new glyph with optimized insertion
-                        insertResult = glyphCache.emplace(key, Glyph{});
+                        insertResult = s_globalGlyphCache.emplace(key, Glyph{});
                         glyph = &insertResult.first->second;
                         
                         // Use the already selected font
@@ -3193,16 +3205,8 @@ namespace tsl {
                     currX += xAdvanceScaled;
                 }
             }
-            
+
                                     
-            /**
-             * @brief Limit a string's length and end it with "…" - Actually optimized version
-             *
-             * @param string String to truncate
-             * @param monospace Whether the font is monospace
-             * @param fontSize Size of the font
-             * @param maxLength Maximum length of the string in terms of width
-             */
             /**
              * @brief Limit a string's length and end it with "…" - Actually optimized version
              *
@@ -3871,7 +3875,7 @@ namespace tsl {
 
 
         // Helper function to calculate string width
-        static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
+        inline static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool fixedWidthNumbers = false) {
             if (originalString.empty()) {
                 return 0.0f;
             }
