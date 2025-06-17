@@ -2164,7 +2164,7 @@ namespace tsl {
             }
             
 
-            // Fixed unified drawString method with proper spacing
+            // Optimized unified drawString method with improved performance
             inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, 
                                                   const s32 x, const s32 y, const u32 fontSize, 
                                                   const Color& defaultColor, const ssize_t maxWidth = 0, 
@@ -2185,115 +2185,158 @@ namespace tsl {
                 
                 if (text.empty() || fontSize == 0) return {0, 0};
                 
-                float maxX = x, currX = x, currY = y;
                 const float maxWidthLimit = maxWidth > 0 ? x + maxWidth : std::numeric_limits<float>::max();
                 
-                // Fast ASCII check
+                // Fast ASCII check with early exit
                 bool isAsciiOnly = true;
-                for (unsigned char c : text) {
-                    if (c > 127) {
+                const char* textPtr = text.data();
+                const char* textEnd = textPtr + text.size();
+                for (const char* p = textPtr; p < textEnd; ++p) {
+                    if (static_cast<unsigned char>(*p) > 127) {
                         isAsciiOnly = false;
                         break;
                     }
                 }
                 
-                // State for highlighting
+                
+                float maxX = x, currX = x, currY = y;
                 bool inHighlight = false;
                 const Color* currentColor = &defaultColor;
                 
-                // Main character processing
-                auto itStr = text.cbegin();
-                const auto itStrEnd = text.cend();
+                // Pre-declare variables used in loops to avoid repeated allocations
+                u32 currCharacter;
+                ssize_t codepointWidth;
+                FontManager::Glyph* glyph;
+                bool symbolProcessed;
+                size_t remainingLength;
+                u32 symChar;
+                ssize_t symWidth;
+                size_t i;
                 
-                while (itStr != itStrEnd) {
-                    if (currX >= maxWidthLimit) break;
-                    
-                    // Decode character
-                    u32 currCharacter;
-                    ssize_t codepointWidth;
-                    if (isAsciiOnly) {
-                        currCharacter = static_cast<u32>(*itStr);
-                        codepointWidth = 1;
-                    } else {
-                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                        if (codepointWidth <= 0) break;
+                // Main processing loop with pointer arithmetic for ASCII optimization
+                if (isAsciiOnly && !specialSymbols) {
+                    // Fast ASCII-only path
+                    for (const char* p = textPtr; p < textEnd && currX < maxWidthLimit; ++p) {
+                        currCharacter = static_cast<u32>(*p);
+                        
+                        // Handle highlighting
+                        if (highlightColor) {
+                            if (currCharacter == '(') {
+                                inHighlight = true;
+                            } else if (currCharacter == ')') {
+                                inHighlight = false;
+                            }
+                            currentColor = (currCharacter == '(' || currCharacter == ')') ? 
+                                          &defaultColor : (inHighlight ? highlightColor : &defaultColor);
+                        }
+                        
+                        // Handle newline
+                        if (currCharacter == '\n') {
+                            maxX = std::max(currX, maxX);
+                            currX = x;
+                            currY += fontSize;
+                            continue;
+                        }
+                        
+                        // Get glyph
+                        glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        if (!glyph) continue;
+                        
+                        // Render if needed
+                        if (draw && glyph->glyphBmp && currCharacter > 32) { // Space is 32
+                            renderGlyph(glyph, currX, currY, *currentColor);
+                        }
+                        
+                        currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                     }
+                } else {
+                    // UTF-8 path with special symbols support
+                    auto itStr = text.cbegin();
+                    const auto itStrEnd = text.cend();
                     
-                    // Check for special symbols if provided
-                    bool symbolProcessed = false;
-                    if (specialSymbols && draw) {
-                        for (const auto& symbol : *specialSymbols) {
-                            if (static_cast<size_t>(itStrEnd - itStr) >= symbol.length() &&
-                                std::equal(symbol.begin(), symbol.end(), itStr)) {
-                                
-                                // Process the special symbol character by character
-                                for (size_t i = 0; i < symbol.length(); ) {
-                                    u32 symChar;
-                                    ssize_t symWidth = decode_utf8(&symChar, 
-                                        reinterpret_cast<const u8*>(&symbol[i]));
-                                    if (symWidth <= 0) break;
+                    while (itStr != itStrEnd && currX < maxWidthLimit) {
+                        // Check for special symbols first
+                        symbolProcessed = false;
+                        if (specialSymbols) {
+                            remainingLength = itStrEnd - itStr;
+                            for (const auto& symbol : *specialSymbols) {
+                                if (remainingLength >= symbol.length() &&
+                                    std::equal(symbol.begin(), symbol.end(), itStr)) {
                                     
-                                    if (symChar == '\n') {
-                                        maxX = std::max(currX, maxX);
-                                        currX = x;
-                                        currY += fontSize;
-                                    } else {
-                                        FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
-                                        if (draw && glyph && glyph->glyphBmp && !std::iswspace(symChar)) {
-                                            renderGlyph(glyph, currX, currY, *highlightColor);
+                                    // Process special symbol
+                                    for (i = 0; i < symbol.length(); ) {
+                                        symWidth = decode_utf8(&symChar, 
+                                            reinterpret_cast<const u8*>(&symbol[i]));
+                                        if (symWidth <= 0) break;
+                                        
+                                        if (symChar == '\n') {
+                                            maxX = std::max(currX, maxX);
+                                            currX = x;
+                                            currY += fontSize;
+                                        } else {
+                                            glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
+                                            if (glyph) {
+                                                if (draw && glyph->glyphBmp && symChar > 32) {
+                                                    renderGlyph(glyph, currX, currY, *highlightColor);
+                                                }
+                                                currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                                            }
                                         }
-                                        if (glyph) {
-                                            currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-                                        }
+                                        i += symWidth;
                                     }
-                                    i += symWidth;
+                                    itStr += symbol.length();
+                                    symbolProcessed = true;
+                                    break;
                                 }
-                                itStr += symbol.length();
-                                symbolProcessed = true;
-                                break;
                             }
                         }
-                    }
-                    
-                    if (symbolProcessed) continue;
-                    
-                    itStr += codepointWidth;
-                    
-                    // Handle highlighting with parentheses
-                    if (highlightColor) {
-                        if (currCharacter == '(') {
-                            inHighlight = true;
-                        } else if (currCharacter == ')') {
-                            inHighlight = false;
+                        
+                        if (symbolProcessed) continue;
+                        
+                        // Decode character
+                        if (isAsciiOnly) {
+                            currCharacter = static_cast<u32>(*itStr);
+                            codepointWidth = 1;
+                        } else {
+                            codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+                            if (codepointWidth <= 0) break;
                         }
-                        currentColor = (currCharacter == '(' || currCharacter == ')') ? 
-                                      &defaultColor : (inHighlight ? highlightColor : &defaultColor);
+                        
+                        itStr += codepointWidth;
+                        
+                        // Handle highlighting
+                        if (highlightColor) {
+                            if (currCharacter == '(') {
+                                inHighlight = true;
+                            } else if (currCharacter == ')') {
+                                inHighlight = false;
+                            }
+                            currentColor = (currCharacter == '(' || currCharacter == ')') ? 
+                                          &defaultColor : (inHighlight ? highlightColor : &defaultColor);
+                        }
+                        
+                        // Handle newline
+                        if (currCharacter == '\n') {
+                            maxX = std::max(currX, maxX);
+                            currX = x;
+                            currY += fontSize;
+                            continue;
+                        }
+                        
+                        // Get glyph
+                        glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        if (!glyph) continue;
+                        
+                        // Render if needed
+                        if (draw && glyph->glyphBmp && currCharacter > 32) {
+                            renderGlyph(glyph, currX, currY, *currentColor);
+                        }
+                        
+                        currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                     }
-                    
-                    // Handle newline
-                    if (currCharacter == '\n') {
-                        maxX = std::max(currX, maxX);
-                        currX = x;
-                        currY += fontSize;
-                        continue;
-                    }
-                    
-                    // Get glyph using shared cache
-                    FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
-                    if (!glyph) continue;
-                    
-                    // Render if drawing and not whitespace
-                    if (draw && glyph->glyphBmp && !std::iswspace(currCharacter)) {
-                        renderGlyph(glyph, currX, currY, *currentColor);
-                    }
-                    
-                    // Character advance
-                    currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                 }
                 
-                // Final maxX calculation
                 maxX = std::max(currX, maxX);
-                
                 return {static_cast<s32>(maxX - x), static_cast<s32>(currY - y)};
             }
             
