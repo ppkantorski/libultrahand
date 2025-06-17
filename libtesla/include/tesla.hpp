@@ -318,7 +318,7 @@ namespace tsl {
     static bool disableSelectionBG = false;
     static bool invertBGClickColor = false;
 
-    static size_t selectionBGAlpha = 7;
+    static size_t selectionBGAlpha = 13;
     static Color selectionBGColor = RGB888(ult::blackColor, selectionBGAlpha);
 
     static Color highlightColor1 = RGB888("2288CC");
