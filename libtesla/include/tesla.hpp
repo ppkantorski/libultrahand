@@ -2395,7 +2395,9 @@ namespace tsl {
                         }
                     }
                 }
-            
+
+                uintptr_t fontPtr;
+
                 // Main character processing loop
                 while (itStr != itStrEnd) {
                     // Early maxWidth check with pre-calculated limit
@@ -2422,24 +2424,27 @@ namespace tsl {
                         continue;
                     }
             
-                    // Calculate glyph key
-                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | static_cast<u64>(fontSize);
-            
+                    // Determine the appropriate font for the character FIRST
+                    stbtt_fontinfo* selectedFont;
+                    if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                        selectedFont = &this->m_extFont;
+                    } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                        selectedFont = &this->m_localFont;
+                    } else {
+                        selectedFont = &this->m_stdFont;
+                    }
+                    
+                    // Calculate glyph key with font information
+                    fontPtr = reinterpret_cast<uintptr_t>(selectedFont);
+                    key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(monospace) << 31) | static_cast<u64>(fontSize) | (fontPtr & 0xFFFF);
+                    
                     // Check cache for the glyph
                     cacheIt = s_glyphCache.find(key);
-            
+                    
                     // If glyph not found, create and cache it
                     if (cacheIt == s_glyphCache.end()) {
                         glyph = &s_glyphCache.emplace(key, Glyph()).first->second;
-                        
-                        // Determine the appropriate font for the character
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
+                        glyph->currFont = selectedFont;  // Use the already selected font
             
                         scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
                         glyph->currFontSize = scaledFontSize;
@@ -2878,7 +2883,7 @@ namespace tsl {
                 return {static_cast<s32>(maxX - x), static_cast<s32>(currY - y + fontSize)};
             }
 
-                                    
+                                                
             inline void drawStringWithColoredSections(const std::string& text, const std::vector<std::string>& specialSymbols, s32 x, const s32 y, const u32 fontSize, const Color& defaultColor, const Color& specialColor) {
                 // Early exits
                 //if (text.empty() || fontSize <= 0) [[unlikely]] {
@@ -2910,7 +2915,7 @@ namespace tsl {
                 float currX = x;
                 float currY = y;
                 
-                // Pre-calculate constants
+                // Pre-calculate constants - removed font info from keyBase since we'll add it per-character
                 const u64 keyBase = (static_cast<u64>(false) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
                 
                 // Static glyph cache (shared)
@@ -2929,7 +2934,7 @@ namespace tsl {
                 bool foundMatch;
                 size_t matchLength;
                 size_t symLen;
-
+            
                 // Main processing loop
                 while (strPtr < strEnd) {
                     // Check for special symbol matches at current position
@@ -2974,8 +2979,8 @@ namespace tsl {
                     renderTextSegment(currentStart, strPtr - currentStart, currX, currY, fontSize, defaultColor, keyBase, s_glyphCache);
                 }
             }
-                        
-             // Ultra-optimized text segment rendering with all variables hoisted outside loops
+                                
+            // Ultra-optimized text segment rendering with all variables hoisted outside loops
             inline void renderTextSegment(const char* textPtr, size_t length, float& currX, float& currY, 
                                          const u32 fontSize, const Color& color, const u64 keyBase,
                                          std::unordered_map<u64, Glyph>& glyphCache) {
@@ -2993,6 +2998,10 @@ namespace tsl {
                 Glyph* glyph;
                 std::unordered_map<u64, Glyph>::iterator it;
                 std::pair<std::unordered_map<u64, Glyph>::iterator, bool> insertResult;
+                
+                // Font selection variables
+                stbtt_fontinfo* selectedFont;
+                uintptr_t fontPtr;
                 
                 // Font and glyph creation variables
                 float scaledFontSize;
@@ -3050,8 +3059,19 @@ namespace tsl {
                         continue;
                     }
                     
-                    // Glyph lookup with pre-computed key
-                    key = (static_cast<u64>(currCharacter) << 32) | keyBase;
+                    // Font selection logic - inline to avoid helper method
+                    if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
+                        selectedFont = &this->m_extFont;
+                    } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
+                        selectedFont = &this->m_localFont;
+                    } else {
+                        selectedFont = &this->m_stdFont;
+                    }
+                    
+                    // Include font information in cache key
+                    fontPtr = reinterpret_cast<uintptr_t>(selectedFont);
+                    key = (static_cast<u64>(currCharacter) << 32) | keyBase | (fontPtr & 0xFFFF);
+                    
                     it = glyphCache.find(key);
                     
                     if (it == glyphCache.end()) [[unlikely]] {
@@ -3059,14 +3079,8 @@ namespace tsl {
                         insertResult = glyphCache.emplace(key, Glyph{});
                         glyph = &insertResult.first->second;
                         
-                        // Font selection (unchanged logic but using pre-declared variables)
-                        if (stbtt_FindGlyphIndex(&this->m_extFont, currCharacter)) {
-                            glyph->currFont = &this->m_extFont;
-                        } else if (this->m_hasLocalFont && stbtt_FindGlyphIndex(&this->m_stdFont, currCharacter) == 0) {
-                            glyph->currFont = &this->m_localFont;
-                        } else {
-                            glyph->currFont = &this->m_stdFont;
-                        }
+                        // Use the already selected font
+                        glyph->currFont = selectedFont;
             
                         scaledFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
                         glyph->currFontSize = scaledFontSize;
@@ -3869,7 +3883,9 @@ namespace tsl {
                 return 0.0f;
             }
         
-            static const stbtt_fontinfo& font = tsl::gfx::Renderer::get().getStandardFont();
+            // Get renderer instance to access all fonts
+            auto& renderer = tsl::gfx::Renderer::get();
+            
             float maxWidth = 0.0f;
             float currentLineWidth = 0.0f;
             ssize_t codepointWidth;
@@ -3883,7 +3899,13 @@ namespace tsl {
             u64 key = 0;
             Renderer::Glyph* glyph = nullptr;
             auto it = s_glyphCache.end();
-        
+            
+            // Font selection variables
+            stbtt_fontinfo* selectedFont;
+            uintptr_t fontPtr;
+            
+            float kernAdvance;
+
             while (itStr != itStrEnd) {
                 // Decode UTF-8 codepoint
                 codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
@@ -3904,8 +3926,21 @@ namespace tsl {
                     continue;
                 }
         
-                // Calculate glyph key
-                key = (static_cast<u64>(currCharacter) << 32) | (static_cast<u64>(fixedWidthNumbers) << 31) | (static_cast<u64>(std::bit_cast<u32>(fontSize)));
+                // Font selection logic - same as in rendering functions
+                if (stbtt_FindGlyphIndex(&renderer.m_extFont, currCharacter)) {
+                    selectedFont = &renderer.m_extFont;
+                } else if (renderer.m_hasLocalFont && stbtt_FindGlyphIndex(&renderer.m_stdFont, currCharacter) == 0) {
+                    selectedFont = &renderer.m_localFont;
+                } else {
+                    selectedFont = &renderer.m_stdFont;
+                }
+        
+                // Calculate glyph key with font information
+                fontPtr = reinterpret_cast<uintptr_t>(selectedFont);
+                key = (static_cast<u64>(currCharacter) << 32) | 
+                      (static_cast<u64>(fixedWidthNumbers) << 31) | 
+                      (static_cast<u64>(std::bit_cast<u32>(fontSize))) | 
+                      (fontPtr & 0xFFFF);
         
                 // Check cache for the glyph
                 it = s_glyphCache.find(key);
@@ -3914,8 +3949,8 @@ namespace tsl {
                 if (it == s_glyphCache.end()) {
                     glyph = &s_glyphCache.emplace(key, Renderer::Glyph()).first->second;
         
-                    // Use const_cast to handle const font
-                    glyph->currFont = const_cast<stbtt_fontinfo*>(&font);
+                    // Use the selected font
+                    glyph->currFont = selectedFont;
                     glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
                     stbtt_GetCodepointHMetrics(glyph->currFont, currCharacter, &glyph->xAdvance, nullptr);
                 } else {
@@ -3923,7 +3958,7 @@ namespace tsl {
                 }
         
                 if (prevCharacter) {
-                    float kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
+                    kernAdvance = stbtt_GetCodepointKernAdvance(glyph->currFont, prevCharacter, currCharacter);
                     currentLineWidth += kernAdvance * glyph->currFontSize;
                 }
         
