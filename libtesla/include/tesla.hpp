@@ -5781,15 +5781,19 @@ namespace tsl {
                 
                 resetNavigationState();
                 
+                // Save current offset to prevent scroll jumping
+                float savedOffset = m_offset;
+                float savedNextOffset = m_nextOffset;
+                
                 // Try to focus items starting from the calculated index
                 for (size_t i = startIndex; i < m_items.size(); ++i) {
                     if (!m_items[i]->isTable()) {
                         Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
                             m_focusedIndex = i;
-                            // Don't immediately update scroll - let it stay where it is
-                            // Only update if the item is not visible
-                            updateScrollOffset();
+                            // Restore the scroll position to prevent jumping
+                            m_offset = savedOffset;
+                            m_nextOffset = savedNextOffset;
                             return newFocus;
                         }
                     }
@@ -5801,7 +5805,9 @@ namespace tsl {
                         Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
                             m_focusedIndex = i;
-                            updateScrollOffset();
+                            // Restore the scroll position to prevent jumping
+                            m_offset = savedOffset;
+                            m_nextOffset = savedNextOffset;
                             return newFocus;
                         }
                     }
