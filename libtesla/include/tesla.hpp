@@ -5992,15 +5992,17 @@ namespace tsl {
                 // Find the next item in the list
                 size_t nextIndex = m_focusedIndex + 1;
                 
+                s32 tableTop, tableBottom, viewBottom;
+
                 // Skip to find next item (table or focusable)
                 while (nextIndex < m_items.size()) {
                     Element* item = m_items[nextIndex];
                     
                     if (item->isTable()) {
                         // Found a table - start scrolling through it
-                        s32 tableTop = item->getTopBound();
-                        s32 tableBottom = item->getBottomBound();
-                        s32 viewBottom = getBottomBound();
+                        tableTop = item->getTopBound();
+                        tableBottom = item->getBottomBound();
+                        viewBottom = getBottomBound();
                         
                         // Always set focus to the table when we encounter it
                         m_focusedIndex = nextIndex;
@@ -6050,15 +6052,17 @@ namespace tsl {
                 
                 ssize_t prevIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
                 
+                s32 tableTop, tableBottom, viewTop;
+
                 // Skip to find previous item (table or focusable)
                 while (prevIndex >= 0) {
                     Element* item = m_items[prevIndex];
                     
                     if (item->isTable()) {
                         // Found a table - start scrolling through it
-                        s32 tableTop = item->getTopBound();
-                        s32 tableBottom = item->getBottomBound();
-                        s32 viewTop = getTopBound();
+                        tableTop = item->getTopBound();
+                        tableBottom = item->getBottomBound();
+                        viewTop = getTopBound();
                         
                         // Always set focus to the table when we encounter it
                         m_focusedIndex = static_cast<size_t>(prevIndex);
