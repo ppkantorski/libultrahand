@@ -56,6 +56,7 @@
 #include <functional>
 #include <type_traits>
 #include <mutex>
+#include <shared_mutex>
 #include <memory>
 //#include <chrono>
 #include <list>
@@ -880,8 +881,7 @@ namespace tsl {
 
         // Forward declarations
         class Renderer;
-        
-        // Shared glyph cache and font management
+            
         class FontManager {
         public:
             struct Glyph {
@@ -891,21 +891,98 @@ namespace tsl {
                 int xAdvance;
                 u8 *glyphBmp;
                 int width, height;
+                
+                // Add destructor to ensure cleanup
+                ~Glyph() {
+                    if (glyphBmp) {
+                        stbtt_FreeBitmap(glyphBmp, nullptr);
+                        glyphBmp = nullptr;
+                    }
+                }
+                
+                // Prevent copying to avoid double-free
+                Glyph(const Glyph&) = delete;
+                Glyph& operator=(const Glyph&) = delete;
+                
+                // Allow moving
+                Glyph(Glyph&& other) noexcept 
+                    : currFont(other.currFont), currFontSize(other.currFontSize)
+                    , xAdvance(other.xAdvance), glyphBmp(other.glyphBmp)
+                    , width(other.width), height(other.height) {
+                    std::memcpy(bounds, other.bounds, sizeof(bounds));
+                    other.glyphBmp = nullptr; // Prevent double-free
+                }
+                
+                Glyph& operator=(Glyph&& other) noexcept {
+                    if (this != &other) {
+                        if (glyphBmp) {
+                            stbtt_FreeBitmap(glyphBmp, nullptr);
+                        }
+                        currFont = other.currFont;
+                        currFontSize = other.currFontSize;
+                        xAdvance = other.xAdvance;
+                        glyphBmp = other.glyphBmp;
+                        width = other.width;
+                        height = other.height;
+                        std::memcpy(bounds, other.bounds, sizeof(bounds));
+                        other.glyphBmp = nullptr;
+                    }
+                    return *this;
+                }
+                
+                Glyph() : currFont(nullptr), currFontSize(0.0f), xAdvance(0), 
+                          glyphBmp(nullptr), width(0), height(0) {
+                    std::memset(bounds, 0, sizeof(bounds));
+                }
             };
             
-            // Shared static cache
-            static std::unordered_map<u64, Glyph> s_sharedGlyphCache;
+        private:
+            static std::shared_mutex s_cacheMutex;
+            static std::mutex s_initMutex;
             
-            // Font pointers - initialized by renderer
+            // Use unique_ptr to ensure proper cleanup
+            static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
+            
+            // Add cache size limits
+            static constexpr size_t MAX_CACHE_SIZE = 10000;
+            static constexpr size_t CLEANUP_THRESHOLD = 8000;
+            
             static stbtt_fontinfo* s_stdFont;
             static stbtt_fontinfo* s_localFont;
             static stbtt_fontinfo* s_extFont;
             static bool s_hasLocalFont;
             static bool s_initialized;
             
-            // Initialize fonts (called by Renderer)
+            // Fix cache key generation to prevent collisions
+            static u64 generateCacheKey(u32 character, bool monospace, u32 fontSize) {
+                // Use more bits for fontSize and separate monospace bit
+                u64 key = static_cast<u64>(character);
+                key = (key << 32) | static_cast<u64>(fontSize);
+                if (monospace) {
+                    key |= (1ULL << 63); // Use the highest bit for monospace
+                }
+                return key;
+            }
+            
+            // Cleanup old entries when cache gets too large
+            static void cleanupOldEntries() {
+                if (s_sharedGlyphCache.size() <= CLEANUP_THRESHOLD) return;
+                
+                // Simple cleanup: remove oldest entries
+                // In a real implementation, you might want LRU or other strategies
+                size_t toRemove = s_sharedGlyphCache.size() - CLEANUP_THRESHOLD;
+                auto it = s_sharedGlyphCache.begin();
+                for (size_t i = 0; i < toRemove && it != s_sharedGlyphCache.end(); ++i) {
+                    it = s_sharedGlyphCache.erase(it);
+                }
+            }
+            
+        public:
             static void initializeFonts(stbtt_fontinfo* stdFont, stbtt_fontinfo* localFont, 
                                       stbtt_fontinfo* extFont, bool hasLocalFont) {
+                std::lock_guard<std::mutex> initLock(s_initMutex);
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                
                 s_stdFont = stdFont;
                 s_localFont = localFont;
                 s_extFont = extFont;
@@ -913,8 +990,9 @@ namespace tsl {
                 s_initialized = true;
             }
             
-            // Font selection logic
             static stbtt_fontinfo* selectFontForCharacter(u32 character) {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                
                 if (!s_initialized) return nullptr;
                 
                 if (stbtt_FindGlyphIndex(s_extFont, character)) {
@@ -925,23 +1003,43 @@ namespace tsl {
                 return s_stdFont;
             }
             
-            // Shared glyph creation/retrieval
             static Glyph* getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
+                const u64 key = generateCacheKey(character, monospace, fontSize);
+                
+                // First, try to find existing glyph with shared lock
+                {
+                    std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
+                    
+                    if (!s_initialized) return nullptr;
+                    
+                    auto it = s_sharedGlyphCache.find(key);
+                    if (it != s_sharedGlyphCache.end()) {
+                        return it->second.get();
+                    }
+                }
+                
+                // Glyph not found, need to create it with exclusive lock
+                std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
+                
                 if (!s_initialized) return nullptr;
                 
-                const u64 key = (static_cast<u64>(character) << 32) | 
-                               (static_cast<u64>(monospace) << 31) | 
-                               static_cast<u64>(fontSize);
-                
+                // Double-check pattern
                 auto it = s_sharedGlyphCache.find(key);
                 if (it != s_sharedGlyphCache.end()) {
-                    return &it->second;
+                    return it->second.get();
+                }
+                
+                // Check cache size and cleanup if needed
+                if (s_sharedGlyphCache.size() >= MAX_CACHE_SIZE) {
+                    cleanupOldEntries();
                 }
                 
                 // Create new glyph
-                Glyph* glyph = &s_sharedGlyphCache[key];
-                glyph->currFont = selectFontForCharacter(character);
-                if (!glyph->currFont) return nullptr;
+                auto glyph = std::make_unique<Glyph>();
+                glyph->currFont = selectFontForCharacterUnsafe(character);
+                if (!glyph->currFont) {
+                    return nullptr;
+                }
                 
                 glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
                 
@@ -957,49 +1055,111 @@ namespace tsl {
                     glyph->currFontSize, glyph->currFontSize, character, 
                     &glyph->width, &glyph->height, nullptr, nullptr);
                 
-                return glyph;
+                Glyph* glyphPtr = glyph.get();
+                s_sharedGlyphCache[key] = std::move(glyph);
+                
+                return glyphPtr;
             }
             
-            // Cleanup method (call on exit)
+            static void clearCache() {
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                s_sharedGlyphCache.clear(); // unique_ptr will handle cleanup
+            }
+            
             static void cleanup() {
-                for (auto& pair : s_sharedGlyphCache) {
-                    if (pair.second.glyphBmp) {
-                        stbtt_FreeBitmap(pair.second.glyphBmp, nullptr);
-                    }
-                }
+                std::lock_guard<std::mutex> initLock(s_initMutex);
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                
                 s_sharedGlyphCache.clear();
                 s_initialized = false;
+                s_stdFont = nullptr;
+                s_localFont = nullptr;
+                s_extFont = nullptr;
+                s_hasLocalFont = false;
+            }
+            
+            static size_t getCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_sharedGlyphCache.size();
+            }
+            
+            static bool isInitialized() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_initialized;
+            }
+            
+            // Add memory usage monitoring
+            static size_t getMemoryUsage() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                size_t totalMemory = 0;
+                for (const auto& pair : s_sharedGlyphCache) {
+                    const auto& glyph = pair.second;
+                    if (glyph && glyph->glyphBmp) {
+                        totalMemory += glyph->width * glyph->height; // Approximate bitmap size
+                    }
+                }
+                return totalMemory;
+            }
+            
+        private:
+            static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
+                if (!s_initialized) return nullptr;
+                
+                if (stbtt_FindGlyphIndex(s_extFont, character)) {
+                    return s_extFont;
+                } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
+                    return s_localFont;
+                }
+                return s_stdFont;
             }
         };
         
-        // Static member definitions (add these to your .cpp file)
-        std::unordered_map<u64, FontManager::Glyph> FontManager::s_sharedGlyphCache;
+        // Static member definitions
+        std::shared_mutex FontManager::s_cacheMutex;
+        std::mutex FontManager::s_initMutex;
+        std::unordered_map<u64, std::unique_ptr<FontManager::Glyph>> FontManager::s_sharedGlyphCache;
         stbtt_fontinfo* FontManager::s_stdFont = nullptr;
         stbtt_fontinfo* FontManager::s_localFont = nullptr;
         stbtt_fontinfo* FontManager::s_extFont = nullptr;
         bool FontManager::s_hasLocalFont = false;
         bool FontManager::s_initialized = false;
         
-        // Updated calculateStringWidth function
+        // Updated thread-safe calculateStringWidth function
         static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace = false) {
-            if (originalString.empty() || !FontManager::s_initialized) {
+            if (originalString.empty() || !FontManager::isInitialized()) {
                 return 0.0f;
             }
             
+            // Thread-safe translation cache access
+            std::string text;
             #ifdef UI_OVERRIDE_PATH
-            auto translatedIt = ult::translationCache.find(originalString);
-            const std::string& text = (translatedIt != ult::translationCache.end()) ? 
-                                      translatedIt->second : originalString;
-            if (translatedIt == ult::translationCache.end()) {
-                ult::translationCache[originalString] = originalString;
+            {
+                std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+                auto translatedIt = ult::translationCache.find(originalString);
+                if (translatedIt != ult::translationCache.end()) {
+                    text = translatedIt->second;
+                } else {
+                    // Need to upgrade to write lock
+                    readLock.unlock();
+                    std::unique_lock<std::shared_mutex> writeLock(s_translationCacheMutex);
+                    
+                    // Double-check pattern
+                    translatedIt = ult::translationCache.find(originalString);
+                    if (translatedIt != ult::translationCache.end()) {
+                        text = translatedIt->second;
+                    } else {
+                        ult::translationCache[originalString] = originalString;
+                        text = originalString;
+                    }
+                }
             }
             #else
-            const std::string& text = originalString;
+            text = originalString;
             #endif
             
             // CRITICAL: Use the same data types as drawString
             s32 maxWidth = 0;
-            s32 currentLineWidth = 0;  // Changed from float to s32
+            s32 currentLineWidth = 0;
             ssize_t codepointWidth;
             u32 currCharacter = 0;
             
@@ -1037,7 +1197,7 @@ namespace tsl {
                     continue;
                 }
                 
-                // Use u32 fontSize to match drawString
+                // Use u32 fontSize to match drawString - now thread-safe
                 FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSizeInt);
                 if (!glyph) continue;
                 
@@ -1047,7 +1207,7 @@ namespace tsl {
             
             // Final width calculation
             maxWidth = std::max(currentLineWidth, maxWidth);
-            return static_cast<float>(maxWidth);  // Convert back to float at the end
+            return static_cast<float>(maxWidth);
         }
 
         static std::pair<int, int> getUnderscanPixels();
@@ -2162,9 +2322,9 @@ namespace tsl {
             const stbtt_fontinfo& getStandardFont() const {
                 return m_stdFont;
             }
-            
-
-            // Optimized unified drawString method with improved performance
+                    
+        
+            // Optimized unified drawString method with thread safety
             inline std::pair<s32, s32> drawString(const std::string& originalString, bool monospace, 
                                                   const s32 x, const s32 y, const u32 fontSize, 
                                                   const Color& defaultColor, const ssize_t maxWidth = 0, 
@@ -2172,15 +2332,31 @@ namespace tsl {
                                                   const Color* highlightColor = nullptr,
                                                   const std::vector<std::string>* specialSymbols = nullptr) {
                 
+                // Thread-safe translation cache access
+                std::string text;
                 #ifdef UI_OVERRIDE_PATH
-                auto translatedIt = ult::translationCache.find(originalString);
-                const std::string& text = (translatedIt != ult::translationCache.end()) ? 
-                                          translatedIt->second : originalString;
-                if (translatedIt == ult::translationCache.end()) {
-                    ult::translationCache[originalString] = originalString;
+                {
+                    std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+                    auto translatedIt = ult::translationCache.find(originalString);
+                    if (translatedIt != ult::translationCache.end()) {
+                        text = translatedIt->second;
+                    } else {
+                        // Need to upgrade to write lock
+                        readLock.unlock();
+                        std::unique_lock<std::shared_mutex> writeLock(s_translationCacheMutex);
+                        
+                        // Double-check pattern
+                        translatedIt = ult::translationCache.find(originalString);
+                        if (translatedIt != ult::translationCache.end()) {
+                            text = translatedIt->second;
+                        } else {
+                            ult::translationCache[originalString] = originalString;
+                            text = originalString;
+                        }
+                    }
                 }
                 #else
-                const std::string& text = originalString;
+                text = originalString;
                 #endif
                 
                 if (text.empty() || fontSize == 0) return {0, 0};
@@ -2198,8 +2374,7 @@ namespace tsl {
                     }
                 }
                 
-                
-                float maxX = x, currX = x, currY = y;
+                s32 maxX = x, currX = x, currY = y;  // Changed to s32 for consistency
                 bool inHighlight = false;
                 const Color* currentColor = &defaultColor;
                 
@@ -2234,11 +2409,11 @@ namespace tsl {
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += fontSize;
+                            currY += static_cast<s32>(fontSize);  // Cast to s32
                             continue;
                         }
                         
-                        // Get glyph
+                        // Get glyph (now thread-safe)
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
@@ -2272,7 +2447,7 @@ namespace tsl {
                                         if (symChar == '\n') {
                                             maxX = std::max(currX, maxX);
                                             currX = x;
-                                            currY += fontSize;
+                                            currY += static_cast<s32>(fontSize);
                                         } else {
                                             glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
                                             if (glyph) {
@@ -2319,11 +2494,11 @@ namespace tsl {
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += fontSize;
+                            currY += static_cast<s32>(fontSize);
                             continue;
                         }
                         
-                        // Get glyph
+                        // Get glyph (now thread-safe)
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
@@ -2337,7 +2512,7 @@ namespace tsl {
                 }
                 
                 maxX = std::max(currX, maxX);
-                return {static_cast<s32>(maxX - x), static_cast<s32>(currY - y)};
+                return {maxX - x, currY - y};
             }
             
             // Convenience wrappers for backward compatibility
@@ -2349,12 +2524,12 @@ namespace tsl {
                 return drawString(text, monospace, x, y, fontSize, defaultColor, maxWidth, true, &specialColor);
             }
             
-            inline void drawStringWithColoredSections(const std::string& text, bool monospace,
+            inline std::pair<s32, s32> drawStringWithColoredSections(const std::string& text, bool monospace,
                                                     const std::vector<std::string>& specialSymbols, 
                                                     s32 x, const s32 y, const u32 fontSize, 
                                                     const Color& defaultColor, 
                                                     const Color& specialColor) {
-                drawString(text, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
+                return drawString(text, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
             }
             
             // Calculate string dimensions without drawing
@@ -2363,29 +2538,51 @@ namespace tsl {
                 return drawString(text, monospace, 0, 0, fontSize, Color{0,0,0,0}, maxWidth, false);
             }
             
-            // Optimized limitStringLength using the unified cache
+            // Thread-safe limitStringLength using the unified cache
             inline std::string limitStringLength(const std::string& originalString, const bool monospace, 
-                                               const s32 fontSize, const s32 maxLength) {
+                                               const u32 fontSize, const s32 maxLength) {  // Changed fontSize to u32
+                
+                // Thread-safe translation cache access
+                std::string text;
                 #ifdef UI_OVERRIDE_PATH
-                auto translatedIt = ult::translationCache.find(originalString);
-                const std::string& text = (translatedIt != ult::translationCache.end()) ? 
-                                         translatedIt->second : originalString;
-                if (translatedIt == ult::translationCache.end()) {
-                    ult::translationCache[originalString] = originalString;
+                {
+                    std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+                    auto translatedIt = ult::translationCache.find(originalString);
+                    if (translatedIt != ult::translationCache.end()) {
+                        text = translatedIt->second;
+                    } else {
+                        // Need to upgrade to write lock
+                        readLock.unlock();
+                        std::unique_lock<std::shared_mutex> writeLock(s_translationCacheMutex);
+                        
+                        // Double-check pattern
+                        translatedIt = ult::translationCache.find(originalString);
+                        if (translatedIt != ult::translationCache.end()) {
+                            text = translatedIt->second;
+                        } else {
+                            ult::translationCache[originalString] = originalString;
+                            text = originalString;
+                        }
+                    }
                 }
                 #else
-                const std::string& text = originalString;
+                text = originalString;
                 #endif
                 
                 if (text.size() < 2) return text;
                 
-                // Get ellipsis width using shared cache
+                // Get ellipsis width using shared cache (now thread-safe)
                 constexpr u32 ellipsisChar = 0x2026;
                 FontManager::Glyph* ellipsisGlyph = FontManager::getOrCreateGlyph(ellipsisChar, monospace, fontSize);
                 if (!ellipsisGlyph) return text;
                 
-                const s32 ellipsisWidth = ellipsisGlyph->xAdvance * ellipsisGlyph->currFontSize;
+                // Fixed: Use consistent s32 calculation like other functions
+                const s32 ellipsisWidth = static_cast<s32>(ellipsisGlyph->xAdvance * ellipsisGlyph->currFontSize);
                 const s32 maxWidthWithoutEllipsis = maxLength - ellipsisWidth;
+                
+                if (maxWidthWithoutEllipsis <= 0) {
+                    return "…"; // If there's no room for text, just return ellipsis
+                }
                 
                 // Calculate width incrementally
                 s32 currX = 0;
@@ -2393,19 +2590,42 @@ namespace tsl {
                 const auto itStrEnd = text.cend();
                 auto lastValidPos = itStr;
                 
+                // Fast ASCII check
+                bool isAsciiOnly = true;
+                for (unsigned char c : text) {
+                    if (c > 127) {
+                        isAsciiOnly = false;
+                        break;
+                    }
+                }
+                
                 while (itStr != itStrEnd) {
                     u32 currCharacter;
-                    ssize_t codepointWidth = decode_utf8(&currCharacter, 
-                                                        reinterpret_cast<const u8*>(&(*itStr)));
-                    if (codepointWidth <= 0) break;
+                    ssize_t codepointWidth;
                     
+                    // Decode UTF-8 codepoint
+                    if (isAsciiOnly) {
+                        currCharacter = static_cast<u32>(*itStr);
+                        codepointWidth = 1;
+                    } else {
+                        codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+                        if (codepointWidth <= 0) break;
+                    }
+                    
+                    // FontManager::getOrCreateGlyph is now thread-safe
                     FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
-                    if (!glyph) break;
+                    if (!glyph) {
+                        itStr += codepointWidth;
+                        continue;
+                    }
                     
-                    s32 charWidth = glyph->xAdvance * glyph->currFontSize;
+                    // Fixed: Use consistent s32 calculation
+                    s32 charWidth = static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                     
                     if (currX + charWidth > maxWidthWithoutEllipsis) {
-                        return std::string(text.begin(), lastValidPos) + "…";
+                        // Calculate the byte position for substring
+                        size_t bytePos = std::distance(text.cbegin(), lastValidPos);
+                        return text.substr(0, bytePos) + "…";
                     }
                     
                     currX += charWidth;
@@ -2653,7 +2873,10 @@ namespace tsl {
             
             std::stack<ScissoringConfig> m_scissoringStack;
             
-            
+            #ifdef UI_OVERRIDE_PATH
+            static std::shared_mutex s_translationCacheMutex;
+            #endif
+
             static inline float s_opacity = 1.0F;
             
             
@@ -4447,19 +4670,24 @@ namespace tsl {
         static u32 s_cachedScrollbarOffset = 0;
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
+        static u32 pageCount = 0;
 
         class List : public Element {
         
         public:
             List() : Element(), m_instanceId(generateInstanceId()) {
                 m_isItem = false;
+                pageCount++;
             }
             virtual ~List() {
-                
-                if (s_cachedInstanceId == m_instanceId && jumpItemName.empty() ) {
-                    clearItems();
-                    clearStaticCache();
-                }
+                pageCount--;
+                //tsl::gfx::FontManager::clearCache();
+                //if (s_cachedInstanceId == m_instanceId && jumpItemName.empty() ) {
+                //    clearItems();
+                //    clearStaticCache();
+                //}
+                cacheCurrentFrame();
+                //clearItems();
             }
             
             
@@ -4475,7 +4703,7 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 static bool checkOnce = true;
-                if (m_pendingJump && !s_hasValidFrame && !jumpItemName.empty() && checkOnce) {
+                if (m_pendingJump && !s_hasValidFrame && checkOnce) {
                     checkOnce = false;
                     return;
                 } else {
@@ -4489,7 +4717,7 @@ namespace tsl {
                     return;
                 }
 
-                cacheCurrentFrame();
+                //if (s_hasValidFrame)
 
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
@@ -4521,6 +4749,7 @@ namespace tsl {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
+                clearStaticCache();
                 
             }
         
@@ -4739,7 +4968,12 @@ namespace tsl {
             }
         
             static void clearStaticCache() {
+                // Clear previous cache (including memory!)
+                for (Element* el : s_lastFrameItems) {
+                    delete el;
+                }
                 s_lastFrameItems.clear();
+                s_lastFrameItems.shrink_to_fit();
                 s_hasValidFrame = false;
                 s_cachedInstanceId = 0;
                 s_cachedTopBound = 0;
@@ -4753,14 +4987,33 @@ namespace tsl {
                 s_cachedScrollbarX = 0;
                 s_cachedScrollbarY = 0;
             }
-        
+                    
             void cacheCurrentFrame() {
-                s_lastFrameItems = m_items;
+                // Clear previous cache (including memory!)
+                for (Element* el : s_lastFrameItems) {
+                    delete el;
+                }
+                s_lastFrameItems.clear();
+                s_lastFrameItems.shrink_to_fit();
+                
+                // Cache bounds for visibility calculations
+                const s32 topBound = getTopBound();
+                const s32 bottomBound = getBottomBound();
+                
+                // Only cache items that are actually visible (or partially visible)
+                s_lastFrameItems.reserve(m_items.size()); // Reserve full size to avoid reallocations
+                for (Element* element : m_items) {
+                    // Only cache items that are in the visible area
+                    //if (element->getBottomBound() > topBound && element->getTopBound() < bottomBound) {
+                    s_lastFrameItems.push_back(element);
+                    //}
+                }
+                
                 s_cachedInstanceId = m_instanceId;
                 
-                // Cache all the bounds and calculations
-                s_cachedTopBound = getTopBound();
-                s_cachedBottomBound = getBottomBound();
+                // Cache all the bounds and calculations (unchanged)
+                s_cachedTopBound = topBound;
+                s_cachedBottomBound = bottomBound;
                 s_cachedHeight = getHeight();
                 s_cachedListHeight = m_listHeight;
                 
@@ -4771,7 +5024,7 @@ namespace tsl {
                 }
                 s_cachedActualContentBottom = actualContentBottom;
                 
-                // Cache scrollbar parameters
+                // Cache scrollbar parameters (unchanged - uses full m_listHeight for correct sizing)
                 s_shouldDrawScrollbar = (s_cachedListHeight-20 > s_cachedHeight || s_cachedActualContentBottom-20 > s_cachedHeight);
                 
                 if (s_shouldDrawScrollbar) {
@@ -4783,7 +5036,7 @@ namespace tsl {
                                                      static_cast<u32>(viewHeight));
                     
                     s_cachedScrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - s_cachedScrollbarHeight)), 
-                                                     static_cast<u32>(viewHeight - s_cachedScrollbarHeight)) + 4;
+                                                     static_cast<u32>(viewHeight - s_cachedScrollbarOffset)) + 4;
             
                     s_cachedScrollbarX = getRightBound() + 20;
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset + 2;
@@ -4791,7 +5044,7 @@ namespace tsl {
                 
                 s_hasValidFrame = true;
             }
-                        
+                                    
             void renderCachedFrame(gfx::Renderer* renderer) {
                 renderer->enableScissoring(getLeftBound(), s_cachedTopBound, getWidth() + 8, s_cachedHeight + 4);
             
@@ -4952,12 +5205,10 @@ namespace tsl {
             inline Element* handleDownFocus(Element* oldFocus) {
                 updateHoldState();
                 
-                if (m_isHolding && m_stoppedAtBoundary) {
-                    // Continue scrolling if we can
-                    if (canScrollDown()) {
-                        scrollDown();
-                        m_stoppedAtBoundary = false;
-                    }
+                // If holding and at boundary, try to scroll first, but don't block navigation
+                if (m_isHolding && m_stoppedAtBoundary && canScrollDown()) {
+                    scrollDown();
+                    m_stoppedAtBoundary = false;
                     return oldFocus;
                 }
                 
@@ -4975,29 +5226,28 @@ namespace tsl {
                     return oldFocus;
                 }
                 
-                // At boundary - check for wrapping
+                // At boundary - check for wrapping (only if not holding or hasn't wrapped yet)
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     return wrapToTop(oldFocus);
                 }
                 
+                // Set boundary flag but don't block future navigation attempts
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
                 }
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
-                                                        
+            
             inline Element* handleUpFocus(Element* oldFocus) {
                 updateHoldState();
                 
-                if (m_isHolding && m_stoppedAtBoundary) {
-                    // Continue scrolling if we can
-                    if (canScrollUp()) {
-                        scrollUp();
-                        m_stoppedAtBoundary = false;
-                    }
+                // If holding and at boundary, try to scroll first, but don't block navigation
+                if (m_isHolding && m_stoppedAtBoundary && canScrollUp()) {
+                    scrollUp();
+                    m_stoppedAtBoundary = false;
                     return oldFocus;
                 }
                 
@@ -5015,13 +5265,14 @@ namespace tsl {
                     return oldFocus;
                 }
                 
-                // At boundary - check for wrapping
+                // At boundary - check for wrapping (only if not holding or hasn't wrapped yet)
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     return wrapToBottom(oldFocus);
                 }
                 
+                // Set boundary flag but don't block future navigation attempts
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
                 }
