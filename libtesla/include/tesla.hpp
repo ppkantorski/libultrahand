@@ -4749,7 +4749,7 @@ namespace tsl {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
-                clearStaticCache();
+                clearStaticCache(); // clear cache after rendering (for smoother transitions)
                 
             }
         
@@ -5336,13 +5336,12 @@ namespace tsl {
             }
 
             inline Element* handleJumpToItem(Element* oldFocus) {
-                //resetTableState();
                 resetNavigationState();
                 invalidate();
-            
+                
                 const bool needsScroll = m_listHeight > getHeight();
-                const float viewportThird = needsScroll ? getHeight() / 3.0f : 0.0f;
-                const float maxOffset = needsScroll ? m_listHeight - getHeight() : 0.0f;
+                const float viewHeight = static_cast<float>(getHeight());
+                const float maxOffset = needsScroll ? m_listHeight - viewHeight : 0.0f;
                 
                 float h = 0.0f;
                 
@@ -5351,7 +5350,15 @@ namespace tsl {
                     
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
-                        m_offset = m_nextOffset = needsScroll && i ? std::clamp(h - viewportThird, 0.0f, maxOffset) : 0.0f;
+                        // CHANGED: Calculate center of the item and center it in viewport
+                        float itemHeight = m_items[i]->getHeight();
+                        float itemCenterPos = h + (itemHeight);
+                        float viewportCenter = viewHeight / 2.0f;
+                        float idealOffset = itemCenterPos - viewportCenter;
+                        
+                        // Clamp to valid bounds
+                        m_offset = m_nextOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                        
                         return newFocus;
                     }
                     
@@ -5660,7 +5667,7 @@ namespace tsl {
                     prefixSums[i] = prefixSums[i - 1] + m_items[i - 1]->getHeight();
                 }
             }
-                        
+                                    
             virtual inline void updateScrollOffset() {
                 if (Element::getInputMode() != InputMode::Controller) return;
                 
@@ -5678,38 +5685,23 @@ namespace tsl {
                 // Get the focused item's height
                 float itemHeight = (m_focusedIndex < m_items.size()) ? m_items[m_focusedIndex]->getHeight() : 0.0f;
                 
-                // Calculate viewport bounds
+                // Calculate viewport height
                 float viewHeight = static_cast<float>(getHeight());
-                float viewTop = m_offset;
-                float viewBottom = m_offset + viewHeight;
                 
-                // Check if item is already fully visible
-                bool itemFullyVisible = (itemPos >= viewTop) && (itemPos + itemHeight <= viewBottom);
+                // CHANGED: Calculate the actual center position of the item
+                float itemCenterPos = itemPos + (itemHeight);
                 
-                if (itemFullyVisible) {
-                    // Item is already visible - don't change scroll
-                    return;
-                }
+                // CHANGED: Calculate offset to put item center at viewport center
+                float viewportCenter = viewHeight / 2.0f;
+                float idealOffset = itemCenterPos - viewportCenter;
                 
-                // Calculate ideal scroll position to keep item visible with padding
-                float padding = viewHeight * 0.2f; // 20% padding from edges
-                float idealOffset = m_offset;
-                
-                // If item is above viewport, scroll up to show it with padding
-                if (itemPos < viewTop) {
-                    idealOffset = std::max(0.0f, itemPos - padding);
-                }
-                // If item is below viewport, scroll down to show it with padding
-                else if (itemPos + itemHeight > viewBottom) {
-                    idealOffset = std::min(itemPos + itemHeight - viewHeight + padding, 
-                                          static_cast<float>(m_listHeight - getHeight()));
-                }
+                // Clamp to valid scroll bounds
+                idealOffset = std::max(0.0f, std::min(idealOffset, static_cast<float>(m_listHeight - getHeight())));
                 
                 // Set target for smooth animation
                 m_nextOffset = idealOffset;
-                // Don't set m_offset - let updateScrollAnimation handle smooth transition
             }
-
+            
         };
 
         /**
