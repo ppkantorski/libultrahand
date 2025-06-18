@@ -2330,7 +2330,9 @@ namespace tsl {
                                                   const Color& defaultColor, const ssize_t maxWidth = 0, 
                                                   bool draw = true,
                                                   const Color* highlightColor = nullptr,
-                                                  const std::vector<std::string>* specialSymbols = nullptr) {
+                                                  const std::vector<std::string>* specialSymbols = nullptr,
+                                                  const u32 highlightStartChar = 0,
+                                                  const u32 highlightEndChar = 0) {
                 
                 // Thread-safe translation cache access
                 std::string text;
@@ -2363,6 +2365,9 @@ namespace tsl {
                 
                 const float maxWidthLimit = maxWidth > 0 ? x + maxWidth : std::numeric_limits<float>::max();
                 
+                // Check if highlighting is enabled (both highlight color and delimiters must be provided)
+                const bool highlightingEnabled = highlightColor && highlightStartChar != 0 && highlightEndChar != 0;
+                
                 // Fast ASCII check with early exit
                 bool isAsciiOnly = true;
                 const char* textPtr = text.data();
@@ -2394,14 +2399,14 @@ namespace tsl {
                     for (const char* p = textPtr; p < textEnd && currX < maxWidthLimit; ++p) {
                         currCharacter = static_cast<u32>(*p);
                         
-                        // Handle highlighting
-                        if (highlightColor) {
-                            if (currCharacter == '(') {
+                        // Handle highlighting with configurable delimiters
+                        if (highlightingEnabled) {
+                            if (currCharacter == highlightStartChar) {
                                 inHighlight = true;
-                            } else if (currCharacter == ')') {
+                            } else if (currCharacter == highlightEndChar) {
                                 inHighlight = false;
                             }
-                            currentColor = (currCharacter == '(' || currCharacter == ')') ? 
+                            currentColor = (currCharacter == highlightStartChar || currCharacter == highlightEndChar) ? 
                                           &defaultColor : (inHighlight ? highlightColor : &defaultColor);
                         }
                         
@@ -2479,14 +2484,14 @@ namespace tsl {
                         
                         itStr += codepointWidth;
                         
-                        // Handle highlighting
-                        if (highlightColor) {
-                            if (currCharacter == '(') {
+                        // Handle highlighting with configurable delimiters
+                        if (highlightingEnabled) {
+                            if (currCharacter == highlightStartChar) {
                                 inHighlight = true;
-                            } else if (currCharacter == ')') {
+                            } else if (currCharacter == highlightEndChar) {
                                 inHighlight = false;
                             }
-                            currentColor = (currCharacter == '(' || currCharacter == ')') ? 
+                            currentColor = (currCharacter == highlightStartChar || currCharacter == highlightEndChar) ? 
                                           &defaultColor : (inHighlight ? highlightColor : &defaultColor);
                         }
                         
@@ -2520,8 +2525,10 @@ namespace tsl {
                                                               s32 x, s32 y, const u32 fontSize, 
                                                               const Color& defaultColor, 
                                                               const Color& specialColor, 
-                                                              const ssize_t maxWidth = 0) {
-                return drawString(text, monospace, x, y, fontSize, defaultColor, maxWidth, true, &specialColor);
+                                                              const ssize_t maxWidth = 0,
+                                                              const u32 startChar = '(',
+                                                              const u32 endChar = ')') {
+                return drawString(text, monospace, x, y, fontSize, defaultColor, maxWidth, true, &specialColor, nullptr, startChar, endChar);
             }
             
             inline std::pair<s32, s32> drawStringWithColoredSections(const std::string& text, bool monospace,
