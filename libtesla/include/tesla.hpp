@@ -909,7 +909,7 @@ namespace tsl {
                     : currFont(other.currFont), currFontSize(other.currFontSize)
                     , xAdvance(other.xAdvance), glyphBmp(other.glyphBmp)
                     , width(other.width), height(other.height) {
-                    std::memcpy(bounds, other.bounds, sizeof(bounds));
+                    __builtin_memcpy(bounds, other.bounds, sizeof(bounds));
                     other.glyphBmp = nullptr; // Prevent double-free
                 }
                 
@@ -924,7 +924,7 @@ namespace tsl {
                         glyphBmp = other.glyphBmp;
                         width = other.width;
                         height = other.height;
-                        std::memcpy(bounds, other.bounds, sizeof(bounds));
+                        __builtin_memcpy(bounds, other.bounds, sizeof(bounds));
                         other.glyphBmp = nullptr;
                     }
                     return *this;
@@ -4679,6 +4679,8 @@ namespace tsl {
         static u32 s_cachedScrollbarY = 0;
         static u32 pageCount = 0;
 
+        static bool isTableScrolling = false;
+
         class List : public Element {
         
         public:
@@ -4943,7 +4945,8 @@ namespace tsl {
         
             static constexpr float smoothingFactor = 0.15f;
             static constexpr float dampingFactor = 0.3f;
-            static constexpr float TABLE_SCROLL_STEP_SIZE = tsl::style::MiniListItemDefaultHeight;
+            static constexpr float TABLE_SCROLL_STEP_SIZE = 13;
+            static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 40;
             
             enum class NavigationResult {
                 None,
@@ -5411,6 +5414,7 @@ namespace tsl {
                     Element* item = m_items[nextIndex];
                     
                     if (item->isTable()) {
+                        isTableScrolling = true;
                         // Found a table - start scrolling through it
                         tableTop = item->getTopBound();
                         tableBottom = item->getBottomBound();
@@ -5428,6 +5432,7 @@ namespace tsl {
                         nextIndex++;
                         continue;
                     } else {
+                        isTableScrolling = false;
                         // Found a focusable item - try to focus it
                         Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
                         if (newFocus && newFocus != oldFocus) {
@@ -5447,6 +5452,7 @@ namespace tsl {
             inline Element* navigateUp(Element* oldFocus) {
                 // Check if we're currently "in" a table (focusing on it for scrolling)
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
+                    isTableScrolling = true;
                     Element* currentTable = m_items[m_focusedIndex];
                     s32 tableTop = currentTable->getTopBound();
                     s32 viewTop = getTopBound();
@@ -5458,6 +5464,7 @@ namespace tsl {
                     }
                     // Table is fully visible, move to previous item
                 }
+                isTableScrolling = false;
                 
                 // Find the previous item in the list
                 if (m_focusedIndex == 0) return oldFocus;
@@ -5514,19 +5521,47 @@ namespace tsl {
                 return m_nextOffset > 0.0f; // Check nextOffset for smoother behavior
             }
             
+            
+            // Update the scrollDown method to use different step sizes based on hold state
             inline void scrollDown() {
-                static constexpr float SCROLL_STEP = TABLE_SCROLL_STEP_SIZE;
+                float scrollStep;
+                
+                // Use larger step size for single clicks, smaller for holds
+                if (m_isHolding) {
+                    scrollStep = TABLE_SCROLL_STEP_SIZE; // 13 for holds
+                } else {
+                    scrollStep = TABLE_SCROLL_STEP_SIZE_CLICK; // 26 for single clicks
+                }
+                
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                m_nextOffset = std::min(m_nextOffset + SCROLL_STEP, maxOffset);
+                
+                // Don't scroll more than the remaining scrollable distance (prevents over-scrolling small tables)
+                float remainingScroll = maxOffset - m_nextOffset;
+                scrollStep = std::min(scrollStep, remainingScroll);
+                
+                m_nextOffset = std::min(m_nextOffset + scrollStep, maxOffset);
                 // Don't set m_offset - let updateScrollAnimation handle smooth transition
             }
             
+            // Update the scrollUp method to use different step sizes based on hold state
             inline void scrollUp() {
-                static constexpr float SCROLL_STEP = TABLE_SCROLL_STEP_SIZE;
-                m_nextOffset = std::max(m_nextOffset - SCROLL_STEP, 0.0f);
+                float scrollStep;
+                
+                // Use larger step size for single clicks, smaller for holds
+                if (m_isHolding) {
+                    scrollStep = TABLE_SCROLL_STEP_SIZE; // 13 for holds
+                } else {
+                    scrollStep = TABLE_SCROLL_STEP_SIZE_CLICK; // 26 for single clicks
+                }
+                
+                // Don't scroll more than the remaining scrollable distance (prevents over-scrolling small tables)
+                float remainingScroll = m_nextOffset;
+                scrollStep = std::min(scrollStep, remainingScroll);
+                
+                m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
                 // Don't set m_offset - let updateScrollAnimation handle smooth transition
             }
-
+            
         
             // Wrapping
             // Fix for the wrapToTop function
@@ -6502,7 +6537,7 @@ namespace tsl {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
                 m_isItem = false;
-                m_isTable = true;
+                //m_isTable = true;
             }
             virtual ~CategoryHeader() {}
             
@@ -8422,17 +8457,29 @@ namespace tsl {
                         if (!singlePressHandled && durationSincePress_ns >= clickThreshold_ns) {
                             singlePressHandled = true;
                         }
-        
-                        // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                        static const u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
-                        static const u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
-                        static const u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
                         
-                        float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
-                                 (float)durationSincePress_ns / (float)transitionPoint_ns;
+                        if (!tsl::elm::isTableScrolling) {
+                            // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
+                            static const u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
+                            static const u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
+                            static const u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
+                            
+                            float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
+                                     (float)durationSincePress_ns / (float)transitionPoint_ns;
+                            // Smooth transition between intervals using linear interpolation
+                            keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
+                        } else {
+                            // Table scrolling - faster timing
+                            static const u64 transitionPoint_ns = 300000000ULL; // 1000ms (faster transition)
+                            static const u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
+                            static const u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
+                            
+                            float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
+                                     (float)durationSincePress_ns / (float)transitionPoint_ns;
+                            // Smooth transition between intervals using linear interpolation
+                            keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
+                        }
                         
-                        // Smooth transition between intervals using linear interpolation
-                        keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
 
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
@@ -9157,17 +9204,17 @@ namespace tsl {
         
         // Add required flags
         if (!hasSkipCombo) {
-            memcpy(p, " --skipCombo", 12);
+            __builtin_memcpy(p, " --skipCombo", 12);
             p += 12;
         }
         
         // Add foreground flag
-        memcpy(p, " --foregroundFix ", 17);
+        __builtin_memcpy(p, " --foregroundFix ", 17);
         p += 17;
         *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
         
         // Add last title ID
-        memcpy(p, " --lastTitleID ", 15);
+        __builtin_memcpy(p, " --lastTitleID ", 15);
         p += 15;
         const char* titleId = ult::lastTitleID.c_str();
         while (*titleId) *p++ = *titleId++;
