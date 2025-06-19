@@ -5140,14 +5140,23 @@ namespace tsl {
         
             inline void updateScrollAnimation() {
                 if (Element::getInputMode() == InputMode::Controller) {
-                    static float velocity = 0.0f;
-                    velocity = velocity * dampingFactor + (m_nextOffset - m_offset) * smoothingFactor;
+                    // Check how far behind we are
+                    float distance = std::abs(m_nextOffset - m_offset);
                     
-                    if (std::abs(velocity) < 0.2f) {
+                    // Use a base lerp speed that's fast enough for normal scrolling
+                    float lerpSpeed = 0.3f;
+                    
+                    // If we're falling behind (large distance), catch up faster
+                    if (distance > getHeight() * 0.2f) {
+                        lerpSpeed = 0.6f;
+                    }
+                    
+                    // Apply the lerp
+                    m_offset += (m_nextOffset - m_offset) * lerpSpeed;
+                    
+                    // Snap when close
+                    if (distance < 0.5f) {
                         m_offset = m_nextOffset;
-                        velocity = 0.0f;
-                    } else {
-                        m_offset += velocity;
                     }
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     m_offset += (m_nextOffset - m_offset);
@@ -8238,7 +8247,11 @@ namespace tsl {
             renderer.endFrame();
         }
         
-
+        // Calculate transition using ease-in-out curve instead of linear
+        float easeInOutCubic(float t) {
+            return t < 0.5f ? 4.0f * t * t * t : 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+        }
+                        
 
                 
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
@@ -8420,6 +8433,7 @@ namespace tsl {
                         
                         // Smooth transition between intervals using linear interpolation
                         keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
+
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
