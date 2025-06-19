@@ -5426,16 +5426,18 @@ namespace tsl {
                 
                 float h = 0.0f;
                 
+                float itemHeight, itemCenterPos, viewportCenter, idealOffset;
+
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     m_focusedIndex = i;
                     
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
                         // CHANGED: Calculate center of the item and center it in viewport
-                        float itemHeight = m_items[i]->getHeight();
-                        float itemCenterPos = h + (itemHeight);
-                        float viewportCenter = viewHeight / 2.0f;
-                        float idealOffset = itemCenterPos - viewportCenter;
+                        itemHeight = m_items[i]->getHeight();
+                        itemCenterPos = h + (itemHeight);
+                        viewportCenter = viewHeight / 2.0f;
+                        idealOffset = itemCenterPos - viewportCenter;
                         
                         // Clamp to valid bounds
                         m_offset = m_nextOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
@@ -6616,7 +6618,7 @@ namespace tsl {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
                 m_isItem = false;
-                //m_isTable = true;
+                m_isTable = true;
             }
             virtual ~CategoryHeader() {}
             
