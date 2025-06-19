@@ -3866,6 +3866,7 @@ namespace tsl {
              */
             CustomDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {
                 m_isItem = false;
+                m_isTable = true;
             }
 
             virtual ~CustomDrawer() {}
@@ -8467,7 +8468,7 @@ namespace tsl {
                             float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
                                      (float)durationSincePress_ns / (float)transitionPoint_ns;
                             // Smooth transition between intervals using linear interpolation
-                            keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
+                            keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         } else {
                             // Table scrolling - faster timing
                             static const u64 transitionPoint_ns = 300000000ULL; // 1000ms (faster transition)
@@ -8477,7 +8478,7 @@ namespace tsl {
                             float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
                                      (float)durationSincePress_ns / (float)transitionPoint_ns;
                             // Smooth transition between intervals using linear interpolation
-                            keyEventInterval_ns = (u64)((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
+                            keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         }
                         
 
