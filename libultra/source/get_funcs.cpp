@@ -242,50 +242,42 @@ namespace ult {
         std::vector<std::string> subdirectories;
         std::unique_ptr<DIR, DirCloser> dir(opendir(directoryPath.c_str()));
         
-        if (dir) {
-            std::string entryName, fullPath;
-            dirent* entry;
-            struct stat entryStat;
-            while ((entry = readdir(dir.get())) != nullptr) {
-                entryName = entry->d_name;
-                
-                // Exclude current directory (.) and parent directory (..)
-                if (entryName != "." && entryName != "..") {
-                    fullPath = directoryPath + "/" + entryName;
-                    
-                    if (stat(fullPath.c_str(), &entryStat) == 0 && S_ISDIR(entryStat.st_mode)) {
-                        subdirectories.push_back(entryName);
-                    }
-                }
+        if (!dir) return subdirectories;
+        
+        struct dirent* entry;
+        while ((entry = readdir(dir.get())) != nullptr) {
+            const std::string entryName = entry->d_name;
+            
+            // Skip . and ..
+            if (entryName == "." || entryName == "..") continue;
+            
+            const std::string fullPath = directoryPath + "/" + entryName;
+            
+            if (isDirectory(entry, fullPath)) {
+                subdirectories.emplace_back(entryName);
             }
         }
         
         return subdirectories;
     }
     
-    
-    // Cache to store directory status
-    // Assuming a very simple cache implementation
-    std::vector<std::pair<std::string, bool>> directoryCache;
-    
-    bool isDirectoryCached(struct dirent* entry, const std::string& path) {
+    /**
+     * @brief Check if a directory entry is a directory (no caching).
+     * Fast path for known types, stat() only when necessary.
+     */
+    inline bool isDirectory(struct dirent* entry, const std::string& path) {
+        // Fast path - most filesystems populate d_type correctly
         if (entry->d_type == DT_DIR) {
             return true;
-        } else if (entry->d_type == DT_UNKNOWN) {
-            for (const auto& item : directoryCache) {
-                if (item.first == path) {
-                    return item.second;
-                }
-            }
-    
-            struct stat path_stat;
-            stat(path.c_str(), &path_stat);
-            bool isDir = S_ISDIR(path_stat.st_mode);
-            directoryCache.push_back({path, isDir});
-            return isDir;
+        } else if (entry->d_type != DT_UNKNOWN) {
+            return false;  // DT_REG, DT_LNK, etc.
         }
-        return false;
+        
+        // Only stat when d_type is unknown (rare on modern filesystems)
+        struct stat entryStat;
+        return (stat(path.c_str(), &entryStat) == 0) && S_ISDIR(entryStat.st_mode);
     }
+    
     
     /**
      * @brief Recursively retrieves a list of files from a directory.
@@ -296,21 +288,30 @@ namespace ult {
     std::vector<std::string> getFilesListFromDirectory(const std::string& directoryPath) {
         std::vector<std::string> fileList;
         std::unique_ptr<DIR, DirCloser> dir(opendir(directoryPath.c_str()));
-        std::vector<std::string> subDirFiles;  // Moved vector definition here
-    
-        if (!dir) return fileList;  // Return empty list if directory cannot be opened
-    
+
+        if (!dir) return fileList;
+
         struct dirent* entry;
         while ((entry = readdir(dir.get())) != nullptr) {
-            if (entry->d_type == DT_REG) {  // Check if it's a regular file
-                fileList.push_back(directoryPath + "/" + entry->d_name);
-            } else if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-                // Recursively retrieve files from subdirectories
-                subDirFiles = getFilesListFromDirectory(directoryPath + "/" + entry->d_name);
-                fileList.insert(fileList.end(), subDirFiles.begin(), subDirFiles.end());
+            const std::string entryName = entry->d_name;
+            
+            if (entryName == "." || entryName == "..") continue;
+            
+            const std::string fullPath = directoryPath + "/" + entryName;
+            
+            if (entry->d_type == DT_REG) {
+                // Definitely a regular file
+                fileList.emplace_back(fullPath);
+            } else if (isDirectory(entry, fullPath)) {
+                // Recursively get files from subdirectories
+                auto subDirFiles = getFilesListFromDirectory(fullPath);
+                fileList.reserve(fileList.size() + subDirFiles.size());
+                fileList.insert(fileList.end(), 
+                              std::make_move_iterator(subDirFiles.begin()),
+                              std::make_move_iterator(subDirFiles.end()));
             }
         }
-    
+
         return fileList;
     }
     
@@ -322,35 +323,45 @@ namespace ult {
     //}
     
     // Recursive function to handle wildcard directories and file patterns
-    void handleDirectory(const std::string& basePath, const std::vector<std::string>& parts, size_t partIndex, std::vector<std::string>& results, bool directoryOnly) {
+    void handleDirectory(const std::string& basePath, 
+                        const std::vector<std::string>& parts, 
+                        size_t partIndex, 
+                        std::vector<std::string>& results, 
+                        bool directoryOnly) {
         if (partIndex >= parts.size()) return;
-    
-        // Open the directory safely using a smart pointer
+
         std::unique_ptr<DIR, DirCloser> dir(opendir(basePath.c_str()));
         if (!dir) return;
-    
+
+        const std::string& pattern = parts[partIndex];
+        const bool isLastPart = (partIndex == parts.size() - 1);
+        const bool needsSlash = basePath.back() != '/';
+
         struct dirent* entry;
-        std::string entryName, fullPath;
-        bool isCurrentDir, match;
-    
         while ((entry = readdir(dir.get())) != nullptr) {
-            entryName = entry->d_name;
+            const std::string entryName = entry->d_name;
             if (entryName == "." || entryName == "..") continue;
             
-            fullPath = basePath + (basePath.back() == '/' ? "" : "/") + entryName;
-            isCurrentDir = isDirectoryCached(entry, fullPath);
-            
-            match = (fnmatch(parts[partIndex].c_str(), entryName.c_str(), FNM_NOESCAPE) == 0);
-            if (!match) continue; // Skip non-matching entries
-            
-            // Recurse into directories if there are more parts to process
-            if (isCurrentDir && partIndex < parts.size() - 1) {
-                handleDirectory(fullPath, parts, partIndex + 1, results, directoryOnly);
+            // Check pattern match first (cheap operation)
+            if (fnmatch(pattern.c_str(), entryName.c_str(), FNM_NOESCAPE) != 0) {
+                continue;
             }
             
-            // Add matching directories/files to results
-            if (match && partIndex == parts.size() - 1 && (directoryOnly ? isCurrentDir : true)) {
-                results.push_back(fullPath + (isCurrentDir ? "/" : ""));
+            std::string fullPath = basePath;
+            if (needsSlash) fullPath += '/';
+            fullPath += entryName;
+            
+            const bool isDir = isDirectory(entry, fullPath);
+            
+            if (isLastPart) {
+                // Final part - add to results if criteria match
+                if (!directoryOnly || isDir) {
+                    if (isDir) fullPath += '/';
+                    results.emplace_back(std::move(fullPath));
+                }
+            } else if (isDir) {
+                // Recurse into directories for non-final parts
+                handleDirectory(fullPath, parts, partIndex + 1, results, directoryOnly);
             }
         }
     }
@@ -366,22 +377,38 @@ namespace ult {
      */
     std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern) {
         std::vector<std::string> results;
-        bool directoryOnly = pathPattern.back() == '/';
-        size_t prefixEnd = pathPattern.find(":/") + 2;
-        std::string basePath = pathPattern.substr(0, prefixEnd);
+        
+        if (pathPattern.empty()) return results;
+        
+        const bool directoryOnly = pathPattern.back() == '/';
+        const size_t prefixEnd = pathPattern.find(":/");
+        
+        if (prefixEnd == std::string::npos) {
+            return results; // Invalid pattern
+        }
+        
+        const std::string basePath = pathPattern.substr(0, prefixEnd + 2);
         std::vector<std::string> parts;
         
-        size_t start = prefixEnd, pos;
+        // Parse path components
+        size_t start = prefixEnd + 2;
+        size_t pos;
         while ((pos = pathPattern.find('/', start)) != std::string::npos) {
-            parts.push_back(pathPattern.substr(start, pos - start));
+            if (pos > start) {
+                parts.emplace_back(pathPattern.substr(start, pos - start));
+            }
             start = pos + 1;
         }
-        if (!directoryOnly) {
-            parts.push_back(pathPattern.substr(start)); // Include the last segment if not directoryOnly
+        
+        // Add final component if not directoryOnly
+        if (start < pathPattern.length() && !directoryOnly) {
+            parts.emplace_back(pathPattern.substr(start));
         }
-    
-        handleDirectory(basePath, parts, 0, results, directoryOnly);
-    
+        
+        if (!parts.empty()) {
+            handleDirectory(basePath, parts, 0, results, directoryOnly);
+        }
+        
         return results;
     }
     

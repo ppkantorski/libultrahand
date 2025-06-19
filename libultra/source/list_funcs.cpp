@@ -18,8 +18,12 @@
  ********************************************************************************/
 
 #include <list_funcs.hpp>
+#include <mutex>
 
 namespace ult {
+    // Thread-safe file access mutex
+    static std::mutex file_access_mutex;
+    
     /**
      * @brief Removes entries from a vector of strings that match a specified entry.
      *
@@ -42,7 +46,7 @@ namespace ult {
      * to perform the removal.
      *
      * @param filterList The list of entries to filter by. Entries in `itemsList` matching any entry in this list will be removed.
-     * @param itemsList The list of stringsto be filtered.
+     * @param itemsList The list of strings to be filtered.
      */
     void filterItemsList(const std::vector<std::string>& filterList, std::vector<std::string>& itemsList) {
         for (const auto& entry : filterList) {
@@ -53,32 +57,37 @@ namespace ult {
     
     // Function to read file into a vector of strings
     std::vector<std::string> readListFromFile(const std::string& filePath) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
         std::vector<std::string> lines;
     
     #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
+        FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return lines; // Return empty vector
+            return lines;
         }
     
-        char buffer[4096];  // Buffer to hold each line
-        while (fgets(buffer, sizeof(buffer), file)) {
+        constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove newline character from the buffer if present
-            buffer[strcspn(buffer, "\n")] = '\0';  // Replace newline with null terminator
-            lines.emplace_back(buffer);  // Add line to vector
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            lines.emplace_back(buffer);
         }
     
-        fclose(file);  // Close the file after reading
+        fclose(file);
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return lines; // Return empty vector
+            return lines;
         }
     
         std::string line;
@@ -86,56 +95,68 @@ namespace ult {
             lines.push_back(std::move(line));
         }
     
-        file.close();  // Close the file
+        file.close();
     #endif
     
-        return lines;  // Return the vector of lines
+        return lines;
     }
 
     
     // Function to get an entry from the list based on the index
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
+        
     #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(listPath.c_str(), "r");  // Open the file in text mode
+        FILE* file = fopen(listPath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + listPath);
             #endif
-            return ""; // Return an empty string if the file cannot be opened
+            return "";
         }
     
+        constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
         std::string line;
+        
         // Read lines until reaching the desired index
         for (size_t i = 0; i <= listIndex; ++i) {
-            char buffer[4096];  // Buffer to hold each line
-            if (!fgets(buffer, sizeof(buffer), file)) {
-                fclose(file);  // Close the file before returning
-                return ""; // Return an empty string if the index is out of bounds
+            if (!fgets(buffer, BUFFER_SIZE, file)) {
+                fclose(file);
+                return ""; // Index out of bounds
             }
-            line = buffer;  // Store the line (it will include a newline character if present)
+            if (i == listIndex) {
+                line = buffer;
+                // Remove newline character if present
+                size_t len = line.length();
+                if (len > 0 && line[len - 1] == '\n') {
+                    line.pop_back();
+                }
+                break;
+            }
         }
     
-        fclose(file);  // Close the file after reading
+        fclose(file);
     #else
         std::ifstream file(listPath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + listPath);
             #endif
-            return ""; // Return an empty string if the file cannot be opened
+            return "";
         }
     
         std::string line;
         for (size_t i = 0; i <= listIndex; ++i) {
             if (!std::getline(file, line)) {
-                return ""; // Return an empty string if the index is out of bounds
+                return ""; // Index out of bounds
             }
         }
     
-        file.close();  // Close the file
+        file.close();
     #endif
     
-        return line;  // Return the line at the specified index
+        return line;
     }
 
 
@@ -149,6 +170,10 @@ namespace ult {
      */
     std::vector<std::string> stringToList(const std::string& str) {
         std::vector<std::string> result;
+        
+        if (str.empty()) {
+            return result;
+        }
         
         // Check if the input string starts and ends with '(' and ')' or '[' and ']'
         if ((str.front() == '(' && str.back() == ')') || (str.front() == '[' && str.back() == ']')) {
@@ -169,7 +194,7 @@ namespace ult {
                 // Remove quotes from each token if necessary
                 removeQuotes(item);
                 
-                result.push_back(item);
+                result.push_back(std::move(item));
                 start = end + 1;
             }
             
@@ -178,7 +203,7 @@ namespace ult {
                 item = values.substr(start);
                 trim(item);
                 removeQuotes(item);
-                result.push_back(item);
+                result.push_back(std::move(item));
             }
         }
         
@@ -189,74 +214,83 @@ namespace ult {
     
     // Function to read file into a set of strings
     std::unordered_set<std::string> readSetFromFile(const std::string& filePath) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
         std::unordered_set<std::string> lines;
     
     #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in text mode
+        FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return lines; // Return empty set if the file cannot be opened
+            return lines;
         }
     
-        char buffer[4096];  // Buffer to hold each line
-        while (fgets(buffer, sizeof(buffer), file)) {
+        constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove trailing newline character if it exists
-            buffer[strcspn(buffer, "\n")] = 0;  
-            lines.insert(buffer);  // Insert the line into the set
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            lines.insert(buffer);
         }
     
-        fclose(file);  // Close the file after reading
+        fclose(file);
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return lines; // Return empty set if the file cannot be opened
+            return lines;
         }
     
         std::string line;
         while (std::getline(file, line)) {
-            lines.insert(std::move(line));  // Insert lines into the set
+            lines.insert(std::move(line));
         }
     
-        file.close();  // Close the file
+        file.close();
     #endif
     
-        return lines;  // Return the set of lines
+        return lines;
     }
     
     
     // Function to write a set to a file
     void writeSetToFile(const std::unordered_set<std::string>& fileSet, const std::string& filePath) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
+        
     #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "w");  // Open the file in write mode
+        FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
             #endif
-            return;  // Exit if the file cannot be opened
+            return;
         }
     
         for (const auto& entry : fileSet) {
-            fprintf(file, "%s\n", entry.c_str());  // Write each entry followed by a newline
+            fprintf(file, "%s\n", entry.c_str());
         }
     
-        fclose(file);  // Close the file after writing
+        fclose(file);
     #else
         std::ofstream file(filePath);
-        if (file.is_open()) {
-            for (const auto& entry : fileSet) {
-                file << entry << '\n';  // Write each entry followed by a newline
-            }
-            file.close();  // Close the file after writing
-        } else {
+        if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open file: " + filePath);
             #endif
+            return;
         }
+        
+        for (const auto& entry : fileSet) {
+            file << entry << '\n';
+        }
+        
+        file.close();
     #endif
     }
 
@@ -281,39 +315,41 @@ namespace ult {
     
     // Helper function to read a text file and process each line with a callback
     void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
+        
     #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "r");  // Open the file in read mode
+        FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return;  // Exit if the file cannot be opened
+            return;
         }
     
-        size_t len;
-        char buffer[1024];  // Buffer to store each line
-        while (fgets(buffer, sizeof(buffer), file)) {
+        constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove newline character, if present
-            len = strlen(buffer);
+            size_t len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
-            callback(buffer);  // Call the provided callback function
+            callback(buffer);
         }
     
-        fclose(file);  // Close the file after processing
+        fclose(file);
     #else
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Unable to open file: " + filePath);
             #endif
-            return;  // Exit if the file cannot be opened
+            return;
         }
     
         std::string line;
         while (std::getline(file, line)) {
-            callback(line);  // Call the provided callback function
+            callback(line);
         }
     #endif
     }
@@ -334,7 +370,7 @@ namespace ult {
         std::unordered_set<std::string> thisFileLines;
 
         for (const auto& singlePath : wildcardFiles) {
-            // Skip the case where the wildcard match is literally the same path we’re comparing to:
+            // Skip the case where the wildcard match is literally the same path we're comparing to:
             if (singlePath == txtFilePath) {
                 continue;
             }
@@ -353,7 +389,7 @@ namespace ult {
             }
         });
     
-        // 4) Write any “duplicate” lines to outputTxtFilePath
+        // 4) Write any "duplicate" lines to outputTxtFilePath
         writeSetToFile(duplicateLines, outputTxtFilePath);
     }
 }

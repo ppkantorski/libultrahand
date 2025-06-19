@@ -921,7 +921,7 @@ namespace ult {
         }
     
         // Copy the modified string back to the character array
-        strcpy(timeStr, timeStrCopy.c_str());
+        __builtin_strcpy(timeStr, timeStrCopy.c_str());
     }
     #endif
 

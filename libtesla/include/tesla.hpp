@@ -2726,7 +2726,7 @@ namespace tsl {
                         ult::ReadSocTemperature(&ult::SOC_temperature);
                         snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
                     } else {
-                        strcpy(SOC_temperatureStr, "");
+                        __builtin_strcpy(SOC_temperatureStr, "");
                         ult::SOC_temperature = 0;
                     }
                     
@@ -2734,7 +2734,7 @@ namespace tsl {
                         ult::ReadPcbTemperature(&ult::PCB_temperature);
                         snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::PCB_temperature)));
                     } else {
-                        strcpy(PCB_temperatureStr, "");
+                        __builtin_strcpy(PCB_temperatureStr, "");
                         ult::PCB_temperature = 0;
                     }
                     
@@ -2743,7 +2743,7 @@ namespace tsl {
                         ult::batteryCharge = std::min(ult::batteryCharge, 100U);
                         sprintf(chargeString, "%d%%", ult::batteryCharge);
                     } else {
-                        strcpy(chargeString, "");
+                        __builtin_strcpy(chargeString, "");
                         ult::batteryCharge = 0;
                     }
                     
@@ -7135,6 +7135,12 @@ namespace tsl {
                 }
                 bool success = false;
         
+                // Placeholder replacement
+                static const std::string valuePlaceholder = "{value}";
+                static const std::string indexPlaceholder = "{index}";
+                static const size_t valuePlaceholderLength = valuePlaceholder.length();
+                static const size_t indexPlaceholderLength = indexPlaceholder.length();
+
                 size_t pos;
                 size_t tryCount = 0;
                 while (!success) {
@@ -7143,11 +7149,6 @@ namespace tsl {
                             break;
                         auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
                         
-                        // Placeholder replacement
-                        const std::string valuePlaceholder = "{value}";
-                        const std::string indexPlaceholder = "{index}";
-                        const size_t valuePlaceholderLength = valuePlaceholder.length();
-                        const size_t indexPlaceholderLength = indexPlaceholder.length();
                         
                         
                         for (auto& cmd : modifiedCmds) {

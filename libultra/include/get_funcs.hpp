@@ -129,9 +129,9 @@ namespace ult {
     
     // Cache to store directory status
     // Assuming a very simple cache implementation
-    extern std::vector<std::pair<std::string, bool>> directoryCache;
+    //extern std::vector<std::pair<std::string, bool>> directoryCache;
     
-    bool isDirectoryCached(struct dirent* entry, const std::string& path);
+    bool isDirectory(struct dirent* entry, const std::string& path);
     
     /**
      * @brief Recursively retrieves a list of files from a directory.

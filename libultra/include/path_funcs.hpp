@@ -34,13 +34,17 @@
 #include "string_funcs.hpp"
 #include "get_funcs.hpp"
 #include <queue>
+#include <mutex>
 
 
 namespace ult {
     extern std::atomic<bool> abortFileOp;
     
-    extern size_t COPY_BUFFER_SIZE; // Increase buffer size to 128 KB
+    extern size_t COPY_BUFFER_SIZE; // Made const for thread safety
     extern std::atomic<int> copyPercentage;
+    
+    // Mutex for thread-safe logging operations
+    extern std::mutex logMutex;
     
     /**
      * @brief Checks if a path points to a directory.

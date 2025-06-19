@@ -17,6 +17,7 @@
  ********************************************************************************/
 
 #include "download_funcs.hpp"
+#include <mutex>
 
 namespace ult {
 
@@ -33,6 +34,10 @@ std::atomic<bool> abortDownload(false);
 std::atomic<bool> abortUnzip(false);
 std::atomic<int> downloadPercentage(-1);
 std::atomic<int> unzipPercentage(-1);
+
+// Thread-safe curl initialization
+static std::mutex curlInitMutex;
+static std::atomic<bool> curlInitialized(false);
 
 const std::string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
@@ -61,6 +66,7 @@ void ZzipFileDeleter::operator()(ZZIP_FILE* file) const {
 #if NO_FSTREAM_DIRECTIVE
 // Using stdio.h functions (FILE*, fwrite)
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    if (!ptr || !stream) return 0;
     size_t totalBytes = size * nmemb;
     size_t writtenBytes = fwrite(ptr, 1, totalBytes, stream);
     return writtenBytes;
@@ -68,6 +74,7 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 #else
 // Using std::ofstream for writing
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
+    if (!ptr || !stream) return 0;
     auto& file = *static_cast<std::ofstream*>(stream);
     size_t totalBytes = size * nmemb;
     file.write(static_cast<const char*>(ptr), totalBytes);
@@ -75,16 +82,15 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream)
 }
 #endif
 
-
-
-
 // Your C function
 extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
+    if (!ptr) return 1;
+    
     auto percentage = static_cast<std::atomic<int>*>(ptr);
 
     if (totalToDownload > 0) {
-        //int newProgress = static_cast<int>(float(nowDownloaded) / float(totalToDownload) *100);
-        percentage->store(static_cast<int>(float(nowDownloaded) / float(totalToDownload) *100), std::memory_order_release);
+        int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
+        percentage->store(newProgress, std::memory_order_release);
     }
 
     if (abortDownload.load(std::memory_order_acquire)) {
@@ -95,23 +101,30 @@ extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_
     return 0;  // Continue the download
 }
 
-
 // Global initialization function
 void initializeCurl() {
-    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-    if (res != CURLE_OK) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
-        #endif
-        // Handle error appropriately, possibly exit the program
+    std::lock_guard<std::mutex> lock(curlInitMutex);
+    if (!curlInitialized.load(std::memory_order_acquire)) {
+        CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+        if (res != CURLE_OK) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
+            #endif
+            // Handle error appropriately, possibly exit the program
+        } else {
+            curlInitialized.store(true, std::memory_order_release);
+        }
     }
 }
 
 // Global cleanup function
 void cleanupCurl() {
-    curl_global_cleanup();
+    std::lock_guard<std::mutex> lock(curlInitMutex);
+    if (curlInitialized.load(std::memory_order_acquire)) {
+        curl_global_cleanup();
+        curlInitialized.store(false, std::memory_order_release);
+    }
 }
-
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
@@ -121,7 +134,7 @@ void cleanupCurl() {
  * @return True if the download was successful, false otherwise.
  */
 bool downloadFile(const std::string& url, const std::string& toDestination) {
-    abortDownload.store(false);
+    abortDownload.store(false, std::memory_order_release);
 
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
@@ -159,14 +172,17 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
 #else
     // Alternative method of opening file (depending on your platform, like using POSIX open())
-    int file = open(tempFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (file < 0) {
+    FILE* file = fopen(tempFilePath.c_str(), "wb");
+    if (!file) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
         #endif
         return false;
     }
 #endif
+
+    // Ensure curl is initialized
+    initializeCurl();
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
@@ -176,20 +192,19 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
         file.close();
 #else
-        close(file);
+        fclose(file);
 #endif
         return false;
     }
 
     downloadPercentage.store(0, std::memory_order_release);
 
-    
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
 #ifndef NO_FSTREAM_DIRECTIVE
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
 #else
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, reinterpret_cast<void*>(file));
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file);
 #endif
     curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
@@ -212,7 +227,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
     file.close();
 #else
-    close(file);
+    fclose(file);
 #endif
 
     if (result != CURLE_OK) {
@@ -257,28 +272,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     downloadPercentage.store(100, std::memory_order_release);
     moveFile(tempFilePath, destination);
-
     return true;
 }
-
-
-// Define a custom deleter for the unique_ptr to properly close the ZZIP_DIR handle
-//struct ZzipDirDeleter {
-//    void operator()(ZZIP_DIR* dir) const {
-//        if (dir) {
-//            zzip_dir_close(dir);
-//        }
-//    }
-//};
-
-//struct ZzipFileDeleter {
-//    void operator()(ZZIP_FILE* file) const {
-//        if (file) {
-//            zzip_file_close(file);
-//        }
-//    }
-//};
-
 
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
@@ -341,6 +336,15 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     while (zzip_dir_read(dir.get(), &entry)) {
         if (entry.d_name[0] == '\0') continue; // Skip empty entries
 
+        // Check for abort signal
+        if (abortUnzip.load(std::memory_order_acquire)) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Aborting unzip operation.");
+            #endif
+            success = false;
+            break;
+        }
+
         fileName = entry.d_name;
 
         // Remove invalid characters
@@ -392,9 +396,14 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                 #endif
 
                 #if NO_FSTREAM_DIRECTIVE
-                fclose(outputFile); // Close file handle for FILE*
+                if (outputFile) {
+                    fclose(outputFile);
+                    outputFile = nullptr;
+                }
                 #else
-                outputFile.close(); // Close ofstream
+                if (outputFile.is_open()) {
+                    outputFile.close();
+                }
                 #endif
                 
                 deleteFileOrDirectory(extractedFilePath); // Cleanup partial file
@@ -403,26 +412,43 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             }
 
             #if NO_FSTREAM_DIRECTIVE
-            fwrite(buffer, 1, bytesRead, outputFile); // Write to FILE* stream
+            if (fwrite(buffer, 1, bytesRead, outputFile) != static_cast<size_t>(bytesRead)) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Error writing to file: " + extractedFilePath);
+                #endif
+                success = false;
+                break;
+            }
             #else
-            outputFile.write(buffer, bytesRead); // Write to std::ofstream
-            #endif
-
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Extracted: " + extractedFilePath);
+            outputFile.write(buffer, bytesRead);
+            if (!outputFile.good()) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Error writing to file: " + extractedFilePath);
+                #endif
+                success = false;
+                break;
+            }
             #endif
 
             currentUncompressedSize += bytesRead;
 
-            unzipPercentage.store(totalUncompressedSize != 0 ?
-                static_cast<int>(100.0 * std::min(1.0, static_cast<double>(currentUncompressedSize) / static_cast<double>(totalUncompressedSize))) : 0,
-                std::memory_order_release);
+            // Update progress safely
+            if (totalUncompressedSize > 0) {
+                int progress = static_cast<int>(std::min(100.0, 
+                    (static_cast<double>(currentUncompressedSize) / static_cast<double>(totalUncompressedSize)) * 100.0));
+                unzipPercentage.store(progress, std::memory_order_release);
+            }
         }
 
         #if NO_FSTREAM_DIRECTIVE
-        fclose(outputFile); // Close FILE* stream
+        if (outputFile) {
+            fclose(outputFile);
+            outputFile = nullptr;
+        }
         #else
-        outputFile.close(); // Close std::ofstream
+        if (outputFile.is_open()) {
+            outputFile.close();
+        }
         #endif
 
         if (!success) break; // Exit the outer loop if interrupted during extraction
@@ -430,7 +456,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     if (success) {
         unzipPercentage.store(100, std::memory_order_release); // Ensure it's set to 100% on successful extraction
-        //logMessage("Extraction Complete!");
     } else {
         unzipPercentage.store(-1, std::memory_order_release);
     }
