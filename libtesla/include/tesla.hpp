@@ -6619,7 +6619,7 @@ namespace tsl {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
                 m_isItem = false;
-                m_isTable = true;
+                //m_isTable = true;
             }
             virtual ~CategoryHeader() {}
             
