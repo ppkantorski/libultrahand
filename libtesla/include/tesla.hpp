@@ -5189,13 +5189,26 @@ namespace tsl {
                         return;
                     }
                     
-                    // Calculate target velocity with distance-based urgency
-                    float urgency = std::min(distance / getHeight(), 1.0f);  // 0 to 1 based on distance
-                    float accelerationFactor = 0.18f + (0.24f * urgency);    // 0.18 to 0.42 (was 0.15 to 0.35)
-                    float dampingFactor = 0.48f - (0.18f * urgency);         // 0.48 to 0.30 (was 0.4 to 0.25)
+                    // CHANGED: Detect if this is a large jump (likely from jump to top/bottom)
+                    bool isLargeJump = distance > getHeight() * 1.5f;  // More than 1.5 viewport heights
+                    bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;  // Low/no velocity
                     
-                    float targetVelocity = diff * accelerationFactor;
-                    m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
+                    if (isLargeJump && isFromRest) {
+                        // For large jumps from rest, use gentler initial acceleration
+                        float gentleAcceleration = 0.08f;  // Much gentler than normal
+                        float gentleDamping = 0.85f;       // Higher damping for smoothness
+                        
+                        float targetVelocity = diff * gentleAcceleration;
+                        m_scrollVelocity += (targetVelocity - m_scrollVelocity) * gentleDamping;
+                    } else {
+                        // Calculate target velocity with distance-based urgency (original logic)
+                        float urgency = std::min(distance / getHeight(), 1.0f);  // 0 to 1 based on distance
+                        float accelerationFactor = 0.18f + (0.24f * urgency);    // 0.18 to 0.42 (was 0.15 to 0.35)
+                        float dampingFactor = 0.48f - (0.18f * urgency);         // 0.48 to 0.30 (was 0.4 to 0.25)
+                        
+                        float targetVelocity = diff * accelerationFactor;
+                        m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
+                    }
                     
                     // Apply velocity
                     m_offset += m_scrollVelocity;
