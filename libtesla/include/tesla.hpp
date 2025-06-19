@@ -5825,6 +5825,7 @@ namespace tsl {
             }
             
         };
+        // Forward declare external method to be used in changeTo
 
         /**
          * @brief A item that goes into a list
@@ -8761,6 +8762,9 @@ namespace tsl {
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
             isNavigatingBackwards = false;
+
+            // cache frame for forward rendering using external list method (to be implemented)
+
             // Create the top element of the new Gui
             gui->m_topElement = gui->createUI();
 
