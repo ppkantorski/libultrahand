@@ -5141,29 +5141,74 @@ namespace tsl {
                 renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
                 renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
             }
-        
+
+            float m_scrollVelocity = 0.0f;
             inline void updateScrollAnimation() {
                 if (Element::getInputMode() == InputMode::Controller) {
-                    // Check how far behind we are
-                    float distance = std::abs(m_nextOffset - m_offset);
-                    
-                    // Use a base lerp speed that's fast enough for normal scrolling
-                    float lerpSpeed = 0.3f;
-                    
-                    // If we're falling behind (large distance), catch up faster
-                    if (distance > getHeight() * 0.2f) {
-                        lerpSpeed = 0.6f;
+                    // First, check if the focused item is going out of bounds
+                    if (m_focusedIndex < m_items.size()) {
+                        float itemTop = 0.0f;
+                        for (size_t i = 0; i < m_focusedIndex; ++i) {
+                            itemTop += m_items[i]->getHeight();
+                        }
+                        float itemBottom = itemTop + m_items[m_focusedIndex]->getHeight();
+                        
+                        float viewTop = m_offset;
+                        float viewBottom = m_offset + getHeight();
+                        
+                        // Emergency correction if item is outside view
+                        if (itemTop < viewTop || itemBottom > viewBottom) {
+                            // Item is going out of bounds - accelerate MUCH faster
+                            float diff = m_nextOffset - m_offset;
+                            float emergencySpeed = 0.6f;  // 60% immediate correction (was 0.5f)
+                            
+                            // If completely out of view, snap even faster
+                            if (itemBottom < viewTop || itemTop > viewBottom) {
+                                emergencySpeed = 0.9f;  // 90% immediate correction (was 0.8f)
+                            }
+                            
+                            m_offset += diff * emergencySpeed;
+                            m_scrollVelocity = diff * 0.3f;  // Set velocity to continue momentum
+                            
+                            if (prevOffset != m_offset) {
+                                invalidate();
+                                prevOffset = m_offset;
+                            }
+                            return;
+                        }
                     }
                     
-                    // Apply the lerp
-                    m_offset += (m_nextOffset - m_offset) * lerpSpeed;
+                    // Normal smooth scrolling when item is in view
+                    float diff = m_nextOffset - m_offset;
+                    float distance = std::abs(diff);
                     
-                    // Snap when close
+                    // If we're very close, just snap
                     if (distance < 0.5f) {
                         m_offset = m_nextOffset;
+                        m_scrollVelocity = 0.0f;
+                        return;
+                    }
+                    
+                    // Calculate target velocity with distance-based urgency
+                    float urgency = std::min(distance / getHeight(), 1.0f);  // 0 to 1 based on distance
+                    float accelerationFactor = 0.18f + (0.24f * urgency);    // 0.18 to 0.42 (was 0.15 to 0.35)
+                    float dampingFactor = 0.48f - (0.18f * urgency);         // 0.48 to 0.30 (was 0.4 to 0.25)
+                    
+                    float targetVelocity = diff * accelerationFactor;
+                    m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
+                    
+                    // Apply velocity
+                    m_offset += m_scrollVelocity;
+                    
+                    // Ensure we don't overshoot
+                    if ((m_scrollVelocity > 0 && m_offset > m_nextOffset) ||
+                        (m_scrollVelocity < 0 && m_offset < m_nextOffset)) {
+                        m_offset = m_nextOffset;
+                        m_scrollVelocity = 0.0f;
                     }
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
-                    m_offset += (m_nextOffset - m_offset);
+                    m_offset = m_nextOffset;
+                    m_scrollVelocity = 0.0f;
                 }
                 
                 if (prevOffset != m_offset) {
@@ -5644,21 +5689,21 @@ namespace tsl {
                 // Not at top - perform the jump
                 if (firstFocusableIndex < m_items.size()) {
                     m_focusedIndex = firstFocusableIndex;
-                    m_nextOffset = 0.0f;  // Scroll to absolute top
+                    m_nextOffset = 0.0f;  // Set target position for smooth scrolling
                     
                     Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
-                        invalidate();
+                        // DON'T call invalidate() here - let updateScrollAnimation() handle the smooth transition
                         return newFocus;
                     }
                 }
                 
-                // No focusable items - just scroll to top
+                // No focusable items - just set target to top
                 m_nextOffset = 0.0f;
-                invalidate();
+                // DON'T call invalidate() here either
                 return oldFocus;
             }
-            
+                        
             Element* handleJumpToBottom(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
                 
@@ -5695,18 +5740,18 @@ namespace tsl {
                 // Not at bottom - perform the jump
                 if (lastFocusableIndex < m_items.size()) {
                     m_focusedIndex = lastFocusableIndex;
-                    m_nextOffset = maxOffset;  // Scroll to absolute bottom
+                    m_nextOffset = maxOffset;  // Set target position for smooth scrolling
                     
                     Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
-                        invalidate();
+                        // DON'T call invalidate() here - let updateScrollAnimation() handle the smooth transition
                         return newFocus;
                     }
                 }
                 
-                // No focusable items - just scroll to bottom
+                // No focusable items - just set target to bottom
                 m_nextOffset = maxOffset;
-                invalidate();
+                // DON'T call invalidate() here either
                 return oldFocus;
             }
             
@@ -5719,7 +5764,9 @@ namespace tsl {
                     prefixSums[i] = prefixSums[i - 1] + m_items[i - 1]->getHeight();
                 }
             }
-                                    
+            
+            
+            // Keep your EXACT original updateScrollOffset() method unchanged:
             virtual inline void updateScrollOffset() {
                 if (Element::getInputMode() != InputMode::Controller) return;
                 
