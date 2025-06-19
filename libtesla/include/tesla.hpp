@@ -3571,9 +3571,9 @@ namespace tsl {
                     this->drawClickAnimation(renderer);
         
                     // Calculate time elapsed since the animation started using armTicksToNs
-                    u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    u64 elapsed_ns = currentTime_ns - this->m_animationStartTime;
-                    double elapsed_ms = elapsed_ns / 1000000.0; // Convert to milliseconds
+                    //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    //u64 elapsed_ns = armTicksToNs(armGetSystemTick()) - this->m_animationStartTime;
+                    double elapsed_ms = (armTicksToNs(armGetSystemTick()) - this->m_animationStartTime) / 1000000.0; // Convert to milliseconds
         
                     // Decrease progress based on the elapsed time (1 second = 1000ms)
                     this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (elapsed_ms / 500.0f));
@@ -3597,8 +3597,8 @@ namespace tsl {
                 
                 
                 // Changed timing calculation to use armTicksToNs
-                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                double time_seconds = currentTime_ns / 1000000000.0; // Convert nanoseconds to seconds
+                //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                double time_seconds = armTicksToNs(armGetSystemTick()) / 1000000000.0; // Convert nanoseconds to seconds
                 progress = ((std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) / 2.0);
 
                 if (ult::runningInterpreter.load(std::memory_order_acquire)) {
@@ -3620,8 +3620,8 @@ namespace tsl {
                 y = 0;
                 
                 if (this->m_highlightShaking) {
-                    u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    t_ns = currentTime_ns - this->m_highlightShakingStartTime; // Changed
+                    //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    t_ns = armTicksToNs(armGetSystemTick()) - this->m_highlightShakingStartTime; // Changed
                     if (t_ns >= 100000000) // 100ms in nanoseconds
                         this->m_highlightShaking = false;
                     else {
@@ -5810,14 +5810,19 @@ namespace tsl {
                 }
                 renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() + 10, 1, a(separatorColor));
                 lastBottomBound = bottomBound;
-        
+            
+            #if IS_LAUNCHER_DIRECTIVE
+                static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
+            #else
+                static const std::vector<std::string> specialChars = {};
+            #endif
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
-                    renderer->drawStringWithColoredSections(m_text, false, {ult::STAR_SYMBOL}, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor)),
                         a(m_focused ? starColor : selectionStarColor));
                 } else {
-                    drawTruncatedText(renderer, yOffset, useClickTextColor, {ult::STAR_SYMBOL});
+                    drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
                 }
         
                 if (!m_value.empty()) [[likely]] {
@@ -6196,7 +6201,12 @@ namespace tsl {
                     }
                 } else {
                     // Render the text with special character handling
-                    renderer->drawStringWithColoredSections(this->m_text, false, {ult::STAR_SYMBOL}, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
+                #if IS_LAUNCHER_DIRECTIVE
+                    static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
+                #else
+                    static const std::vector<std::string> specialChars = {};
+                #endif
+                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
                         a(this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
                         a(this->m_focused ? starColor : selectionStarColor)
                     );
@@ -8289,7 +8299,7 @@ namespace tsl {
         }
                         
 
-                
+                        
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
             // Static variables to maintain state between function calls
             static HidTouchState initialTouchPos = { 0 };
@@ -8304,7 +8314,7 @@ namespace tsl {
             
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
-
+        
             auto& currentGui = this->getCurrentGui();
             //static bool isTopElement = true;
         
@@ -8359,7 +8369,7 @@ namespace tsl {
                 }
             }
         #endif
-
+        
             // Reset touch state when GUI changes
             if (currentGui.get() != lastGuiPtr) {  // or just currentGui != lastGuiPtr if it's not a smart pointer
                 hasScrolled = false;
@@ -8369,7 +8379,7 @@ namespace tsl {
                 initialTouchPos = { 0 };
                 lastGuiPtr = currentGui.get();  // or just currentGui
             }
-                    
+            
             if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !oldTouchDetected && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                 if (!topElement) return;
                 
@@ -8471,7 +8481,7 @@ namespace tsl {
                             keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         } else {
                             // Table scrolling - faster timing
-                            static const u64 transitionPoint_ns = 300000000ULL; // 1000ms (faster transition)
+                            static const u64 transitionPoint_ns = 300000000ULL; // 300ms (faster transition)
                             static const u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
                             static const u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
                             
@@ -8481,7 +8491,7 @@ namespace tsl {
                             keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         }
                         
-
+        
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
@@ -8525,14 +8535,30 @@ namespace tsl {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
             }
         
+            // Cache common calculations
+            const float backLeftEdge = 20.0f + ult::layerEdge;
+            const float backRightEdge = ult::backWidth + 86.0f + ult::layerEdge;
+            const float selectRightEdge = backRightEdge + ult::selectWidth + 68.0f;
+            const float menuRightEdge = 245.0f + ult::layerEdge;
+            const u32 footerY = cfg::FramebufferHeight - 73U;
+            
             // Touch region calculations
-            ult::touchingBack = (touchPos.x >= 20.0f + ult::layerEdge && touchPos.x < ult::backWidth+86.0f + ult::layerEdge && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            ult::touchingSelect = !ult::noClickableItems && (touchPos.x >= ult::backWidth+86.0f + ult::layerEdge && touchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+            ult::touchingBack = (touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
+                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY);
+            
+            ult::touchingSelect = !ult::noClickableItems && 
+                                  (touchPos.x >= backRightEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
+                                  (initialTouchPos.x >= backRightEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
+            
             if (!ult::noClickableItems)
-                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
+                ult::touchingNextPage = (touchPos.x >= selectRightEdge && (touchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && touchPos.y > footerY) && 
+                                        (initialTouchPos.x >= selectRightEdge && (initialTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY);
             else
-                ult::touchingNextPage = (touchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (touchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && touchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U);
-            ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= 245+ult::layerEdge && touchPos.y > 10U && touchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= 245 + ult::layerEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+                ult::touchingNextPage = (touchPos.x >= backRightEdge && (touchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && touchPos.y > footerY) && 
+                                        (initialTouchPos.x >= backRightEdge && (initialTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY);
+            
+            ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
+                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
             
         
             if (touchDetected) {
@@ -8555,7 +8581,9 @@ namespace tsl {
                     initialTouchPos = touchPos;
                     elm::Element::setInputMode(InputMode::Touch);
                     if (!ult::runningInterpreter.load(std::memory_order_acquire)) {
-                        ult::touchInBounds = (initialTouchPos.y <= cfg::FramebufferHeight - 73U && initialTouchPos.y > 73U && initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth-30U && initialTouchPos.x > 40U + ult::layerEdge);
+                        ult::touchInBounds = (initialTouchPos.y <= footerY && initialTouchPos.y > 73U && 
+                                            initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U && 
+                                            initialTouchPos.x > 40U + ult::layerEdge);
                         if (ult::touchInBounds) currentGui->removeFocus();
                     }
                     touchEvent = elm::TouchEvent::Touch;
@@ -8563,7 +8591,8 @@ namespace tsl {
                 
                 if (currentGui && topElement && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
-                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth-30U + ult::layerEdge && touchPos.y > 73U && touchPos.y <= cfg::FramebufferHeight - 73U) {
+                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth - 30U + ult::layerEdge && 
+                        touchPos.y > 73U && touchPos.y <= footerY) {
                         currentGui->removeFocus();
                     }
                 }
@@ -8583,19 +8612,24 @@ namespace tsl {
                 ult::stillTouching = true;
             } else {
                 if (!ult::interruptedTouch && !ult::runningInterpreter.load(std::memory_order_acquire)) {
-                    if ((oldTouchPos.x >= 20.0f + ult::layerEdge && oldTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= 20.0f + ult::layerEdge && initialTouchPos.x < ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                    if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
+                        (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedBackComplete = false;
                         ult::simulatedBack = true;
-                    } else if (!ult::noClickableItems && (oldTouchPos.x >= ult::backWidth+86.0f + ult::layerEdge && oldTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >=  ult::backWidth+86.0f + ult::layerEdge && initialTouchPos.x < (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= backRightEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= backRightEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedSelectComplete = false;
                         ult::simulatedSelect = true;
-                    } else if (!ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::selectWidth+68.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f + ult::selectWidth+68.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= selectRightEdge && (oldTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= selectRightEdge && (initialTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY)) {
                         ult::simulatedNextPageComplete = false;
                         ult::simulatedNextPage = true;
-                    } else if (ult::noClickableItems && (oldTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (oldTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && oldTouchPos.y > cfg::FramebufferHeight - 73U) && (initialTouchPos.x >= (ult::backWidth+86.0f + ult::layerEdge) && (initialTouchPos.x <= ult::backWidth+86.0f +ult::nextPageWidth+70.0f + ult::layerEdge) && initialTouchPos.y > cfg::FramebufferHeight - 73U)) {
+                    } else if (ult::noClickableItems && (oldTouchPos.x >= backRightEdge && (oldTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= backRightEdge && (initialTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY)) {
                         ult::simulatedNextPageComplete = false;
                         ult::simulatedNextPage = true;
-                    } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= ult::layerEdge + 245 && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= ult::layerEdge + 245 && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
+                    } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
+                               (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
                         ult::simulatedMenuComplete = false;
                         ult::simulatedMenu = true;
                     }
