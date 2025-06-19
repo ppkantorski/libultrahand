@@ -5076,7 +5076,7 @@ namespace tsl {
             }
 
 
-            inline void clearItems() {
+            void clearItems() {
                 // Clear static cache if it belongs to this instance
                 if (s_cachedInstanceId == m_instanceId) {
                     clearStaticCache();
@@ -5091,7 +5091,7 @@ namespace tsl {
                 actualItemCount = 0;
             }
             
-            inline void addPendingItems() {
+            void addPendingItems() {
                 for (auto [index, element] : m_itemsToAdd) {
                     element->invalidate();
                     if (index >= 0 && static_cast<size_t>(index) < m_items.size()) {
@@ -5105,7 +5105,7 @@ namespace tsl {
                 updateScrollOffset();
             }
             
-            inline void removePendingItems() {
+            void removePendingItems() {
                 size_t index;
                 for (Element* element : m_itemsToRemove) {
                     auto it = std::find(m_items.begin(), m_items.end(), element);
@@ -5123,7 +5123,7 @@ namespace tsl {
                 updateScrollOffset();
             }
             
-            inline void drawScrollbar(gfx::Renderer* renderer, s32 height) {
+            void drawScrollbar(gfx::Renderer* renderer, s32 height) {
                 const float viewHeight = static_cast<float>(height - 10);
                 const float totalHeight = static_cast<float>(m_listHeight-22);
                 const u32 maxScrollableHeight = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
@@ -5780,7 +5780,7 @@ namespace tsl {
             
             
             // Keep your EXACT original updateScrollOffset() method unchanged:
-            virtual inline void updateScrollOffset() {
+            virtual void updateScrollOffset() {
                 if (Element::getInputMode() != InputMode::Controller) return;
                 
                 if (m_listHeight <= getHeight()) {
