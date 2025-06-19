@@ -4665,6 +4665,7 @@ namespace tsl {
         class ListItem; // forward declaration
 
         static std::vector<Element*> s_lastFrameItems;
+        static bool s_isForwardCache = false; // NEW VARIABLE FOR FORWARD CACHING
         static bool s_hasValidFrame = false;
         static size_t s_cachedInstanceId = 0;
         static size_t s_nextInstanceId = 1; 
@@ -4678,7 +4679,6 @@ namespace tsl {
         static u32 s_cachedScrollbarOffset = 0;
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
-        static u32 pageCount = 0;
 
         static bool isTableScrolling = false;
 
@@ -4687,17 +4687,9 @@ namespace tsl {
         public:
             List() : Element(), m_instanceId(generateInstanceId()) {
                 m_isItem = false;
-                pageCount++;
             }
             virtual ~List() {
-                pageCount--;
-                //tsl::gfx::FontManager::clearCache();
-                //if (s_cachedInstanceId == m_instanceId && jumpItemName.empty() ) {
-                //    clearItems();
-                //    clearStaticCache();
-                //}
                 cacheCurrentFrame();
-                //clearItems();
             }
             
             
@@ -4723,7 +4715,12 @@ namespace tsl {
                 if (m_pendingJump && s_hasValidFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    clearStaticCache();
+                    if (!s_isForwardCache)
+                        clearStaticCache();
+                    else {
+                        // remove pointer connections from s_lastFrameItems connected to prior list without destroying them (NEEDS IMPLEMENTING)
+                        clearStaticCache(true);
+                    }
                     return;
                 }
 
@@ -4759,7 +4756,13 @@ namespace tsl {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
-                clearStaticCache(); // clear cache after rendering (for smoother transitions)
+
+                if (!s_isForwardCache && s_hasValidFrame)
+                    clearStaticCache(); // clear cache after rendering (for smoother transitions)
+                else {
+                    // remove pointer connections from s_lastFrameItems connected to prior list without destroying them (NEEDS IMPLEMENTING)
+                    clearStaticCache(true);
+                }
                 
             }
         
@@ -4961,24 +4964,24 @@ namespace tsl {
         
         private:
             // Method to explicitly preserve cache when navigating away
-            void preserveCacheForReturn() {
-                if (m_instanceId == s_cachedInstanceId && s_hasValidFrame) {
-                    // Cache is already preserved for this instance
-                    return;
-                }
-                cacheCurrentFrame();
-            }
+            //void preserveCacheForReturn() {
+            //    if (m_instanceId == s_cachedInstanceId && s_hasValidFrame) {
+            //        // Cache is already preserved for this instance
+            //        return;
+            //    }
+            //    cacheCurrentFrame();
+            //}
         
             // Method to check if this instance has a valid cached frame
-            bool hasCachedFrame() const {
-                return s_hasValidFrame && s_cachedInstanceId == m_instanceId;
-            }
+            //bool hasCachedFrame() const {
+            //    return s_hasValidFrame && s_cachedInstanceId == m_instanceId;
+            //}
 
             static size_t generateInstanceId() {
                 return s_nextInstanceId++;
             }
         
-            static void clearStaticCache() {
+            static void clearStaticCache(bool isForwardCache = false) {
                 // Clear previous cache (including memory!)
                 for (Element* el : s_lastFrameItems) {
                     delete el;
@@ -4999,7 +5002,7 @@ namespace tsl {
                 s_cachedScrollbarY = 0;
             }
                     
-            void cacheCurrentFrame() {
+            void cacheCurrentFrame(bool isForwardCache = false) {
                 // Clear previous cache (including memory!)
                 for (Element* el : s_lastFrameItems) {
                     delete el;
@@ -5457,6 +5460,7 @@ namespace tsl {
                     
                     // If table extends beyond view, continue scrolling through it
                     if (tableBottom > viewBottom) {
+                        isTableScrolling = true;
                         scrollDown();
                         return oldFocus;
                     }
@@ -5473,7 +5477,7 @@ namespace tsl {
                     Element* item = m_items[nextIndex];
                     
                     if (item->isTable()) {
-                        isTableScrolling = true;
+                        
                         // Found a table - start scrolling through it
                         tableTop = item->getTopBound();
                         tableBottom = item->getBottomBound();
@@ -5484,6 +5488,7 @@ namespace tsl {
                         
                         // Check if we need to scroll to see more of the table
                         if (tableBottom > viewBottom || tableTop >= viewBottom) {
+                            isTableScrolling = true;
                             scrollDown();
                             return oldFocus;
                         }
@@ -5491,11 +5496,12 @@ namespace tsl {
                         nextIndex++;
                         continue;
                     } else {
-                        isTableScrolling = false;
+                        
                         // Found a focusable item - try to focus it
                         Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
                         if (newFocus && newFocus != oldFocus) {
                             m_focusedIndex = nextIndex;
+                            isTableScrolling = false;
                             updateScrollOffset();
                             return newFocus;
                         }
@@ -5511,19 +5517,19 @@ namespace tsl {
             inline Element* navigateUp(Element* oldFocus) {
                 // Check if we're currently "in" a table (focusing on it for scrolling)
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
-                    isTableScrolling = true;
                     Element* currentTable = m_items[m_focusedIndex];
                     s32 tableTop = currentTable->getTopBound();
                     s32 viewTop = getTopBound();
                     
                     // If table extends beyond view, continue scrolling through it
                     if (tableTop < viewTop) {
+                        isTableScrolling = true;
                         scrollUp();
                         return oldFocus;
                     }
                     // Table is fully visible, move to previous item
                 }
-                isTableScrolling = false;
+                
                 
                 // Find the previous item in the list
                 if (m_focusedIndex == 0) return oldFocus;
@@ -5547,6 +5553,7 @@ namespace tsl {
                         
                         // Check if we need to scroll to see more of the table
                         if (tableTop < viewTop || tableBottom <= viewTop) {
+                            isTableScrolling = true;
                             scrollUp();
                             return oldFocus;
                         }
@@ -5558,6 +5565,7 @@ namespace tsl {
                         Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
                         if (newFocus && newFocus != oldFocus) {
                             m_focusedIndex = static_cast<size_t>(prevIndex);
+                            isTableScrolling = false;
                             updateScrollOffset();
                             return newFocus;
                         }
