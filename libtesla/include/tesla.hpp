@@ -4774,7 +4774,10 @@ namespace tsl {
                     clearStaticCache(); // clear cache after rendering (for smoother transitions)
                 
                 if (cacheForwardFrameOnce && !s_hasValidFrame) {
-                    clearStaticCache(true);
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
+                    s_lastFrameItems = m_items;
+                    s_isForwardCache = true;
                     cacheForwardFrameOnce = false;
                 }
 
@@ -8808,7 +8811,7 @@ namespace tsl {
             
             // Push the new Gui onto the stack
             this->m_guiStack.push(std::move(gui));
-            
+            tsl::gfx::FontManager::clearCache();
             return this->m_guiStack.top();
         }
 
