@@ -4821,6 +4821,8 @@ namespace tsl {
                         m_nextOffset = std::clamp(m_nextOffset, 0.0f, 
                             static_cast<float>(m_listHeight - getHeight()));
                         
+                        // Track that we're touch scrolling
+                        m_touchScrollActive = true;
                     }
                     return true;
                 }
@@ -4971,12 +4973,15 @@ namespace tsl {
             u32 scrollbarHeight;
             u32 scrollbarOffset;
             u32 prevOffset;
-        
+            
             static constexpr float smoothingFactor = 0.15f;
             static constexpr float dampingFactor = 0.3f;
             static constexpr float TABLE_SCROLL_STEP_SIZE = 13;
             static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 40;
+            float m_scrollVelocity = 0.0f;
             
+            bool m_touchScrollActive = false;
+
             enum class NavigationResult {
                 None,
                 Success,
@@ -5187,9 +5192,13 @@ namespace tsl {
                 renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
             }
 
-            float m_scrollVelocity = 0.0f;
+            
             inline void updateScrollAnimation() {
                 if (Element::getInputMode() == InputMode::Controller) {
+                    // Clear touch flag when in controller mode
+                    m_touchScrollActive = false;
+                    
+                    // Your existing controller animation code here (unchanged)...
                     // First, check if the focused item is going out of bounds
                     if (m_focusedIndex < m_items.size()) {
                         float itemTop = 0.0f;
@@ -5267,6 +5276,25 @@ namespace tsl {
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     m_offset = m_nextOffset;
                     m_scrollVelocity = 0.0f;
+                    
+                    // When touch scrolling, update focused index to match visible area
+                    if (m_touchScrollActive) {
+                        float viewCenter = m_offset + (getHeight() / 2.0f);
+                        float accumHeight = 0.0f;
+                        
+                        float itemHeight, itemCenter;
+                        for (size_t i = 0; i < m_items.size(); ++i) {
+                            itemHeight = m_items[i]->getHeight();
+                            itemCenter = accumHeight + (itemHeight / 2.0f);
+                            
+                            if (itemCenter >= viewCenter) {
+                                m_focusedIndex = i;
+                                break;
+                            }
+                            
+                            accumHeight += itemHeight;
+                        }
+                    }
                 }
                 
                 if (prevOffset != m_offset) {
