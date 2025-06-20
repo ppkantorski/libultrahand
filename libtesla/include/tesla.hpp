@@ -4730,17 +4730,14 @@ namespace tsl {
                 if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    clearStaticCache(s_isForwardCache);
+                    if (s_isForwardCache)
+                        clearStaticCache(true);
+                    else
+                        clearStaticCache();
                     s_isForwardCache = false;
+                    s_hasValidFrame = false;
                     return;
                 }
-
-                //if (!m_pendingJump && s_isForwardCache) {
-                //    clearStaticCache(s_isForwardCache);
-                //    s_isForwardCache = false;
-                //}
-
-                //if (s_hasValidFrame)
 
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
@@ -4773,15 +4770,14 @@ namespace tsl {
                     updateScrollAnimation();
                 }
 
+                if (!s_isForwardCache && s_hasValidFrame)
+                    clearStaticCache(); // clear cache after rendering (for smoother transitions)
                 
-                if (cacheForwardFrameOnce) {
-                    s_lastFrameItems = m_items;
-                    s_isForwardCache = true;
+                if (cacheForwardFrameOnce && !s_hasValidFrame) {
+                    clearStaticCache(true);
                     cacheForwardFrameOnce = false;
-                } else {
-                    if (s_hasValidFrame)
-                        clearStaticCache(s_isForwardCache); // clear cache after rendering (for smoother transitions)
                 }
+
                 if (s_isForwardCache)
                     cacheCurrentFrame(true);
                 
@@ -5060,6 +5056,8 @@ namespace tsl {
                 //    //}
                 //}
                 if (!isForwardCache) {
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
                 }
                 
