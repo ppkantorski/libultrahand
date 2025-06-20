@@ -4698,6 +4698,7 @@ namespace tsl {
                 m_isItem = false;
             }
             virtual ~List() {
+                s_isForwardCache = false;
                 cacheCurrentFrame();
             }
             
@@ -4763,12 +4764,15 @@ namespace tsl {
 
                 static bool cacheForwardFrameOnce = true;
                 if (cacheForwardFrameOnce) {
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
                     s_isForwardCache = true;
                 }
+
                 if (s_hasValidFrame && !s_isForwardCache)
                     clearStaticCache(); // clear cache after rendering (for smoother transitions)
-                else
+                if (s_isForwardCache)
                     cacheCurrentFrame(true);
                 
             }
@@ -4973,6 +4977,23 @@ namespace tsl {
             NavigationResult m_lastNavigationResult = NavigationResult::None;
         
         private:
+            // Method to explicitly preserve cache when navigating away
+            //void preserveCacheForReturn() {
+            //    if (m_instanceId == s_cachedInstanceId && s_hasValidFrame) {
+            //        // Cache is already preserved for this instance
+            //        return;
+            //    }
+            //    cacheCurrentFrame();
+            //}
+        
+            // Method to check if this instance has a valid cached frame
+            //bool hasCachedFrame() const {
+            //    return s_hasValidFrame && s_cachedInstanceId == m_instanceId;
+            //}
+
+            //static size_t generateInstanceId() {
+            //    return s_nextInstanceId++;
+            //}
         
             static void clearStaticCache(bool preservePointers = false) {
                 if (preservePointers) {
@@ -5087,9 +5108,13 @@ namespace tsl {
 
 
             void clearItems() {
+                // Clear static cache if it belongs to this instance
+                //if (s_cachedInstanceId == m_instanceId) {
+                //    clearStaticCache();
+                //}
+
                 for (Element* item : m_items) delete item;
                 m_items.clear();
-                m_items.shrink_to_fit();
                 m_offset = 0;
                 m_focusedIndex = 0;
                 invalidate();
