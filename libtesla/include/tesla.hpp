@@ -8798,7 +8798,7 @@ namespace tsl {
          * @param gui Gui to change to
          * @return Reference to the Gui
          */
-        std::unique_ptr<tsl::Gui>& changeTo(std::unique_ptr<tsl::Gui>&& gui) {
+        std::unique_ptr<tsl::Gui>& changeTo(std::unique_ptr<tsl::Gui>&& gui, bool clearGlyphCache = false) {
             if (this->m_guiStack.top() != nullptr && this->m_guiStack.top()->m_focusedElement != nullptr)
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
@@ -8812,7 +8812,8 @@ namespace tsl {
             
             // Push the new Gui onto the stack
             this->m_guiStack.push(std::move(gui));
-            //tsl::gfx::FontManager::clearCache();
+            if (clearGlyphCache)
+                tsl::gfx::FontManager::clearCache();
             return this->m_guiStack.top();
         }
 
@@ -8825,9 +8826,16 @@ namespace tsl {
          * @param args Arguments to pass to the Gui
          * @return Reference to the newly created Gui
          */
+        // Template version without clearGlyphCache (for backward compatibility)
         template<typename G, typename ...Args>
         std::unique_ptr<tsl::Gui>& changeTo(Args&&... args) {
-            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...));
+            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), false);
+        }
+        
+        // Template version with clearGlyphCache as the last parameter
+        template<typename G, typename ...Args>
+        std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
+            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), true);
         }
         
         /**
