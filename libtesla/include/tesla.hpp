@@ -5566,7 +5566,7 @@ namespace tsl {
                             // This is a gap/header - scroll past it smoothly
                             float itemTop = calculateItemPosition(searchIndex);
                             float itemBottom = itemTop + item->getHeight();
-                            float viewTop = m_offset;
+                            //float viewTop = m_offset;
                             float viewBottom = m_offset + getHeight();
                             
                             // If this element isn't fully visible, scroll to show it
@@ -5639,9 +5639,9 @@ namespace tsl {
                         } else {
                             // This is a gap/header - scroll past it smoothly
                             float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
-                            float itemBottom = itemTop + item->getHeight();
+                            //float itemBottom = itemTop + item->getHeight();
                             float viewTop = m_offset;
-                            float viewBottom = m_offset + getHeight();
+                            //float viewBottom = m_offset + getHeight();
                             
                             // If this element isn't fully visible, scroll to show it
                             if (itemTop < viewTop) {
@@ -5712,62 +5712,105 @@ namespace tsl {
                         
         
             Element* wrapToTop(Element* oldFocus) {
-                // Go to absolute beginning - sync both positions immediately
-                m_focusedIndex = 0;
-                m_nextOffset = 0.0f;
-                m_offset = 0.0f;  // Immediately sync current position
-                m_scrollVelocity = 0.0f;  // Stop any animation
-                isTableScrolling = false;
-                
-                // Try to focus the first item if it's focusable
-                if (!m_items.empty()) {
-                    Element* newFocus = m_items[0]->requestFocus(oldFocus, FocusDirection::Down);
+                // Find first focusable item (including tables)
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus) {
-                        invalidate();
+                        m_focusedIndex = i;
+                        m_nextOffset = 0.0f;
                         return newFocus;
                     }
                 }
                 
-                // First item not focusable (header/gap/table) - just ensure we're positioned correctly
+                // No focusable items - just scroll to top
+                m_nextOffset = 0.0f;
                 invalidate();
                 return oldFocus;
             }
-            
+
+
+                        
+            // Also fix wrapToBottom for consistency
             Element* wrapToBottom(Element* oldFocus) {
-                // Go to absolute end - sync both positions immediately
-                if (!m_items.empty()) {
-                    m_focusedIndex = m_items.size() - 1;
-                }
+                invalidate();
                 
-                // Calculate max scroll position and sync immediately
-                float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                m_nextOffset = maxOffset;
-                m_offset = maxOffset;  // Immediately sync current position
-                m_scrollVelocity = 0.0f;  // Stop any animation
-                isTableScrolling = false;
-                
-                // Try to focus the last item if it's focusable, searching backwards
+                // Find last focusable item (including tables)
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = static_cast<size_t>(i);
-                        invalidate();
+                        if (m_listHeight > getHeight()) {
+                            m_nextOffset = static_cast<float>(m_listHeight - getHeight());
+                        }
                         return newFocus;
                     }
                 }
                 
-                // No focusable items found - just ensure we're positioned at bottom
-                invalidate();
+                // No focusable items - just scroll to bottom
+                if (m_listHeight > getHeight()) {
+                    m_nextOffset = static_cast<float>(m_listHeight - getHeight());
+                    invalidate();
+                }
                 return oldFocus;
             }
 
-
-            
             
             // Add these methods to handle jumps with smooth scrolling
+            Element* handleJumpToBottom(Element* oldFocus) {
+                if (m_items.empty()) return oldFocus;
+                
+                invalidate();
+                resetNavigationState();
+                jumpToBottom = false;  // Reset flag
+                
+                // Find the last focusable item
+                size_t lastFocusableIndex = m_items.size();
+                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (test) {
+                        lastFocusableIndex = static_cast<size_t>(i);
+                        break;
+                    }
+                }
+                
+                // Calculate scroll position using SAME logic as wrapToBottom
+                float targetOffset = 0.0f;
+                if (m_listHeight > getHeight()) {
+                    targetOffset = static_cast<float>(m_listHeight - getHeight());
+                }
+                
+                // Check if we're already at the bottom with proper tolerance
+                bool alreadyAtBottom = false;
+                if (lastFocusableIndex < m_items.size()) {
+                    const float tolerance = 5.0f;
+                    alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) && 
+                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                }
+                
+                if (alreadyAtBottom) {
+                    return oldFocus;  // Already at bottom, do nothing
+                }
+                
+                // Not at bottom - perform the jump using SAME logic as wrapToBottom
+                if (lastFocusableIndex < m_items.size()) {
+                    m_focusedIndex = lastFocusableIndex;
+                    m_nextOffset = targetOffset;  // Use same calculation as wrapToBottom
+                    
+                    Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
+                    if (newFocus && newFocus != oldFocus) {
+                        return newFocus;
+                    }
+                }
+                
+                // No focusable items - just set target to bottom (same as wrapToBottom)
+                m_nextOffset = targetOffset;
+                return oldFocus;
+            }
+            
             Element* handleJumpToTop(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
                 
+                invalidate();
                 resetNavigationState();
                 jumpToTop = false;  // Reset flag
                 
@@ -5781,85 +5824,34 @@ namespace tsl {
                     }
                 }
                 
+                // Use SAME logic as wrapToTop - always scroll to 0.0f
+                float targetOffset = 0.0f;
+                
                 // Check if we're already at the top with proper tolerance
                 bool alreadyAtTop = false;
                 if (firstFocusableIndex < m_items.size()) {
-                    // We're on the first focusable item AND we're scrolled to the top
                     const float tolerance = 5.0f;
                     alreadyAtTop = (m_focusedIndex == firstFocusableIndex) && 
-                                  (std::abs(m_nextOffset) <= tolerance);
+                                  (std::abs(m_nextOffset - targetOffset) <= tolerance);
                 }
                 
                 if (alreadyAtTop) {
                     return oldFocus;  // Already at top, do nothing
                 }
                 
-                // Not at top - perform the jump
+                // Not at top - perform the jump using SAME logic as wrapToTop
                 if (firstFocusableIndex < m_items.size()) {
                     m_focusedIndex = firstFocusableIndex;
-                    m_nextOffset = 0.0f;  // Set target position for smooth scrolling
+                    m_nextOffset = targetOffset;  // Same as wrapToTop
                     
                     Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
-                        // DON'T call invalidate() here - let updateScrollAnimation() handle the smooth transition
                         return newFocus;
                     }
                 }
                 
-                // No focusable items - just set target to top
-                m_nextOffset = 0.0f;
-                // DON'T call invalidate() here either
-                return oldFocus;
-            }
-                        
-            Element* handleJumpToBottom(Element* oldFocus) {
-                if (m_items.empty()) return oldFocus;
-                
-                resetNavigationState();
-                jumpToBottom = false;  // Reset flag
-                
-                // Calculate the maximum possible scroll offset
-                float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                
-                // Find the last focusable item
-                size_t lastFocusableIndex = m_items.size();
-                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) {
-                        lastFocusableIndex = static_cast<size_t>(i);
-                        break;
-                    }
-                }
-                
-                // Check if we're already at the bottom with proper tolerance
-                bool alreadyAtBottom = false;
-                if (lastFocusableIndex < m_items.size()) {
-                    // We're on the last focusable item AND we're scrolled to the maximum position
-                    // Use a small tolerance (e.g., 5 pixels) to account for floating point precision
-                    const float tolerance = 5.0f;
-                    alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) && 
-                                     (std::abs(m_nextOffset - maxOffset) <= tolerance);
-                }
-                
-                if (alreadyAtBottom) {
-                    return oldFocus;  // Already at bottom, do nothing
-                }
-                
-                // Not at bottom - perform the jump
-                if (lastFocusableIndex < m_items.size()) {
-                    m_focusedIndex = lastFocusableIndex;
-                    m_nextOffset = maxOffset;  // Set target position for smooth scrolling
-                    
-                    Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        // DON'T call invalidate() here - let updateScrollAnimation() handle the smooth transition
-                        return newFocus;
-                    }
-                }
-                
-                // No focusable items - just set target to bottom
-                m_nextOffset = maxOffset;
-                // DON'T call invalidate() here either
+                // No focusable items - just set target to top (same as wrapToTop)
+                m_nextOffset = targetOffset;
                 return oldFocus;
             }
             
