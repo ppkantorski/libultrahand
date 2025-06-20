@@ -4696,14 +4696,15 @@ namespace tsl {
         
         public:
             List() : Element() {
-                m_isItem = false;
                 cacheForwardFrameOnce = true;
+                m_isItem = false;
+                
             }
             virtual ~List() {
                 if (s_isForwardCache)
                     clearStaticCache(true);
                 cacheCurrentFrame();
-                cacheForwardFrameOnce = false;
+                cacheForwardFrameOnce = true;
                 s_isForwardCache = false;
             }
             
@@ -8811,7 +8812,7 @@ namespace tsl {
             
             // Push the new Gui onto the stack
             this->m_guiStack.push(std::move(gui));
-            tsl::gfx::FontManager::clearCache();
+            //tsl::gfx::FontManager::clearCache();
             return this->m_guiStack.top();
         }
 
