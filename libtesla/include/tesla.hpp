@@ -2380,6 +2380,7 @@ namespace tsl {
                 }
                 
                 s32 maxX = x, currX = x, currY = y;  // Changed to s32 for consistency
+                s32 maxY = y;                        // Track maximum Y position reached
                 bool inHighlight = false;
                 const Color* currentColor = &defaultColor;
                 
@@ -2422,6 +2423,9 @@ namespace tsl {
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
+                        // Track maximum Y position reached (y position + glyph height)
+                        maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                        
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) { // Space is 32
                             renderGlyph(glyph, currX, currY, *currentColor);
@@ -2456,6 +2460,9 @@ namespace tsl {
                                         } else {
                                             glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
                                             if (glyph) {
+                                                // Track maximum Y position reached
+                                                maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                                                
                                                 if (draw && glyph->glyphBmp && symChar > 32) {
                                                     renderGlyph(glyph, currX, currY, *highlightColor);
                                                 }
@@ -2507,6 +2514,9 @@ namespace tsl {
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
+                        // Track maximum Y position reached
+                        maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                        
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
                             renderGlyph(glyph, currX, currY, *currentColor);
@@ -2517,7 +2527,8 @@ namespace tsl {
                 }
                 
                 maxX = std::max(currX, maxX);
-                return {maxX - x, currY - y};
+                // Use same pattern as width: maxY - y (maximum Y position reached - starting Y)
+                return {maxX - x, maxY - y};
             }
             
             // Convenience wrappers for backward compatibility
@@ -4667,8 +4678,6 @@ namespace tsl {
         static std::vector<Element*> s_lastFrameItems;
         static bool s_isForwardCache = false; // NEW VARIABLE FOR FORWARD CACHING
         static bool s_hasValidFrame = false;
-        static size_t s_cachedInstanceId = 0;
-        static size_t s_nextInstanceId = 1; 
         static s32 s_cachedTopBound = 0;
         static s32 s_cachedBottomBound = 0;
         static s32 s_cachedHeight = 0;
@@ -4685,7 +4694,7 @@ namespace tsl {
         class List : public Element {
         
         public:
-            List() : Element(), m_instanceId(generateInstanceId()) {
+            List() : Element() {
                 m_isItem = false;
             }
             virtual ~List() {
@@ -4705,22 +4714,17 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 static bool checkOnce = true;
-                if (m_pendingJump && !s_hasValidFrame && checkOnce) {
+                if (m_pendingJump && !s_hasValidFrame && !s_isForwardCache && checkOnce) {
                     checkOnce = false;
                     return;
                 } else {
                     checkOnce = true;
                 }
 
-                if (m_pendingJump && s_hasValidFrame) {
+                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    if (!s_isForwardCache)
-                        clearStaticCache();
-                    else {
-                        // remove pointer connections from s_lastFrameItems connected to prior list without destroying them (NEEDS IMPLEMENTING)
-                        clearStaticCache(true);
-                    }
+                    clearStaticCache(s_isForwardCache);
                     return;
                 }
 
@@ -4757,12 +4761,15 @@ namespace tsl {
                     updateScrollAnimation();
                 }
 
-                if (!s_isForwardCache && s_hasValidFrame)
-                    clearStaticCache(); // clear cache after rendering (for smoother transitions)
-                else {
-                    // remove pointer connections from s_lastFrameItems connected to prior list without destroying them (NEEDS IMPLEMENTING)
-                    clearStaticCache(true);
+                static bool cacheForwardFrameOnce = true;
+                if (cacheForwardFrameOnce) {
+                    s_lastFrameItems = m_items;
+                    s_isForwardCache = true;
+                } else {
+                    if (s_hasValidFrame)
+                        clearStaticCache(s_isForwardCache); // clear cache after rendering (for smoother transitions)
                 }
+                cacheCurrentFrame(true);
                 
             }
         
@@ -4929,7 +4936,7 @@ namespace tsl {
             std::vector<float> prefixSums;
             
             // Instance identification
-            const size_t m_instanceId;
+            //const size_t m_instanceId;
 
             // Enhanced navigation state tracking
             bool m_justWrapped = false;
@@ -4980,19 +4987,27 @@ namespace tsl {
             //    return s_hasValidFrame && s_cachedInstanceId == m_instanceId;
             //}
 
-            static size_t generateInstanceId() {
-                return s_nextInstanceId++;
-            }
+            //static size_t generateInstanceId() {
+            //    return s_nextInstanceId++;
+            //}
         
-            static void clearStaticCache(bool isForwardCache = false) {
-                // Clear previous cache (including memory!)
-                for (Element* el : s_lastFrameItems) {
-                    delete el;
+            static void clearStaticCache(bool preservePointers = false) {
+                if (preservePointers) {
+                    // For forward cache: just clear the vector without deleting elements
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
+                } else {
+                    // Normal case: delete elements and clear
+                    for (Element* el : s_lastFrameItems) {
+                        delete el;
+                    }
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
                 }
-                s_lastFrameItems.clear();
-                s_lastFrameItems.shrink_to_fit();
-                s_hasValidFrame = false;
-                s_cachedInstanceId = 0;
+                
+                // CRITICAL: Always reset these, even for forward cache!
+                s_hasValidFrame = false;  // This MUST be false after clearing
+                s_isForwardCache = false;
                 s_cachedTopBound = 0;
                 s_cachedBottomBound = 0;
                 s_cachedHeight = 0;
@@ -5004,29 +5019,35 @@ namespace tsl {
                 s_cachedScrollbarX = 0;
                 s_cachedScrollbarY = 0;
             }
+
                     
             void cacheCurrentFrame(bool isForwardCache = false) {
-                // Clear previous cache (including memory!)
-                for (Element* el : s_lastFrameItems) {
-                    delete el;
+
+                if (!isForwardCache) {
+                    // Clear previous cache (including memory!)
+                    for (Element* el : s_lastFrameItems) {
+                        delete el;
+                    }
+                    s_lastFrameItems.clear();
+                    s_lastFrameItems.shrink_to_fit();
                 }
-                s_lastFrameItems.clear();
-                s_lastFrameItems.shrink_to_fit();
                 
                 // Cache bounds for visibility calculations
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
                 
                 // Only cache items that are actually visible (or partially visible)
-                s_lastFrameItems.reserve(m_items.size()); // Reserve full size to avoid reallocations
-                for (Element* element : m_items) {
-                    // Only cache items that are in the visible area
-                    //if (element->getBottomBound() > topBound && element->getTopBound() < bottomBound) {
-                    s_lastFrameItems.push_back(element);
-                    //}
+                //s_lastFrameItems.reserve(m_items.size()); // Reserve full size to avoid reallocations
+                //for (Element* element : m_items) {
+                //    // Only cache items that are in the visible area
+                //    //if (element->getBottomBound() > topBound && element->getTopBound() < bottomBound) {
+                //    s_lastFrameItems.push_back(element);
+                //    //}
+                //}
+                if (!isForwardCache) {
+                    s_lastFrameItems = m_items;
                 }
                 
-                s_cachedInstanceId = m_instanceId;
                 
                 // Cache all the bounds and calculations (unchanged)
                 s_cachedTopBound = topBound;
@@ -5058,7 +5079,7 @@ namespace tsl {
                     s_cachedScrollbarX = getRightBound() + 20;
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset + 2;
                 }
-                
+                s_isForwardCache = isForwardCache;
                 s_hasValidFrame = true;
             }
                                     
@@ -5084,9 +5105,9 @@ namespace tsl {
 
             void clearItems() {
                 // Clear static cache if it belongs to this instance
-                if (s_cachedInstanceId == m_instanceId) {
-                    clearStaticCache();
-                }
+                //if (s_cachedInstanceId == m_instanceId) {
+                //    clearStaticCache();
+                //}
 
                 for (Element* item : m_items) delete item;
                 m_items.clear();
@@ -6159,7 +6180,6 @@ namespace tsl {
                 m_maxWidth = 0;
             }
         };
-        
         
         class MiniListItem : public ListItem {
         public:
