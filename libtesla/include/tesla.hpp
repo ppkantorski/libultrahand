@@ -4697,10 +4697,14 @@ namespace tsl {
         public:
             List() : Element() {
                 m_isItem = false;
+                cacheForwardFrameOnce = true;
             }
             virtual ~List() {
+                if (s_isForwardCache)
+                    clearStaticCache(true);
                 cacheCurrentFrame();
                 cacheForwardFrameOnce = false;
+                s_isForwardCache = false;
             }
             
             
@@ -4727,8 +4731,14 @@ namespace tsl {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
                     clearStaticCache(s_isForwardCache);
+                    s_isForwardCache = false;
                     return;
                 }
+
+                //if (!m_pendingJump && s_isForwardCache) {
+                //    clearStaticCache(s_isForwardCache);
+                //    s_isForwardCache = false;
+                //}
 
                 //if (s_hasValidFrame)
 
@@ -4772,7 +4782,8 @@ namespace tsl {
                     if (s_hasValidFrame)
                         clearStaticCache(s_isForwardCache); // clear cache after rendering (for smoother transitions)
                 }
-                cacheCurrentFrame(true);
+                if (s_isForwardCache)
+                    cacheCurrentFrame(true);
                 
             }
 
