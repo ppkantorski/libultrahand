@@ -4879,7 +4879,10 @@ namespace tsl {
             }
 
             inline void jumpToItem(const std::string& text = "", const std::string& value = "") {
-                m_pendingJump = true;
+                if (!text.empty() || !value.empty())
+                    m_pendingJump = true;
+                else
+                    m_pendingJump = false;
                 m_jumpToText = text;
                 m_jumpToValue = value;
             }
