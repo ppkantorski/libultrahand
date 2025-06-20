@@ -5194,6 +5194,7 @@ namespace tsl {
 
             
             inline void updateScrollAnimation() {
+                                
                 if (Element::getInputMode() == InputMode::Controller) {
                     // Clear touch flag when in controller mode
                     m_touchScrollActive = false;
@@ -5232,14 +5233,8 @@ namespace tsl {
                     float diff = m_nextOffset - m_offset;
                     float distance = std::abs(diff);
                     
-                    // SIMPLE BOUNDARY CRAWLING FIX: Only snap at exact boundaries when crawling
-                    float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                    bool isTargetingExactTop = (m_nextOffset == 0.0f);
-                    bool isTargetingExactBottom = (m_nextOffset == maxOffset);
-                    bool isCrawling = (distance < 2.0f && std::abs(m_scrollVelocity) < 1.0f);
-                    
-                    if (distance < 0.5f || ((isTargetingExactTop || isTargetingExactBottom) && isCrawling)) {
-                        // Snap exactly to target - prevents boundary crawling
+                    // SIMPLE BOUNDARY SNAPPING: Just handle normal cases
+                    if (distance < 0.5f) {
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
                         
@@ -5358,7 +5353,7 @@ namespace tsl {
                 return nullptr;
             }
             
-                                                                                                                    
+                                                                                                                                
             inline Element* handleDownFocus(Element* oldFocus) {
                 updateHoldState();
                 
@@ -5674,6 +5669,7 @@ namespace tsl {
                 return position;
             }
 
+            // Enhanced scroll methods that ensure we always reach boundaries
             inline bool canScrollDown() {
                 if (m_listHeight <= getHeight()) return false;
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
@@ -5685,58 +5681,49 @@ namespace tsl {
             }
             
             
-            // Update the scrollDown method to use different step sizes based on hold state
+                        
+            // Enhanced scroll methods that snap to exact boundaries
             inline void scrollDown() {
-                float scrollStep;
-                
-                // Use larger step size for single clicks, smaller for holds
-                if (m_isHolding) {
-                    scrollStep = TABLE_SCROLL_STEP_SIZE; // 13 for holds
-                } else {
-                    scrollStep = TABLE_SCROLL_STEP_SIZE_CLICK; // 26 for single clicks
-                }
-                
+                float scrollStep = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
                 
-                // Don't scroll more than the remaining scrollable distance (prevents over-scrolling small tables)
-                float remainingScroll = maxOffset - m_nextOffset;
-                scrollStep = std::min(scrollStep, remainingScroll);
-                
                 m_nextOffset = std::min(m_nextOffset + scrollStep, maxOffset);
-                // Don't set m_offset - let updateScrollAnimation handle smooth transition
+                
+                // BOUNDARY SNAP: If we're very close to the bottom boundary, snap both positions exactly
+                if (m_nextOffset >= maxOffset - 2.0f) {
+                    m_nextOffset = maxOffset;
+                    m_offset = maxOffset;  // Also snap current position immediately
+                    m_scrollVelocity = 0.0f;
+                }
             }
             
-            // Update the scrollUp method to use different step sizes based on hold state
             inline void scrollUp() {
-                float scrollStep;
-                
-                // Use larger step size for single clicks, smaller for holds
-                if (m_isHolding) {
-                    scrollStep = TABLE_SCROLL_STEP_SIZE; // 13 for holds
-                } else {
-                    scrollStep = TABLE_SCROLL_STEP_SIZE_CLICK; // 26 for single clicks
-                }
-                
-                // Don't scroll more than the remaining scrollable distance (prevents over-scrolling small tables)
-                float remainingScroll = m_nextOffset;
-                scrollStep = std::min(scrollStep, remainingScroll);
+                float scrollStep = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 
                 m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
-                // Don't set m_offset - let updateScrollAnimation handle smooth transition
+                
+                // BOUNDARY SNAP: If we're very close to the top boundary, snap both positions exactly  
+                if (m_nextOffset <= 2.0f) {
+                    m_nextOffset = 0.0f;
+                    m_offset = 0.0f;  // Also snap current position immediately
+                    m_scrollVelocity = 0.0f;
+                }
             }
-            
+                        
         
-            // Wrapping
             Element* wrapToTop(Element* oldFocus) {
-                // Go to absolute beginning
+                // Go to absolute beginning - sync both positions immediately
                 m_focusedIndex = 0;
                 m_nextOffset = 0.0f;
+                m_offset = 0.0f;  // Immediately sync current position
+                m_scrollVelocity = 0.0f;  // Stop any animation
                 isTableScrolling = false;
                 
                 // Try to focus the first item if it's focusable
                 if (!m_items.empty()) {
                     Element* newFocus = m_items[0]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus) {
+                        invalidate();
                         return newFocus;
                     }
                 }
@@ -5747,14 +5734,16 @@ namespace tsl {
             }
             
             Element* wrapToBottom(Element* oldFocus) {
-                // Go to absolute end
+                // Go to absolute end - sync both positions immediately
                 if (!m_items.empty()) {
                     m_focusedIndex = m_items.size() - 1;
                 }
                 
-                // Calculate max scroll position
+                // Calculate max scroll position and sync immediately
                 float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
                 m_nextOffset = maxOffset;
+                m_offset = maxOffset;  // Immediately sync current position
+                m_scrollVelocity = 0.0f;  // Stop any animation
                 isTableScrolling = false;
                 
                 // Try to focus the last item if it's focusable, searching backwards
@@ -5762,6 +5751,7 @@ namespace tsl {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = static_cast<size_t>(i);
+                        invalidate();
                         return newFocus;
                     }
                 }
@@ -5770,6 +5760,7 @@ namespace tsl {
                 invalidate();
                 return oldFocus;
             }
+
 
             
             
