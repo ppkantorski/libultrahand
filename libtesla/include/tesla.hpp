@@ -4688,6 +4688,7 @@ namespace tsl {
         static u32 s_cachedScrollbarOffset = 0;
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
+        static bool cacheForwardFrameOnce = true;
 
         static bool isTableScrolling = false;
 
@@ -4698,8 +4699,8 @@ namespace tsl {
                 m_isItem = false;
             }
             virtual ~List() {
-                s_isForwardCache = false;
                 cacheCurrentFrame();
+                cacheForwardFrameOnce = false;
             }
             
             
@@ -4762,20 +4763,19 @@ namespace tsl {
                     updateScrollAnimation();
                 }
 
-                static bool cacheForwardFrameOnce = true;
+                
                 if (cacheForwardFrameOnce) {
-                    s_lastFrameItems.clear();
-                    s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
                     s_isForwardCache = true;
+                    cacheForwardFrameOnce = false;
+                } else {
+                    if (s_hasValidFrame)
+                        clearStaticCache(s_isForwardCache); // clear cache after rendering (for smoother transitions)
                 }
-
-                if (s_hasValidFrame && !s_isForwardCache)
-                    clearStaticCache(); // clear cache after rendering (for smoother transitions)
-                if (s_isForwardCache)
-                    cacheCurrentFrame(true);
+                cacheCurrentFrame(true);
                 
             }
+
         
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 y = getY() - m_offset;
@@ -5083,8 +5083,9 @@ namespace tsl {
                     s_cachedScrollbarX = getRightBound() + 20;
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset + 2;
                 }
-                s_isForwardCache = isForwardCache;
-                s_hasValidFrame = true;
+                //s_isForwardCache = isForwardCache;
+                if (!isForwardCache)
+                    s_hasValidFrame = true;
             }
                                     
             void renderCachedFrame(gfx::Renderer* renderer) {
