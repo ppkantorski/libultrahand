@@ -5198,8 +5198,7 @@ namespace tsl {
                     // Clear touch flag when in controller mode
                     m_touchScrollActive = false;
                     
-                    // Your existing controller animation code here (unchanged)...
-                    // First, check if the focused item is going out of bounds
+                    // Emergency correction if item is going out of bounds (unchanged)
                     if (m_focusedIndex < m_items.size()) {
                         float itemTop = 0.0f;
                         for (size_t i = 0; i < m_focusedIndex; ++i) {
@@ -5210,19 +5209,16 @@ namespace tsl {
                         float viewTop = m_offset;
                         float viewBottom = m_offset + getHeight();
                         
-                        // Emergency correction if item is outside view
                         if (itemTop < viewTop || itemBottom > viewBottom) {
-                            // Item is going out of bounds - accelerate MUCH faster
                             float diff = m_nextOffset - m_offset;
-                            float emergencySpeed = 0.6f;  // 60% immediate correction (was 0.5f)
+                            float emergencySpeed = 0.6f;
                             
-                            // If completely out of view, snap even faster
                             if (itemBottom < viewTop || itemTop > viewBottom) {
-                                emergencySpeed = 0.9f;  // 90% immediate correction (was 0.8f)
+                                emergencySpeed = 0.9f;
                             }
                             
                             m_offset += diff * emergencySpeed;
-                            m_scrollVelocity = diff * 0.3f;  // Set velocity to continue momentum
+                            m_scrollVelocity = diff * 0.3f;
                             
                             if (prevOffset != m_offset) {
                                 invalidate();
@@ -5232,33 +5228,42 @@ namespace tsl {
                         }
                     }
                     
-                    // Normal smooth scrolling when item is in view
+                    // Calculate distance to target
                     float diff = m_nextOffset - m_offset;
                     float distance = std::abs(diff);
                     
-                    // If we're very close, just snap
-                    if (distance < 0.5f) {
+                    // SIMPLE BOUNDARY CRAWLING FIX: Only snap at exact boundaries when crawling
+                    float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                    bool isTargetingExactTop = (m_nextOffset == 0.0f);
+                    bool isTargetingExactBottom = (m_nextOffset == maxOffset);
+                    bool isCrawling = (distance < 2.0f && std::abs(m_scrollVelocity) < 1.0f);
+                    
+                    if (distance < 0.5f || ((isTargetingExactTop || isTargetingExactBottom) && isCrawling)) {
+                        // Snap exactly to target - prevents boundary crawling
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
+                        
+                        if (prevOffset != m_offset) {
+                            invalidate();
+                            prevOffset = m_offset;
+                        }
                         return;
                     }
                     
-                    // CHANGED: Detect if this is a large jump (likely from jump to top/bottom)
-                    bool isLargeJump = distance > getHeight() * 1.5f;  // More than 1.5 viewport heights
-                    bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;  // Low/no velocity
+                    // ORIGINAL SMOOTH SCROLLING LOGIC (completely unchanged)
+                    bool isLargeJump = distance > getHeight() * 1.5f;
+                    bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;
                     
                     if (isLargeJump && isFromRest) {
-                        // For large jumps from rest, use gentler initial acceleration
-                        float gentleAcceleration = 0.08f;  // Much gentler than normal
-                        float gentleDamping = 0.85f;       // Higher damping for smoothness
+                        float gentleAcceleration = 0.08f;
+                        float gentleDamping = 0.85f;
                         
                         float targetVelocity = diff * gentleAcceleration;
                         m_scrollVelocity += (targetVelocity - m_scrollVelocity) * gentleDamping;
                     } else {
-                        // Calculate target velocity with distance-based urgency (original logic)
-                        float urgency = std::min(distance / getHeight(), 1.0f);  // 0 to 1 based on distance
-                        float accelerationFactor = 0.18f + (0.24f * urgency);    // 0.18 to 0.42 (was 0.15 to 0.35)
-                        float dampingFactor = 0.48f - (0.18f * urgency);         // 0.48 to 0.30 (was 0.4 to 0.25)
+                        float urgency = std::min(distance / getHeight(), 1.0f);
+                        float accelerationFactor = 0.18f + (0.24f * urgency);
+                        float dampingFactor = 0.48f - (0.18f * urgency);
                         
                         float targetVelocity = diff * accelerationFactor;
                         m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
@@ -5267,12 +5272,13 @@ namespace tsl {
                     // Apply velocity
                     m_offset += m_scrollVelocity;
                     
-                    // Ensure we don't overshoot
+                    // Prevent overshoot
                     if ((m_scrollVelocity > 0 && m_offset > m_nextOffset) ||
                         (m_scrollVelocity < 0 && m_offset < m_nextOffset)) {
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
                     }
+                
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     m_offset = m_nextOffset;
                     m_scrollVelocity = 0.0f;
@@ -5352,11 +5358,11 @@ namespace tsl {
                 return nullptr;
             }
             
-                                                                                            
+                                                                                                                    
             inline Element* handleDownFocus(Element* oldFocus) {
                 updateHoldState();
                 
-                // If holding and at boundary, try to scroll first, but don't block navigation
+                // If holding and at boundary, try to scroll first
                 if (m_isHolding && m_stoppedAtBoundary && canScrollDown()) {
                     scrollDown();
                     m_stoppedAtBoundary = false;
@@ -5371,20 +5377,20 @@ namespace tsl {
                     return result;
                 }
                 
-                // No focusable item found - check if we can scroll down
+                // Check if we can still scroll down
                 if (canScrollDown()) {
                     scrollDown();
                     return oldFocus;
                 }
                 
-                // At boundary - check for wrapping (only if not holding or hasn't wrapped yet)
+                // At absolute bottom - check for wrapping
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     return wrapToTop(oldFocus);
                 }
                 
-                // Set boundary flag but don't block future navigation attempts
+                // Set boundary flag
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
                 }
@@ -5395,7 +5401,7 @@ namespace tsl {
             inline Element* handleUpFocus(Element* oldFocus) {
                 updateHoldState();
                 
-                // If holding and at boundary, try to scroll first, but don't block navigation
+                // If holding and at boundary, try to scroll first
                 if (m_isHolding && m_stoppedAtBoundary && canScrollUp()) {
                     scrollUp();
                     m_stoppedAtBoundary = false;
@@ -5410,50 +5416,39 @@ namespace tsl {
                     return result;
                 }
                 
-                // No focusable item found - check if we can scroll up
+                // Check if we can still scroll up
                 if (canScrollUp()) {
                     scrollUp();
                     return oldFocus;
                 }
                 
-                // At boundary - check for wrapping (only if not holding or hasn't wrapped yet)
+                // At absolute top - check for wrapping
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     return wrapToBottom(oldFocus);
                 }
                 
-                // Set boundary flag but don't block future navigation attempts
+                // Set boundary flag
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
                 }
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
-
+                        
             inline bool isAtTop() {
-                // If we can still scroll up, we're not at the top
-                if (canScrollUp()) return false;
-                
-                // Check if there are any focusable items before current position
-                for (ssize_t i = static_cast<ssize_t>(m_focusedIndex) - 1; i >= 0; --i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) return false;
-                }
-                return true;
+                // We're at top if we're scrolled to the very beginning AND focused on first element
+                bool scrolledToTop = (m_nextOffset <= 0.1f && m_offset <= 0.1f);
+                bool focusedOnFirst = (m_focusedIndex == 0);
+                return scrolledToTop && focusedOnFirst;
             }
-
-
+            
             inline bool isAtBottom() {
-                // If we can still scroll down, we're not at the bottom
-                if (canScrollDown()) return false;
-                
-                // Check if there are any focusable items after current position
-                for (size_t i = m_focusedIndex + 1; i < m_items.size(); ++i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) return false;
-                }
-                return true;
+                // We're at bottom if we can't scroll down AND focused on last element
+                bool cannotScrollDown = !canScrollDown();
+                bool focusedOnLast = (m_focusedIndex >= m_items.size() - 1);
+                return cannotScrollDown && focusedOnLast;
             }
 
             // Helper to check if there are any focusable items
@@ -5524,7 +5519,10 @@ namespace tsl {
         
             // Core navigation logic
             inline Element* navigateDown(Element* oldFocus) {
-                // Check if we're currently "in" a table (focusing on it for scrolling)
+                // Start searching from the next index
+                size_t searchIndex = m_focusedIndex + 1;
+                
+                // If we're currently on a table, check if we need to continue scrolling through it
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
                     s32 tableBottom = currentTable->getBottomBound();
@@ -5536,58 +5534,65 @@ namespace tsl {
                         scrollDown();
                         return oldFocus;
                     }
-                    // Table is fully visible, move to next item
+                    // Table is fully visible, move to next element
                 }
                 
-                // Find the next item in the list
-                size_t nextIndex = m_focusedIndex + 1;
-                
-                s32 tableTop, tableBottom, viewBottom;
-
-                // Skip to find next item (table or focusable)
-                while (nextIndex < m_items.size()) {
-                    Element* item = m_items[nextIndex];
+                // Search through ALL remaining elements
+                while (searchIndex < m_items.size()) {
+                    Element* item = m_items[searchIndex];
+                    m_focusedIndex = searchIndex; // Always update focus index to track position
                     
                     if (item->isTable()) {
+                        // Table: Start scrolling through it
+                        s32 tableTop = item->getTopBound();
+                        s32 tableBottom = item->getBottomBound();
+                        s32 viewBottom = getBottomBound();
                         
-                        // Found a table - start scrolling through it
-                        tableTop = item->getTopBound();
-                        tableBottom = item->getBottomBound();
-                        viewBottom = getBottomBound();
-                        
-                        // Always set focus to the table when we encounter it
-                        m_focusedIndex = nextIndex;
-                        
-                        // Check if we need to scroll to see more of the table
+                        // If table needs scrolling or isn't fully visible, scroll
                         if (tableBottom > viewBottom || tableTop >= viewBottom) {
                             isTableScrolling = true;
                             scrollDown();
                             return oldFocus;
                         }
-                        // Table is fully visible, continue to next item
-                        nextIndex++;
-                        continue;
-                    } else {
                         
-                        // Found a focusable item - try to focus it
+                        // Table is fully visible, continue to next element
+                        searchIndex++;
+                        continue;
+                        
+                    } else {
+                        // Try to focus this item (might be focusable or might be gap/header)
                         Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
                         if (newFocus && newFocus != oldFocus) {
-                            m_focusedIndex = nextIndex;
+                            // Successfully focused an item
                             isTableScrolling = false;
                             updateScrollOffset();
                             return newFocus;
+                        } else {
+                            // This is a gap/header - scroll past it smoothly
+                            float itemTop = calculateItemPosition(searchIndex);
+                            float itemBottom = itemTop + item->getHeight();
+                            float viewTop = m_offset;
+                            float viewBottom = m_offset + getHeight();
+                            
+                            // If this element isn't fully visible, scroll to show it
+                            if (itemBottom > viewBottom) {
+                                scrollDown();
+                                return oldFocus;
+                            }
+                            
+                            // Element is visible, continue to next
+                            searchIndex++;
+                            continue;
                         }
-                        // Item not focusable, continue searching
-                        nextIndex++;
-                        continue;
                     }
                 }
                 
-                return oldFocus; // No more items or no focusable items found
+                // Reached end of list
+                return oldFocus;
             }
             
             inline Element* navigateUp(Element* oldFocus) {
-                // Check if we're currently "in" a table (focusing on it for scrolling)
+                // If we're currently on a table, check if we need to continue scrolling through it
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
                     s32 tableTop = currentTable->getTopBound();
@@ -5599,65 +5604,84 @@ namespace tsl {
                         scrollUp();
                         return oldFocus;
                     }
-                    // Table is fully visible, move to previous item
+                    // Table is fully visible, move to previous element
                 }
                 
-                
-                // Find the previous item in the list
+                // Start searching from the previous index
                 if (m_focusedIndex == 0) return oldFocus;
+                ssize_t searchIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
                 
-                ssize_t prevIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
-                
-                s32 tableTop, tableBottom, viewTop;
-
-                // Skip to find previous item (table or focusable)
-                while (prevIndex >= 0) {
-                    Element* item = m_items[prevIndex];
+                // Search through ALL previous elements
+                while (searchIndex >= 0) {
+                    Element* item = m_items[searchIndex];
+                    m_focusedIndex = static_cast<size_t>(searchIndex); // Always update focus index
                     
                     if (item->isTable()) {
-                        // Found a table - start scrolling through it
-                        tableTop = item->getTopBound();
-                        tableBottom = item->getBottomBound();
-                        viewTop = getTopBound();
+                        // Table: Start scrolling through it
+                        s32 tableTop = item->getTopBound();
+                        s32 tableBottom = item->getBottomBound();
+                        s32 viewTop = getTopBound();
                         
-                        // Always set focus to the table when we encounter it
-                        m_focusedIndex = static_cast<size_t>(prevIndex);
-                        
-                        // Check if we need to scroll to see more of the table
+                        // If table needs scrolling or isn't fully visible, scroll
                         if (tableTop < viewTop || tableBottom <= viewTop) {
                             isTableScrolling = true;
                             scrollUp();
                             return oldFocus;
                         }
-                        // Table is fully visible, continue to previous item
-                        prevIndex--;
+                        
+                        // Table is fully visible, continue to previous element
+                        searchIndex--;
                         continue;
+                        
                     } else {
-                        // Found a focusable item - try to focus it
+                        // Try to focus this item (might be focusable or might be gap/header)
                         Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
                         if (newFocus && newFocus != oldFocus) {
-                            m_focusedIndex = static_cast<size_t>(prevIndex);
+                            // Successfully focused an item
                             isTableScrolling = false;
                             updateScrollOffset();
                             return newFocus;
+                        } else {
+                            // This is a gap/header - scroll past it smoothly
+                            float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
+                            float itemBottom = itemTop + item->getHeight();
+                            float viewTop = m_offset;
+                            float viewBottom = m_offset + getHeight();
+                            
+                            // If this element isn't fully visible, scroll to show it
+                            if (itemTop < viewTop) {
+                                scrollUp();
+                                return oldFocus;
+                            }
+                            
+                            // Element is visible, continue to previous
+                            searchIndex--;
+                            continue;
                         }
-                        // Item not focusable, continue searching
-                        prevIndex--;
-                        continue;
                     }
                 }
                 
-                return oldFocus; // No more items or no focusable items found
+                // Reached beginning of list
+                return oldFocus;
+            }
+            
+            // Helper method to calculate an item's position in the list
+            inline float calculateItemPosition(size_t index) {
+                float position = 0.0f;
+                for (size_t i = 0; i < index && i < m_items.size(); ++i) {
+                    position += m_items[i]->getHeight();
+                }
+                return position;
             }
 
             inline bool canScrollDown() {
                 if (m_listHeight <= getHeight()) return false;
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                return m_nextOffset < maxOffset; // Check nextOffset for smoother behavior
+                return (m_nextOffset < maxOffset - 0.1f) && (m_offset < maxOffset - 0.1f);
             }
             
             inline bool canScrollUp() {
-                return m_nextOffset > 0.0f; // Check nextOffset for smoother behavior
+                return (m_nextOffset > 0.1f) || (m_offset > 0.1f);
             }
             
             
@@ -5703,47 +5727,47 @@ namespace tsl {
             
         
             // Wrapping
-            // Fix for the wrapToTop function
             Element* wrapToTop(Element* oldFocus) {
-                // Find first focusable item (including tables)
-                for (size_t i = 0; i < m_items.size(); ++i) {
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                // Go to absolute beginning
+                m_focusedIndex = 0;
+                m_nextOffset = 0.0f;
+                isTableScrolling = false;
+                
+                // Try to focus the first item if it's focusable
+                if (!m_items.empty()) {
+                    Element* newFocus = m_items[0]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = i;
-                        m_nextOffset = 0.0f;
                         return newFocus;
                     }
                 }
                 
-                // No focusable items - just scroll to top
-                m_nextOffset = 0.0f;
+                // First item not focusable (header/gap/table) - just ensure we're positioned correctly
                 invalidate();
                 return oldFocus;
             }
-
-
-                        
-            // Also fix wrapToBottom for consistency
+            
             Element* wrapToBottom(Element* oldFocus) {
-                invalidate();
+                // Go to absolute end
+                if (!m_items.empty()) {
+                    m_focusedIndex = m_items.size() - 1;
+                }
                 
-                // Find last focusable item (including tables)
+                // Calculate max scroll position
+                float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+                m_nextOffset = maxOffset;
+                isTableScrolling = false;
+                
+                // Try to focus the last item if it's focusable, searching backwards
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
                     if (newFocus && newFocus != oldFocus) {
                         m_focusedIndex = static_cast<size_t>(i);
-                        if (m_listHeight > getHeight()) {
-                            m_nextOffset = static_cast<float>(m_listHeight - getHeight());
-                        }
                         return newFocus;
                     }
                 }
                 
-                // No focusable items - just scroll to bottom
-                if (m_listHeight > getHeight()) {
-                    m_nextOffset = static_cast<float>(m_listHeight - getHeight());
-                    invalidate();
-                }
+                // No focusable items found - just ensure we're positioned at bottom
+                invalidate();
                 return oldFocus;
             }
 
