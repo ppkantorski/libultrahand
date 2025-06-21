@@ -156,7 +156,6 @@ static std::string jumpItemName;
 static std::string jumpItemValue;
 static bool jumpItemExactMatch = true;
 
-
 namespace tsl {
 
     // Constants
@@ -536,7 +535,7 @@ namespace tsl {
             CloseOnExit        = BIT(0)     ///< Close the overlay the last Gui gets poped from the stack
         };
         
-        [[maybe_unused]] static constexpr LaunchFlags operator|(LaunchFlags lhs, LaunchFlags rhs) {
+        static constexpr LaunchFlags operator|(LaunchFlags lhs, LaunchFlags rhs) {
             return static_cast<LaunchFlags>(u8(lhs) | u8(rhs));
         }
         
@@ -544,11 +543,11 @@ namespace tsl {
         
     }
     
-    [[maybe_unused]] static void goBack();
+    void goBack(u32 count = 1);
 
-    [[maybe_unused]] static void pop();
+    static void pop(u32 count = 1);
     
-    [[maybe_unused]] static void setNextOverlay(const std::string& ovlPath, std::string args = "");
+    static void setNextOverlay(const std::string& ovlPath, std::string args = "");
     
     template<typename TOverlay, impl::LaunchFlags launchFlags = impl::LaunchFlags::CloseOnExit>
     int loop(int argc, char** argv);
@@ -4722,7 +4721,7 @@ namespace tsl {
                     checkOnce = true;
                 }
 
-                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
+                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache) && !m_skipFrame) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
                     if (s_isForwardCache)
@@ -4732,6 +4731,8 @@ namespace tsl {
                     s_isForwardCache = false;
                     s_hasValidFrame = false;
                     return;
+                } else {
+                    m_skipFrame = false;
                 }
 
                 // Cache bounds for hot loop
@@ -4896,7 +4897,7 @@ namespace tsl {
                 return oldFocus;
             }
 
-            inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true) {
+            inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true, bool skipFrame=false) {
                 if (!text.empty() || !value.empty())
                     m_pendingJump = true;
                 else
@@ -4904,6 +4905,7 @@ namespace tsl {
                 m_jumpToText = text;
                 m_jumpToValue = value;
                 m_jumpToExactMatch = exactMatch;
+                m_skipFrame = skipFrame;
             }
                         
             virtual Element* getItemAtIndex(u32 index) {
@@ -4964,6 +4966,7 @@ namespace tsl {
             std::string m_jumpToValue;
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
+            bool m_skipFrame = false;
 
             // Stack variables for hot path - reused to avoid allocations
             u32 scrollbarHeight;
@@ -8878,36 +8881,53 @@ namespace tsl {
         
         
         /**
-         * @brief Pops the top Gui from the stack and goes back to the last one
-         * @note The Overlay gets closes once there are no more Guis on the stack
+         * @brief Pops the top Gui(s) from the stack and goes back count number of times
+         * @param count Number of Guis to pop from the stack (default: 1)
+         * @note The Overlay gets closed once there are no more Guis on the stack
          */
-        void goBack() {
+        void goBack(u32 count = 1) {
             isNavigatingBackwards = true;
-            if (!this->m_closeOnExit && this->m_guiStack.size() == 1) {
+            
+            // Clamp count to available stack size to prevent underflow
+            u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
+            
+            // Special case: if we don't close on exit and popping everything would leave us with 0 or 1 GUI
+            if (!this->m_closeOnExit && this->m_guiStack.size() <= actualCount) {
                 this->hide();
                 return;
             }
             
-            if (!this->m_guiStack.empty())
+            // Pop the specified number of GUIs
+            for (u32 i = 0; i < actualCount && !this->m_guiStack.empty(); ++i) {
                 this->m_guiStack.pop();
+            }
             
-            if (this->m_guiStack.empty())
+            // Close overlay if stack is empty
+            if (this->m_guiStack.empty()) {
                 this->close();
+            }
         }
 
-        void pop() {
+        void pop(u32 count = 1) {
             isNavigatingBackwards = true;
-            if (!this->m_guiStack.empty())
+            
+            // Clamp count to available stack size to prevent underflow
+            u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
+            
+            // Pop the specified number of GUIs
+            for (u32 i = 0; i < actualCount; ++i) {
                 this->m_guiStack.pop();
+            }
         }
+
         
         template<typename G, typename ...Args>
         friend std::unique_ptr<tsl::Gui>& changeTo(Args&&... args);
         template<typename G, typename ...Args>
         friend std::unique_ptr<tsl::Gui>& changeToWithCacheCLear(Args&&... args);
         
-        friend void goBack();
-        friend void pop();
+        friend void goBack(u32 count);
+        friend void pop(u32 count);
         
         template<typename, tsl::impl::LaunchFlags>
         friend int loop(int argc, char** argv);
@@ -9343,12 +9363,12 @@ namespace tsl {
      * @brief Pops the top Gui from the stack and goes back to the last one
      * @note The Overlay gets closed once there are no more Guis on the stack
      */
-    static void goBack() {
-        Overlay::get()->goBack();
+    void goBack(u32 count) {
+        Overlay::get()->goBack(count);
     }
     
-    static void pop() {
-        Overlay::get()->pop();
+    void pop(u32 count) {
+        Overlay::get()->pop(count);
     }
         
     
