@@ -355,6 +355,7 @@ namespace ult {
     std::string DUTCH = "Dutch";
     std::string PORTUGUESE = "Portuguese";
     std::string RUSSIAN = "Russian";
+    std::string UKRAINIAN = "Ukrainian";
     std::string POLISH = "Polish";
     std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
     std::string TRADITIONAL_CHINESE = "Traditional Chinese";
@@ -522,6 +523,7 @@ namespace ult {
         DUTCH = "Dutch";
         PORTUGUESE = "Portuguese";
         RUSSIAN = "Russian";
+        UKRAINIAN = "Ukrainian";
         POLISH = "Polish";
         SIMPLIFIED_CHINESE = "Simplified Chinese";
         TRADITIONAL_CHINESE = "Traditional Chinese";
@@ -694,6 +696,8 @@ namespace ult {
             {"DUTCH", &DUTCH},
             {"PORTUGUESE", &PORTUGUESE},
             {"RUSSIAN", &RUSSIAN},
+            {"UKRAINIAN", &UKRAINIAN},
+            {"POLISH", &POLISH},
             {"SIMPLIFIED_CHINESE", &SIMPLIFIED_CHINESE},
             {"TRADITIONAL_CHINESE", &TRADITIONAL_CHINESE},
             {"OVERLAYS", &OVERLAYS},
