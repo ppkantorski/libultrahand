@@ -291,6 +291,7 @@ namespace ult {
     extern std::string DUTCH;
     extern std::string PORTUGUESE;
     extern std::string RUSSIAN;
+    extern std::string UKRAINIAN;
     extern std::string POLISH;
     extern std::string SIMPLIFIED_CHINESE;
     extern std::string TRADITIONAL_CHINESE;
