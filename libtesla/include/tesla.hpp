@@ -3778,7 +3778,7 @@ namespace tsl {
                 this->m_clickAnimationProgress = 0;
             }
 
-            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const {
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool contains) const {
                 return false; // Default implementation for non-ListItem elements
             }
             
@@ -4895,13 +4895,14 @@ namespace tsl {
                 return oldFocus;
             }
 
-            inline void jumpToItem(const std::string& text = "", const std::string& value = "") {
+            inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true) {
                 if (!text.empty() || !value.empty())
                     m_pendingJump = true;
                 else
                     m_pendingJump = false;
                 m_jumpToText = text;
                 m_jumpToValue = value;
+                m_jumpToExactMatch = exactMatch;
             }
                         
             virtual Element* getItemAtIndex(u32 index) {
@@ -4960,6 +4961,7 @@ namespace tsl {
             // Jump to navigation variables
             std::string m_jumpToText;
             std::string m_jumpToValue;
+            bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
 
             // Stack variables for hot path - reused to avoid allocations
@@ -5501,7 +5503,7 @@ namespace tsl {
                     m_focusedIndex = i;
                     
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
-                    if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue)) {
+                    if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue, m_jumpToExactMatch)) {
                         // CHANGED: Calculate center of the item and center it in viewport
                         itemHeight = m_items[i]->getHeight();
                         itemCenterPos = h + (itemHeight);
@@ -6059,9 +6061,9 @@ namespace tsl {
                 return m_value;
             }
 
-            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const override {
-                return matchesJumpCriteria(jumpText, jumpValue, true); // Default to exact match
-            }
+            //virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const override {
+            //    return matchesJumpCriteria(jumpText, jumpValue, true); // Default to exact match
+            //}
 
             virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool exactMatch=true) const {
                 if (jumpText.empty() && jumpValue.empty()) return false;
