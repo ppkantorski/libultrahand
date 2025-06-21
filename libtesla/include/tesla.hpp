@@ -154,6 +154,7 @@ static bool hideHidden = false;
 static std::string g_overlayFilename;;
 static std::string jumpItemName;
 static std::string jumpItemValue;
+static bool jumpItemExactMatch = true;
 
 
 namespace tsl {
@@ -9488,6 +9489,7 @@ namespace tsl {
                             g_overlayFilename = "";
                             jumpItemName = "";
                             jumpItemValue = "";
+                            jumpItemExactMatch = true;
                             break;
                             
                         case 2: // skipCombo  
