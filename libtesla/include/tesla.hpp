@@ -846,7 +846,7 @@ namespace tsl {
             u64 keys;
 
             for (const auto& [overlayFileName, settings] : overlaysIniData) {
-                auto keyComboIt = settings.find("key_combo");
+                auto keyComboIt = settings.find(ult::KEY_COMBO_STR);
                 if (keyComboIt != settings.end() && !keyComboIt->second.empty()) {
                     keys = hlp::comboStringToKeys(keyComboIt->second);
                     if (keys != 0) {
