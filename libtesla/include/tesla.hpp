@@ -3487,36 +3487,40 @@ namespace tsl {
                     return;
                 if (!disableSelectionBG)
                     renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
-
+            
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
-
+            
                 Color animColor = {0xF,0xF,0xF,0xF};
                 if (invertBGClickColor) {
-                    animColor.r = 15-saturation;
-                    animColor.g = 15-saturation;
-                    animColor.b = 15-saturation;
-                    animColor.a = 15-saturation;
+                    u8 inverted = 15-saturation;
+                    animColor = {inverted, inverted, inverted, inverted};
                 } else {
-                    animColor.r = saturation;
-                    animColor.g = saturation;
-                    animColor.b = saturation;
-                    animColor.a = saturation;
+                    animColor = {saturation, saturation, saturation, saturation};
                 }
                 renderer->drawRect(ELEMENT_BOUNDS(this), a(animColor));
-
+            
+                // Cache time calculation - only compute once
+                static u64 lastTimeUpdate = 0;
+                static double cachedProgress = 0.0;
+                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                
+                // Only recalculate progress if enough time has passed (reduce computation frequency)
+                if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
+                    double time_seconds = currentTime_ns / 1000000000.0;
+                    cachedProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) / 2.0;
+                    lastTimeUpdate = currentTime_ns;
+                }
+                progress = cachedProgress;
+                
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
-                
-                // Changed timing calculation to use armTicksToNs
-                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                double time_seconds = currentTime_ns / 1000000000.0; // Convert nanoseconds to seconds
-                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) / 2.0;
                 
                 if (progress >= 0.5) {
                     clickColor1 = clickColor;
                     clickColor2 = highlightColor2;
                 }
                 
+                // Combine color interpolation into single calculation
                 highlightColor = {
                     static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
                     static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
@@ -3527,45 +3531,31 @@ namespace tsl {
                 x = 0;
                 y = 0;
                 if (this->m_highlightShaking) {
-                    u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    t_ns = currentTime_ns - this->m_highlightShakingStartTime; // Changed
+                    t_ns = currentTime_ns - this->m_highlightShakingStartTime;
                     if (t_ns >= 100000000) // 100ms in nanoseconds
                         this->m_highlightShaking = false;
                     else {
-                        amplitude = std::rand() % 5 + 5;
+                        // Use faster random generation if available, or cache amplitude
+                        static int cachedAmplitude = std::rand() % 5 + 5;
+                        if (t_ns % 10000000 == 0) // Update amplitude less frequently
+                            cachedAmplitude = std::rand() % 5 + 5;
+                        amplitude = cachedAmplitude;
                         
-                    switch (this->m_highlightShakingDirection) {
-                        case FocusDirection::Up:
-                            y -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                            break;
-                        case FocusDirection::Down:
-                            y += shakeAnimation(t_ns, amplitude); // Changed parameter
-                            break;
-                        case FocusDirection::Left:
-                            x -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                            break;
-                        case FocusDirection::Right:
-                            x += shakeAnimation(t_ns, amplitude); // Changed parameter
-                            break;
-                        default:
-                            break;
-                    }
+                        int shakeOffset = shakeAnimation(t_ns, amplitude);
+                        switch (this->m_highlightShakingDirection) {
+                            case FocusDirection::Up:    y = -shakeOffset; break;
+                            case FocusDirection::Down:  y = shakeOffset; break;
+                            case FocusDirection::Left:  x = -shakeOffset; break;
+                            case FocusDirection::Right: x = shakeOffset; break;
+                            default: break;
+                        }
                         
                         x = std::clamp(x, -amplitude, amplitude);
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
                 
-                
-                //renderer->drawRect(this->getX() + x - 4, this->getY() + y - 4, this->getWidth() + 8, 4, highlightColor);
-                //renderer->drawRect(this->getX() + x - 4, this->getY() + y + this->getHeight(), this->getWidth() + 8, 4, highlightColor);
-                //renderer->drawRect(this->getX() + x - 4, this->getY() + y, 4, this->getHeight(), highlightColor);
-                //renderer->drawRect(this->getX() + x + this->getWidth(), this->getY() + y, 4, this->getHeight(), highlightColor);
-                
-                
                 renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
-                    
-                //}
             }
             
             /**
@@ -3575,21 +3565,16 @@ namespace tsl {
              * @param renderer Renderer
              */
             virtual void drawFocusBackground(gfx::Renderer *renderer) {
-                //if (!disableSelectionBG)
-                //    renderer->drawRect(ELEMENT_BOUNDS(this), a(selectionBGColor)); // CUSTOM MODIFICATION 
-                
                 if (this->m_clickAnimationProgress > 0) {
                     this->drawClickAnimation(renderer);
-        
-                    // Calculate time elapsed since the animation started using armTicksToNs
-                    //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    //u64 elapsed_ns = armTicksToNs(armGetSystemTick()) - this->m_animationStartTime;
-                    double elapsed_ms = (armTicksToNs(armGetSystemTick()) - this->m_animationStartTime) / 1000000.0; // Convert to milliseconds
-        
-                    // Decrease progress based on the elapsed time (1 second = 1000ms)
-                    this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (elapsed_ms / 500.0f));
-        
-                    // Ensure progress does not go below 0
+            
+                    // Single time calculation and direct millisecond conversion
+                    double elapsed_ms = (armTicksToNs(armGetSystemTick()) - this->m_animationStartTime) * 0.000001; // Direct conversion
+            
+                    // Direct calculation without intermediate multiplication
+                    this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - elapsed_ms * 0.002f); // 0.002f = 1/500
+            
+                    // Clamp to 0 in one operation
                     if (this->m_clickAnimationProgress < 0) {
                         this->m_clickAnimationProgress = 0;
                     }
@@ -3606,13 +3591,28 @@ namespace tsl {
                 if (!m_isItem)
                     return;
                 
+                // Use cached time calculation from drawClickAnimation if possible
+                static u64 lastHighlightUpdate = 0;
+                static double cachedHighlightProgress = 0.0;
+                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 
-                // Changed timing calculation to use armTicksToNs
-                //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                double time_seconds = armTicksToNs(armGetSystemTick()) / 1000000000.0; // Convert nanoseconds to seconds
-                progress = ((std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) / 2.0);
-
-                if (ult::runningInterpreter.load(std::memory_order_acquire)) {
+                // Update progress at 60 FPS rate
+                if (currentTime_ns - lastHighlightUpdate > 16666666) {
+                    double time_seconds = currentTime_ns * 0.000000001; // Direct conversion
+                    cachedHighlightProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) * 0.5;
+                    lastHighlightUpdate = currentTime_ns;
+                }
+                progress = cachedHighlightProgress;
+            
+                // Cache the interpreter state check result to avoid atomic load overhead
+                static bool lastInterpreterState = false;
+                static u64 lastInterpreterCheck = 0;
+                if (currentTime_ns - lastInterpreterCheck > 50000000) { // Check every 50ms
+                    lastInterpreterState = ult::runningInterpreter.load(std::memory_order_acquire);
+                    lastInterpreterCheck = currentTime_ns;
+                }
+            
+                if (lastInterpreterState) {
                     highlightColor = {
                         static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
                         static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
@@ -3627,43 +3627,39 @@ namespace tsl {
                         0xF
                     };
                 }
+                
                 x = 0;
                 y = 0;
                 
                 if (this->m_highlightShaking) {
-                    //u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    t_ns = armTicksToNs(armGetSystemTick()) - this->m_highlightShakingStartTime; // Changed
+                    t_ns = currentTime_ns - this->m_highlightShakingStartTime;
                     if (t_ns >= 100000000) // 100ms in nanoseconds
                         this->m_highlightShaking = false;
                     else {
-                        amplitude = std::rand() % 5 + 5;
+                        // Use cached amplitude like in drawClickAnimation
+                        static int cachedAmplitude = std::rand() % 5 + 5;
+                        if (t_ns % 10000000 == 0)
+                            cachedAmplitude = std::rand() % 5 + 5;
+                        amplitude = cachedAmplitude;
                         
+                        int shakeOffset = shakeAnimation(t_ns, amplitude);
                         switch (this->m_highlightShakingDirection) {
-                            case FocusDirection::Up:
-                                y -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Down:
-                                y += shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Left:
-                                x -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Right:
-                                x += shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            default:
-                                break;
+                            case FocusDirection::Up:    y = -shakeOffset; break;
+                            case FocusDirection::Down:  y = shakeOffset; break;
+                            case FocusDirection::Left:  x = -shakeOffset; break;
+                            case FocusDirection::Right: x = shakeOffset; break;
+                            default: break;
                         }
                         
                         x = std::clamp(x, -amplitude, amplitude);
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
-                //if ((disableSelectionBG && this->m_clickAnimationProgress == 0) || !disableSelectionBG) {
+                
                 if (this->m_clickAnimationProgress == 0) {
                     if (!disableSelectionBG)
                         renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
-
+            
                     #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
                     float activePercentage = 0.0f;
@@ -3675,16 +3671,13 @@ namespace tsl {
                         activePercentage = ult::copyPercentage;
                     }
                     if (activePercentage > 0){
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage/100.0f), this->getHeight(), a(progressColor));
-                        //if (ult::copyPercentage == 100.0f) {
-                        //    ult::copyPercentage = -1;
-                        //}
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), a(progressColor)); // Direct percentage conversion
                     }
                     #endif
-
+            
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
-                //renderer->drawRect(ELEMENT_BOUNDS(this), a(0xF000)); // This has been moved here (needs to be toggleable)
+                
                 ult::onTrackBar = false;
             }
             
@@ -4930,7 +4923,7 @@ namespace tsl {
                     updateScrollOffset();
                 }
             }
-        
+            
             inline void onDirectionalKeyReleased() {
                 m_hasWrappedInCurrentSequence = false;
                 m_lastNavigationResult = NavigationResult::None;
@@ -5357,6 +5350,14 @@ namespace tsl {
             inline Element* handleDownFocus(Element* oldFocus) {
                 updateHoldState();
                 
+                // Check if the next item is non-focusable BEFORE we do anything else
+                if (m_focusedIndex + 1 < int(m_items.size())) {
+                    Element* nextItem = m_items[m_focusedIndex + 1];
+                    if (nextItem->isTable() || nextItem->requestFocus(nullptr, FocusDirection::None) == nullptr) {
+                        isTableScrolling = true;  // Set this IMMEDIATELY
+                    }
+                }
+                
                 // If holding and at boundary, try to scroll first
                 if (m_isHolding && m_stoppedAtBoundary && canScrollDown()) {
                     scrollDown();
@@ -5395,6 +5396,14 @@ namespace tsl {
             
             inline Element* handleUpFocus(Element* oldFocus) {
                 updateHoldState();
+                
+                // Check if the previous item is non-focusable BEFORE we do anything else
+                if (m_focusedIndex > 0) {
+                    Element* prevItem = m_items[m_focusedIndex - 1];
+                    if (prevItem->isTable() || prevItem->requestFocus(nullptr, FocusDirection::None) == nullptr) {
+                        isTableScrolling = true;  // Set this IMMEDIATELY
+                    }
+                }
                 
                 // If holding and at boundary, try to scroll first
                 if (m_isHolding && m_stoppedAtBoundary && canScrollUp()) {
@@ -5455,10 +5464,10 @@ namespace tsl {
                 return false;
             }
 
-        
+            
             inline void updateHoldState() {
                 u64 currentTime = armTicksToNs(armGetSystemTick());
-                if (m_lastNavigationTime != 0 && (currentTime - m_lastNavigationTime) < HOLD_THRESHOLD_NS) {
+                if ((m_lastNavigationTime != 0 && (currentTime - m_lastNavigationTime) < HOLD_THRESHOLD_NS)) {
                     m_isHolding = true;
                 } else {
                     m_isHolding = false;
@@ -5514,151 +5523,111 @@ namespace tsl {
         
             // Core navigation logic
             inline Element* navigateDown(Element* oldFocus) {
-                // Start searching from the next index
                 size_t searchIndex = m_focusedIndex + 1;
                 
-                // If we're currently on a table, check if we need to continue scrolling through it
+                // If currently on a table that needs more scrolling
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
-                    s32 tableBottom = currentTable->getBottomBound();
-                    s32 viewBottom = getBottomBound();
-                    
-                    // If table extends beyond view, continue scrolling through it
-                    if (tableBottom > viewBottom) {
+                    if (currentTable->getBottomBound() > getBottomBound()) {
                         isTableScrolling = true;
                         scrollDown();
                         return oldFocus;
                     }
-                    // Table is fully visible, move to next element
                 }
                 
-                // Search through ALL remaining elements
                 while (searchIndex < m_items.size()) {
                     Element* item = m_items[searchIndex];
-                    m_focusedIndex = searchIndex; // Always update focus index to track position
+                    m_focusedIndex = searchIndex;
                     
                     if (item->isTable()) {
-                        // Table: Start scrolling through it
-                        s32 tableTop = item->getTopBound();
+                        // Table needs scrolling
                         s32 tableBottom = item->getBottomBound();
                         s32 viewBottom = getBottomBound();
-                        
-                        // If table needs scrolling or isn't fully visible, scroll
-                        if (tableBottom > viewBottom || tableTop >= viewBottom) {
+                        if (tableBottom > viewBottom) {
                             isTableScrolling = true;
                             scrollDown();
                             return oldFocus;
                         }
-                        
-                        // Table is fully visible, continue to next element
                         searchIndex++;
                         continue;
-                        
+                    }
+                    
+                    // Try to focus this item
+                    Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
+                    if (newFocus && newFocus != oldFocus) {
+                        // ONLY reset when we successfully focus something
+                        isTableScrolling = false;
+                        updateScrollOffset();
+                        return newFocus;
                     } else {
-                        // Try to focus this item (might be focusable or might be gap/header)
-                        Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
-                        if (newFocus && newFocus != oldFocus) {
-                            // Successfully focused an item
-                            isTableScrolling = false;
-                            updateScrollOffset();
-                            return newFocus;
-                        } else {
-                            // This is a gap/header - scroll past it smoothly
-                            float itemTop = calculateItemPosition(searchIndex);
-                            float itemBottom = itemTop + item->getHeight();
-                            //float viewTop = m_offset;
-                            float viewBottom = m_offset + getHeight();
-                            
-                            // If this element isn't fully visible, scroll to show it
-                            if (itemBottom > viewBottom) {
-                                scrollDown();
-                                return oldFocus;
-                            }
-                            
-                            // Element is visible, continue to next
-                            searchIndex++;
-                            continue;
+                        // Non-focusable item (gap/header)
+                        float itemBottom = calculateItemPosition(searchIndex) + item->getHeight();
+                        if (itemBottom > m_offset + getHeight()) {
+                            isTableScrolling = true;  // Treat gaps/headers like tables
+                            scrollDown();
+                            return oldFocus;
                         }
+                        searchIndex++;
                     }
                 }
                 
-                // Reached end of list
                 return oldFocus;
             }
             
+            // Same pattern for navigateUp:
             inline Element* navigateUp(Element* oldFocus) {
-                // If we're currently on a table, check if we need to continue scrolling through it
+                if (m_focusedIndex == 0) return oldFocus;
+                ssize_t searchIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
+                
+                // If currently on a table that needs more scrolling
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
-                    s32 tableTop = currentTable->getTopBound();
-                    s32 viewTop = getTopBound();
-                    
-                    // If table extends beyond view, continue scrolling through it
-                    if (tableTop < viewTop) {
+                    if (currentTable->getTopBound() < getTopBound()) {
                         isTableScrolling = true;
                         scrollUp();
                         return oldFocus;
                     }
-                    // Table is fully visible, move to previous element
                 }
                 
-                // Start searching from the previous index
-                if (m_focusedIndex == 0) return oldFocus;
-                ssize_t searchIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
-                
-                // Search through ALL previous elements
                 while (searchIndex >= 0) {
                     Element* item = m_items[searchIndex];
-                    m_focusedIndex = static_cast<size_t>(searchIndex); // Always update focus index
+                    m_focusedIndex = static_cast<size_t>(searchIndex);
                     
                     if (item->isTable()) {
-                        // Table: Start scrolling through it
+                        // Table needs scrolling
                         s32 tableTop = item->getTopBound();
-                        s32 tableBottom = item->getBottomBound();
                         s32 viewTop = getTopBound();
-                        
-                        // If table needs scrolling or isn't fully visible, scroll
-                        if (tableTop < viewTop || tableBottom <= viewTop) {
+                        if (tableTop < viewTop) {
                             isTableScrolling = true;
                             scrollUp();
                             return oldFocus;
                         }
-                        
-                        // Table is fully visible, continue to previous element
                         searchIndex--;
                         continue;
-                        
+                    }
+                    
+                    // Try to focus this item
+                    Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
+                    if (newFocus && newFocus != oldFocus) {
+                        // ONLY reset when we successfully focus something
+                        isTableScrolling = false;
+                        updateScrollOffset();
+                        return newFocus;
                     } else {
-                        // Try to focus this item (might be focusable or might be gap/header)
-                        Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
-                        if (newFocus && newFocus != oldFocus) {
-                            // Successfully focused an item
-                            isTableScrolling = false;
-                            updateScrollOffset();
-                            return newFocus;
-                        } else {
-                            // This is a gap/header - scroll past it smoothly
-                            float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
-                            //float itemBottom = itemTop + item->getHeight();
-                            float viewTop = m_offset;
-                            //float viewBottom = m_offset + getHeight();
-                            
-                            // If this element isn't fully visible, scroll to show it
-                            if (itemTop < viewTop) {
-                                scrollUp();
-                                return oldFocus;
-                            }
-                            
-                            // Element is visible, continue to previous
-                            searchIndex--;
-                            continue;
+                        // Non-focusable item (gap/header)
+                        float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
+                        if (itemTop < m_offset) {
+                            isTableScrolling = true;  // Treat gaps/headers like tables
+                            scrollUp();
+                            return oldFocus;
                         }
+                        searchIndex--;
                     }
                 }
                 
-                // Reached beginning of list
                 return oldFocus;
             }
+            
             
             // Helper method to calculate an item's position in the list
             inline float calculateItemPosition(size_t index) {
@@ -5681,10 +5650,23 @@ namespace tsl {
             }
             
             
-                        
+            //u64 m_lastScrollNavigationTime = 0;
+            //bool m_isHoldingOnTable = false;
+
             // Enhanced scroll methods that snap to exact boundaries
             inline void scrollDown() {
-                float scrollStep = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+
+                //u64 currentTime = armTicksToNs(armGetSystemTick());
+                //if ((currentTime - m_lastScrollNavigationTime) < HOLD_THRESHOLD_NS) {
+                //    m_isHoldingOnTable = true;
+                //    m_isHolding=true;
+                //} else {
+                //    m_isHoldingOnTable = false;
+                //    m_stoppedAtBoundary = false;
+                //    m_hasWrappedInCurrentSequence = false;
+                //}
+
+                float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
                 
                 m_nextOffset = std::min(m_nextOffset + scrollStep, maxOffset);
@@ -5698,7 +5680,20 @@ namespace tsl {
             }
             
             inline void scrollUp() {
-                float scrollStep = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+
+                //u64 currentTime = armTicksToNs(armGetSystemTick());
+                //if ((currentTime - m_lastScrollNavigationTime) < HOLD_THRESHOLD_NS) {
+                //    m_isHoldingOnTable = true;
+                //    m_isHolding=true;
+                //} else {
+                //    m_isHoldingOnTable = false;
+                //    m_stoppedAtBoundary = false;
+                //    m_hasWrappedInCurrentSequence = false;
+                //    m_lastScrollNavigationTime = 0;
+                //}
+                
+
+                float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 
                 m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
                 
@@ -5710,8 +5705,11 @@ namespace tsl {
                 }
             }
                         
-        
+                    
             Element* wrapToTop(Element* oldFocus) {
+                // Reset table scrolling when wrapping
+                isTableScrolling = false;
+                
                 // Find first focusable item (including tables)
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
@@ -5727,11 +5725,11 @@ namespace tsl {
                 invalidate();
                 return oldFocus;
             }
-
-
-                        
-            // Also fix wrapToBottom for consistency
+            
             Element* wrapToBottom(Element* oldFocus) {
+                // Reset table scrolling when wrapping
+                isTableScrolling = false;
+                
                 invalidate();
                 
                 // Find last focusable item (including tables)
@@ -5902,6 +5900,8 @@ namespace tsl {
             }
             
         };
+
+
         // Forward declare external method to be used in changeTo
 
         /**
@@ -8316,6 +8316,12 @@ namespace tsl {
         constexpr inline std::unique_ptr<T> initially(Args&&... args) {
             return std::make_unique<T>(args...);
         }
+
+        // Template version with clearGlyphCache as the last parameter
+        template<typename G, typename ...Args>
+        std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
+            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), true);
+        }
         
     private:
         using GuiPtr = std::unique_ptr<tsl::Gui>;
@@ -8867,11 +8873,6 @@ namespace tsl {
             return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), false);
         }
         
-        // Template version with clearGlyphCache as the last parameter
-        template<typename G, typename ...Args>
-        std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
-            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), true);
-        }
         
         /**
          * @brief Pops the top Gui from the stack and goes back to the last one
@@ -8899,6 +8900,8 @@ namespace tsl {
         
         template<typename G, typename ...Args>
         friend std::unique_ptr<tsl::Gui>& changeTo(Args&&... args);
+        template<typename G, typename ...Args>
+        friend std::unique_ptr<tsl::Gui>& changeToWithCacheCLear(Args&&... args);
         
         friend void goBack();
         friend void pop();
@@ -9328,6 +9331,11 @@ namespace tsl {
         return Overlay::get()->changeTo<G, Args...>(std::forward<Args>(args)...);
     }
     
+    template<typename G, typename ...Args>
+    std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
+        return Overlay::get()->changeToWithCacheClear<G, Args...>(std::forward<Args>(args)...);
+    }
+
     /**
      * @brief Pops the top Gui from the stack and goes back to the last one
      * @note The Overlay gets closed once there are no more Guis on the stack
