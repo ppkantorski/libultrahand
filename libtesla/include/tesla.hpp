@@ -881,7 +881,11 @@ namespace tsl {
 
         // Forward declarations
         class Renderer;
-            
+        
+
+        #ifdef UI_OVERRIDE_PATH
+        static std::shared_mutex s_translationCacheMutex;
+        #endif
         class FontManager {
         public:
             struct Glyph {
@@ -2898,9 +2902,6 @@ namespace tsl {
             
             std::stack<ScissoringConfig> m_scissoringStack;
             
-            #ifdef UI_OVERRIDE_PATH
-            static std::shared_mutex s_translationCacheMutex;
-            #endif
 
             static inline float s_opacity = 1.0F;
             
