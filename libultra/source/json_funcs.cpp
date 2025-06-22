@@ -241,4 +241,70 @@ namespace ult {
         free(jsonString);
         return success;
     }
+
+    /**
+     * @brief Renames a key in a JSON file.
+     *
+     * @param filePath The path to the JSON file.
+     * @param oldKey The current key name.
+     * @param newKey The new key name.
+     * @return true if successful, false otherwise.
+     */
+    bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey) {
+        // Try to load existing file
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        
+        if (!root) {
+            return false; // File doesn't exist or couldn't be loaded
+        }
+    
+        // Check if old key exists
+        json_t* value = json_object_get(root.get(), oldKey.c_str());
+        if (!value) {
+            return false; // Old key doesn't exist
+        }
+    
+        // Increment reference count since we're going to use this value twice
+        json_incref(value);
+    
+        // Set the new key with the old value
+        int setResult = json_object_set(root.get(), newKey.c_str(), value);
+        
+        // Delete the old key
+        int delResult = json_object_del(root.get(), oldKey.c_str());
+        
+        // Decrement reference count
+        json_decref(value);
+        
+        if (setResult != 0 || delResult != 0) {
+            return false;
+        }
+    
+        // Save to file
+        char* jsonString = json_dumps(root.get(), JSON_INDENT(2) | JSON_PRESERVE_ORDER);
+        if (!jsonString) {
+            return false;
+        }
+    
+        bool success = false;
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "wb");
+        if (file) {
+            size_t jsonLength = strlen(jsonString);
+            size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+            success = (bytesWritten == jsonLength);
+            fclose(file);
+        }
+    #else
+        std::ofstream file(filePath, std::ios::binary);
+        if (file.is_open()) {
+            file << jsonString;
+            success = !file.fail();
+            file.close();
+        }
+    #endif
+    
+        free(jsonString);
+        return success;
+    }
 }
