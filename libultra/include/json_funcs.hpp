@@ -84,5 +84,16 @@ namespace ult {
      * @return true if successful, false otherwise.
      */
     bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists = false);
+
+
+    /**
+     * @brief Renames a key in a JSON file.
+     *
+     * @param filePath The path to the JSON file.
+     * @param oldKey The current key name.
+     * @param newKey The new key name.
+     * @return true if successful, false otherwise.
+     */
+    bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey);
 }
 #endif
