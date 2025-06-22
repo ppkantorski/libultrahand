@@ -547,7 +547,7 @@ namespace tsl {
     }
     
     static void goBack(u32 count = 1);
-    
+
     static void pop(u32 count = 1);
     
     static void setNextOverlay(const std::string& ovlPath, std::string args = "");
@@ -4720,6 +4720,12 @@ namespace tsl {
                     clearItems();
                     return;
                 }
+
+                // Draw: backup reset if instance missed its chance  
+                if (!m_forwardHasCached) {
+                    cacheForwardFrameOnce = true;
+                    m_forwardHasCached = true;
+                }
                 
                 // Process pending operations in batch
                 if (!m_itemsToAdd.empty()) addPendingItems();
@@ -4982,6 +4988,7 @@ namespace tsl {
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
             bool m_skipFrame = false;
+            bool m_forwardHasCached = false;
 
             // Stack variables for hot path - reused to avoid allocations
             u32 scrollbarHeight;
