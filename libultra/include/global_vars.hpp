@@ -36,6 +36,7 @@ namespace ult {
     extern const std::string LANG_PATH;
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
+    extern const std::string HB_APPSTORE_JSON;
     
     // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
     extern std::string THEME_CONFIG_INI_PATH;

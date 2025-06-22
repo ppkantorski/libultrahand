@@ -31,6 +31,7 @@ namespace ult {
     const std::string LANG_PATH = SETTINGS_PATH + "lang/";
     const std::string THEMES_PATH = SETTINGS_PATH + "themes/";
     const std::string WALLPAPERS_PATH = SETTINGS_PATH + "wallpapers/";
+    const std::string HB_APPSTORE_JSON = "/switch/appstore/.get/packages/UltrahandOverlay/info.json";
     
     std::string THEME_CONFIG_INI_PATH = SETTINGS_PATH + "theme.ini";
     std::string WALLPAPER_PATH = SETTINGS_PATH + "wallpaper.rgba";

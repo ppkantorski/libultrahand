@@ -159,4 +159,86 @@ namespace ult {
             return "";
         }
     }
+
+
+    /**
+     * @brief Sets a value in a JSON file, creating the file if it doesn't exist.
+     *
+     * @param filePath The path to the JSON file.
+     * @param key The key to set.
+     * @param value The value to set (auto-detected type).
+     * @param createIfNotExists Whether to create the file if it doesn't exist.
+     * @return true if successful, false otherwise.
+     */
+    bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists) {
+        // Try to load existing file
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        
+        // If file doesn't exist, create new JSON object if allowed
+        if (!root) {
+            if (!createIfNotExists) {
+                return false;
+            }
+            root.reset(json_object());
+            if (!root) {
+                return false;
+            }
+        }
+
+        // Determine value type and create appropriate JSON value
+        json_t* jsonValue = nullptr;
+        if (value == "true") {
+            jsonValue = json_true();
+        } else if (value == "false") {
+            jsonValue = json_false();
+        } else {
+            // Try parsing as integer
+            std::size_t pos = 0;
+            int intValue = ult::stoi(value, &pos, 10);
+            if (pos == value.length() && !value.empty()) {
+                jsonValue = json_integer(intValue);
+            } else {
+                jsonValue = json_string(value.c_str());
+            }
+        }
+
+        if (!jsonValue) {
+            return false;
+        }
+
+        // Set the value
+        int result = json_object_set(root.get(), key.c_str(), jsonValue);
+        json_decref(jsonValue);
+        
+        if (result != 0) {
+            return false;
+        }
+
+        // Save to file
+        char* jsonString = json_dumps(root.get(), JSON_INDENT(2) | JSON_PRESERVE_ORDER);
+        if (!jsonString) {
+            return false;
+        }
+
+        bool success = false;
+    #if NO_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "wb");
+        if (file) {
+            size_t jsonLength = strlen(jsonString);
+            size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+            success = (bytesWritten == jsonLength);
+            fclose(file);
+        }
+    #else
+        std::ofstream file(filePath, std::ios::binary);
+        if (file.is_open()) {
+            file << jsonString;
+            success = !file.fail();
+            file.close();
+        }
+    #endif
+
+        free(jsonString);
+        return success;
+    }
 }

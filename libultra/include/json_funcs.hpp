@@ -15,21 +15,16 @@
  *  Copyright (c) 2024 ppkantorski
  ********************************************************************************/
 #pragma once
-
 #ifndef JSON_FUNCS_HPP
 #define JSON_FUNCS_HPP
-
 #if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
 #else
 #include <fstream>
 #endif
-
 #include <string>
 #include <jansson.h>
 #include "string_funcs.hpp"
-
-
 namespace ult {
     // Define a custom deleter for json_t*
     struct JsonDeleter {
@@ -77,6 +72,17 @@ namespace ult {
      * @return A string containing the value associated with the given key, or an empty string if the key is not found.
      */
     std::string getStringFromJsonFile(const std::string& filePath, const std::string& key);
+    
+    
+    /**
+     * @brief Sets a value in a JSON file, creating the file if it doesn't exist.
+     *
+     * @param filePath The path to the JSON file.
+     * @param key The key to set.
+     * @param value The value to set (auto-detected type).
+     * @param createIfNotExists Whether to create the file if it doesn't exist.
+     * @return true if successful, false otherwise.
+     */
+    bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists = false);
 }
-
 #endif
