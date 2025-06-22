@@ -428,7 +428,7 @@ namespace ult {
     std::string _ABOUT = "About";
     std::string _CREDITS = "Credits";
 
-    std::string USERGUIDE_OFFSET = "175";
+    std::string USERGUIDE_OFFSET = "176";
     std::string SETTINGS_MENU = "Settings Menu";
     std::string SCRIPT_OVERLAY = "Script Overlay";
     std::string STAR_FAVORITE = "Star/Favorite";
@@ -606,7 +606,7 @@ namespace ult {
         GAP_1 = "     ";
         GAP_2 = "  ";
 
-        USERGUIDE_OFFSET = "175";
+        USERGUIDE_OFFSET = "176";
         SETTINGS_MENU = "Settings Menu";
         SCRIPT_OVERLAY = "Script Overlay";
         STAR_FAVORITE = "Star/Favorite";
