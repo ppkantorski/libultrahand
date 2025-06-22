@@ -4722,9 +4722,9 @@ namespace tsl {
                 }
 
                 // Draw: backup reset if instance missed its chance  
-                if (!m_forwardHasCached) {
+                if (!m_hasForwardCached) {
                     cacheForwardFrameOnce = true;
-                    m_forwardHasCached = true;
+                    m_hasForwardCached = true;
                 }
                 
                 // Process pending operations in batch
@@ -4988,7 +4988,7 @@ namespace tsl {
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
             bool m_skipFrame = false;
-            bool m_forwardHasCached = false;
+            bool m_hasForwardCached = false;
 
             // Stack variables for hot path - reused to avoid allocations
             u32 scrollbarHeight;
