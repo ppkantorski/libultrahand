@@ -150,11 +150,14 @@ double elapsedTime;
 static bool jumpToTop = false;
 static bool jumpToBottom = false;
 static u32 offsetWidthVar = 112;
-static bool hideHidden = false;
 static std::string g_overlayFilename;;
 static std::string jumpItemName;
 static std::string jumpItemValue;
 static bool jumpItemExactMatch = true;
+
+#if IS_LAUNCHER_DIRECTIVE
+static bool hideHidden = false;
+#endif
 
 namespace tsl {
 
