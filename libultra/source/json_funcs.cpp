@@ -224,7 +224,7 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "wb");
         if (file) {
-            size_t jsonLength = strlen(jsonString);
+            size_t jsonLength = jsonString.size();
             size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
@@ -290,7 +290,7 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "wb");
         if (file) {
-            size_t jsonLength = strlen(jsonString);
+            size_t jsonLength = jsonString.size();
             size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
