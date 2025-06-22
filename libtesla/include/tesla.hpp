@@ -147,16 +147,16 @@ double elapsedTime;
 
 // Custom variables
 //static bool jumpToListItem = false;
-static bool jumpToTop = false;
-static bool jumpToBottom = false;
-static u32 offsetWidthVar = 112;
-static std::string g_overlayFilename;;
-static std::string jumpItemName;
-static std::string jumpItemValue;
-static bool jumpItemExactMatch = true;
+inline bool jumpToTop = false;
+inline bool jumpToBottom = false;
+inline u32 offsetWidthVar = 112;
+inline std::string g_overlayFilename;;
+inline std::string jumpItemName;
+inline std::string jumpItemValue;
+inline bool jumpItemExactMatch = true;
 
 #if IS_LAUNCHER_DIRECTIVE
-static bool hideHidden = false;
+inline bool hideHidden = false;
 #endif
 
 namespace tsl {
@@ -546,8 +546,8 @@ namespace tsl {
         
     }
     
-    void goBack(u32 count = 1);
-
+    static void goBack(u32 count = 1);
+    
     static void pop(u32 count = 1);
     
     static void setNextOverlay(const std::string& ovlPath, std::string args = "");
@@ -887,7 +887,7 @@ namespace tsl {
         
 
         #ifdef UI_OVERRIDE_PATH
-        static std::shared_mutex s_translationCacheMutex;
+        inline static std::shared_mutex s_translationCacheMutex;
         #endif
         class FontManager {
         public:
@@ -944,21 +944,22 @@ namespace tsl {
             };
             
         private:
-            static std::shared_mutex s_cacheMutex;
-            static std::mutex s_initMutex;
+            inline static std::shared_mutex s_cacheMutex;
+            inline static std::mutex s_initMutex;
             
             // Use unique_ptr to ensure proper cleanup
-            static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
+            inline static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
             
             // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 10000;
             static constexpr size_t CLEANUP_THRESHOLD = 8000;
             
-            static stbtt_fontinfo* s_stdFont;
-            static stbtt_fontinfo* s_localFont;
-            static stbtt_fontinfo* s_extFont;
-            static bool s_hasLocalFont;
-            static bool s_initialized;
+            // font handles & state
+            inline static stbtt_fontinfo* s_stdFont     = nullptr;
+            inline static stbtt_fontinfo* s_localFont   = nullptr;
+            inline static stbtt_fontinfo* s_extFont     = nullptr;
+            inline static bool             s_hasLocalFont = false;
+            inline static bool             s_initialized  = false;
             
             // Fix cache key generation to prevent collisions
             static u64 generateCacheKey(u32 character, bool monospace, u32 fontSize) {
@@ -1122,14 +1123,14 @@ namespace tsl {
         };
         
         // Static member definitions
-        std::shared_mutex FontManager::s_cacheMutex;
-        std::mutex FontManager::s_initMutex;
-        std::unordered_map<u64, std::unique_ptr<FontManager::Glyph>> FontManager::s_sharedGlyphCache;
-        stbtt_fontinfo* FontManager::s_stdFont = nullptr;
-        stbtt_fontinfo* FontManager::s_localFont = nullptr;
-        stbtt_fontinfo* FontManager::s_extFont = nullptr;
-        bool FontManager::s_hasLocalFont = false;
-        bool FontManager::s_initialized = false;
+       //std::shared_mutex FontManager::s_cacheMutex;
+       //std::mutex FontManager::s_initMutex;
+       //std::unordered_map<u64, std::unique_ptr<FontManager::Glyph>> FontManager::s_sharedGlyphCache;
+       //stbtt_fontinfo* FontManager::s_stdFont = nullptr;
+       //stbtt_fontinfo* FontManager::s_localFont = nullptr;
+       //stbtt_fontinfo* FontManager::s_extFont = nullptr;
+       //bool FontManager::s_hasLocalFont = false;
+       //bool FontManager::s_initialized = false;
         
         // Updated thread-safe calculateStringWidth function
         static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace = false) {
