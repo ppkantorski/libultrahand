@@ -4998,10 +4998,11 @@ namespace tsl {
             u32 scrollbarOffset;
             u32 prevOffset;
             static constexpr float SCROLLBAR_X_OFFSET = 21.0f;
-            static constexpr float SCROLLBAR_Y_OFFSET = 4.0f;
+            static constexpr float SCROLLBAR_Y_OFFSET = 3.0f;
+            static constexpr float SCROLLBAR_HEIGHT_TRIM = 6.0f;
             
-            static constexpr float smoothingFactor = 0.15f;
-            static constexpr float dampingFactor = 0.3f;
+            //static constexpr float smoothingFactor = 0.15f;
+            //static constexpr float dampingFactor = 0.3f;
             static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
             static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
             static constexpr float BOTTOM_PADDING = 7.0f;
@@ -5126,7 +5127,7 @@ namespace tsl {
                     s_cachedScrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - s_cachedScrollbarHeight)), 
                                                      static_cast<u32>(viewHeight - s_cachedScrollbarOffset));
                     
-                    scrollbarHeight-=6; // shorten very slightly
+                    scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM; // shorten very slightly
                     s_cachedScrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset+SCROLLBAR_Y_OFFSET;
                 }
@@ -5217,7 +5218,7 @@ namespace tsl {
                 const u32 scrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
                 const u32 scrollbarY = getY() + scrollbarOffset+SCROLLBAR_Y_OFFSET;
 
-                scrollbarHeight-=6; // shorten very slightly
+                scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM; // shorten very slightly
         
                 renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
                 renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
