@@ -4733,14 +4733,18 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 static bool checkOnce = true;
-                if (m_pendingJump && !s_hasValidFrame && !s_isForwardCache && checkOnce && ult::internalTouchReleased) {
+                if (checkOnce && m_pendingJump && !s_hasValidFrame && !s_isForwardCache && ult::internalTouchReleased) {
                     if (lastInternalTouchRelease == ult::internalTouchReleased) {
                         checkOnce = false;
                         return;
                     }
                 } else {
-                    checkOnce = true;
-                    lastInternalTouchRelease = ult::internalTouchReleased;
+                    static bool checkOnce2 = true;
+                    if (checkOnce2) {
+                        checkOnce = true;
+                        lastInternalTouchRelease = ult::internalTouchReleased;
+                        checkOnce2 = false;
+                    }
                 }
 
                 if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
