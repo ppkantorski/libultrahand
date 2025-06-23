@@ -1777,6 +1777,17 @@ namespace tsl {
 
             // Define processChunk as a static member function
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 x_end, const s32 y_end, const s32 r2, const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
+                // Get framebuffer bounds (assuming these are available as members or globals)
+                const s32 fb_width = cfg::FramebufferWidth;
+                const s32 fb_height = cfg::FramebufferHeight;
+                
+                // Early exit if completely outside bounds
+                if (startRow >= fb_height || endRow <= 0) return;
+                
+                // Clamp rows to framebuffer bounds
+                const s32 clampedStartRow = std::max(0, startRow);
+                const s32 clampedEndRow = std::min(fb_height, endRow);
+                
                 // All constant calculations moved outside loops
                 const s32 x_left = x + radius;
                 const s32 x_right = x_end - radius;
@@ -1815,8 +1826,11 @@ namespace tsl {
                 #endif
                 
                 // Only compute spans for rows we actually need
-                const s32 first_row_idx = std::max(0, startRow - y);
-                const s32 last_row_idx = std::min(total_height - 1, endRow - y - 1);
+                const s32 first_row_idx = std::max(0, clampedStartRow - y);
+                const s32 last_row_idx = std::min(total_height - 1, clampedEndRow - y - 1);
+                
+                // Early exit if no valid rows
+                if (first_row_idx > last_row_idx) return;
                 
                 // Use stack allocation for small span arrays
                 HorizontalSpan spans[512]; // Assuming reasonable max height
@@ -1837,9 +1851,9 @@ namespace tsl {
                     const s32 y1 = y + row_idx;
                     
                     if (y1 >= y_top && y1 < y_bottom) {
-                        // Middle section - direct assignment
-                        span_ptr[span_idx].start_x = x;
-                        span_ptr[span_idx].end_x = x_end;
+                        // Middle section - direct assignment with clamping
+                        span_ptr[span_idx].start_x = std::max(0, x);
+                        span_ptr[span_idx].end_x = std::min(fb_width, x_end);
                     } else {
                         // Corner section - optimize with lookup table for small radii
                         const bool isTopSection = (y1 < y_top);
@@ -1853,8 +1867,8 @@ namespace tsl {
                         } else {
                             // Use fast integer square root for better performance
                             const s32 max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
-                            span_ptr[span_idx].start_x = std::max(x_left - max_dx, x);
-                            span_ptr[span_idx].end_x = std::min(x_right + max_dx, x_end);
+                            span_ptr[span_idx].start_x = std::max(0, std::max(x_left - max_dx, x));
+                            span_ptr[span_idx].end_x = std::min(fb_width, std::min(x_right + max_dx, x_end));
                         }
                     }
                     ++span_idx;
@@ -1862,7 +1876,7 @@ namespace tsl {
                 
                 // Render using pre-computed spans with larger batch sizes
                 span_idx = 0;
-                for (s32 y_current = startRow; y_current < endRow; ++y_current) {
+                for (s32 y_current = clampedStartRow; y_current < clampedEndRow; ++y_current) {
                     const s32 row_idx = y_current - y;
                     if (row_idx < first_row_idx || row_idx > last_row_idx) continue;
                     
@@ -1875,6 +1889,7 @@ namespace tsl {
                         const s32 remaining = span->end_x - x_pos;
                         const s32 batch_size = std::min(remaining, 512);
                         
+                        // The setPixelBlendDstBatch should now be safe as we've clamped all coordinates
                         self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, batch_size);
                         x_pos += batch_size;
                     }
@@ -1896,6 +1911,13 @@ namespace tsl {
             inline void drawRoundedRectMultiThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
                 if (w <= 0 || h <= 0) return;
                 
+                // Get framebuffer bounds
+                const s32 fb_width = cfg::FramebufferWidth;
+                const s32 fb_height = cfg::FramebufferHeight;
+                
+                // Early exit if completely outside visible area
+                if (x >= fb_width || y >= fb_height || x + w <= 0 || y + h <= 0) return;
+                
                 // For small rectangles, use single-threaded version
                 if (w * h < 1000) {
                     drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
@@ -1907,14 +1929,21 @@ namespace tsl {
                 s32 y_end = y + h;
                 s32 r2 = radius * radius;
                 
-                // Dynamic chunk size based on rectangle size
-                s32 chunkSize = std::max((s32)1, (s32)(h / (ult::numThreads * 2)));
-                std::atomic<s32> currentRow(y);
+                // Clamp the drawing area to framebuffer bounds
+                const s32 clampedYStart = std::max(0, y);
+                const s32 clampedYEnd = std::min(fb_height, y_end);
+                
+                // Dynamic chunk size based on visible rectangle size
+                const s32 visibleHeight = clampedYEnd - clampedYStart;
+                if (visibleHeight <= 0) return;
+                
+                s32 chunkSize = std::max((s32)1, (s32)(visibleHeight / (ult::numThreads * 2)));
+                std::atomic<s32> currentRow(clampedYStart);
                 
                 auto threadTask = [&]() {
                     s32 startRow, endRow;
-                    while ((startRow = currentRow.fetch_add(chunkSize)) < y_end) {
-                        endRow = std::min(startRow + chunkSize, y_end);
+                    while ((startRow = currentRow.fetch_add(chunkSize)) < clampedYEnd) {
+                        endRow = std::min(startRow + chunkSize, clampedYEnd);
                         processRoundedRectChunk(this, x, y, x_end, y_end, r2, radius, color, startRow, endRow);
                     }
                 };
@@ -1934,12 +1963,23 @@ namespace tsl {
 
 
             inline void drawRoundedRectSingleThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
-                //const s32 x_end = x + w;
-                const s32 y_end = y + h;
-                //const s32 r2 = radius * radius;
+                // Get framebuffer bounds
+                const s32 fb_width = cfg::FramebufferWidth;
+                const s32 fb_height = cfg::FramebufferHeight;
                 
-                // Call the processRoundedRectChunk function directly for the entire rectangle
-                processRoundedRectChunk(this, x, y, x + w, y_end, radius * radius, radius, color, y, y_end);
+                // Early exit if completely outside visible area
+                if (x >= fb_width || y >= fb_height || x + w <= 0 || y + h <= 0) return;
+                
+                const s32 y_end = y + h;
+                
+                // Clamp the drawing area to framebuffer bounds
+                const s32 clampedYStart = std::max(0, y);
+                const s32 clampedYEnd = std::min(fb_height, y_end);
+                
+                if (clampedYStart >= clampedYEnd) return;
+                
+                // Call the processRoundedRectChunk function directly for the visible portion
+                processRoundedRectChunk(this, x, y, x + w, y_end, radius * radius, radius, color, clampedYStart, clampedYEnd);
             }
 
             std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
@@ -4015,7 +4055,7 @@ namespace tsl {
                     
                     if (ult::touchingBack) {
                         renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                                  ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                     }
                     
                     // Use getTextDimensions instead of calculateStringWidth
@@ -4024,7 +4064,7 @@ namespace tsl {
                     
                     if (ult::touchingSelect && !m_noClickableItems) {
                         renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                                  ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
                 
@@ -4368,14 +4408,14 @@ namespace tsl {
                 ult::backWidth = backWidth;
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                 }
             
                 auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
                 ult::selectWidth = selectWidth;
                 if (ult::touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
             #if IS_LAUNCHER_DIRECTIVE
@@ -4395,7 +4435,7 @@ namespace tsl {
                     if (ult::touchingNextPage) {
                         renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f + ((!m_noClickableItems) ? ult::selectWidth+68.0f : 0), 
                                                   static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
+                                                  ult::nextPageWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
             #endif
@@ -4559,14 +4599,14 @@ namespace tsl {
                 ult::backWidth = backWidth;
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
                 ult::selectWidth = selectWidth;
                 if (ult::touchingSelect) {
                     renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
@@ -4965,6 +5005,7 @@ namespace tsl {
                 //    m_pendingJump = true;
                 //else
                 //    m_pendingJump = false;
+                //if (g_overlayFilename == "ovlmenu.ovl") return;
                 m_pendingJump = true;
                 m_jumpToText = text;
                 m_jumpToValue = value;
@@ -8547,7 +8588,7 @@ namespace tsl {
         
             // Return early if current GUI is not available
             if (!currentGui) return;
-            //if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
+            if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
@@ -8923,8 +8964,8 @@ namespace tsl {
             
             // Push the new Gui onto the stack
             this->m_guiStack.push(std::move(gui));
-            if (clearGlyphCache)
-                tsl::gfx::FontManager::clearCache();
+            //if (clearGlyphCache)
+            //    tsl::gfx::FontManager::clearCache();
             return this->m_guiStack.top();
         }
 
