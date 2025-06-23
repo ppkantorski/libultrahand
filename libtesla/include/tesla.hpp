@@ -4721,7 +4721,7 @@ namespace tsl {
             
             virtual void draw(gfx::Renderer* renderer) override {
                 // Early exit optimizations
-                if (m_clearList) {
+                if (m_clearList || skipDeconstruction) {
                     clearItems();
                     return;
                 }
@@ -4735,7 +4735,7 @@ namespace tsl {
                 
                 // Process pending operations in batch
                 if (!m_itemsToAdd.empty() && !skipDeconstruction) addPendingItems();
-                if (!m_itemsToRemove.empty() || skipDeconstruction) removePendingItems();
+                if (!m_itemsToRemove.empty()) removePendingItems();
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
