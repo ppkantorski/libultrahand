@@ -4734,8 +4734,8 @@ namespace tsl {
 
                 
                 // Process pending operations in batch
-                if (!m_itemsToAdd.empty()) addPendingItems();
-                if (!m_itemsToRemove.empty()) removePendingItems();
+                if (!m_itemsToAdd.empty() && !skipDeconstruction) addPendingItems();
+                if (!m_itemsToRemove.empty() || skipDeconstruction) removePendingItems();
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
