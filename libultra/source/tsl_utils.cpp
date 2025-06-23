@@ -1089,8 +1089,8 @@ namespace ult {
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
-        size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
+        size_t originalDataSize = width * height * 4;
+        size_t compressedDataSize = originalDataSize / 2;
         
         wallpaperData.resize(compressedDataSize);
     
@@ -1130,29 +1130,53 @@ namespace ult {
             }
         #endif
     
-        // Compress RGBA8888 to RGBA4444
-        uint8_t* input = buffer.data();
-        uint8_t* output = wallpaperData.data();
-        uint8_t r1, g1, b1, a1;
-        uint8_t r2, g2, b2, a2;
-    
-        for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
-            // Read 2 RGBA pixels (8 bytes)
-            r1 = input[i] >> 4;
-            g1 = input[i + 1] >> 4;
-            b1 = input[i + 2] >> 4;
-            a1 = input[i + 3] >> 4;
-    
-            r2 = input[i + 4] >> 4;
-            g2 = input[i + 5] >> 4;
-            b2 = input[i + 6] >> 4;
-            a2 = input[i + 7] >> 4;
-    
-            // Pack them into 4 bytes (2 bytes per pixel)
-            output[j] = (r1 << 4) | g1;
-            output[j + 1] = (b1 << 4) | a1;
-            output[j + 2] = (r2 << 4) | g2;
-            output[j + 3] = (b2 << 4) | a2;
+        // Compress RGBA8888 to RGBA4444 - Optimized version
+        const uint8_t* __restrict input = buffer.data();
+        uint8_t* __restrict output = wallpaperData.data();
+        
+        // Process 8 pixels at a time for better performance
+        size_t pixels = originalDataSize >> 2;  // Total number of pixels
+        size_t i = 0;
+        
+        // Main loop - unrolled 4x (8 pixels)
+        for (; i + 8 <= pixels; i += 8) {
+            // Pixel 1-2
+            output[0] = (input[0] & 0xF0) | (input[1] >> 4);
+            output[1] = (input[2] & 0xF0) | (input[3] >> 4);
+            output[2] = (input[4] & 0xF0) | (input[5] >> 4);
+            output[3] = (input[6] & 0xF0) | (input[7] >> 4);
+            
+            // Pixel 3-4
+            output[4] = (input[8] & 0xF0) | (input[9] >> 4);
+            output[5] = (input[10] & 0xF0) | (input[11] >> 4);
+            output[6] = (input[12] & 0xF0) | (input[13] >> 4);
+            output[7] = (input[14] & 0xF0) | (input[15] >> 4);
+            
+            // Pixel 5-6
+            output[8] = (input[16] & 0xF0) | (input[17] >> 4);
+            output[9] = (input[18] & 0xF0) | (input[19] >> 4);
+            output[10] = (input[20] & 0xF0) | (input[21] >> 4);
+            output[11] = (input[22] & 0xF0) | (input[23] >> 4);
+            
+            // Pixel 7-8
+            output[12] = (input[24] & 0xF0) | (input[25] >> 4);
+            output[13] = (input[26] & 0xF0) | (input[27] >> 4);
+            output[14] = (input[28] & 0xF0) | (input[29] >> 4);
+            output[15] = (input[30] & 0xF0) | (input[31] >> 4);
+            
+            input += 32;
+            output += 16;
+        }
+        
+        // Handle remaining pixels (2 at a time as in original)
+        for (; i + 2 <= pixels; i += 2) {
+            output[0] = (input[0] & 0xF0) | (input[1] >> 4);
+            output[1] = (input[2] & 0xF0) | (input[3] >> 4);
+            output[2] = (input[4] & 0xF0) | (input[5] >> 4);
+            output[3] = (input[6] & 0xF0) | (input[7] >> 4);
+            
+            input += 8;
+            output += 4;
         }
     }
 
