@@ -4919,10 +4919,11 @@ namespace tsl {
             }
 
             inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true, bool skipFrame=false) {
-                if (!text.empty() || !value.empty())
-                    m_pendingJump = true;
-                else
-                    m_pendingJump = false;
+                //if (!text.empty() || !value.empty())
+                //    m_pendingJump = true;
+                //else
+                //    m_pendingJump = false;
+                m_pendingJump = true;
                 m_jumpToText = text;
                 m_jumpToValue = value;
                 m_jumpToExactMatch = exactMatch;
