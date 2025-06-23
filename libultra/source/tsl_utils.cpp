@@ -205,8 +205,8 @@ namespace ult {
     bool resetForegroundCheck = false; // initialize as true
 
 
-
-    bool internalTouchReleased = true;
+    
+    std::atomic<bool> internalTouchReleased(true);
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
@@ -983,7 +983,7 @@ namespace ult {
     
     // Prepare a map of default settings
     std::map<std::string, std::string> defaultThemeSettingsMap = {
-        {"default_overlay_color", "FFFFFF"},
+        {"default_overlay_color", whiteColor},
         {"default_package_color", "00FF00"},
         {"default_script_color", "FF33FF"},
         {"clock_color", whiteColor},
