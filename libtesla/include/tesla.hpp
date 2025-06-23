@@ -4696,6 +4696,8 @@ namespace tsl {
         static bool cacheForwardFrameOnce = true;
         static bool lastInternalTouchRelease = true;
 
+        static bool skipDeconstruction = false;
+
         static bool isTableScrolling = false;
 
         class List : public Element {
@@ -4707,11 +4709,13 @@ namespace tsl {
                 
             }
             virtual ~List() {
-                if (s_isForwardCache)
-                    clearStaticCache(true);
-                cacheCurrentFrame();
-                cacheForwardFrameOnce = true;
-                s_isForwardCache = false;
+                if (!skipDeconstruction) {
+                    if (s_isForwardCache)
+                        clearStaticCache(true);
+                    cacheCurrentFrame();
+                    cacheForwardFrameOnce = true;
+                    s_isForwardCache = false;
+                }
             }
             
             
@@ -4727,6 +4731,7 @@ namespace tsl {
                     cacheForwardFrameOnce = true;
                     m_hasForwardCached = true;
                 }
+
                 
                 // Process pending operations in batch
                 if (!m_itemsToAdd.empty()) addPendingItems();
@@ -4749,19 +4754,20 @@ namespace tsl {
                 }
 
                 if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
+                    
+
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    if (!m_skipFrame) {
+
+                    if (!skipDeconstruction) {
                         if (s_isForwardCache)
                             clearStaticCache(true);
                         else
                             clearStaticCache();
                         s_isForwardCache = false;
                         s_hasValidFrame = false;
-                        return;
-                    } else {
-                        m_skipFrame = false;
                     }
+                    return;
                 }
 
                 // Cache bounds for hot loop
@@ -4810,6 +4816,7 @@ namespace tsl {
                 if (s_isForwardCache)
                     cacheCurrentFrame(true);
                 
+                //svcSleepThread(300'000'000); // for testing
             }
 
         
@@ -4929,7 +4936,7 @@ namespace tsl {
                 return oldFocus;
             }
 
-            inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true, bool skipFrame=false) {
+            inline void jumpToItem(const std::string& text = "", const std::string& value = "", bool exactMatch=true) {
                 //if (!text.empty() || !value.empty())
                 //    m_pendingJump = true;
                 //else
@@ -4938,7 +4945,7 @@ namespace tsl {
                 m_jumpToText = text;
                 m_jumpToValue = value;
                 m_jumpToExactMatch = exactMatch;
-                m_skipFrame = skipFrame;
+
             }
                         
             virtual Element* getItemAtIndex(u32 index) {
@@ -4999,7 +5006,6 @@ namespace tsl {
             std::string m_jumpToValue;
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
-            bool m_skipFrame = false;
             bool m_hasForwardCached = false;
 
             // Stack variables for hot path - reused to avoid allocations
