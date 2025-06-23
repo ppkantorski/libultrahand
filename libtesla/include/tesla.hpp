@@ -4732,6 +4732,7 @@ namespace tsl {
                 if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
+                // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
                 if (checkOnce && m_pendingJump && !s_hasValidFrame && !s_isForwardCache && ult::internalTouchReleased) {
                     if (lastInternalTouchRelease == ult::internalTouchReleased) {
