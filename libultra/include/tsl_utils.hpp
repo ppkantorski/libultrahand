@@ -120,7 +120,9 @@ namespace ult {
 
 
     //extern bool isLauncher;
-    extern bool internalTouchReleased;
+    //extern bool internalTouchReleased;
+    extern std::atomic<bool> internalTouchReleased;
+
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
