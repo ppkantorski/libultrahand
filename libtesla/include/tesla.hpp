@@ -4997,12 +4997,14 @@ namespace tsl {
             u32 scrollbarHeight;
             u32 scrollbarOffset;
             u32 prevOffset;
+            static constexpr float SCROLLBAR_X_OFFSET = 21.0f;
+            static constexpr float SCROLLBAR_Y_OFFSET = 4.0f;
             
             static constexpr float smoothingFactor = 0.15f;
             static constexpr float dampingFactor = 0.3f;
-            static constexpr float TABLE_SCROLL_STEP_SIZE = 13;
-            static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 40;
-            static constexpr float BOTTOM_PADDING = 6.0f;
+            static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
+            static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
+            static constexpr float BOTTOM_PADDING = 7.0f;
 
             float m_scrollVelocity = 0.0f;
             
@@ -5123,9 +5125,10 @@ namespace tsl {
                     
                     s_cachedScrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - s_cachedScrollbarHeight)), 
                                                      static_cast<u32>(viewHeight - s_cachedScrollbarOffset));
-            
-                    s_cachedScrollbarX = getRightBound() + 20;
-                    s_cachedScrollbarY = getY() + s_cachedScrollbarOffset;
+                    
+                    scrollbarHeight-=6; // shorten very slightly
+                    s_cachedScrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
+                    s_cachedScrollbarY = getY() + s_cachedScrollbarOffset+SCROLLBAR_Y_OFFSET;
                 }
                 //s_isForwardCache = isForwardCache;
                 if (!isForwardCache)
@@ -5211,8 +5214,8 @@ namespace tsl {
                 scrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - scrollbarHeight)), 
                                          static_cast<u32>(viewHeight - scrollbarHeight));
         
-                const u32 scrollbarX = getRightBound() + 20;
-                const u32 scrollbarY = getY() + scrollbarOffset+4;
+                const u32 scrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
+                const u32 scrollbarY = getY() + scrollbarOffset+SCROLLBAR_Y_OFFSET;
 
                 scrollbarHeight-=6; // shorten very slightly
         
@@ -5349,7 +5352,7 @@ namespace tsl {
                     }
                 }
                 
-                resetNavigationState();
+                //resetNavigationState();
                 
                 // Save current offset to prevent scroll jumping
                 const float savedOffset = m_offset;
@@ -5380,7 +5383,7 @@ namespace tsl {
                 // Check if the next item is non-focusable BEFORE we do anything else
                 if (m_focusedIndex + 1 < int(m_items.size())) {
                     Element* nextItem = m_items[m_focusedIndex + 1];
-                    if (nextItem->isTable() || nextItem->requestFocus(nullptr, FocusDirection::None) == nullptr) {
+                    if (!nextItem->m_isItem) {
                         isTableScrolling = true;  // Set this IMMEDIATELY
                     }
                 }
@@ -5427,7 +5430,7 @@ namespace tsl {
                 // Check if the previous item is non-focusable BEFORE we do anything else
                 if (m_focusedIndex > 0) {
                     Element* prevItem = m_items[m_focusedIndex - 1];
-                    if (prevItem->isTable() || prevItem->requestFocus(nullptr, FocusDirection::None) == nullptr) {
+                    if (prevItem->isTable()) {
                         isTableScrolling = true;  // Set this IMMEDIATELY
                     }
                 }
@@ -8665,7 +8668,7 @@ namespace tsl {
                             keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         } else {
                             // Table scrolling - faster timing
-                            static const u64 transitionPoint_ns = 300000000ULL; // 300ms (faster transition)
+                            static const u64 transitionPoint_ns = 200000000ULL; // 300ms (faster transition)
                             static const u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
                             static const u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
                             
