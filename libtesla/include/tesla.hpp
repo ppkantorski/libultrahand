@@ -4739,20 +4739,22 @@ namespace tsl {
                     checkOnce = true;
                 }
 
-                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache) && !m_skipFrame) {
+                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
-                    if (s_isForwardCache)
-                        clearStaticCache(true);
-                    else
-                        clearStaticCache();
-                    s_isForwardCache = false;
-                    s_hasValidFrame = false;
-                    return;
-                } else {
-                    m_skipFrame = false;
+                    if (!m_skipFrame) {
+                        if (s_isForwardCache)
+                            clearStaticCache(true);
+                        else
+                            clearStaticCache();
+                        s_isForwardCache = false;
+                        s_hasValidFrame = false;
+                        return;
+                    } else {
+                        m_skipFrame = false;
+                    }
                 }
-
+                
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
