@@ -4055,7 +4055,7 @@ namespace tsl {
                     
                     if (ult::touchingBack) {
                         renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                                  ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                     }
                     
                     // Use getTextDimensions instead of calculateStringWidth
@@ -4064,7 +4064,7 @@ namespace tsl {
                     
                     if (ult::touchingSelect && !m_noClickableItems) {
                         renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                                  ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                     }
                 }
                 
@@ -4408,14 +4408,14 @@ namespace tsl {
                 ult::backWidth = backWidth;
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
             
                 auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
                 ult::selectWidth = selectWidth;
                 if (ult::touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
             #if IS_LAUNCHER_DIRECTIVE
@@ -4599,14 +4599,14 @@ namespace tsl {
                 ult::backWidth = backWidth;
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
                 ult::selectWidth = selectWidth;
                 if (ult::touchingSelect) {
                     renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+50.0f, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
