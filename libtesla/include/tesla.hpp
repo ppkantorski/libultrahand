@@ -4473,7 +4473,7 @@ namespace tsl {
             
             inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!m_contentElement || !m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased)
+                if (!m_contentElement || !m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased.load(std::memory_order_acquire))
                     return false;
                 
                 return m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
@@ -4763,8 +4763,8 @@ namespace tsl {
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
-                if (checkOnce && m_pendingJump && !s_hasValidFrame && !s_isForwardCache && ult::internalTouchReleased) {
-                    if (lastInternalTouchRelease == ult::internalTouchReleased) {
+                if (checkOnce && m_pendingJump && !s_hasValidFrame && !s_isForwardCache && ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                    if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
                         checkOnce = false;
                         return;
                     }
@@ -4772,7 +4772,7 @@ namespace tsl {
                     static bool checkOnce2 = true;
                     if (checkOnce2) {
                         checkOnce = true;
-                        lastInternalTouchRelease = ult::internalTouchReleased;
+                        lastInternalTouchRelease = ult::internalTouchReleased.load(std::memory_order_acquire);
                         checkOnce2 = false;
                     }
                 }
@@ -8547,7 +8547,7 @@ namespace tsl {
         
             // Return early if current GUI is not available
             if (!currentGui) return;
-            if (!ult::internalTouchReleased) return;
+            //if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
@@ -9234,7 +9234,8 @@ namespace tsl {
                         
                     
                         if (!shData->overlayOpen) {
-                            ult::internalTouchReleased = false;
+                            //ult::internalTouchReleased = false;
+                            ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
                         
                         u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
@@ -9254,7 +9255,8 @@ namespace tsl {
                     
                         // Handle touch release state
                         if (currentTouch.x == 0 && currentTouch.y == 0) {
-                            ult::internalTouchReleased = true;  // Indicate that the touch has been released
+                            //ult::internalTouchReleased = true;  // Indicate that the touch has been released
+                            ult::internalTouchReleased.store(true, std::memory_order_release);
                             lastTouchX = currentTouch.x;
                         }
 
@@ -9267,7 +9269,8 @@ namespace tsl {
                     } else {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
-                        ult::internalTouchReleased = true;
+                        //ult::internalTouchReleased = true;
+                        ult::internalTouchReleased.store(true, std::memory_order_release);
                     
                         // Reset touch history to invalid state
                         lastTouchX = 0;
