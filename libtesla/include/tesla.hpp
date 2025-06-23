@@ -4697,6 +4697,7 @@ namespace tsl {
         static bool lastInternalTouchRelease = true;
 
         static bool skipDeconstruction = false;
+        static bool skipOnce = false;
 
         static bool isTableScrolling = false;
 
@@ -4704,8 +4705,20 @@ namespace tsl {
         
         public:
             List() : Element() {
-                cacheForwardFrameOnce = true;
+                
                 m_isItem = false;
+
+                if (skipDeconstruction) {
+                    if (!m_itemsToAdd.empty()){
+                        addPendingItems();
+                    }
+                    if (!m_items.empty()){
+                        clearItems();
+                    }
+                } else {
+                    cacheForwardFrameOnce = true;
+                    skipOnce = false;
+                }
                 
             }
             virtual ~List() {
@@ -4716,12 +4729,23 @@ namespace tsl {
                     cacheForwardFrameOnce = true;
                     s_isForwardCache = false;
                 }
+
+                if (skipOnce && skipDeconstruction) {
+                    if (!m_itemsToAdd.empty()){
+                        addPendingItems();
+                    }
+                    if (!m_items.empty()){
+                        clearItems();
+                    }
+                } else if (skipDeconstruction) {
+                    skipOnce = true;
+                }
             }
             
             
             virtual void draw(gfx::Renderer* renderer) override {
                 // Early exit optimizations
-                if (m_clearList || skipDeconstruction) {
+                if (m_clearList) {
                     clearItems();
                     return;
                 }
@@ -4734,7 +4758,7 @@ namespace tsl {
 
                 
                 // Process pending operations in batch
-                if (!m_itemsToAdd.empty() && !skipDeconstruction) addPendingItems();
+                if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
