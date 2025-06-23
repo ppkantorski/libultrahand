@@ -205,8 +205,8 @@ namespace ult {
     bool resetForegroundCheck = false; // initialize as true
 
 
-    
-    std::atomic<bool> internalTouchReleased(true);
+
+    bool internalTouchReleased = true;
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
