@@ -4694,6 +4694,7 @@ namespace tsl {
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
         static bool cacheForwardFrameOnce = true;
+        static bool lastInternalTouchRelease = true;
 
         static bool isTableScrolling = false;
 
@@ -4732,11 +4733,14 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 static bool checkOnce = true;
-                if (m_pendingJump && !s_hasValidFrame && !s_isForwardCache && checkOnce) {
-                    checkOnce = false;
-                    return;
+                if (m_pendingJump && !s_hasValidFrame && !s_isForwardCache && checkOnce && ult::internalTouchReleased) {
+                    if (lastInternalTouchRelease == ult::internalTouchReleased) {
+                        checkOnce = false;
+                        return;
+                    }
                 } else {
                     checkOnce = true;
+                    lastInternalTouchRelease = ult::internalTouchReleased;
                 }
 
                 if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
@@ -8507,11 +8511,8 @@ namespace tsl {
             //static bool isTopElement = true;
         
             // Return early if current GUI is not available
-        #if !IS_STATUS_MONITOR_DIRECTIVE
             if (!currentGui) return;
             if (!ult::internalTouchReleased) return;
-        #endif
-            
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
