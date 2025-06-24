@@ -6544,9 +6544,9 @@ namespace tsl {
             u64 timeIn_ns;
         
             std::string m_text;
-            std::string m_value = "";
-            std::string m_scrollText = "";
-            std::string m_ellipsisText = "";
+            std::string m_value;
+            std::string m_scrollText;
+            std::string m_ellipsisText;
             u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
         
         #if IS_LAUNCHER_DIRECTIVE
@@ -7312,14 +7312,15 @@ namespace tsl {
                     ult::setIniFileValue(configPath, m_label, "value", valueStr);
                 }
                 bool success = false;
-        
-                // Placeholder replacement
+            
+                // Placeholder replacement - cache lengths once
                 static const std::string valuePlaceholder = "{value}";
                 static const std::string indexPlaceholder = "{index}";
-                static const size_t valuePlaceholderLength = valuePlaceholder.length();
-                static const size_t indexPlaceholderLength = indexPlaceholder.length();
-
-                size_t pos;
+                static const size_t valuePlaceholderLen = valuePlaceholder.length();
+                static const size_t indexPlaceholderLen = indexPlaceholder.length();
+                const size_t valueStrLen = valueStr.length();
+                const size_t indexStrLen = indexStr.length();
+                
                 size_t tryCount = 0;
                 while (!success) {
                     if (interpretAndExecuteCommands) {
@@ -7327,21 +7328,17 @@ namespace tsl {
                             break;
                         auto modifiedCmds = getSourceReplacement(commands, valueStr, m_index, m_packagePath);
                         
-                        
-                        
                         for (auto& cmd : modifiedCmds) {
                             for (auto& arg : cmd) {
-                                pos = 0;
-                                while ((pos = arg.find(valuePlaceholder, pos)) != std::string::npos) {
-                                    arg.replace(pos, valuePlaceholderLength, valueStr);
-                                    pos += valueStr.length();
+                                // Replace value placeholder
+                                for (size_t pos = 0; (pos = arg.find(valuePlaceholder, pos)) != std::string::npos; pos += valueStrLen) {
+                                    arg.replace(pos, valuePlaceholderLen, valueStr);
                                 }
                                 
+                                // Replace index placeholder if needed
                                 if (m_usingNamedStepTrackbar) {
-                                    pos = 0;
-                                    while ((pos = arg.find(indexPlaceholder, pos)) != std::string::npos) {
-                                        arg.replace(pos, indexPlaceholderLength, indexStr);
-                                        pos += indexStr.length();
+                                    for (size_t pos = 0; (pos = arg.find(indexPlaceholder, pos)) != std::string::npos; pos += indexStrLen) {
+                                        arg.replace(pos, indexPlaceholderLen, indexStr);
                                     }
                                 }
                             }
@@ -7349,7 +7346,7 @@ namespace tsl {
                         
                         success = interpretAndExecuteCommands(std::move(modifiedCmds), m_packagePath, selectedCommand);
                         ult::resetPercentages();
-        
+            
                         if (success)
                             break;
                         tryCount++;
@@ -7965,41 +7962,44 @@ namespace tsl {
             virtual ~NamedStepTrackBarV2() {}
                         
             virtual void draw(gfx::Renderer *renderer) override {
-                // TrackBarV2 width excluding the handle areas
-                u16 trackBarWidth = this->getWidth() - 95;
-            
-                // Base X and Y coordinates
-                u16 baseX = this->getX() + 59;
-                u16 baseY = this->getY() + 44; // 50 - 3
-            
-                // Calculate the spacing between each step
-                float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
+                // Cache frequently used values
+                const u16 trackBarWidth = this->getWidth() - 95;
+                const u16 baseX = this->getX() + 59;
+                const u16 baseY = this->getY() + 44; // 50 - 3
+                const u8 numSteps = this->m_numSteps;
+                const u8 halfNumSteps = (numSteps - 1) / 2;
+                const u16 lastStepX = baseX + trackBarWidth - 1;
                 
-                // Calculate the halfway point index
-                u8 halfNumSteps = (this->m_numSteps - 1) / 2;
-
-                // Draw step rectangles
+                // Pre-calculate step spacing
+                const float stepSpacing = static_cast<float>(trackBarWidth) / (numSteps - 1);
+                
+                // Cache color for multiple drawRect calls
+                const auto stepColor = a(trackBarEmptyColor);
+                
+                // Draw step rectangles - optimized loop
                 u16 stepX;
-                for (u8 i = 0; i < this->m_numSteps; i++) {
-                    stepX = baseX + std::round(i * stepSpacing);
+                for (u8 i = 0; i < numSteps; i++) {
                     
-                    // Subtract 1 from the X position for steps on the right side of the center
-                    if (i > halfNumSteps) {
-                        stepX -= 1;
+                    if (i == numSteps - 1) {
+                        // Last step - avoid overshooting
+                        stepX = lastStepX;
+                    } else {
+                        stepX = baseX + static_cast<u16>(std::round(i * stepSpacing));
+                        // Adjust for steps on right side of center
+                        if (i > halfNumSteps) {
+                            stepX -= 1;
+                        }
                     }
-
-                    // Adjust the last step to avoid overshooting
-                    if (i == this->m_numSteps - 1) {
-                        stepX = baseX + trackBarWidth -1;
-                    }
-            
-                    renderer->drawRect(stepX, baseY, 1, 8, a(trackBarEmptyColor));
+                    
+                    renderer->drawRect(stepX, baseY, 1, 8, stepColor);
                 }
-            
-                // Draw the current step description
-                currentDescIndex = this->m_index;
-                this->m_selection = this->m_stepDescriptions[currentDescIndex];
-            
+                
+                // Update selection (only if index changed - optional optimization)
+                if (currentDescIndex != this->m_index) {
+                    currentDescIndex = this->m_index;
+                    this->m_selection = this->m_stepDescriptions[currentDescIndex];
+                }
+                
                 // Draw the parent trackbar
                 StepTrackBarV2::draw(renderer);
             }
@@ -8451,8 +8451,8 @@ namespace tsl {
             }
         
             // Calculate and set the opacity using an easing function
-            float opacity = calculateEaseInOut(static_cast<float>(this->m_animationCounter) / MAX_ANIMATION_COUNTER);
-            gfx::Renderer::setOpacity(opacity);
+            //float opacity = calculateEaseInOut(static_cast<float>(this->m_animationCounter) / MAX_ANIMATION_COUNTER);
+            gfx::Renderer::setOpacity(calculateEaseInOut(static_cast<float>(this->m_animationCounter) / MAX_ANIMATION_COUNTER));
         }
 
 
@@ -9137,6 +9137,8 @@ namespace tsl {
                 runOnce = false;
             }
 
+            u64 elapsedTime_ns;
+
             while (shData->running) {
             
                 nowTick = armGetSystemTick();
@@ -9196,7 +9198,7 @@ namespace tsl {
                             // ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
                         
-                        u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
+                        elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
                         
                         // Check if the touch is within bounds for left-to-right swipe within the time window
                         if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
