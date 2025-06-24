@@ -17,7 +17,7 @@
  ********************************************************************************/
 
 #include "download_funcs.hpp"
-#include <mutex>
+
 
 namespace ult {
 
@@ -274,36 +274,82 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     return true;
 }
 
+
+
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
+ * Memory-efficient version with accurate progress reporting
+ * 
  * @param zipFilePath The path to the ZIP archive file.
  * @param toDestination The destination directory where files should be extracted.
  * @return True if the extraction was successful, false otherwise.
  */
 bool unzipFile(const std::string& zipFilePath, const std::string& toDestination) {
-    abortUnzip.store(false, std::memory_order_release); // Reset abort flag
+    abortUnzip.store(false, std::memory_order_release);
 
-    std::unique_ptr<ZZIP_DIR, ZzipDirDeleter> dir(zzip_dir_open(zipFilePath.c_str(), nullptr));
-    if (!dir) {
+    // Ensure destination directory exists
+    createDirectory(toDestination);
+    
+    // Ensure destination ends with '/'
+    std::string destination = toDestination;
+    if (!destination.empty() && destination.back() != '/') {
+        destination += '/';
+    }
+
+    zzip_ssize_t totalUncompressedSize = 0;
+    
+    // Phase 1: Calculate total size with minimal memory usage
+    {
+        ZZIP_DIR* dirPtr = zzip_dir_open(zipFilePath.c_str(), nullptr);
+        if (!dirPtr) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error opening zip file: " + zipFilePath);
+            #endif
+            return false;
+        }
+
+        ZZIP_DIRENT entry;
+        while (zzip_dir_read(dirPtr, &entry)) {
+            if (entry.d_name[0] != '\0' && entry.st_size > 0) {
+                // Check if it's a file (not directory)
+                size_t nameLen = strlen(entry.d_name);
+                if (nameLen > 0 && entry.d_name[nameLen - 1] != '/') {
+                    totalUncompressedSize += entry.st_size;
+                }
+            }
+        }
+        
+        // Explicitly close to free all memory
+        zzip_dir_close(dirPtr);
+        dirPtr = nullptr;
+    }
+    
+    // Give system time to fully clean up memory from first pass
+    #ifdef __SWITCH__
+    svcSleepThread(10000000); // 10ms
+    #else
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    #endif
+
+    if (totalUncompressedSize == 0) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening zip file: " + zipFilePath);
+        logMessage("No files to extract or unable to determine size");
         #endif
         return false;
     }
 
-    ZZIP_DIRENT entry;
-    zzip_ssize_t totalUncompressedSize = 0;
-
-    // First pass: Calculate the total size of all files
-    while (zzip_dir_read(dir.get(), &entry)) {
-        if (entry.d_name[0] != '\0' && entry.st_size > 0) {
-            totalUncompressedSize += entry.st_size;
-        }
+    // Allocate extraction buffer on heap
+    std::unique_ptr<char[]> buffer(new(std::nothrow) char[UNZIP_BUFFER_SIZE]);
+    if (!buffer) {
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Failed to allocate extraction buffer");
+        #endif
+        return false;
     }
 
-    // Close and reopen the directory for extraction
-    dir.reset(zzip_dir_open(zipFilePath.c_str(), nullptr));
+    // Phase 2: Extract files with accurate progress
+    ZZIP_DIR* dir = zzip_dir_open(zipFilePath.c_str(), nullptr);
     if (!dir) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Failed to reopen zip file: " + zipFilePath);
@@ -311,31 +357,18 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         return false;
     }
 
+    ZZIP_DIRENT entry;
     bool success = true;
     zzip_ssize_t currentUncompressedSize = 0;
-
-    std::string fileName, extractedFilePath;
-    std::string directoryPath;
-    char buffer[UNZIP_BUFFER_SIZE];
-    zzip_ssize_t bytesRead;
-
-    unzipPercentage.store(0, std::memory_order_release); // Initialize percentage
-
-    std::unique_ptr<ZZIP_FILE, ZzipFileDeleter> file;
+    int filesProcessed = 0;
     
-    // Declare file pointer for use with fopen and fwrite when NO_FSTREAM_DIRECTIVE is enabled
-    #if NO_FSTREAM_DIRECTIVE
-    FILE* outputFile = nullptr;
-    #else
-    std::ofstream outputFile;
-    #endif
+    unzipPercentage.store(0, std::memory_order_release);
 
-    auto it = extractedFilePath.end();
-    // Second pass: Extract files and update progress
-    while (zzip_dir_read(dir.get(), &entry)) {
-        if (entry.d_name[0] == '\0') continue; // Skip empty entries
+    // Process entries one at a time to minimize memory usage
+    while (zzip_dir_read(dir, &entry)) {
+        if (entry.d_name[0] == '\0') continue;
 
-        // Check for abort signal
+        // Check for abort
         if (abortUnzip.load(std::memory_order_acquire)) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Aborting unzip operation.");
@@ -344,122 +377,123 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             break;
         }
 
-        fileName = entry.d_name;
+        // Skip directories
+        size_t nameLen = strlen(entry.d_name);
+        if (nameLen > 0 && entry.d_name[nameLen - 1] == '/') continue;
 
-        // Remove invalid characters
-        extractedFilePath = toDestination + fileName;
-        it = extractedFilePath.begin() + std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
+        // Build output path
+        std::string fileName(entry.d_name);
+        std::string extractedFilePath = destination + fileName;
+        
+        // Clean invalid characters
+        auto it = extractedFilePath.begin() + std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
         extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
             return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
         }), extractedFilePath.end());
 
-        if (!extractedFilePath.empty() && extractedFilePath.back() == '/') continue; // Skip directories
-
-        directoryPath = extractedFilePath.substr(0, extractedFilePath.find_last_of('/') + 1);
+        // Create directory
+        std::string directoryPath = extractedFilePath.substr(0, extractedFilePath.find_last_of('/') + 1);
         createDirectory(directoryPath);
 
-        // Reset the unique_ptr before opening a new file
-        file.reset(zzip_file_open(dir.get(), entry.d_name, 0));
-        if (!file) {
+        // Open file in ZIP
+        ZZIP_FILE* zfile = zzip_file_open(dir, entry.d_name, 0);
+        if (!zfile) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error opening file in zip: " + fileName);
             #endif
-            success = false;
             continue;
         }
 
+        // Open output file
         #if NO_FSTREAM_DIRECTIVE
-        outputFile = fopen(extractedFilePath.c_str(), "wb");
+        FILE* outputFile = fopen(extractedFilePath.c_str(), "wb");
         if (!outputFile) {
+            zzip_file_close(zfile);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening output file: " + extractedFilePath);
+            logMessage("Error creating file: " + extractedFilePath);
             #endif
-            success = false;
             continue;
         }
         #else
-        outputFile.open(extractedFilePath, std::ios::binary);
+        std::ofstream outputFile(extractedFilePath, std::ios::binary);
         if (!outputFile.is_open()) {
+            zzip_file_close(zfile);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening output file: " + extractedFilePath);
+            logMessage("Error creating file: " + extractedFilePath);
             #endif
-            success = false;
             continue;
         }
         #endif
 
-        while ((bytesRead = zzip_file_read(file.get(), buffer, UNZIP_BUFFER_SIZE)) > 0) {
+        // Extract file
+        zzip_ssize_t bytesRead;
+        bool fileSuccess = true;
+        
+        while ((bytesRead = zzip_file_read(zfile, buffer.get(), UNZIP_BUFFER_SIZE)) > 0) {
             if (abortUnzip.load(std::memory_order_acquire)) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Aborting unzip operation during file extraction.");
-                #endif
-
-                #if NO_FSTREAM_DIRECTIVE
-                if (outputFile) {
-                    fclose(outputFile);
-                    outputFile = nullptr;
-                }
-                #else
-                if (outputFile.is_open()) {
-                    outputFile.close();
-                }
-                #endif
-                
-                deleteFileOrDirectory(extractedFilePath); // Cleanup partial file
-                success = false;
+                fileSuccess = false;
                 break;
             }
 
             #if NO_FSTREAM_DIRECTIVE
-            if (fwrite(buffer, 1, bytesRead, outputFile) != static_cast<size_t>(bytesRead)) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Error writing to file: " + extractedFilePath);
-                #endif
-                success = false;
+            if (fwrite(buffer.get(), 1, bytesRead, outputFile) != static_cast<size_t>(bytesRead)) {
+                fileSuccess = false;
                 break;
             }
             #else
-            outputFile.write(buffer, bytesRead);
+            outputFile.write(buffer.get(), bytesRead);
             if (!outputFile.good()) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Error writing to file: " + extractedFilePath);
-                #endif
-                success = false;
+                fileSuccess = false;
                 break;
             }
             #endif
 
             currentUncompressedSize += bytesRead;
 
-            // Update progress safely
-            if (totalUncompressedSize > 0) {
-                int progress = static_cast<int>(std::min(100.0, 
-                    (static_cast<double>(currentUncompressedSize) / static_cast<double>(totalUncompressedSize)) * 100.0));
-                unzipPercentage.store(progress, std::memory_order_release);
-            }
+            // Update accurate progress
+            int progress = static_cast<int>((static_cast<double>(currentUncompressedSize) / 
+                                           static_cast<double>(totalUncompressedSize)) * 100.0);
+            progress = std::min(progress, 99); // Cap at 99% until fully done
+            unzipPercentage.store(progress, std::memory_order_release);
         }
 
+        // Clean up file handles immediately
         #if NO_FSTREAM_DIRECTIVE
-        if (outputFile) {
-            fclose(outputFile);
-            outputFile = nullptr;
-        }
+        fclose(outputFile);
         #else
-        if (outputFile.is_open()) {
-            outputFile.close();
-        }
+        outputFile.close();
         #endif
+        zzip_file_close(zfile);
 
-        if (!success) break; // Exit the outer loop if interrupted during extraction
+        if (!fileSuccess) {
+            deleteFileOrDirectory(extractedFilePath);
+            if (abortUnzip.load(std::memory_order_acquire)) {
+                success = false;
+                break;
+            }
+        } else {
+            filesProcessed++;
+        }
+
+        // Yield periodically to prevent UI freezing and allow memory cleanup
+        if (filesProcessed % 20 == 0) {
+            #ifdef __SWITCH__
+            svcSleepThread(5000000); // 5ms - more frequent but shorter pauses
+            #else
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            #endif
+        }
     }
 
-    if (success) {
-        unzipPercentage.store(100, std::memory_order_release); // Ensure it's set to 100% on successful extraction
+    // Clean up
+    zzip_dir_close(dir);
+
+    if (success && filesProcessed > 0) {
+        unzipPercentage.store(100, std::memory_order_release);
+        return true;
     } else {
         unzipPercentage.store(-1, std::memory_order_release);
+        return false;
     }
-
-    return success;
 }
-
 }
