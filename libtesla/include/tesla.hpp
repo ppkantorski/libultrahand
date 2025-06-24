@@ -58,7 +58,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <memory>
-//#include <chrono>
+//#include <chrono> // despite being commented out, it must still be being imported via other libs
 #include <list>
 #include <stack>
 #include <map>
@@ -199,67 +199,38 @@ namespace tsl {
     };
     
     //#if USING_WIDGET_DIRECTIVE
-    static Color GradientColor(float temperature) {
-        // Ensure temperature is within the range [0, 100]
-        temperature = std::max(0.0f, std::min(100.0f, temperature)); // Celsius
+    // Ultra-fast version - zero variables, optimized calculations
+    inline Color GradientColor(float temperature) {
+        if (temperature <= 35.0f) return Color(7, 7, 15, 0xFF);
+        if (temperature >= 65.0f) return Color(15, 0, 0, 0xFF);
         
-        // this is where colors are at their full
-        float blueStart = 35.0f;
-        float greenStart = 45.0f;
-        float yellowStart = 55.0f;
-        float redStart = 65.0f;
-        
-        // Initialize RGB values
-        uint8_t r, g, b, a = 0xFF;
-        float t;
-
-        if (temperature < blueStart) { // rgb 7, 7, 15 at blueStart
-            r = 7;
-            g = 7;
-            b = 15;
-        } else if (temperature >= blueStart && temperature < greenStart) {
-            // Smooth color blending from (7 7 15) to (0 15 0)
-            t = (temperature - blueStart) / (greenStart - blueStart);
-            r = static_cast<uint8_t>(7 - 7 * t);
-            g = static_cast<uint8_t>(7 + 8 * t);
-            b = static_cast<uint8_t>(15 - 15 * t);
-        } else if (temperature >= greenStart && temperature < yellowStart) {
-            // Smooth color blending from (0 15 0) to (15 15 0)
-            t = (temperature - greenStart) / (yellowStart - greenStart);
-            r = static_cast<uint8_t>(15 * t);
-            g = static_cast<uint8_t>(15);
-            b = static_cast<uint8_t>(0);
-        } else if (temperature >= yellowStart && temperature < redStart) {
-            // Smooth color blending from (15 15 0) to (15 0 0)
-            t = (temperature - yellowStart) / (redStart - yellowStart);
-            r = static_cast<uint8_t>(15);
-            g = static_cast<uint8_t>(15 - 15 * t);
-            b = static_cast<uint8_t>(0);
-        } else {
-            // Full red
-            r = 15;
-            g = 0;
-            b = 0;
+        if (temperature < 45.0f) {
+            // Single calculation, avoid repetition
+            float factor = (temperature - 35.0f) * 0.1f;
+            return Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xFF);
         }
         
-        return Color(r, g, b, a);
+        if (temperature < 55.0f) {
+            return Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xFF);
+        }
+        
+        return Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xFF);
     }
     //#endif
 
 
-    static Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
-        std::string validHex = hexColor.empty() || hexColor[0] != '#' ? hexColor : hexColor.substr(1);
+    // Ultra-fast version - single variable, minimal branching
+    inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
+        const char* h = hexColor.size() == 6 ? hexColor.data() :
+                        hexColor.size() == 7 && hexColor[0] == '#' ? hexColor.data() + 1 :
+                        defaultHexColor.data();
         
-        if (!ult::isValidHexColor(validHex)) {
-            validHex = defaultHexColor;
-        }
-        
-        // Convert hex to RGB values
-        uint8_t redValue = (ult::hexMap[static_cast<unsigned char>(validHex[0])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[1])];
-        uint8_t greenValue = (ult::hexMap[static_cast<unsigned char>(validHex[2])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[3])];
-        uint8_t blueValue = (ult::hexMap[static_cast<unsigned char>(validHex[4])] << 4) | ult::hexMap[static_cast<unsigned char>(validHex[5])];
-        
-        return Color(redValue >> 4, greenValue >> 4, blueValue >> 4, alpha);
+        return Color(
+            (ult::hexMap[h[0]] << 4 | ult::hexMap[h[1]]) >> 4,
+            (ult::hexMap[h[2]] << 4 | ult::hexMap[h[3]]) >> 4,
+            (ult::hexMap[h[4]] << 4 | ult::hexMap[h[5]]) >> 4,
+            alpha
+        );
     }
     
     
@@ -1253,8 +1224,9 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : static_cast<u8>(std::min(static_cast<u8>(c.a), static_cast<u8>(0xF * Renderer::s_opacity)));
-                return (c.rgba & 0x0FFF) | (alpha << 12);
+                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : 
+                           (c.a < (0xF * Renderer::s_opacity) ? c.a : static_cast<u8>(0xF * Renderer::s_opacity));
+                return (c.rgba & 0x0FFF) | (static_cast<u32>(alpha) << 12);
             }
             
             /**
@@ -1776,43 +1748,17 @@ namespace tsl {
             };
 
             // Define processChunk as a static member function
+            // Optimized processRoundedRectChunk - assumes bounds checking done by caller
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 x_end, const s32 y_end, const s32 r2, const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
-                // Get framebuffer bounds (assuming these are available as members or globals)
-                const s32 fb_width = cfg::FramebufferWidth;
-                const s32 fb_height = cfg::FramebufferHeight;
+                // All constants pulled outside loops - minimal variable definitions
+                const s32 x_left = x + radius, x_right = x_end - radius;
+                const s32 y_top = y + radius, y_bottom = y_end - radius;
+                const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
                 
-                // Early exit if completely outside bounds
-                if (startRow >= fb_height || endRow <= 0) return;
-                
-                // Clamp rows to framebuffer bounds
-                const s32 clampedStartRow = std::max(0, startRow);
-                const s32 clampedEndRow = std::min(fb_height, endRow);
-                
-                // All constant calculations moved outside loops
-                const s32 x_left = x + radius;
-                const s32 x_right = x_end - radius;
-                const s32 y_top = y + radius;
-                const s32 y_bottom = y_end - radius;
-                const s32 total_height = y_end - y;
-                
-                // Use stack allocation for small arrays to avoid heap allocation
+                // Fixed stack arrays - no dynamic allocation overhead
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
-                const u8 red = color.r;
-                const u8 green = color.g;
-                const u8 blue = color.b;
-                const u8 alpha = color.a;
                 
-                // SIMD-optimized color array initialization (if available)
-                #ifdef __AVX2__
-                const __m256i color_vec = _mm256_set1_epi32((alpha << 24) | (blue << 16) | (green << 8) | red);
-                for (s32 i = 0; i < 512; i += 8) {
-                    _mm256_store_si256((__m256i*)(redArray + i), _mm256_and_si256(color_vec, _mm256_set1_epi32(0xFF)));
-                    _mm256_store_si256((__m256i*)(greenArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 8), _mm256_set1_epi32(0xFF)));
-                    _mm256_store_si256((__m256i*)(blueArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 16), _mm256_set1_epi32(0xFF)));
-                    _mm256_store_si256((__m256i*)(alphaArray + i), _mm256_and_si256(_mm256_srli_epi32(color_vec, 24), _mm256_set1_epi32(0xFF)));
-                }
-                #else
-                // Fallback: unroll the loop for better performance
+                // Optimized array initialization - 8-way unroll
                 for (s32 i = 0; i < 512; i += 8) {
                     redArray[i] = redArray[i+1] = redArray[i+2] = redArray[i+3] = 
                     redArray[i+4] = redArray[i+5] = redArray[i+6] = redArray[i+7] = red;
@@ -1823,75 +1769,32 @@ namespace tsl {
                     alphaArray[i] = alphaArray[i+1] = alphaArray[i+2] = alphaArray[i+3] = 
                     alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
                 }
-                #endif
                 
-                // Only compute spans for rows we actually need
-                const s32 first_row_idx = std::max(0, clampedStartRow - y);
-                const s32 last_row_idx = std::min(total_height - 1, clampedEndRow - y - 1);
-                
-                // Early exit if no valid rows
-                if (first_row_idx > last_row_idx) return;
-                
-                // Use stack allocation for small span arrays
-                HorizontalSpan spans[512]; // Assuming reasonable max height
-                const bool use_heap = (last_row_idx - first_row_idx + 1) > 512;
-                std::vector<HorizontalSpan> heap_spans;
-                
-                HorizontalSpan* span_ptr;
-                if (use_heap) {
-                    heap_spans.resize(last_row_idx - first_row_idx + 1);
-                    span_ptr = heap_spans.data();
-                } else {
-                    span_ptr = spans;
-                }
-                
-                // Pre-compute spans only for needed rows
-                s32 span_idx = 0;
-                for (s32 row_idx = first_row_idx; row_idx <= last_row_idx; ++row_idx) {
-                    const s32 y1 = y + row_idx;
+                // Direct rendering - no intermediate span storage, minimal variables in loop
+                for (s32 y_current = startRow; y_current < endRow; ++y_current) {
+                    s32 span_start, span_end;
                     
-                    if (y1 >= y_top && y1 < y_bottom) {
-                        // Middle section - direct assignment with clamping
-                        span_ptr[span_idx].start_x = std::max(0, x);
-                        span_ptr[span_idx].end_x = std::min(fb_width, x_end);
+                    if (y_current >= y_top && y_current < y_bottom) {
+                        // Middle section
+                        span_start = x;
+                        span_end = x_end;
                     } else {
-                        // Corner section - optimize with lookup table for small radii
-                        const bool isTopSection = (y1 < y_top);
-                        const s32 corner_y = isTopSection ? y_top : y_bottom;
-                        const s32 dy = abs(y1 - corner_y);
+                        // Corner section
+                        const s32 dy = y_current - (y_current < y_top ? y_top : y_bottom);
                         const s32 dy2 = dy * dy;
+                        if (dy2 > r2) continue;
                         
-                        if (dy2 > r2) {
-                            span_ptr[span_idx].start_x = 0;
-                            span_ptr[span_idx].end_x = 0; // Empty span
-                        } else {
-                            // Use fast integer square root for better performance
-                            const s32 max_dx = static_cast<s32>(std::sqrt(r2 - dy2));
-                            span_ptr[span_idx].start_x = std::max(0, std::max(x_left - max_dx, x));
-                            span_ptr[span_idx].end_x = std::min(fb_width, std::min(x_right + max_dx, x_end));
-                        }
+                        const s32 dx = static_cast<s32>(std::sqrt(r2 - dy2));
+                        span_start = std::max(x_left - dx, x);
+                        span_end = std::min(x_right + dx, x_end);
                     }
-                    ++span_idx;
-                }
-                
-                // Render using pre-computed spans with larger batch sizes
-                span_idx = 0;
-                for (s32 y_current = clampedStartRow; y_current < clampedEndRow; ++y_current) {
-                    const s32 row_idx = y_current - y;
-                    if (row_idx < first_row_idx || row_idx > last_row_idx) continue;
                     
-                    const HorizontalSpan* span = &span_ptr[span_idx++];
-                    if (span->start_x >= span->end_x) continue;
+                    if (span_start >= span_end) continue;
                     
-                    // Draw with larger batch size for better cache utilization
-                    s32 x_pos = span->start_x;
-                    while (x_pos < span->end_x) {
-                        const s32 remaining = span->end_x - x_pos;
-                        const s32 batch_size = std::min(remaining, 512);
-                        
-                        // The setPixelBlendDstBatch should now be safe as we've clamped all coordinates
-                        self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, batch_size);
-                        x_pos += batch_size;
+                    // Batch rendering with minimal variables
+                    for (s32 x_pos = span_start; x_pos < span_end; x_pos += 512) {
+                        //const s32 batch_size = std::min(512, span_end - x_pos);
+                        self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, std::min(512, span_end - x_pos));
                     }
                 }
             }
@@ -1899,7 +1802,7 @@ namespace tsl {
 
 
             /**
-             * @brief Draws a rounded rectangle of given sizes and corner radius
+             * @brief Draws a rounded rectangle of given sizes and corner radius (Multi-threaded)
              *
              * @param x X pos
              * @param y Y pos
@@ -1915,36 +1818,38 @@ namespace tsl {
                 const s32 fb_width = cfg::FramebufferWidth;
                 const s32 fb_height = cfg::FramebufferHeight;
                 
-                // Early exit if completely outside visible area
-                if (x >= fb_width || y >= fb_height || x + w <= 0 || y + h <= 0) return;
+                // Calculate and clamp rectangle bounds to framebuffer
+                const s32 clampedX = std::max(0, x);
+                const s32 clampedY = std::max(0, y);
+                const s32 clampedXEnd = std::min(fb_width, x + w);
+                const s32 clampedYEnd = std::min(fb_height, y + h);
+                
+                // Early exit if nothing to draw after clamping
+                if (clampedX >= clampedXEnd || clampedY >= clampedYEnd) return;
+                
+                // Calculate visible dimensions
+                const s32 visibleWidth = clampedXEnd - clampedX;
+                const s32 visibleHeight = clampedYEnd - clampedY;
                 
                 // For small rectangles, use single-threaded version
-                if (w * h < 1000) {
+                if (visibleWidth * visibleHeight < 1000) {
                     drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
                     return;
                 }
                 
-                // Use the existing multi-threaded approach but with better chunk sizes
-                s32 x_end = x + w;
-                s32 y_end = y + h;
-                s32 r2 = radius * radius;
+                // Pre-calculate values for processRoundedRectChunk
+                const s32 r2 = radius * radius;
                 
-                // Clamp the drawing area to framebuffer bounds
-                const s32 clampedYStart = std::max(0, y);
-                const s32 clampedYEnd = std::min(fb_height, y_end);
-                
-                // Dynamic chunk size based on visible rectangle size
-                const s32 visibleHeight = clampedYEnd - clampedYStart;
-                if (visibleHeight <= 0) return;
-                
-                s32 chunkSize = std::max((s32)1, (s32)(visibleHeight / (ult::numThreads * 2)));
-                std::atomic<s32> currentRow(clampedYStart);
+                // Dynamic chunk size based on visible rectangle height
+                s32 chunkSize = std::max(1, visibleHeight / (static_cast<s32>(ult::numThreads) * 2));
+                std::atomic<s32> currentRow(clampedY);
                 
                 auto threadTask = [&]() {
                     s32 startRow, endRow;
                     while ((startRow = currentRow.fetch_add(chunkSize)) < clampedYEnd) {
                         endRow = std::min(startRow + chunkSize, clampedYEnd);
-                        processRoundedRectChunk(this, x, y, x_end, y_end, r2, radius, color, startRow, endRow);
+                        // Pass clamped coordinates to processRoundedRectChunk
+                        processRoundedRectChunk(this, clampedX, clampedY, clampedXEnd, clampedYEnd, r2, radius, color, startRow, endRow);
                     }
                 };
                 
@@ -1952,7 +1857,7 @@ namespace tsl {
                 std::vector<std::thread> threads;
                 threads.reserve(ult::numThreads);
                 
-                for (unsigned i = 0; i < ult::numThreads; ++i) {
+                for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
                     threads.emplace_back(threadTask);
                 }
                 
@@ -1960,28 +1865,40 @@ namespace tsl {
                     t.join();
                 }
             }
-
-
+            
+            /**
+             * @brief Draws a rounded rectangle of given sizes and corner radius (Single-threaded)
+             *
+             * @param x X pos
+             * @param y Y pos
+             * @param w Width
+             * @param h Height
+             * @param radius Corner radius
+             * @param color Color
+             */
             inline void drawRoundedRectSingleThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
+                if (w <= 0 || h <= 0) return;
+                
                 // Get framebuffer bounds
                 const s32 fb_width = cfg::FramebufferWidth;
                 const s32 fb_height = cfg::FramebufferHeight;
                 
-                // Early exit if completely outside visible area
-                if (x >= fb_width || y >= fb_height || x + w <= 0 || y + h <= 0) return;
+                // Calculate and clamp rectangle bounds to framebuffer
+                const s32 clampedX = std::max(0, x);
+                const s32 clampedY = std::max(0, y);
+                const s32 clampedXEnd = std::min(fb_width, x + w);
+                const s32 clampedYEnd = std::min(fb_height, y + h);
                 
-                const s32 y_end = y + h;
+                // Early exit if nothing to draw after clamping
+                if (clampedX >= clampedXEnd || clampedY >= clampedYEnd) return;
                 
-                // Clamp the drawing area to framebuffer bounds
-                const s32 clampedYStart = std::max(0, y);
-                const s32 clampedYEnd = std::min(fb_height, y_end);
+                // Pre-calculate values for processRoundedRectChunk
+                const s32 r2 = radius * radius;
                 
-                if (clampedYStart >= clampedYEnd) return;
-                
-                // Call the processRoundedRectChunk function directly for the visible portion
-                processRoundedRectChunk(this, x, y, x + w, y_end, radius * radius, radius, color, clampedYStart, clampedYEnd);
+                // Pass clamped coordinates to processRoundedRectChunk
+                processRoundedRectChunk(this, clampedX, clampedY, clampedXEnd, clampedYEnd, r2, radius, color, clampedY, clampedYEnd);
             }
-
+            
             std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
             inline void updateDrawFunction() {
                 if (ult::expandedMemory) {
