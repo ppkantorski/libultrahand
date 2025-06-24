@@ -178,7 +178,7 @@ namespace ult {
      * @return The reversed hexadecimal string.
      */
     std::string decimalToReversedHex(const std::string& decimalStr, int byteGroupSize) {
-        std::string hexadecimal = decimalToHex(decimalStr, byteGroupSize);
+        //std::string hexadecimal = decimalToHex(decimalStr, byteGroupSize);
         
         // Reverse the hexadecimal string in groups of byteGroupSize
         //std::string reversedHex;
@@ -186,7 +186,7 @@ namespace ult {
         //    reversedHex += hexadecimal.substr(i, byteGroupSize);
         //}
         
-        return hexToReversedHex(hexadecimal);
+        return hexToReversedHex(decimalToHex(decimalStr, byteGroupSize));
     }
     
     
@@ -237,7 +237,7 @@ namespace ult {
         while ((bytesRead = fread(buffer.data(), 1, HEX_BUFFER_SIZE, file)) > 0) {
             for (size_t i = 0; i < bytesRead; ++i) {
                 if (offset + i + binaryData.size() <= fileSize && 
-                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
+                    __builtin_memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
                     offsets.push_back(ult::to_string(offset + i));
                 }
             }
@@ -279,7 +279,7 @@ namespace ult {
             bytesRead = file.gcount();
             for (size_t i = 0; i < bytesRead; ++i) {
                 if (offset + i + binaryData.size() <= fileSize && 
-                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
+                    __builtin_memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
                     offsets.push_back(ult::to_string(offset + i));
                 }
             }
@@ -499,7 +499,7 @@ namespace ult {
             //std::cout << "Hex data replaced successfully." << std::endl;
         }
     }
-    
+        
     /**
      * @brief Finds and replaces hexadecimal data in a file.
      *
@@ -512,15 +512,24 @@ namespace ult {
      * @param occurrence The occurrence/index of the data to replace (default is "0" to replace all occurrences).
      */
     std::string parseHexDataAtCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, size_t length, size_t occurrence) {
-        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
+        // Cache key optimization - avoid string concatenations in hot path
+        thread_local std::string cacheKey;
+        cacheKey.clear();
+        cacheKey.reserve(filePath.size() + customAsciiPattern.size() + 32);
+        cacheKey += filePath;
+        cacheKey += '?';
+        cacheKey += customAsciiPattern;
+        cacheKey += '?';
+        cacheKey += ult::to_string(occurrence); // Keep using optimized custom to_string
+        
         int hexSum = -1;
     
         auto cachedResult = hexSumCache.find(cacheKey);
         if (cachedResult != hexSumCache.end()) {
-            hexSum = ult::stoi(cachedResult->second);
+            hexSum = ult::stoi(cachedResult->second); // Keep using optimized custom stoi
         } else {
-            std::string customHexPattern = asciiToHex(customAsciiPattern); // Function should cache its results if expensive
-            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern); // Consider optimizing this search
+            std::string customHexPattern = asciiToHex(customAsciiPattern);
+            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
     
             if (!offsets.empty() && offsets.size() > occurrence) {
                 hexSum = ult::stoi(offsets[occurrence]);
@@ -534,8 +543,10 @@ namespace ult {
         }
     
         std::streampos totalOffset = hexSum + std::stoll(offsetStr);
-        std::vector<char> hexBuffer(length);
-        std::vector<char> hexStream(length * 2);
+        
+        // Pre-allocate result string with exact size needed
+        std::string result;
+        result.reserve(length * 2);
     
     #if NO_FSTREAM_DIRECTIVE
         // Open the file for reading in binary mode
@@ -556,23 +567,26 @@ namespace ult {
             return "";
         }
     
-        // Read the data into hexBuffer
-        size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
-        if (bytesRead == length) {
-            const char hexDigits[] = "0123456789ABCDEF";
-            for (size_t i = 0; i < length; ++i) {
-                hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
-                hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
-            }
-        } else {
+        // Read directly into a buffer and convert to hex in one pass
+        std::vector<char> buffer(length);
+        size_t bytesRead = fread(buffer.data(), sizeof(char), length, file);
+        fclose(file);
+        
+        if (bytesRead != length) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error reading data from file or end of file reached.");
             #endif
-            fclose(file);
             return "";
         }
     
-        fclose(file);
+        // Optimized hex conversion - avoid lookups, use direct bit operations
+        static constexpr char hexDigits[] = "0123456789ABCDEF";
+        for (size_t i = 0; i < length; ++i) {
+            unsigned char byte = static_cast<unsigned char>(buffer[i]);
+            result += hexDigits[byte >> 4];
+            result += hexDigits[byte & 0xF];
+        }
+    
     #else
         // Open the file for reading in binary mode
         std::ifstream file(filePath, std::ios::binary);
@@ -592,27 +606,31 @@ namespace ult {
             return "";
         }
     
-        // Read the data into hexBuffer
-        file.read(hexBuffer.data(), length);
-        if (file.gcount() == static_cast<std::streamsize>(length)) {
-            const char hexDigits[] = "0123456789ABCDEF";
-            for (size_t i = 0; i < length; ++i) {
-                hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
-                hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
-            }
-        } else {
+        // Read directly into a buffer
+        std::vector<char> buffer(length);
+        file.read(buffer.data(), length);
+        std::streamsize bytesRead = file.gcount();
+        file.close();
+        
+        if (bytesRead != static_cast<std::streamsize>(length)) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error reading data from file or end of file reached.");
             #endif
             return "";
         }
     
-        file.close();
+        // Optimized hex conversion - avoid lookups, use direct bit operations
+        static constexpr char hexDigits[] = "0123456789ABCDEF";
+        for (size_t i = 0; i < length; ++i) {
+            unsigned char byte = static_cast<unsigned char>(buffer[i]);
+            result += hexDigits[byte >> 4];
+            result += hexDigits[byte & 0xF];
+        }
     #endif
     
-        std::string result(hexStream.begin(), hexStream.end());
-        //std::transform(result.begin(), result.end(), result.begin(), ::toupper);
-        result = stringToUppercase(result);
+        // Convert to uppercase in-place (faster than stringToUppercase if it's doing char-by-char)
+        std::transform(result.begin(), result.end(), result.begin(), 
+                       [](unsigned char c) { return std::toupper(c); });
     
         return result;
     }
@@ -655,12 +673,12 @@ namespace ult {
             
             if (components.size() == 3) {
                 // Extract individual components
-                std::string customAsciiPattern = components[0];
-                std::string offsetStr = components[1];
-                size_t length = std::stoul(components[2]);
+                //std::string customAsciiPattern = components[0];
+                //std::string offsetStr = components[1];
+                //size_t length = std::stoul(components[2]);
                 
                 // Call the parsing function and replace the placeholder
-                std::string parsedResult = parseHexDataAtCustomOffset(hexPath, customAsciiPattern, offsetStr, length);
+                std::string parsedResult = parseHexDataAtCustomOffset(hexPath, components[0], components[1], std::stoul(components[2]));
                 
                 // Only replace if parsedResult returns a non-empty string
                 if (!parsedResult.empty()) {
