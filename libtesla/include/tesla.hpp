@@ -849,7 +849,7 @@ namespace tsl {
         
 
         struct ScissoringConfig {
-            u32 x, y, w, h;
+            u32 x, y, w, h, x_max, y_max;
         };
         
 
@@ -1224,9 +1224,11 @@ namespace tsl {
              * @return Color with applied opacity
              */
             static Color a(const Color& c) {
-                u8 alpha = (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : 
-                           (c.a < (0xF * Renderer::s_opacity) ? c.a : static_cast<u8>(0xF * Renderer::s_opacity));
-                return (c.rgba & 0x0FFF) | (static_cast<u32>(alpha) << 12);
+                const u8 opacity_limit = static_cast<u8>(0xF * Renderer::s_opacity);
+                return (c.rgba & 0x0FFF) | (static_cast<u32>(
+                    (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : 
+                    (c.a < opacity_limit ? c.a : opacity_limit)
+                ) << 12);
             }
             
             /**
@@ -1238,7 +1240,7 @@ namespace tsl {
              * @param h Height
              */
             inline void enableScissoring(const u32 x, const u32 y, const u32 w, const u32 h) {
-                this->m_scissoringStack.emplace(x, y, w, h);
+                this->m_scissoringStack.emplace(x, y, w, h, x+w, y+h);
             }
             
             /**
@@ -1275,9 +1277,10 @@ namespace tsl {
              * @param alpha Opacity
              * @return Blended color
              */
+            static constexpr u8 inv_alpha_table[16] = {15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0};
+            
             inline u8 blendColor(const u8 src, const u8 dst, const u8 alpha) {
-                //const u8 inv_alpha = 15 - alpha;
-                return (dst * alpha + src * (alpha ^ 15)) >> 4;
+                return (src * inv_alpha_table[alpha] + dst * alpha) >> 4;
             }
             
             /**
@@ -1353,30 +1356,46 @@ namespace tsl {
              * @param y Y pos
              * @param color Color
              */
+            //inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
+            //    const u32 offset = this->getPixelOffset(x, y);
+            //    if (offset == UINT32_MAX) [[unlikely]]
+            //        return;
+            //    
+            //    // Early exit for fully transparent pixels
+            //    //if (color.a == 0)
+            //    //    return;
+            //    
+            //    const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+            //    const Color src(framebuffer[offset]);
+            //    
+            //    // Optimized alpha blending calculation
+            //    const u8 invColorAlpha = 0xF - color.a;
+            //    const Color end = {
+            //        blendColor(src.r, color.r, color.a),
+            //        blendColor(src.g, color.g, color.a),
+            //        blendColor(src.b, color.b, color.a),
+            //        static_cast<u8>(color.a + (src.a * invColorAlpha >> 4))  // Optimized alpha blend
+            //    };
+            //
+            //    this->setPixel(x, y, end, offset);
+            //}
+
+            // Compromise version - keep framebuffer lookup but inline the rest
             inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                // Early exit for fully transparent pixels
-                //if (color.a == 0)
-                //    return;
+                const Color src(static_cast<const u16*>(this->getCurrentFramebuffer())[offset]);
                 
-                const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                const Color src(framebuffer[offset]);
-                
-                // Optimized alpha blending calculation
-                const u8 invColorAlpha = 0xF - color.a;
-                const Color end = {
+                this->setPixel(x, y, {
                     blendColor(src.r, color.r, color.a),
                     blendColor(src.g, color.g, color.a),
                     blendColor(src.b, color.b, color.a),
-                    static_cast<u8>(color.a + (src.a * invColorAlpha >> 4))  // Optimized alpha blend
-                };
-            
-                this->setPixel(x, y, end, offset);
+                    static_cast<u8>(color.a + (src.a * (0xF - color.a) >> 4))
+                }, offset);
             }
-            
+
             // Batch version for setPixelBlendDst
             inline void setPixelBlendDstBatch(const u32 baseX, const u32 baseY, 
                                               const u8 red[16], const u8 green[16], 
@@ -1770,9 +1789,10 @@ namespace tsl {
                     alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
                 }
                 
+                s32 span_start, span_end;
                 // Direct rendering - no intermediate span storage, minimal variables in loop
                 for (s32 y_current = startRow; y_current < endRow; ++y_current) {
-                    s32 span_start, span_end;
+                    
                     
                     if (y_current >= y_top && y_current < y_bottom) {
                         // Middle section
@@ -2942,8 +2962,8 @@ namespace tsl {
                 if (!this->m_scissoringStack.empty()) {
                     const auto& currScissorConfig = this->m_scissoringStack.top();
                     if (x < currScissorConfig.x || y < currScissorConfig.y || 
-                        x >= currScissorConfig.x + currScissorConfig.w || 
-                        y >= currScissorConfig.y + currScissorConfig.h) {
+                        x >= currScissorConfig.x_max || 
+                        y >= currScissorConfig.y_max) {
                         return UINT32_MAX;
                     }
                 }
