@@ -4830,6 +4830,7 @@ namespace tsl {
                     entry->invalidate();
                     y += entry->getHeight();
                 }
+
                 
                 // Calculate total height AFTER all invalidations are done
                 m_listHeight = BOTTOM_PADDING;
@@ -5244,12 +5245,42 @@ namespace tsl {
 
             
             inline void updateScrollAnimation() {
-                                
                 if (Element::getInputMode() == InputMode::Controller) {
                     // Clear touch flag when in controller mode
                     m_touchScrollActive = false;
                     
-                    // Emergency correction if item is going out of bounds (unchanged)
+                    // Calculate distance to target
+                    float diff = m_nextOffset - m_offset;
+                    float distance = std::abs(diff);
+                    
+                    // ENHANCED BOUNDARY SNAPPING: More aggressive snapping for boundaries
+                    if (distance < 1.0f) {  // Increased threshold from 0.5f
+                        m_offset = m_nextOffset;
+                        m_scrollVelocity = 0.0f;
+                        
+                        if (prevOffset != m_offset) {
+                            invalidate();
+                            prevOffset = m_offset;
+                        }
+                        return;
+                    }
+                    
+                    // SPECIAL CASE: If target is exactly 0 or max, be more aggressive
+                    float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                    if (m_nextOffset == 0.0f || m_nextOffset == maxOffset) {
+                        if (distance < 3.0f) {  // Larger snap zone for boundaries
+                            m_offset = m_nextOffset;
+                            m_scrollVelocity = 0.0f;
+                            
+                            if (prevOffset != m_offset) {
+                                invalidate();
+                                prevOffset = m_offset;
+                            }
+                            return;
+                        }
+                    }
+                    
+                    // Emergency correction if item is going out of bounds
                     if (m_focusedIndex < m_items.size()) {
                         float itemTop = 0.0f;
                         for (size_t i = 0; i < m_focusedIndex; ++i) {
@@ -5261,7 +5292,6 @@ namespace tsl {
                         float viewBottom = m_offset + getHeight();
                         
                         if (itemTop < viewTop || itemBottom > viewBottom) {
-                            float diff = m_nextOffset - m_offset;
                             float emergencySpeed = 0.6f;
                             
                             if (itemBottom < viewTop || itemTop > viewBottom) {
@@ -5279,23 +5309,7 @@ namespace tsl {
                         }
                     }
                     
-                    // Calculate distance to target
-                    float diff = m_nextOffset - m_offset;
-                    float distance = std::abs(diff);
-                    
-                    // SIMPLE BOUNDARY SNAPPING: Just handle normal cases
-                    if (distance < 0.5f) {
-                        m_offset = m_nextOffset;
-                        m_scrollVelocity = 0.0f;
-                        
-                        if (prevOffset != m_offset) {
-                            invalidate();
-                            prevOffset = m_offset;
-                        }
-                        return;
-                    }
-                    
-                    // ORIGINAL SMOOTH SCROLLING LOGIC (completely unchanged)
+                    // Rest of your existing smooth scrolling logic...
                     bool isLargeJump = distance > getHeight() * 1.5f;
                     bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;
                     
@@ -5317,18 +5331,27 @@ namespace tsl {
                     // Apply velocity
                     m_offset += m_scrollVelocity;
                     
-                    // Prevent overshoot
+                    // ENHANCED overshoot prevention with better boundary handling
                     if ((m_scrollVelocity > 0 && m_offset > m_nextOffset) ||
                         (m_scrollVelocity < 0 && m_offset < m_nextOffset)) {
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
                     }
+                    
+                    // ADDITIONAL: Force exact boundary values
+                    if (m_nextOffset == 0.0f && m_offset < 1.0f) {
+                        m_offset = 0.0f;
+                        m_scrollVelocity = 0.0f;
+                    } else if (m_nextOffset == maxOffset && m_offset > maxOffset - 1.0f) {
+                        m_offset = maxOffset;
+                        m_scrollVelocity = 0.0f;
+                    }
                 
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
+                    // Your existing touch scroll logic...
                     m_offset = m_nextOffset;
                     m_scrollVelocity = 0.0f;
                     
-                    // When touch scrolling, update focused index to match visible area
                     if (m_touchScrollActive) {
                         float viewCenter = m_offset + (getHeight() / 2.0f);
                         float accumHeight = 0.0f;
@@ -5491,7 +5514,7 @@ namespace tsl {
                         
             inline bool isAtTop() {
                 // We're at top if we're scrolled to the very beginning AND focused on first element
-                bool scrolledToTop = (m_nextOffset <= 0.1f && m_offset <= 0.1f);
+                bool scrolledToTop = (m_nextOffset == 0.0f && m_offset == 0.0f);
                 bool focusedOnFirst = (m_focusedIndex == 0);
                 return scrolledToTop && focusedOnFirst;
             }
@@ -5733,25 +5756,14 @@ namespace tsl {
             }
             
             inline void scrollUp() {
-                //u64 currentTime = armTicksToNs(armGetSystemTick());
-                //if ((currentTime - m_lastScrollNavigationTime) < HOLD_THRESHOLD_NS) {
-                //    m_isHoldingOnTable = true;
-                //    m_isHolding=true;
-                //} else {
-                //    m_isHoldingOnTable = false;
-                //    m_stoppedAtBoundary = false;
-                //    m_hasWrappedInCurrentSequence = false;
-                //    m_lastScrollNavigationTime = 0;
-                //}
-            
                 float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 
                 m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
                 
-                // BOUNDARY SNAP: If we're very close to the top boundary, snap both positions exactly  
-                if (m_nextOffset <= 2.0f) {
+                // ENHANCED BOUNDARY SNAP: More aggressive snapping to zero
+                if (m_nextOffset <= 5.0f) {  // Increased threshold
                     m_nextOffset = 0.0f;
-                    m_offset = 0.0f;  // Also snap current position immediately
+                    m_offset = 0.0f;  
                     m_scrollVelocity = 0.0f;
                 }
             }
@@ -5759,7 +5771,8 @@ namespace tsl {
             Element* wrapToTop(Element* oldFocus) {
                 // Reset table scrolling when wrapping
                 isTableScrolling = false;
-                
+                invalidate();
+
                 // Find first focusable item (including tables)
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
@@ -5772,7 +5785,7 @@ namespace tsl {
                 
                 // No focusable items - just scroll to top
                 m_nextOffset = 0.0f;
-                invalidate();
+                
                 return oldFocus;
             }
             
@@ -5801,7 +5814,7 @@ namespace tsl {
                 // No focusable items - just scroll to bottom
                 if (m_listHeight > getHeight()) {
                     m_nextOffset = maxOffset;
-                    invalidate();
+                    //invalidate();
                 }
                 return oldFocus;
             }
@@ -5935,16 +5948,30 @@ namespace tsl {
                 
                 // Calculate viewport height
                 float viewHeight = static_cast<float>(getHeight());
+            
+                // FIXED: Special handling for the first focusable item
+                if (m_focusedIndex == 0 || itemPos <= viewHeight * 0.3f) {
+                    // For items at the very top or very close to top, snap to absolute zero
+                    m_nextOffset = 0.0f;
+                    return;
+                }
                 
-                // CHANGED: Calculate the actual center position of the item
-                float itemCenterPos = itemPos + (itemHeight);
+                // FIXED: Special handling for items near the bottom
+                float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                float itemBottom = itemPos + itemHeight;
+                if (itemBottom >= m_listHeight - (viewHeight * 0.3f)) {
+                    // For items near the bottom, snap to max offset
+                    m_nextOffset = maxOffset;
+                    return;
+                }
                 
-                // CHANGED: Calculate offset to put item center at viewport center
+                // For middle items, use centering logic
+                float itemCenterPos = itemPos + (itemHeight / 2.0f);
                 float viewportCenter = viewHeight / 2.0f;
                 float idealOffset = itemCenterPos - viewportCenter;
                 
                 // Clamp to valid scroll bounds
-                idealOffset = std::max(0.0f, std::min(idealOffset, static_cast<float>(m_listHeight - getHeight())));
+                idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
                 
                 // Set target for smooth animation
                 m_nextOffset = idealOffset;
