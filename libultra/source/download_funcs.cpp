@@ -23,7 +23,7 @@
 
 namespace ult {
 
-size_t DOWNLOAD_BUFFER_SIZE = 4096*4;
+size_t DOWNLOAD_BUFFER_SIZE = 65536;//4096*10;
 size_t UNZIP_BUFFER_SIZE = 131072*2;//4096*4;
 
 // Path to the CA certificate
