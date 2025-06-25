@@ -12,6 +12,91 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
+## Compiling
+
+### Necessary Libraries and Imports
+For easy importing and inclusion, try using `ultrahand.mk`. These lines must go after your projects `SOURCES` and `INCLUDES` definitions.
+```sh
+# Location of where you place the libultrahand directory (can vary between projects)
+LOCAL_LIBS := lib
+include $(TOPDIR)/$(LOCAL_LIBS)/libultrahand/ultrahand.mk
+```
+
+Otherwise developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile`.
+```sh
+SOURCES  := lib/libultrahand/miniz lib/libultrahand/libultra/source
+INCLUDES := lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+```
+
+Including the following libraries are also essential for compilation.
+```sh
+LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+```
+
+### Active Services
+Service conflictions can occur, so if you are already using the following libnx services, you may want to remove them from your project.
+```cpp
+i2cInitialize();
+fsdevMountSdmc();
+splInitialize();
+spsmInitialize();
+ASSERT_FATAL(socketInitializeDefault());
+ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
+ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
+```
+Service `i2cInitialize` however is only utilized in accordance with `USING_WIDGET_DIRECTIVE`.
+
+### Optional Compilation Flags
+```
+-ffunction-sections -fdata-sections
+```
+These options are present in both CFLAGS and CXXFLAGS. They instruct the compiler to place each function and data item in its own section, which allows the linker to more easily identify and remove unused code.
+
+```
+-Wl,--gc-sections
+```
+Included in LDFLAGS. This linker flag instructs the linker to remove unused sections that were created by -ffunction-sections and -fdata-sections. This ensures that functions or data that are not used are removed from the final executable.
+
+```
+-flto (Link Time Optimization)
+```
+Present in CFLAGS, CXXFLAGS, and LDFLAGS. It enables link-time optimization, allowing the compiler to optimize across different translation units and remove any unused code during the linking phase. You also use -flto=6 to control the number of threads for parallel LTO, which helps speed up the process.
+
+```
+-fuse-linker-plugin
+```
+This flag allows the compiler and linker to better collaborate when using LTO, which further helps in optimizing and eliminating unused code.
+Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, and -flto) ensure that any unused functions or data are stripped out during the build process, leading to a smaller and more optimized final binary.
+
+
+## Build Examples
+- [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
+
+- [Tetris Overlay](https://github.com/ppkantorski/Tetris-Overlay)
+
+- [Status Monitor Overlay](https://github.com/ppkantorski/Status-Monitor-Overlay)
+
+- [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
+
+- [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
+
+- [sys-clk](https://github.com/ppkantorski/sys-clk)
+
+- [FPSLocker](https://github.com/ppkantorski/FPSLocker)
+
+- [ReverseNX-RT](https://github.com/ppkantorski/ReverseNX-RT) 
+
+- [QuickNTP](https://github.com/ppkantorski/QuickNTP)
+
+- [SysDVR Overlay](https://github.com/ppkantorski/sysdvr-overlay)
+
+- [Fizeau](https://github.com/ppkantorski/Fizeau)
+
+- [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
+
+- [DNS-MITM_Manager](https://github.com/ppkantorski/DNS-MITM_Manager)
+
+
 ## Features
 
 ### Overriding Themes and Wallpapers
@@ -110,89 +195,6 @@ cleanupCurl();
 
 These lines will ensure `curl` functions properly within the overlay.
 
-## Compiling
-
-### Necessary Libraries and Imports
-For easy importing and inclusion, try using `ultrahand.mk`. These lines must go after your projects `SOURCES` and `INCLUDES` definitions.
-```sh
-# Location of where you place the libultrahand directory (can vary between projects)
-LOCAL_LIBS := lib
-include $(TOPDIR)/$(LOCAL_LIBS)/libultrahand/ultrahand.mk
-```
-
-Otherwise developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile`.
-```sh
-SOURCES  := lib/libultrahand/miniz lib/libultrahand/libultra/source
-INCLUDES := lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
-```
-
-Including the following libraries are also essential for compilation.
-```sh
-LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
-```
-
-### Active Services
-Service conflictions can occur, so if you are already using the following libnx services, you may want to remove them from your project.
-```cpp
-i2cInitialize();
-fsdevMountSdmc();
-splInitialize();
-spsmInitialize();
-ASSERT_FATAL(socketInitializeDefault());
-ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
-```
-Service `i2cInitialize` however is only utilized in accordance with `USING_WIDGET_DIRECTIVE`.
-
-### Optional Compilation Flags
-```
--ffunction-sections -fdata-sections
-```
-These options are present in both CFLAGS and CXXFLAGS. They instruct the compiler to place each function and data item in its own section, which allows the linker to more easily identify and remove unused code.
-
-```
--Wl,--gc-sections
-```
-Included in LDFLAGS. This linker flag instructs the linker to remove unused sections that were created by -ffunction-sections and -fdata-sections. This ensures that functions or data that are not used are removed from the final executable.
-
-```
--flto (Link Time Optimization)
-```
-Present in CFLAGS, CXXFLAGS, and LDFLAGS. It enables link-time optimization, allowing the compiler to optimize across different translation units and remove any unused code during the linking phase. You also use -flto=6 to control the number of threads for parallel LTO, which helps speed up the process.
-
-```
--fuse-linker-plugin
-```
-This flag allows the compiler and linker to better collaborate when using LTO, which further helps in optimizing and eliminating unused code.
-Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, and -flto) ensure that any unused functions or data are stripped out during the build process, leading to a smaller and more optimized final binary.
-
-
-## Build Examples
-- [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
-
-- [Tetris Overlay](https://github.com/ppkantorski/Tetris-Overlay)
-
-- [Status Monitor Overlay](https://github.com/ppkantorski/Status-Monitor-Overlay)
-
-- [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
-
-- [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
-
-- [sys-clk](https://github.com/ppkantorski/sys-clk)
-
-- [FPSLocker](https://github.com/ppkantorski/FPSLocker)
-
-- [ReverseNX-RT](https://github.com/ppkantorski/ReverseNX-RT) 
-
-- [QuickNTP](https://github.com/ppkantorski/QuickNTP)
-
-- [SysDVR Overlay](https://github.com/ppkantorski/sysdvr-overlay)
-
-- [Fizeau](https://github.com/ppkantorski/Fizeau)
-
-- [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
-
-- [DNS-MITM_Manager](https://github.com/ppkantorski/DNS-MITM_Manager)
 
 ## Contributing
 
