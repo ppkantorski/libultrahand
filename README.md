@@ -17,9 +17,9 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 ### Necessary Libraries and Imports
 For easy importing and inclusion, try using `ultrahand.mk`. These lines must go after your projects `SOURCES` and `INCLUDES` definitions.
 ```sh
-# Location of where you place the libultrahand directory (`lib` can vary between projects)
 include $(TOPDIR)/lib/libultrahand/ultrahand.mk
 ```
+The location of where you place the libultrahand directory (`lib` can vary between projects)
 
 Otherwise developers should include the following `SOURCES` and `INCLUDES` lines.
 ```sh
