@@ -1,18 +1,30 @@
 #--------------------------------------------------------------------------------- 
 # Ultrahand Library Configuration
-# This file should be included after LOCAL_LIBS is defined
+# Auto-detects libultrahand directory location
 #--------------------------------------------------------------------------------- 
 
-ifndef LOCAL_LIBS
-$(error LOCAL_LIBS must be defined before including ultrahand.mk)
+# Assume TOPDIR is the root project directory where you run make
+TOPDIR ?= $(CURDIR)
+
+# Get the absolute path of this .mk file directory
+ULTRA_ABS := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+
+# Convert absolute path to relative path from TOPDIR
+ULTRA_DIR := $(subst $(TOPDIR)/,,$(ULTRA_ABS))
+
+# If ULTRA_DIR equals ULTRA_ABS, then ULTRA_ABS is outside TOPDIR,
+# fallback to just ULTRA_ABS (rare case)
+ifeq ($(ULTRA_DIR),$(ULTRA_ABS))
+  ULTRA_DIR := $(ULTRA_ABS)
 endif
 
-# Add libultrahand sources to SOURCES
-SOURCES += $(LOCAL_LIBS)/libultrahand/miniz
-SOURCES += $(LOCAL_LIBS)/libultrahand/libultra/source
+# Now add folder paths relative to TOPDIR (or absolute if fallback)
+SOURCES += \
+  $(ULTRA_DIR)/miniz \
+  $(ULTRA_DIR)/libultra/source
 
-# Add libultrahand includes to INCLUDES
-INCLUDES += $(LOCAL_LIBS)/libultrahand
-INCLUDES += $(LOCAL_LIBS)/libultrahand/miniz
-INCLUDES += $(LOCAL_LIBS)/libultrahand/libultra/include
-INCLUDES += $(LOCAL_LIBS)/libultrahand/libtesla/include
+INCLUDES += \
+  $(ULTRA_DIR) \
+  $(ULTRA_DIR)/miniz \
+  $(ULTRA_DIR)/libultra/include \
+  $(ULTRA_DIR)/libtesla/include
