@@ -111,7 +111,6 @@ cleanupCurl();
 These lines will ensure `curl` functions properly within the overlay.
 
 ## Compiling
-### Inclusion within Makefile
 
 ### Necessary Libraries and Imports
 Developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile` if they want full `libultra` functionality in their projects.
