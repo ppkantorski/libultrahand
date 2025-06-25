@@ -116,8 +116,8 @@ These lines will ensure `curl` functions properly within the overlay.
 ### Necessary Libraries and Imports
 Developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile` if they want full `libultra` functionality in their projects.
 ```
-SOURCES		:= lib/libultrahand/miniz lib/libultrahand/libultra/source
-INCLUDES	:= lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+SOURCES  := lib/libultrahand/miniz lib/libultrahand/libultra/source
+INCLUDES := lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 ```
 
 Including the following libraries are also essential for compilation.
