@@ -21,10 +21,10 @@ For easy importing and inclusion, try using `ultrahand.mk`. These lines must go 
 include $(TOPDIR)/lib/libultrahand/ultrahand.mk
 ```
 
-Otherwise developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile`.
+Otherwise developers should include the following `SOURCES` and `INCLUDES` lines.
 ```sh
-SOURCES  := lib/libultrahand/miniz lib/libultrahand/libultra/source
-INCLUDES := lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+SOURCES  += lib/libultrahand/miniz lib/libultrahand/libultra/source
+INCLUDES += lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 ```
 
 Including the following libraries are also essential for compilation.
