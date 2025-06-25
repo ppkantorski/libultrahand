@@ -12,7 +12,8 @@ Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [Wer
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
-## Usage
+## Features
+
 ### Overriding Themes and Wallpapers
 
 To customize theme, wallpaper and / or allow direct language translations for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
@@ -110,9 +111,16 @@ cleanupCurl();
 These lines will ensure `curl` functions properly within the overlay.
 
 ## Compiling
-### Necessary Libraries
-Developers should include the following libararies in their `Makefile` if they want full `libultra` functionality in their projects.
+### Inclusion within Makefile
 
+### Necessary Libraries and Imports
+Developers should include the following bolded `SOURCES` and `INCLUDES` lines in their `Makefile` if they want full `libultra` functionality in their projects.
+```
+SOURCES		:= source common **lib/libultrahand/miniz** **lib/libultrahand/libultra/source**
+INCLUDES	:= source common include **lib/libultrahand** **lib/libultrahand/miniz** **lib/libultrahand/libultra/include** **lib/libultrahand/libtesla/include**
+```
+
+Including the following libraries are also essential for compilation.
 ```
 LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
 ```
