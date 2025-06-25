@@ -3,7 +3,7 @@
  * Author: ppkantorski
  * Description:
  *   This header file contains functions for downloading and extracting files
- *   using libcurl and zlib. It includes functions for downloading files from URLs,
+ *   using libcurl and miniz. It includes functions for downloading files from URLs,
  *   writing received data to a file, and extracting files from ZIP archives.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
@@ -27,13 +27,16 @@
 #endif
 
 #include <switch.h>
+#define CURL_DISABLE_DEFLATE
 #include <curl/curl.h>
-#include <zlib.h>
-#include <zzip/zzip.h>
+//#include <zlib.h>
+#include <../../miniz/miniz.h>
 #include <atomic>
 #include <memory>
 #include <string>
 #include <mutex>
+#include <cstring>  // Added for memset
+#include <algorithm>  // Added for std::min
 
 #include "global_vars.hpp"
 #include "string_funcs.hpp"
@@ -59,18 +62,13 @@ namespace ult {
     // User agent string for curl requests
     extern const std::string userAgent;
     
-    // Custom deleters for CURL and ZZIP handles
+    // Custom deleters for CURL handles
     struct CurlDeleter {
         void operator()(CURL* curl) const;
     };
     
-    struct ZzipDirDeleter {
-        void operator()(ZZIP_DIR* dir) const;
-    };
-    
-    struct ZzipFileDeleter {
-        void operator()(ZZIP_FILE* file) const;
-    };
+    // Note: MzZipReaderDeleter is no longer needed with miniz
+    // as it uses stack-allocated structs and mz_zip_reader_end()
     
     // Thread-safe callback functions
     #if NO_FSTREAM_DIRECTIVE
