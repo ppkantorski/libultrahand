@@ -114,7 +114,7 @@ These lines will ensure `curl` functions properly within the overlay.
 Developers should include the following libararies in their `Makefile` if they want full `libultra` functionality in their projects.
 
 ```
-LIBS := -lcurl -lz -lzzip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
 ```
 
 ### Active Services
