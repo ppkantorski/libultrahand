@@ -60,7 +60,7 @@ namespace ult {
     extern std::atomic<int> unzipPercentage;
     
     // User agent string for curl requests
-    extern const std::string userAgent;
+    extern const char userAgent[];
     
     // Custom deleters for CURL handles
     struct CurlDeleter {
