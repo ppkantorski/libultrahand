@@ -113,14 +113,21 @@ These lines will ensure `curl` functions properly within the overlay.
 ## Compiling
 
 ### Necessary Libraries and Imports
-Developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile` if they want full `libultra` functionality in their projects.
+For easy importing and inclusion, try using `ultrahand.mk`. These lines must go after your projects `SOURCES` and `INCLUDES` definitions.
+```sh
+# Location of where you place the libultrahand directory (can vary between projects)
+LOCAL_LIBS := lib
+include $(TOPDIR)/$(LOCAL_LIBS)/libultrahand/ultrahand.mk
 ```
+
+Otherwise developers should include the following `SOURCES` and `INCLUDES` lines at the start of their `Makefile`.
+```sh
 SOURCES  := lib/libultrahand/miniz lib/libultrahand/libultra/source
 INCLUDES := lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 ```
 
 Including the following libraries are also essential for compilation.
-```
+```sh
 LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
 ```
 
