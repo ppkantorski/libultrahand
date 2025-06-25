@@ -24,7 +24,7 @@
 namespace ult {
 
 size_t DOWNLOAD_BUFFER_SIZE = 4096*4;
-size_t UNZIP_BUFFER_SIZE = 131072*4;//4096*4;
+size_t UNZIP_BUFFER_SIZE = 131072*2;//4096*4;
 
 // Path to the CA certificate
 const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
@@ -50,13 +50,6 @@ void CurlDeleter::operator()(CURL* curl) const {
     }
 }
 
-//// Definition of MzZipReaderDeleter
-//void MzZipReaderDeleter::operator()(void* reader) const {
-//    if (reader) {
-//        mz_zip_reader_delete(&reader);
-//    }
-//}
-
 // Callback function to write received data to a file.
 #if NO_FSTREAM_DIRECTIVE
 // Using stdio.h functions (FILE*, fwrite)
@@ -77,22 +70,28 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream)
 }
 #endif
 
-// Your C function
+// Optimized progress callback - ensures no integer percentages are missed
 extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
-    if (!ptr) return 1;
-    
-    auto percentage = static_cast<std::atomic<int>*>(ptr);
-
-    if (totalToDownload > 0) {
-        int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
-        percentage->store(newProgress, std::memory_order_release);
-    }
-
+    // Check for abort first - most critical check
     if (abortDownload.load(std::memory_order_acquire)) {
-        percentage->store(-1, std::memory_order_release);
+        if (ptr) static_cast<std::atomic<int>*>(ptr)->store(-1, std::memory_order_relaxed);
         return 1;  // Abort the download
     }
-
+    
+    if (!ptr || totalToDownload <= 0) return 0;
+    
+    auto percentage = static_cast<std::atomic<int>*>(ptr);
+    int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
+    int currentProgress = percentage->load(std::memory_order_relaxed);
+    
+    // Fill in any missing integer percentages to ensure none are skipped
+    if (newProgress > currentProgress) {
+        // Step through each integer percentage to ensure none are missed
+        for (int i = currentProgress + 1; i <= newProgress; ++i) {
+            percentage->store(i, std::memory_order_relaxed);
+        }
+    }
+    
     return 0;  // Continue the download
 }
 
@@ -192,7 +191,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-    downloadPercentage.store(0, std::memory_order_release);
+    downloadPercentage.store(0, std::memory_order_relaxed);
 
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
@@ -210,6 +209,13 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_BUFFER_SIZE); // Increase buffer size
+
+    // Performance optimizations
+    curl_easy_setopt(curl.get(), CURLOPT_TCP_NODELAY, 1L);        // Disable Nagle's algorithm for faster small transfers
+    curl_easy_setopt(curl.get(), CURLOPT_TCP_FASTOPEN, 1L);       // Enable TCP Fast Open if supported
+    curl_easy_setopt(curl.get(), CURLOPT_PIPEWAIT, 1L);          // Enable HTTP/2 multiplexing
+    curl_easy_setopt(curl.get(), CURLOPT_MAXREDIRS, 5L);         // Limit redirects to prevent infinite loops
+    curl_easy_setopt(curl.get(), CURLOPT_DNS_CACHE_TIMEOUT, 300L); // Cache DNS for 5 minutes
 
     // Add timeout options
     curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);   // 10 seconds to connect
@@ -235,7 +241,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         }
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        downloadPercentage.store(-1, std::memory_order_relaxed);
         return false;
     }
 
@@ -246,7 +252,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        downloadPercentage.store(-1, std::memory_order_relaxed);
         checkFile.close();
         return false;
     }
@@ -259,12 +265,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        downloadPercentage.store(-1, std::memory_order_relaxed);
         return false;
     }
 #endif
 
-    downloadPercentage.store(100, std::memory_order_release);
+    downloadPercentage.store(100, std::memory_order_relaxed);
     moveFile(tempFilePath, destination);
     return true;
 }
@@ -272,21 +278,23 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
 
 /**
- * @brief Ultra-optimized ZIP extraction with micro-optimizations
+ * @brief Extracts files from a ZIP archive to a specified destination.
+ *
+ * Ultra-optimized single-pass extraction with smooth progress reporting using miniz
+ * with proper 64-bit file support and streaming extraction
  * 
- * Optimizations:
- * - Single progress tracking point (no skipped percentages)
- * - Branchless progress calculation
- * - Optimized string operations
- * - Reduced function call overhead
- * - Better memory access patterns
+ * @param zipFilePath The path to the ZIP archive file.
+ * @param toDestination The destination directory where files should be extracted.
+ * @return True if the extraction was successful, false otherwise.
  */
 bool unzipFile(const std::string& zipFilePath, const std::string& toDestination) {
     abortUnzip.store(false, std::memory_order_release);
     unzipPercentage.store(0, std::memory_order_release);
 
+    // Ensure destination directory exists
     createDirectory(toDestination);
     
+    // Ensure destination ends with '/' - pre-allocate final string
     std::string destination;
     destination.reserve(toDestination.size() + 1);
     destination = toDestination;
@@ -294,9 +302,11 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         destination += '/';
     }
 
+    // Single ZIP archive handle - no reopening
     mz_zip_archive zip_archive;
     memset(&zip_archive, 0, sizeof(zip_archive));
     
+    // Open with ZIP64 support and disable sorting for faster init
     if (!mz_zip_reader_init_file(&zip_archive, zipFilePath.c_str(), 
                                 MZ_ZIP_FLAG_DO_NOT_SORT_CENTRAL_DIRECTORY)) {
         #if USING_LOGGING_DIRECTIVE
@@ -308,40 +318,32 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     const mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
     if (num_files == 0) {
         mz_zip_reader_end(&zip_archive);
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("No files found in archive");
+        #endif
         return false;
     }
 
-    // Optimized file info with better memory layout
-    struct FileInfo {
-        mz_uint index;
-        uint64_t size;
-        std::string name;
-        std::string extract_path;
-        
-        // Move constructor for better performance
-        FileInfo(mz_uint idx, uint64_t sz, std::string&& n, std::string&& path) 
-            : index(idx), size(sz), name(std::move(n)), extract_path(std::move(path)) {}
-    };
+    // Pre-allocate all containers to avoid reallocations
+    std::vector<mz_uint> file_indices;
+    std::vector<uint64_t> file_sizes;
+    std::vector<std::string> file_names;  // Cache filenames to avoid repeated stat calls
+    std::vector<std::string> extract_paths; // Pre-compute all extraction paths
     
-    std::vector<FileInfo> files;
-    files.reserve(num_files);
+    file_indices.reserve(num_files);
+    file_sizes.reserve(num_files);
+    file_names.reserve(num_files);
+    extract_paths.reserve(num_files);
     
     uint64_t totalUncompressedSize = 0;
     
-    // Pre-allocate strings with likely max sizes to avoid reallocations
-    std::string fileName, extractedFilePath;
-    fileName.reserve(256);  // Most filenames are under 256 chars
-    extractedFilePath.reserve(512); // Most paths under 512
+    // Pre-allocate strings for path operations
+    std::string fileName, extractedFilePath, directoryPath;
+    fileName.reserve(512);
+    extractedFilePath.reserve(1024);
+    directoryPath.reserve(1024);
     
-    // Optimized character replacement lookup table
-    static constexpr auto invalid_chars = []{
-        std::array<bool, 256> tbl{};           // zero-initialised
-        tbl[':'] = tbl['*'] = tbl['?'] = tbl['"'] =
-        tbl['<'] = tbl['>'] = tbl['|'] = true;
-        return tbl;
-    }();
-    
-    // Single-pass file collection with optimized string handling
+    // Single pass: collect file info and pre-compute paths
     for (mz_uint i = 0; i < num_files; i++) {
         mz_zip_archive_file_stat file_stat;
         if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
@@ -351,45 +353,54 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         const char* filename = file_stat.m_filename;
         const mz_uint64 uncompressed_size = file_stat.m_uncomp_size;
         
+        // Quick filename validation
         if (!filename || filename[0] == '\0' || uncompressed_size == 0) continue;
         
         const size_t nameLen = strlen(filename);
-        if (nameLen > 0 && filename[nameLen - 1] == '/') continue;
+        if (nameLen > 0 && filename[nameLen - 1] == '/') continue; // Skip directories
         
-        // Optimized string assignment avoiding extra allocations
+        // Pre-compute extraction path
         fileName.assign(filename, nameLen);
-        
-        // Pre-calculate total path size to avoid string reallocations
         extractedFilePath.clear();
-        extractedFilePath.reserve(destination.size() + nameLen);
-        extractedFilePath.append(destination);
-        extractedFilePath.append(fileName);
+        extractedFilePath.reserve(destination.size() + nameLen + 1);
+        extractedFilePath = destination;
+        extractedFilePath += fileName;
         
-        // Optimized character cleaning using lookup table
-        for (char& c : extractedFilePath) {
-            if (static_cast<unsigned char>(c) < 256 && invalid_chars[static_cast<unsigned char>(c)]) {
-                c = '_';
-            }
+        // Optimized character cleaning - only if needed
+        const size_t invalid_pos = extractedFilePath.find_first_of(":*?\"<>|");
+        if (invalid_pos != std::string::npos) {
+            const size_t start_pos = std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
+            auto it = extractedFilePath.begin() + start_pos;
+            extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
+                return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
+            }), extractedFilePath.end());
         }
         
-        files.emplace_back(i, uncompressed_size, std::move(fileName), std::move(extractedFilePath));
+        file_indices.push_back(i);
+        file_sizes.push_back(uncompressed_size);
+        file_names.emplace_back(std::move(fileName));
+        extract_paths.emplace_back(std::move(extractedFilePath));
         totalUncompressedSize += uncompressed_size;
     }
 
-    if (files.empty()) {
+    if (file_indices.empty()) {
         mz_zip_reader_end(&zip_archive);
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("No extractable files found");
+        #endif
         return false;
     }
 
     #if USING_LOGGING_DIRECTIVE
-    logMessage("Extracting " + std::to_string(files.size()) + " files, " + 
+    logMessage("Extracting " + std::to_string(file_indices.size()) + " files, " + 
                std::to_string(totalUncompressedSize) + " bytes total");
     #endif
 
-    // Ultra-optimized extraction context
-    struct UltraOptimizedContext {
-        uint64_t totalProcessed;
+    // Ultra-optimized extraction context with smoother progress tracking
+    struct UltraOptimizedExtractionContext {
+        uint64_t completedSize;
         const uint64_t totalSize;
+        uint64_t currentFileProcessed;
         std::atomic<int>* const progressAtomic;
         std::atomic<bool>* const abortFlag;
         
@@ -400,124 +411,130 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         #endif
         
         bool writeError;
-        uint32_t callCounter;
+        uint32_t updateCounter; // Reduce atomic operations
+        int lastReportedProgress; // Track last reported progress to avoid duplicate updates
         
-        // Pre-calculated percentage thresholds for ultra-fast lookup
-        std::array<uint64_t, 101> percentageThresholds;
-        int currentPercentage;
-        
-        UltraOptimizedContext(uint64_t total, std::atomic<int>* prog, std::atomic<bool>* abort) 
-            : totalProcessed(0), totalSize(total), progressAtomic(prog), abortFlag(abort), 
-              writeError(false), callCounter(0), currentPercentage(0) 
-        {
-            // Pre-calculate all percentage thresholds (0-100%)
-            for (int i = 0; i <= 100; ++i) {
-                percentageThresholds[i] = (static_cast<uint64_t>(i) * total) / 100;
-            }
-        }
+        UltraOptimizedExtractionContext(uint64_t total, std::atomic<int>* prog, std::atomic<bool>* abort) 
+            : completedSize(0), totalSize(total), currentFileProcessed(0), 
+              progressAtomic(prog), abortFlag(abort), writeError(false), updateCounter(0), lastReportedProgress(-1) {}
     };
 
-
-    // Micro-optimized callback with minimal branching
-    auto ultraCallback = [](void* pOpaque, mz_uint64 file_ofs, const void* pBuf, size_t n) -> size_t {
-        UltraOptimizedContext* ctx = static_cast<UltraOptimizedContext*>(pOpaque);
+    // Maximum performance callback with minimal atomic overhead
+    auto maxPerformanceCallback = [](void* pOpaque, mz_uint64 file_ofs, const void* pBuf, size_t n) -> size_t {
+        UltraOptimizedExtractionContext* ctx = static_cast<UltraOptimizedExtractionContext*>(pOpaque);
         
-        // Ultra-fast abort check
-        if (__builtin_expect((++ctx->callCounter & 0x3FF) == 0, false)) {
-            if (__builtin_expect(ctx->abortFlag->load(std::memory_order_relaxed), false)) {
-                return 0;
-            }
-        }
-        
-        // Fast write
+        // Write data first - most common path, optimize for it
         #if NO_FSTREAM_DIRECTIVE
-        const size_t written = fwrite(pBuf, 1, n, ctx->outputFile);
-        if (__builtin_expect(written != n, false)) {
+        if (fwrite(pBuf, 1, n, ctx->outputFile) != n) [[unlikely]] {
             ctx->writeError = true;
             return 0;
         }
         #else
         ctx->outputFile->write(static_cast<const char*>(pBuf), n);
-        if (__builtin_expect(!ctx->outputFile->good(), false)) {
+        if (!ctx->outputFile->good()) [[unlikely]] {
             ctx->writeError = true;
             return 0;
         }
         #endif
         
-        const uint64_t oldProcessed = ctx->totalProcessed;
-        ctx->totalProcessed += n;
+        ctx->currentFileProcessed += n;
+        const uint32_t counter = ++ctx->updateCounter;
         
-        // Ultra-fast percentage calculation using bit shifts (when total is power of 2)
-        // Or use pre-calculated lookup for common sizes
-        const int oldPct = static_cast<int>((oldProcessed * 100) / ctx->totalSize);
-        const int newPct = static_cast<int>((ctx->totalProcessed * 100) / ctx->totalSize);
-        
-        // Emit all percentages between old and new (guarantees no skips)
-        if (__builtin_expect(newPct > oldPct, false)) {
-            const int clampedNewPct = newPct > 100 ? 100 : newPct;
-            for (int pct = oldPct + 1; pct <= clampedNewPct; ++pct) {
-                ctx->progressAtomic->store(pct, std::memory_order_relaxed);
+        // Check abort much less frequently - every 2048 calls (was 256)
+        if ((counter & 0x7FF) == 0) [[unlikely]] { // Check every 2048 calls
+            if (ctx->abortFlag->load(std::memory_order_relaxed)) [[unlikely]] {
+                return 0;
+            }
+            
+            // Combine abort check with progress update for efficiency
+            const uint64_t totalProcessed = ctx->completedSize + ctx->currentFileProcessed;
+            const int progress = static_cast<int>((totalProcessed * 100ULL) / ctx->totalSize);
+            const int clampedProgress = std::min(progress, 99);
+            
+            // Only update if progress actually changed
+            if (clampedProgress != ctx->lastReportedProgress) [[unlikely]] {
+                ctx->progressAtomic->store(clampedProgress, std::memory_order_relaxed);
+                ctx->lastReportedProgress = clampedProgress;
             }
         }
         
         return n;
     };
-    
+
     bool success = true;
-    UltraOptimizedContext ctx(totalUncompressedSize, &unzipPercentage, &abortUnzip);
+    UltraOptimizedExtractionContext ctx(totalUncompressedSize, &unzipPercentage, &abortUnzip);
     
-    // Pre-allocate directory string with generous size
-    std::string directoryPath;
-    directoryPath.reserve(512);
+    // Pre-declare variables outside loop for maximum performance
+    uint64_t fileSize;
+    const char* cachedFilename;
+    const std::string* extractedFilePathPtr;
+    std::string* directoryPathPtr = &directoryPath;
+    size_t lastSlashPos;
     
-    // Optimized extraction loop with minimal overhead
-    for (size_t fileIdx = 0; fileIdx < files.size(); ++fileIdx) {
-        const FileInfo& file = files[fileIdx];  // const reference to avoid copying
+    #if NO_FSTREAM_DIRECTIVE
+    FILE* outputFile;
+    char* buffer = nullptr;
+    // Allocate a single large buffer for all file operations
+    const size_t bufferSize = std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(256 * 1024)); // At least 256KB
+    buffer = static_cast<char*>(malloc(bufferSize));
+    #else
+    std::ofstream outputFile;
+    #endif
+    
+    mz_bool extract_result;
+    
+    // Process files with minimal overhead
+    for (size_t fileIdx = 0; fileIdx < file_indices.size() && success; ++fileIdx) {
+        fileSize = file_sizes[fileIdx];
+        cachedFilename = file_names[fileIdx].c_str();
+        extractedFilePathPtr = &extract_paths[fileIdx];
         
-        // Quick abort check
-        if (__builtin_expect(abortUnzip.load(std::memory_order_relaxed), false)) {
+        // Quick abort check with relaxed ordering
+        if (abortUnzip.load(std::memory_order_relaxed)) {
             success = false;
             break;
         }
 
-        // Optimized directory creation - find last slash using reverse search
-        const size_t lastSlash = file.extract_path.find_last_of('/');
-        if (lastSlash != std::string::npos) {
-            // Use assign instead of substr for better performance
-            directoryPath.assign(file.extract_path, 0, lastSlash + 1);
-            createDirectory(directoryPath);
+        // Create directory only if needed - use pre-computed path
+        lastSlashPos = extractedFilePathPtr->find_last_of('/');
+        if (lastSlashPos != std::string::npos) {
+            directoryPathPtr->assign(*extractedFilePathPtr, 0, lastSlashPos + 1);
+            createDirectory(*directoryPathPtr);
         }
 
-        // Optimized file opening
+        // Open file with maximum performance settings
         #if NO_FSTREAM_DIRECTIVE
-        FILE* outputFile = fopen(file.extract_path.c_str(), "wb");
-        if (__builtin_expect(!outputFile, false)) {
+        outputFile = fopen(extractedFilePathPtr->c_str(), "wb");
+        if (!outputFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + file.extract_path);
+            logMessage("Error creating file: " + *extractedFilePathPtr);
             #endif
             continue;
         }
-        setvbuf(outputFile, nullptr, _IOFBF, UNZIP_BUFFER_SIZE);
+        // Use our pre-allocated buffer for consistent performance
+        if (buffer) {
+            setvbuf(outputFile, buffer, _IOFBF, bufferSize);
+        }
         ctx.outputFile = outputFile;
         #else
-        std::ofstream outputFile(file.extract_path, std::ios::binary);
-        if (__builtin_expect(!outputFile.is_open(), false)) {
+        outputFile.open(*extractedFilePathPtr, std::ios::binary);
+        if (!outputFile.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + file.extract_path);
+            logMessage("Error creating file: " + *extractedFilePathPtr);
             #endif
             continue;
         }
+        // Set larger buffer
         outputFile.rdbuf()->pubsetbuf(nullptr, UNZIP_BUFFER_SIZE);
         ctx.outputFile = &outputFile;
         #endif
 
-        // Reset context for new file
+        // Reset context for this file
+        ctx.currentFileProcessed = 0;
         ctx.writeError = false;
-        ctx.callCounter = 0;
 
-        // Extract with optimized callback
-        const mz_bool extract_result = mz_zip_reader_extract_file_to_callback(
-            &zip_archive, file.name.c_str(), ultraCallback, &ctx, 0);
+        // Extract with streaming
+        extract_result = mz_zip_reader_extract_file_to_callback(&zip_archive, cachedFilename, maxPerformanceCallback, &ctx, 0);
 
         // Close file immediately
         #if NO_FSTREAM_DIRECTIVE
@@ -526,11 +543,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         outputFile.close();
         #endif
 
-        // Handle extraction result
-        if (__builtin_expect(!extract_result || ctx.writeError, false)) {
-            deleteFileOrDirectory(file.extract_path);
+        if (!extract_result || ctx.writeError) {
+            deleteFileOrDirectory(*extractedFilePathPtr);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to extract: " + file.name);
+            logMessage("Failed to extract: " + file_names[fileIdx]);
             #endif
             
             if (abortUnzip.load(std::memory_order_relaxed)) {
@@ -540,25 +556,43 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             continue;
         }
 
-        // Yield occasionally for very large archives only
-        if (__builtin_expect((fileIdx & 0x3F) == 0 && files.size() > 500, false)) {
+        // Update completed size
+        ctx.completedSize += fileSize;
+
+        // Update progress for completed file - ensure smooth progression
+        const int progress = static_cast<int>((ctx.completedSize * 100ULL) / totalUncompressedSize);
+        const int clampedProgress = std::min(progress, 99);
+        
+        // Only update if progress changed to reduce atomic operations
+        if (clampedProgress != ctx.lastReportedProgress) {
+            unzipPercentage.store(clampedProgress, std::memory_order_relaxed);
+            ctx.lastReportedProgress = clampedProgress;
+        }
+
+        // Minimize thread yields even further for maximum throughput
+        if ((fileIdx & 0x7F) == 0 && file_indices.size() > 1000) { // Every 128 files, only for 1000+ files
             #ifdef __SWITCH__
-            svcSleepThread(100000); // 0.1ms
+            svcSleepThread(100000); // 0.1ms - minimal yield
             #else
             std::this_thread::sleep_for(std::chrono::microseconds(100));
             #endif
         }
     }
 
+    #if NO_FSTREAM_DIRECTIVE
+    if (buffer) {
+        free(buffer);
+    }
+    #endif
+
     mz_zip_reader_end(&zip_archive);
 
-    // Final progress update
-    if (success && ctx.totalProcessed > 0) {
+    if (success && ctx.completedSize > 0) {
         unzipPercentage.store(100, std::memory_order_release);
         
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Extraction completed: " + std::to_string(files.size()) + " files, " + 
-                  std::to_string(ctx.totalProcessed) + " bytes");
+        logMessage("Extraction completed: " + std::to_string(file_indices.size()) + " files, " + 
+                  std::to_string(ctx.completedSize) + " bytes");
         #endif
         
         return true;
