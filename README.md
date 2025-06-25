@@ -19,7 +19,7 @@ For easy importing and inclusion, try using `ultrahand.mk`. These lines must go 
 ```sh
 include $(TOPDIR)/lib/libultrahand/ultrahand.mk
 ```
-The location of where you place the `libultrahand` directory (`lib` can vary between projects).
+This location should reflect where you place the `libultrahand` directory (`lib` can vary between projects).
 
 ##
 
