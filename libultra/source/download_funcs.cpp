@@ -18,13 +18,14 @@
  ********************************************************************************/
 
 #include "download_funcs.hpp"
-#include <chrono>
-#include <thread>
+
 
 namespace ult {
 
-size_t DOWNLOAD_BUFFER_SIZE = 65536;//4096*10;
-size_t UNZIP_BUFFER_SIZE = 65536;//131072*2;//4096*4;
+size_t DOWNLOAD_READ_BUFFER = 64 * 1024;//4096*10;
+size_t DOWNLOAD_WRITE_BUFFER = 64 * 1024;
+size_t UNZIP_READ_BUFFER = 64 * 1024;//131072*2;//4096*4;
+size_t UNZIP_WRITE_BUFFER = 64 * 1024;//131072*2;//4096*4;
 
 // Path to the CA certificate
 const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
@@ -208,7 +209,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     tempFilePath += ".tmp";
 
     // Allocate write buffer - 256KB for optimal throughput
-    size_t WRITE_BUFFER_SIZE = DOWNLOAD_BUFFER_SIZE;
+    size_t WRITE_BUFFER_SIZE = DOWNLOAD_WRITE_BUFFER;
     std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(WRITE_BUFFER_SIZE);
 
     // Open file with write buffer
@@ -224,7 +225,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     setvbuf(file, writeBuffer.get(), _IOFBF, WRITE_BUFFER_SIZE);
 
     // Ensure curl is initialized
-    initializeCurl();
+    //initializeCurl(); // already initialized in main.cpp of ultrahand
 
     // Initialize CURL
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
@@ -262,7 +263,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curlPtr, CURLOPT_XFERINFODATA, &progressData);
     
     // Buffer size - 256KB for optimal throughput
-    curl_easy_setopt(curlPtr, CURLOPT_BUFFERSIZE, 262144L);
+    curl_easy_setopt(curlPtr, CURLOPT_BUFFERSIZE, static_cast<long>(DOWNLOAD_READ_BUFFER));
     
     // Protocol settings
     curl_easy_setopt(curlPtr, CURLOPT_USERAGENT, userAgent);
@@ -385,7 +386,7 @@ static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* file
         file = fopen((const char*)filename, mode_fopen);
         if (file && ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)) {
             // Set 64KB buffer for reading the ZIP file - reduces syscalls
-            static const size_t zipReadBufferSize = 64 * 1024;
+            static const size_t zipReadBufferSize = UNZIP_READ_BUFFER;
             setvbuf(file, nullptr, _IOFBF, zipReadBufferSize);
         }
     }
@@ -474,7 +475,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     directoryPath.reserve(1024);
     
     // Single large buffer for extraction - reused for all files
-    const size_t bufferSize = UNZIP_BUFFER_SIZE;//std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
+    const size_t bufferSize = UNZIP_WRITE_BUFFER;//std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
     std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
     char filenameBuffer[512]; // Stack allocated for filename reading
     
