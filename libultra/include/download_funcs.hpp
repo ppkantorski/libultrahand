@@ -29,8 +29,8 @@
 #include <switch.h>
 #define CURL_DISABLE_DEFLATE
 #include <curl/curl.h>
-//#include <zlib.h>
-#include <../../miniz/miniz.h>
+#include <zlib.h>
+#include <minizip/unzip.h>
 #include <atomic>
 #include <memory>
 #include <string>
