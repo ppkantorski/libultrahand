@@ -54,63 +54,85 @@ void CurlDeleter::operator()(CURL* curl) const {
     }
 }
 
-// Callback function to write received data to a file.
-#if NO_FSTREAM_DIRECTIVE
-// Using stdio.h functions (FILE*, fwrite)
-size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
-    if (!ptr || !stream) return 0;
-    size_t totalBytes = size * nmemb;
-    size_t writtenBytes = fwrite(ptr, 1, totalBytes, stream);
-    return writtenBytes;
-}
-#else
-// Using std::ofstream for writing
-size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
-    if (!ptr || !stream) return 0;
-    auto& file = *static_cast<std::ofstream*>(stream);
-    size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), totalBytes);
-    return totalBytes;
-}
-#endif
+// Progress tracking structure for optimized callbacks
+struct ProgressData {
+    std::atomic<int>* percentage;
+    int lastReportedProgress;
+    u64 lastAbortCheck;
+    curl_off_t bytesPerPercent;
+    curl_off_t nextPercentBoundary;
+};
 
-// Optimized progress callback - ensures no integer percentages are missed
-extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
-    // Check for abort first - most critical check
-    if (abortDownload.load(std::memory_order_acquire)) {
-        if (ptr) static_cast<std::atomic<int>*>(ptr)->store(-1, std::memory_order_relaxed);
-        return 1;  // Abort the download
-    }
+// Optimized write callback - minimal overhead
+size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    // Quick validation - single branch
+    if (!ptr || !userdata) return 0;
     
+    FILE* stream = static_cast<FILE*>(userdata);
+    
+    // Direct write - let fwrite handle the multiplication
+    return fwrite(ptr, size, nmemb, stream);
+}
+
+// Optimized progress callback - minimal branching and calculations
+int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, 
+                               curl_off_t totalToUpload, curl_off_t nowUploaded) {
+    // Early exit for invalid state
     if (!ptr || totalToDownload <= 0) return 0;
     
-    auto percentage = static_cast<std::atomic<int>*>(ptr);
-    int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
-    int currentProgress = percentage->load(std::memory_order_relaxed);
+    auto* progressData = static_cast<ProgressData*>(ptr);
     
-    // Fill in any missing integer percentages to ensure none are skipped
-    if (newProgress > currentProgress) {
-        // Step through each integer percentage to ensure none are missed
-        for (int i = currentProgress + 1; i <= newProgress; ++i) {
-            percentage->store(i, std::memory_order_relaxed);
+    // Time-based abort check - only check every 2 seconds
+    const u64 currentTick = armGetSystemTick();
+    
+    // Single comparison for time check
+    if ((currentTick - progressData->lastAbortCheck) >= 2000000000ULL) { // Pre-calculated nanoseconds
+        if (abortDownload.load(std::memory_order_relaxed)) {
+            progressData->percentage->store(-1, std::memory_order_relaxed);
+            return 1;  // Abort
+        }
+        progressData->lastAbortCheck = currentTick;
+    }
+    
+    // Smart percentage calculation - only when crossing boundaries
+    if (nowDownloaded >= progressData->nextPercentBoundary) {
+        // Calculate new percentage
+        int newProgress = static_cast<int>((nowDownloaded * 100LL) / totalToDownload);
+        newProgress = (newProgress > 99) ? 99 : newProgress; // Branchless min
+        
+        // Update if changed
+        if (newProgress > progressData->lastReportedProgress) {
+            // Fill any gaps to ensure smooth progress
+            while (progressData->lastReportedProgress < newProgress) {
+                progressData->lastReportedProgress++;
+                progressData->percentage->store(progressData->lastReportedProgress, std::memory_order_relaxed);
+            }
+            
+            // Calculate next boundary
+            progressData->nextPercentBoundary = ((progressData->lastReportedProgress + 1) * totalToDownload) / 100;
+            
+            #if USING_LOGGING_DIRECTIVE
+            // Log at 10% intervals only
+            if ((progressData->lastReportedProgress % 10) == 0) {
+                logMessage("Download: " + std::to_string(progressData->lastReportedProgress) + "%");
+            }
+            #endif
         }
     }
     
-    return 0;  // Continue the download
+    return 0;  // Continue
 }
 
 // Global initialization function
 void initializeCurl() {
     std::lock_guard<std::mutex> lock(curlInitMutex);
-    if (!curlInitialized.load(std::memory_order_acquire)) {
+    if (!curlInitialized.exchange(true, std::memory_order_acq_rel)) {
         CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
         if (res != CURLE_OK) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
             #endif
-            // Handle error appropriately, possibly exit the program
-        } else {
-            curlInitialized.store(true, std::memory_order_release);
+            curlInitialized.store(false, std::memory_order_release);
         }
     }
 }
@@ -118,22 +140,26 @@ void initializeCurl() {
 // Global cleanup function
 void cleanupCurl() {
     std::lock_guard<std::mutex> lock(curlInitMutex);
-    if (curlInitialized.load(std::memory_order_acquire)) {
+    if (curlInitialized.exchange(false, std::memory_order_acq_rel)) {
         curl_global_cleanup();
-        curlInitialized.store(false, std::memory_order_release);
     }
 }
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
  *
+ * Ultra-optimized with FILE* only, smart progress, and micro-optimizations.
+ *
  * @param url The URL of the file to download.
  * @param toDestination The destination path where the file should be saved.
  * @return True if the download was successful, false otherwise.
  */
 bool downloadFile(const std::string& url, const std::string& toDestination) {
+    // Reset state
     abortDownload.store(false, std::memory_order_release);
+    downloadPercentage.store(0, std::memory_order_release);
 
+    // Quick URL validation - single check
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Invalid URL: " + url);
@@ -141,35 +167,51 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-    std::string destination = toDestination;
+    // Pre-allocate strings to avoid reallocations
+    std::string destination;
+    destination.reserve(toDestination.size() + 256); // Extra space for filename
+    destination = toDestination;
+    
+    // Handle directory destination
     if (destination.back() == '/') {
         createDirectory(destination);
         size_t lastSlash = url.find_last_of('/');
-        if (lastSlash != std::string::npos) {
-            destination += url.substr(lastSlash + 1);
-        } else {
+        if (lastSlash == std::string::npos) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Invalid URL: " + url);
             #endif
             return false;
         }
+        destination.append(url, lastSlash + 1, std::string::npos);
     } else {
-        createDirectory(destination.substr(0, destination.find_last_of('/')));
+        // Create parent directory - avoid substr allocation
+        size_t lastSlash = destination.find_last_of('/');
+        if (lastSlash != std::string::npos) {
+            std::string parentDir(destination, 0, lastSlash);
+            createDirectory(parentDir);
+        }
     }
 
-    std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
-
-#ifndef NO_FSTREAM_DIRECTIVE
-    // Use ofstream if NO_FSTREAM_DIRECTIVE is not defined
-    std::ofstream file(tempFilePath, std::ios::binary);
-    if (!file.is_open()) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening file: " + tempFilePath);
-        #endif
-        return false;
+    // Build temp file path efficiently
+    std::string tempFilePath;
+    tempFilePath.reserve(destination.size() + 16);
+    
+    size_t lastSlash = destination.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        tempFilePath.append(destination, 0, lastSlash + 1);
+        tempFilePath += '.';
+        tempFilePath.append(destination, lastSlash + 1, std::string::npos);
+    } else {
+        tempFilePath = '.';
+        tempFilePath += destination;
     }
-#else
-    // Alternative method of opening file (depending on your platform, like using POSIX open())
+    tempFilePath += ".tmp";
+
+    // Allocate write buffer - 256KB for optimal throughput
+    static constexpr size_t WRITE_BUFFER_SIZE = 256 * 1024;
+    std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(WRITE_BUFFER_SIZE);
+
+    // Open file with write buffer
     FILE* file = fopen(tempFilePath.c_str(), "wb");
     if (!file) {
         #if USING_LOGGING_DIRECTIVE
@@ -177,105 +219,150 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #endif
         return false;
     }
-#endif
+    
+    // Set write buffer for optimal performance
+    setvbuf(file, writeBuffer.get(), _IOFBF, WRITE_BUFFER_SIZE);
 
     // Ensure curl is initialized
     initializeCurl();
 
+    // Initialize CURL
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error initializing curl.");
         #endif
-#ifndef NO_FSTREAM_DIRECTIVE
-        file.close();
-#else
         fclose(file);
-#endif
+        deleteFileOrDirectory(tempFilePath);
         return false;
     }
 
-    downloadPercentage.store(0, std::memory_order_relaxed);
+    // Initialize progress tracking - all data in one struct
+    ProgressData progressData = {
+        &downloadPercentage,
+        0,
+        armGetSystemTick(),
+        0,
+        0
+    };
 
-    curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
-#ifndef NO_FSTREAM_DIRECTIVE
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
-#else
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file);
-#endif
-    curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
-    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent);
-    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
-    curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
+    // Set CURL options - grouped by category for cache efficiency
+    CURL* curlPtr = curl.get(); // Cache pointer
+    
+    // Core transfer options
+    curl_easy_setopt(curlPtr, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curlPtr, CURLOPT_WRITEFUNCTION, +writeCallback);
+    curl_easy_setopt(curlPtr, CURLOPT_WRITEDATA, file);
+    curl_easy_setopt(curlPtr, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_MAXREDIRS, 5L);
+    
+    // Progress tracking
+    curl_easy_setopt(curlPtr, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curlPtr, CURLOPT_XFERINFOFUNCTION, +progressCallback);
+    curl_easy_setopt(curlPtr, CURLOPT_XFERINFODATA, &progressData);
+    
+    // Buffer size - 256KB for optimal throughput
+    curl_easy_setopt(curlPtr, CURLOPT_BUFFERSIZE, 262144L);
+    
+    // Protocol settings
+    curl_easy_setopt(curlPtr, CURLOPT_USERAGENT, userAgent);
+    curl_easy_setopt(curlPtr, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+    curl_easy_setopt(curlPtr, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+    
+    // TCP optimizations - grouped together
+    curl_easy_setopt(curlPtr, CURLOPT_TCP_NODELAY, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_TCP_FASTOPEN, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPIDLE, 60L);
+    curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPINTVL, 60L);
+    
+    // HTTP/2 and connection reuse
+    curl_easy_setopt(curlPtr, CURLOPT_PIPEWAIT, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_HTTP09_ALLOWED, 0L);
+    curl_easy_setopt(curlPtr, CURLOPT_DNS_CACHE_TIMEOUT, 300L);
+    curl_easy_setopt(curlPtr, CURLOPT_MAXAGE_CONN, 300L);
+    
+    // Timeouts
+    curl_easy_setopt(curlPtr, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(curlPtr, CURLOPT_LOW_SPEED_LIMIT, 1000L);
+    curl_easy_setopt(curlPtr, CURLOPT_LOW_SPEED_TIME, 30L);
+    
+    // SSL optimizations
+    curl_easy_setopt(curlPtr, CURLOPT_SSL_ENABLE_ALPN, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_SSL_ENABLE_NPN, 0L);
+    curl_easy_setopt(curlPtr, CURLOPT_SSL_FALSESTART, 1L);
+    
+    // Set CA cert if exists - avoid repeated string construction
+    static bool cacertChecked = false;
+    static bool cacertExists = false;
+    if (!cacertChecked) {
+        cacertExists = isFileOrDirectory(cacertPath);
+        cacertChecked = true;
+    }
+    if (cacertExists) {
+        curl_easy_setopt(curlPtr, CURLOPT_CAINFO, cacertPath.c_str());
+    }
 
-    curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_BUFFER_SIZE); // Increase buffer size
+    #if USING_LOGGING_DIRECTIVE
+    logMessage("Downloading: " + url);
+    #endif
 
-    // Performance optimizations
-    curl_easy_setopt(curl.get(), CURLOPT_TCP_NODELAY, 1L);        // Disable Nagle's algorithm for faster small transfers
-    curl_easy_setopt(curl.get(), CURLOPT_TCP_FASTOPEN, 1L);       // Enable TCP Fast Open if supported
-    curl_easy_setopt(curl.get(), CURLOPT_PIPEWAIT, 1L);          // Enable HTTP/2 multiplexing
-    curl_easy_setopt(curl.get(), CURLOPT_MAXREDIRS, 5L);         // Limit redirects to prevent infinite loops
-    curl_easy_setopt(curl.get(), CURLOPT_DNS_CACHE_TIMEOUT, 300L); // Cache DNS for 5 minutes
+    // Perform download
+    CURLcode result = curl_easy_perform(curlPtr);
 
-    // Add timeout options
-    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);   // 10 seconds to connect
-    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1L);   // 1 byte/s (virtually any progress)
-    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
-
-    CURLcode result = curl_easy_perform(curl.get());
-
-#ifndef NO_FSTREAM_DIRECTIVE
-    file.close();
-#else
+    // Ensure all data is written and close file
+    fflush(file);
     fclose(file);
-#endif
 
+    // Handle errors
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
-        if (result == CURLE_OPERATION_TIMEDOUT) {
-            logMessage("Download timed out: " + url);
-        } else if (result == CURLE_COULDNT_CONNECT) {
-            logMessage("Could not connect to: " + url);
-        } else {
-            logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        const char* errorStr = curl_easy_strerror(result);
+        switch(result) {
+            case CURLE_OPERATION_TIMEDOUT:
+                logMessage("Download timed out: " + url);
+                break;
+            case CURLE_COULDNT_CONNECT:
+                logMessage("Could not connect to: " + url);
+                break;
+            case CURLE_ABORTED_BY_CALLBACK:
+                logMessage("Download aborted by user");
+                break;
+            default:
+                logMessage(std::string("Download error: ") + errorStr);
         }
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_relaxed);
+        downloadPercentage.store(abortDownload.load() ? -2 : -1, std::memory_order_relaxed);
         return false;
     }
 
-#ifndef NO_FSTREAM_DIRECTIVE
-    std::ifstream checkFile(tempFilePath);
-    if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
-        #endif
-        deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_relaxed);
-        checkFile.close();
-        return false;
-    }
-    checkFile.close();
-#else
-    // Alternative method for checking if the file is empty (POSIX example)
+    // Verify file exists and is not empty - single syscall
     struct stat fileStat;
     if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
+        logMessage("Downloaded file is empty or missing");
         #endif
         deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_relaxed);
         return false;
     }
-#endif
 
+    // Final abort check
+    if (abortDownload.load(std::memory_order_acquire)) {
+        deleteFileOrDirectory(tempFilePath);
+        downloadPercentage.store(-2, std::memory_order_relaxed);
+        return false;
+    }
+
+    // Success - update progress and move file
     downloadPercentage.store(100, std::memory_order_relaxed);
     moveFile(tempFilePath, destination);
+    
+    #if USING_LOGGING_DIRECTIVE
+    logMessage("Download complete: " + destination);
+    #endif
+    
     return true;
 }
 
