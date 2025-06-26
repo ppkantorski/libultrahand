@@ -208,7 +208,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     tempFilePath += ".tmp";
 
     // Allocate write buffer - 256KB for optimal throughput
-    static constexpr size_t WRITE_BUFFER_SIZE = 256 * 1024;
+    size_t WRITE_BUFFER_SIZE = DOWNLOAD_BUFFER_SIZE;
     std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(WRITE_BUFFER_SIZE);
 
     // Open file with write buffer
