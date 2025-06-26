@@ -281,6 +281,31 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
 
 /**
+ * @brief Custom I/O function for opening files with larger buffer
+ */
+static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* filename, int mode) {
+    FILE* file = nullptr;
+    const char* mode_fopen = nullptr;
+    
+    if ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)
+        mode_fopen = "rb";
+    else if (mode & ZLIB_FILEFUNC_MODE_EXISTING)
+        mode_fopen = "r+b";
+    else if (mode & ZLIB_FILEFUNC_MODE_CREATE)
+        mode_fopen = "wb";
+
+    if ((filename != nullptr) && (mode_fopen != nullptr)) {
+        file = fopen((const char*)filename, mode_fopen);
+        if (file && ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)) {
+            // Set 64KB buffer for reading the ZIP file - reduces syscalls
+            static const size_t zipReadBufferSize = 64 * 1024;
+            setvbuf(file, nullptr, _IOFBF, zipReadBufferSize);
+        }
+    }
+    return file;
+}
+
+/**
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
  * Ultra-optimized single-pass extraction with smooth byte-based progress reporting
@@ -294,8 +319,13 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     abortUnzip.store(false, std::memory_order_release);
     unzipPercentage.store(0, std::memory_order_release);
 
-    // Open ZIP file using switch-zlib
-    unzFile zipFile = unzOpen64(zipFilePath.c_str());
+    // Set up custom I/O with 64KB buffer for ZIP reading
+    zlib_filefunc64_def ffunc;
+    fill_fopen64_filefunc(&ffunc);
+    ffunc.zopen64_file = fopen64_file_func_custom; // Override open function for larger buffer
+
+    // Open ZIP file using custom I/O
+    unzFile zipFile = unzOpen2_64(zipFilePath.c_str(), &ffunc);
     if (!zipFile) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Failed to open zip file: " + zipFilePath);
@@ -543,11 +573,11 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                 
                 #if USING_LOGGING_DIRECTIVE
                 // Only log at 10% intervals to avoid spam
-                //if (currentProgress % 10 == 0) {
-                //    logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
-                //              std::to_string(totalBytesProcessed) + "/" + 
-                //              std::to_string(totalUncompressedSize) + " bytes)");
-                //}
+                if (currentProgress % 10 == 0) {
+                    logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
+                              std::to_string(totalBytesProcessed) + "/" + 
+                              std::to_string(totalUncompressedSize) + " bytes)");
+                }
                 #endif
             }
         }
