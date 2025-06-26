@@ -280,12 +280,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 }
 
 
-
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
- * Ultra-optimized single-pass extraction with smooth progress reporting using miniz
- * with proper 64-bit file support and streaming extraction
+ * Ultra-optimized single-pass extraction with smooth byte-based progress reporting
+ * using miniz with proper 64-bit file support and streaming extraction
  * 
  * @param zipFilePath The path to the ZIP archive file.
  * @param toDestination The destination directory where files should be extracted.
@@ -295,6 +294,107 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     abortUnzip.store(false, std::memory_order_release);
     unzipPercentage.store(0, std::memory_order_release);
 
+    // Open ZIP file using switch-zlib
+    unzFile zipFile = unzOpen64(zipFilePath.c_str());
+    if (!zipFile) {
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Failed to open zip file: " + zipFilePath);
+        #endif
+        return false;
+    }
+
+    // Get global info about the ZIP file
+    unz_global_info64 globalInfo;
+    if (unzGetGlobalInfo64(zipFile, &globalInfo) != UNZ_OK) {
+        unzClose(zipFile);
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Failed to get zip file info");
+        #endif
+        return false;
+    }
+
+    const uLong numFiles = globalInfo.number_entry;
+    if (numFiles == 0) {
+        unzClose(zipFile);
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("No files found in archive");
+        #endif
+        return false;
+    }
+
+    // ALWAYS calculate total size for accurate byte-based progress
+    ZPOS64_T totalUncompressedSize = 0;
+    char tempFilenameBuffer[512];
+    unz_file_info64 fileInfo;
+    
+    // First pass: calculate total uncompressed size
+    int result = unzGoToFirstFile(zipFile);
+    while (result == UNZ_OK) {
+        if (unzGetCurrentFileInfo64(zipFile, &fileInfo, tempFilenameBuffer, sizeof(tempFilenameBuffer), 
+                                   nullptr, 0, nullptr, 0) == UNZ_OK) {
+            const size_t nameLen = strlen(tempFilenameBuffer);
+            if (nameLen > 0 && tempFilenameBuffer[nameLen - 1] != '/') {
+                totalUncompressedSize += fileInfo.uncompressed_size;
+            }
+        }
+        result = unzGoToNextFile(zipFile);
+    }
+
+    // Fallback to 1 if no actual data (avoid division by zero)
+    if (totalUncompressedSize == 0) {
+        totalUncompressedSize = 1;
+    }
+
+    #if USING_LOGGING_DIRECTIVE
+    logMessage("Processing " + std::to_string(numFiles) + " files, " + 
+              std::to_string(totalUncompressedSize) + " total bytes from archive");
+    #endif
+
+    // Pre-allocate ALL reusable strings and variables outside the main loop
+    std::string fileName, extractedFilePath, directoryPath;
+    fileName.reserve(512);
+    extractedFilePath.reserve(1024);
+    directoryPath.reserve(1024);
+    
+    // Single large buffer for extraction - reused for all files
+    const size_t bufferSize = std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
+    std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
+    char filenameBuffer[512]; // Stack allocated for filename reading
+    
+    // Progress tracking variables - OPTIMIZED for smooth byte-based tracking
+    ZPOS64_T totalBytesProcessed = 0;
+    uLong filesProcessed = 0;
+    int currentProgress = 0;  // Current percentage (0-100)
+    
+    // Calculate bytes per percentage point for smooth updates
+    const ZPOS64_T bytesPerPercent = totalUncompressedSize / 100;
+    ZPOS64_T nextPercentBoundary = bytesPerPercent;  // Next byte count that triggers a percentage update
+    
+    // Time-based abort checking - pre-calculated constants
+    const u64 abortCheckInterval = armNsToTicks(2000000000ULL); // 2 seconds in ticks
+    u64 lastAbortCheck = armGetSystemTick();
+    u64 currentTick; // Reused for all tick operations
+    
+    // File operation variables - moved outside loop
+    #if NO_FSTREAM_DIRECTIVE
+    FILE* outputFile = nullptr;
+    #else
+    std::ofstream outputFile;
+    #endif
+    
+    // Loop variables moved outside
+    bool success = true;
+    bool extractSuccess;
+    ZPOS64_T fileBytesProcessed;
+    int bytesRead;
+    
+    // String operation variables
+    const char* filename;
+    size_t nameLen;
+    size_t lastSlashPos;
+    size_t invalid_pos;
+    size_t start_pos;
+    
     // Ensure destination directory exists
     createDirectory(toDestination);
     
@@ -305,298 +405,205 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     if (!destination.empty() && destination.back() != '/') {
         destination += '/';
     }
-
-    // Single ZIP archive handle - no reopening
-    mz_zip_archive zip_archive;
-    memset(&zip_archive, 0, sizeof(zip_archive));
     
-    // Open with ZIP64 support and disable sorting for faster init
-    if (!mz_zip_reader_init_file(&zip_archive, zipFilePath.c_str(), 
-                                MZ_ZIP_FLAG_DO_NOT_SORT_CENTRAL_DIRECTORY)) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Failed to open zip file: " + zipFilePath);
-        #endif
-        return false;
-    }
-
-    const mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
-    if (num_files == 0) {
-        mz_zip_reader_end(&zip_archive);
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("No files found in archive");
-        #endif
-        return false;
-    }
-
-    // Pre-allocate all containers to avoid reallocations
-    std::vector<mz_uint> file_indices;
-    std::vector<uint64_t> file_sizes;
-    std::vector<std::string> file_names;  // Cache filenames to avoid repeated stat calls
-    std::vector<std::string> extract_paths; // Pre-compute all extraction paths
-    
-    file_indices.reserve(num_files);
-    file_sizes.reserve(num_files);
-    file_names.reserve(num_files);
-    extract_paths.reserve(num_files);
-    
-    uint64_t totalUncompressedSize = 0;
-    
-    // Pre-allocate strings for path operations
-    std::string fileName, extractedFilePath, directoryPath;
-    fileName.reserve(512);
-    extractedFilePath.reserve(1024);
-    directoryPath.reserve(1024);
-    
-    // Single pass: collect file info and pre-compute paths
-    for (mz_uint i = 0; i < num_files; i++) {
-        mz_zip_archive_file_stat file_stat;
-        if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+    // Extract files
+    result = unzGoToFirstFile(zipFile);
+    while (result == UNZ_OK && success) {
+        // Time-based abort check at start of each file (only if 2+ seconds have passed)
+        currentTick = armGetSystemTick();
+        if ((currentTick - lastAbortCheck) >= abortCheckInterval) {
+            if (abortUnzip.load(std::memory_order_relaxed)) {
+                success = false;
+                break;
+            }
+            lastAbortCheck = currentTick;
+        }
+        
+        // Get current file info - reuse fileInfo variable
+        if (unzGetCurrentFileInfo64(zipFile, &fileInfo, filenameBuffer, sizeof(filenameBuffer), 
+                                   nullptr, 0, nullptr, 0) != UNZ_OK) {
+            result = unzGoToNextFile(zipFile);
             continue;
         }
 
-        const char* filename = file_stat.m_filename;
-        const mz_uint64 uncompressed_size = file_stat.m_uncomp_size;
+        filename = filenameBuffer;
         
         // Quick filename validation
-        if (!filename || filename[0] == '\0' || uncompressed_size == 0) continue;
+        if (!filename || filename[0] == '\0') {
+            result = unzGoToNextFile(zipFile);
+            continue;
+        }
         
-        const size_t nameLen = strlen(filename);
-        if (nameLen > 0 && filename[nameLen - 1] == '/') continue; // Skip directories
+        nameLen = strlen(filename);
+        if (nameLen > 0 && filename[nameLen - 1] == '/') { // Skip directories
+            result = unzGoToNextFile(zipFile);
+            continue;
+        }
         
-        // Pre-compute extraction path
+        // Build extraction path - reuse allocated strings
         fileName.assign(filename, nameLen);
         extractedFilePath.clear();
-        extractedFilePath.reserve(destination.size() + nameLen + 1);
         extractedFilePath = destination;
         extractedFilePath += fileName;
         
         // Optimized character cleaning - only if needed
-        const size_t invalid_pos = extractedFilePath.find_first_of(":*?\"<>|");
+        invalid_pos = extractedFilePath.find_first_of(":*?\"<>|");
         if (invalid_pos != std::string::npos) {
-            const size_t start_pos = std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
+            start_pos = std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
             auto it = extractedFilePath.begin() + start_pos;
             extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
                 return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
             }), extractedFilePath.end());
         }
-        
-        file_indices.push_back(i);
-        file_sizes.push_back(uncompressed_size);
-        file_names.emplace_back(std::move(fileName));
-        extract_paths.emplace_back(std::move(extractedFilePath));
-        totalUncompressedSize += uncompressed_size;
-    }
 
-    if (file_indices.empty()) {
-        mz_zip_reader_end(&zip_archive);
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("No extractable files found");
-        #endif
-        return false;
-    }
-
-    #if USING_LOGGING_DIRECTIVE
-    logMessage("Extracting " + std::to_string(file_indices.size()) + " files, " + 
-               std::to_string(totalUncompressedSize) + " bytes total");
-    #endif
-
-    // Ultra-optimized extraction context with smoother progress tracking
-    struct UltraOptimizedExtractionContext {
-        uint64_t completedSize;
-        const uint64_t totalSize;
-        uint64_t currentFileProcessed;
-        std::atomic<int>* const progressAtomic;
-        std::atomic<bool>* const abortFlag;
-        
-        #if NO_FSTREAM_DIRECTIVE
-        FILE* outputFile;
-        #else
-        std::ofstream* outputFile;
-        #endif
-        
-        bool writeError;
-        uint32_t updateCounter; // Reduce atomic operations
-        int lastReportedProgress; // Track last reported progress to avoid duplicate updates
-        
-        UltraOptimizedExtractionContext(uint64_t total, std::atomic<int>* prog, std::atomic<bool>* abort) 
-            : completedSize(0), totalSize(total), currentFileProcessed(0), 
-              progressAtomic(prog), abortFlag(abort), writeError(false), updateCounter(0), lastReportedProgress(-1) {}
-    };
-
-    // Maximum performance callback with minimal atomic overhead
-    auto maxPerformanceCallback = [](void* pOpaque, mz_uint64 file_ofs, const void* pBuf, size_t n) -> size_t {
-        UltraOptimizedExtractionContext* ctx = static_cast<UltraOptimizedExtractionContext*>(pOpaque);
-        
-        // Write data first - most common path, optimize for it
-        #if NO_FSTREAM_DIRECTIVE
-        if (fwrite(pBuf, 1, n, ctx->outputFile) != n) [[unlikely]] {
-            ctx->writeError = true;
-            return 0;
-        }
-        #else
-        ctx->outputFile->write(static_cast<const char*>(pBuf), n);
-        if (!ctx->outputFile->good()) [[unlikely]] {
-            ctx->writeError = true;
-            return 0;
-        }
-        #endif
-        
-        ctx->currentFileProcessed += n;
-        const uint32_t counter = ++ctx->updateCounter;
-        
-        // Check abort much less frequently - every 2048 calls (was 256)
-        if ((counter & 0x7FF) == 0) [[unlikely]] { // Check every 2048 calls
-            if (ctx->abortFlag->load(std::memory_order_relaxed)) [[unlikely]] {
-                return 0;
-            }
-            
-            // Combine abort check with progress update for efficiency
-            const uint64_t totalProcessed = ctx->completedSize + ctx->currentFileProcessed;
-            const int progress = static_cast<int>((totalProcessed * 100ULL) / ctx->totalSize);
-            const int clampedProgress = std::min(progress, 99);
-            
-            // Only update if progress actually changed
-            if (clampedProgress != ctx->lastReportedProgress) [[unlikely]] {
-                ctx->progressAtomic->store(clampedProgress, std::memory_order_relaxed);
-                ctx->lastReportedProgress = clampedProgress;
-            }
-        }
-        
-        return n;
-    };
-
-    bool success = true;
-    UltraOptimizedExtractionContext ctx(totalUncompressedSize, &unzipPercentage, &abortUnzip);
-    
-    // Pre-declare variables outside loop for maximum performance
-    uint64_t fileSize;
-    const char* cachedFilename;
-    const std::string* extractedFilePathPtr;
-    std::string* directoryPathPtr = &directoryPath;
-    size_t lastSlashPos;
-    
-    #if NO_FSTREAM_DIRECTIVE
-    FILE* outputFile;
-    char* buffer = nullptr;
-    // Allocate a single large buffer for all file operations
-    const size_t bufferSize = std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(256 * 1024)); // At least 256KB
-    buffer = static_cast<char*>(malloc(bufferSize));
-    #else
-    std::ofstream outputFile;
-    #endif
-    
-    mz_bool extract_result;
-    
-    // Process files with minimal overhead
-    for (size_t fileIdx = 0; fileIdx < file_indices.size() && success; ++fileIdx) {
-        fileSize = file_sizes[fileIdx];
-        cachedFilename = file_names[fileIdx].c_str();
-        extractedFilePathPtr = &extract_paths[fileIdx];
-        
-        // Quick abort check with relaxed ordering
-        if (abortUnzip.load(std::memory_order_relaxed)) {
-            success = false;
-            break;
-        }
-
-        // Create directory only if needed - use pre-computed path
-        lastSlashPos = extractedFilePathPtr->find_last_of('/');
-        if (lastSlashPos != std::string::npos) {
-            directoryPathPtr->assign(*extractedFilePathPtr, 0, lastSlashPos + 1);
-            createDirectory(*directoryPathPtr);
-        }
-
-        // Open file with maximum performance settings
-        #if NO_FSTREAM_DIRECTIVE
-        outputFile = fopen(extractedFilePathPtr->c_str(), "wb");
-        if (!outputFile) {
+        // Open the current file in the ZIP
+        if (unzOpenCurrentFile(zipFile) != UNZ_OK) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + *extractedFilePathPtr);
+            logMessage("Could not open file in ZIP: " + fileName);
             #endif
+            result = unzGoToNextFile(zipFile);
             continue;
         }
-        // Use our pre-allocated buffer for consistent performance
-        if (buffer) {
-            setvbuf(outputFile, buffer, _IOFBF, bufferSize);
+
+        // Create directory if needed
+        lastSlashPos = extractedFilePath.find_last_of('/');
+        if (lastSlashPos != std::string::npos) {
+            directoryPath.assign(extractedFilePath, 0, lastSlashPos + 1);
+            createDirectory(directoryPath);
         }
-        ctx.outputFile = outputFile;
-        #else
-        outputFile.open(*extractedFilePathPtr, std::ios::binary);
-        if (!outputFile.is_open()) {
+
+        // Open output file
+        #if NO_FSTREAM_DIRECTIVE
+        outputFile = fopen(extractedFilePath.c_str(), "wb");
+        if (!outputFile) {
+            unzCloseCurrentFile(zipFile);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + *extractedFilePathPtr);
+            logMessage("Error creating file: " + extractedFilePath);
             #endif
+            result = unzGoToNextFile(zipFile);
+            continue;
+        }
+        // Set buffer for consistent performance
+        setvbuf(outputFile, buffer.get(), _IOFBF, bufferSize);
+        #else
+        outputFile.open(extractedFilePath, std::ios::binary);
+        if (!outputFile.is_open()) {
+            unzCloseCurrentFile(zipFile);
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Error creating file: " + extractedFilePath);
+            #endif
+            result = unzGoToNextFile(zipFile);
             continue;
         }
         // Set larger buffer
         outputFile.rdbuf()->pubsetbuf(nullptr, UNZIP_BUFFER_SIZE);
-        ctx.outputFile = &outputFile;
         #endif
 
-        // Reset context for this file
-        ctx.currentFileProcessed = 0;
-        ctx.writeError = false;
+        // Extract file data in chunks
+        extractSuccess = true;
+        fileBytesProcessed = 0;
+        
+        while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
+            // Time-based abort check - only every 2 seconds for optimal performance
+            currentTick = armGetSystemTick();
+            if ((currentTick - lastAbortCheck) >= abortCheckInterval) {
+                if (abortUnzip.load(std::memory_order_relaxed)) {
+                    extractSuccess = false;
+                    break;
+                }
+                lastAbortCheck = currentTick;
+            }
+            
+            // Write data to file
+            #if NO_FSTREAM_DIRECTIVE
+            if (fwrite(buffer.get(), 1, bytesRead, outputFile) != static_cast<size_t>(bytesRead)) {
+                extractSuccess = false;
+                break;
+            }
+            #else
+            outputFile.write(buffer.get(), bytesRead);
+            if (!outputFile.good()) {
+                extractSuccess = false;
+                break;
+            }
+            #endif
+            
+            // Update progress tracking
+            fileBytesProcessed += bytesRead;
+            totalBytesProcessed += bytesRead;
+            
+            // OPTIMIZED: Check if we've crossed any percentage boundaries
+            // This ensures we never skip a percentage point
+            while (totalBytesProcessed >= nextPercentBoundary && currentProgress < 99) {
+                currentProgress++;
+                nextPercentBoundary = static_cast<ZPOS64_T>(currentProgress + 1) * bytesPerPercent;
+                
+                // Update the atomic progress value
+                unzipPercentage.store(currentProgress, std::memory_order_relaxed);
+                
+                #if USING_LOGGING_DIRECTIVE
+                // Only log at 10% intervals to avoid spam
+                //if (currentProgress % 10 == 0) {
+                //    logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
+                //              std::to_string(totalBytesProcessed) + "/" + 
+                //              std::to_string(totalUncompressedSize) + " bytes)");
+                //}
+                #endif
+            }
+        }
 
-        // Extract with streaming
-        extract_result = mz_zip_reader_extract_file_to_callback(&zip_archive, cachedFilename, maxPerformanceCallback, &ctx, 0);
+        // Check for read errors
+        if (bytesRead < 0) {
+            extractSuccess = false;
+        }
 
-        // Close file immediately
+        // Close files
         #if NO_FSTREAM_DIRECTIVE
-        fclose(outputFile);
+        if (outputFile) {
+            fclose(outputFile);
+            outputFile = nullptr;
+        }
         #else
         outputFile.close();
         #endif
+        
+        unzCloseCurrentFile(zipFile);
 
-        if (!extract_result || ctx.writeError) {
-            deleteFileOrDirectory(*extractedFilePathPtr);
+        if (!extractSuccess) {
+            deleteFileOrDirectory(extractedFilePath);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to extract: " + file_names[fileIdx]);
+            logMessage("Failed to extract: " + fileName);
             #endif
             
             if (abortUnzip.load(std::memory_order_relaxed)) {
                 success = false;
                 break;
             }
-            continue;
+        } else {
+            filesProcessed++;
         }
 
-        // Update completed size
-        ctx.completedSize += fileSize;
-
-        // Update progress for completed file - ensure smooth progression
-        const int progress = static_cast<int>((ctx.completedSize * 100ULL) / totalUncompressedSize);
-        const int clampedProgress = std::min(progress, 99);
-        
-        // Only update if progress changed to reduce atomic operations
-        if (clampedProgress != ctx.lastReportedProgress) {
-            unzipPercentage.store(clampedProgress, std::memory_order_relaxed);
-            ctx.lastReportedProgress = clampedProgress;
-        }
-
-        // Minimize thread yields even further for maximum throughput
-        if ((fileIdx & 0x7F) == 0 && file_indices.size() > 1000) { // Every 128 files, only for 1000+ files
-            #ifdef __SWITCH__
-            svcSleepThread(100000); // 0.1ms - minimal yield
-            #else
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
-            #endif
-        }
+        // Move to next file
+        result = unzGoToNextFile(zipFile);
     }
 
-    #if NO_FSTREAM_DIRECTIVE
-    if (buffer) {
-        free(buffer);
+    // Clean up
+    unzClose(zipFile);
+
+    if (abortUnzip.load(std::memory_order_relaxed)) {
+        unzipPercentage.store(-2, std::memory_order_release);
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Extraction aborted by user");
+        #endif
+        return false;
     }
-    #endif
 
-    mz_zip_reader_end(&zip_archive);
-
-    if (success && ctx.completedSize > 0) {
+    if (success && filesProcessed > 0) {
         unzipPercentage.store(100, std::memory_order_release);
         
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Extraction completed: " + std::to_string(file_indices.size()) + " files, " + 
-                  std::to_string(ctx.completedSize) + " bytes");
+        logMessage("Extraction completed: " + std::to_string(filesProcessed) + " files, " + 
+                  std::to_string(totalBytesProcessed) + " bytes");
         #endif
         
         return true;
