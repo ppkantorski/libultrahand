@@ -25,8 +25,8 @@ This location should reflect where you place the `libultrahand` directory (`lib`
 
 Otherwise developers should include the following `SOURCES` and `INCLUDES` lines.
 ```sh
-SOURCES  += lib/libultrahand/miniz lib/libultrahand/libultra/source
-INCLUDES += lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+SOURCES  += lib/libultrahand/libultra/source
+INCLUDES += lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 ```
 ##
 
