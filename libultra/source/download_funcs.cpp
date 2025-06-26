@@ -24,7 +24,7 @@
 namespace ult {
 
 size_t DOWNLOAD_BUFFER_SIZE = 65536;//4096*10;
-size_t UNZIP_BUFFER_SIZE = 131072*2;//4096*4;
+size_t UNZIP_BUFFER_SIZE = 65536;//131072*2;//4096*4;
 
 // Path to the CA certificate
 const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
@@ -474,7 +474,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     directoryPath.reserve(1024);
     
     // Single large buffer for extraction - reused for all files
-    const size_t bufferSize = std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
+    const size_t bufferSize = UNZIP_BUFFER_SIZE;//std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
     std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
     char filenameBuffer[512]; // Stack allocated for filename reading
     
