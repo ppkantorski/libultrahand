@@ -5454,7 +5454,7 @@ namespace tsl {
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    return wrapToTop(oldFocus);
+                    return handleJumpToTop(oldFocus);
                 }
                 
                 // Set boundary flag
@@ -5501,7 +5501,7 @@ namespace tsl {
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    return wrapToBottom(oldFocus);
+                    return handleJumpToBottom(oldFocus);
                 }
                 
                 // Set boundary flag
@@ -5768,56 +5768,58 @@ namespace tsl {
                 }
             }
             
-            Element* wrapToTop(Element* oldFocus) {
+            //Element* wrapToTop(Element* oldFocus) {
                 // Reset table scrolling when wrapping
-                isTableScrolling = false;
-                invalidate();
-
-                // Find first focusable item (including tables)
-                for (size_t i = 0; i < m_items.size(); ++i) {
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
-                    if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = i;
-                        m_nextOffset = 0.0f;
-                        return newFocus;
-                    }
-                }
-                
-                // No focusable items - just scroll to top
-                m_nextOffset = 0.0f;
-                
-                return oldFocus;
-            }
+                //isTableScrolling = false;
+                //invalidate();
+                //
+                //// Find first focusable item (including tables)
+                //for (size_t i = 0; i < m_items.size(); ++i) {
+                //    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
+                //    if (newFocus && newFocus != oldFocus) {
+                //        m_focusedIndex = i;
+                //        m_nextOffset = 0.0f;
+                //        return newFocus;
+                //    }
+                //}
+                //
+                //// No focusable items - just scroll to top
+                //m_nextOffset = 0.0f;
+                //
+                //return oldFocus;
+                //return handleJumpToTop(oldFocus);
+            //}
             
-            Element* wrapToBottom(Element* oldFocus) {
+            //Element* wrapToBottom(Element* oldFocus) {
                 // Reset table scrolling when wrapping
-                isTableScrolling = false;
-                
-                invalidate();
-                
-                // Calculate max offset once (this is a good optimization to keep)
-                const float maxOffset = (m_listHeight > getHeight()) ? 
-                                        static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                
-                // Find last focusable item (including tables)
-                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
-                    if (newFocus && newFocus != oldFocus) {
-                        m_focusedIndex = static_cast<size_t>(i);
-                        if (m_listHeight > getHeight()) {
-                            m_nextOffset = maxOffset;
-                        }
-                        return newFocus;
-                    }
-                }
-                
-                // No focusable items - just scroll to bottom
-                if (m_listHeight > getHeight()) {
-                    m_nextOffset = maxOffset;
-                    //invalidate();
-                }
-                return oldFocus;
-            }
+                //isTableScrolling = false;
+                //
+                //invalidate();
+                //
+                //// Calculate max offset once (this is a good optimization to keep)
+                //const float maxOffset = (m_listHeight > getHeight()) ? 
+                //                        static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+                //
+                //// Find last focusable item (including tables)
+                //for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                //    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
+                //    if (newFocus && newFocus != oldFocus) {
+                //        m_focusedIndex = static_cast<size_t>(i);
+                //        if (m_listHeight > getHeight()) {
+                //            m_nextOffset = maxOffset;
+                //        }
+                //        invalidate();
+                //        return newFocus;
+                //    }
+                //}
+                //
+                //// No focusable items - just scroll to bottom
+                //if (m_listHeight > getHeight()) {
+                //    m_nextOffset = maxOffset;
+                //    //invalidate();
+                //}
+                //invalidate();
+            //
             
             // Add these methods to handle jumps with smooth scrolling
             Element* handleJumpToBottom(Element* oldFocus) {
