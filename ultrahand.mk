@@ -20,11 +20,8 @@ endif
 
 # Now add folder paths relative to TOPDIR (or absolute if fallback)
 SOURCES += \
-  $(ULTRA_DIR)/miniz \
   $(ULTRA_DIR)/libultra/source
 
 INCLUDES += \
-  $(ULTRA_DIR) \
-  $(ULTRA_DIR)/miniz \
   $(ULTRA_DIR)/libultra/include \
   $(ULTRA_DIR)/libtesla/include
