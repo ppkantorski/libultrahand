@@ -43,8 +43,11 @@
 
 namespace ult {
     // Constants for buffer sizes
-    extern size_t DOWNLOAD_BUFFER_SIZE;
-    extern size_t UNZIP_BUFFER_SIZE;
+
+    extern size_t DOWNLOAD_READ_BUFFER;
+    extern size_t DOWNLOAD_WRITE_BUFFER;
+    extern size_t UNZIP_READ_BUFFER;
+    extern size_t UNZIP_WRITE_BUFFER;
     
     // Path to the CA certificate
     extern const std::string cacertPath;
