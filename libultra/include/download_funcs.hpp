@@ -19,24 +19,21 @@
 #ifndef DOWNLOAD_FUNCS_HPP
 #define DOWNLOAD_FUNCS_HPP
 
-#if NO_FSTREAM_DIRECTIVE
 #include <stdio.h>
 #include <sys/stat.h>
-#else
-#include <fstream>
-#endif
-
 #include <switch.h>
+
 #define CURL_DISABLE_DEFLATE
 #include <curl/curl.h>
 #include <zlib.h>
 #include <minizip/unzip.h>
+
 #include <atomic>
 #include <memory>
 #include <string>
 #include <mutex>
-#include <cstring>  // Added for memset
-#include <algorithm>  // Added for std::min
+#include <cstring>
+#include <algorithm>
 
 #include "global_vars.hpp"
 #include "string_funcs.hpp"
@@ -67,23 +64,16 @@ namespace ult {
         void operator()(CURL* curl) const;
     };
     
-    // Note: MzZipReaderDeleter is no longer needed with miniz
-    // as it uses stack-allocated structs and mz_zip_reader_end()
-    
-    // Thread-safe callback functions
-    #if NO_FSTREAM_DIRECTIVE
-    size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
-    #else
-    size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
-    #endif
-    
-    extern "C" int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
+    // Optimized callback functions
+    size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata);
+    int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, 
+                        curl_off_t totalToUpload, curl_off_t nowUploaded);
     
     // Thread-safe initialization and cleanup functions
     void initializeCurl();
     void cleanupCurl();
     
-    // Main API functions - thread-safe and memory leak resistant
+    // Main API functions - thread-safe and optimized
     bool downloadFile(const std::string& url, const std::string& toDestination);
     bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
 }
