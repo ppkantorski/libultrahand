@@ -32,7 +32,7 @@ INCLUDES += lib/libultrahand lib/libultrahand/miniz lib/libultrahand/libultra/in
 
 Including the following libraries are also essential for compilation.
 ```sh
-LIBS := -lcurl -lz -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+LIBS := -lcurl -lz -lminizip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
 ```
 
 ### Active Services
