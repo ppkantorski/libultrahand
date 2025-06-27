@@ -50,8 +50,8 @@ namespace ult {
     extern size_t UNZIP_WRITE_BUFFER;
     
     // Path to the CA certificate
-    extern const std::string cacertPath;
-    extern const std::string cacertURL;
+    extern const char cacertPath[];
+    //extern const std::string cacertURL;
     
     // Thread-safe atomic flags for operation control
     extern std::atomic<bool> abortDownload;
