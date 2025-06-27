@@ -28,8 +28,8 @@ size_t UNZIP_READ_BUFFER = 64 * 1024;//131072*2;//4096*4;
 size_t UNZIP_WRITE_BUFFER = 64 * 1024;//131072*2;//4096*4;
 
 // Path to the CA certificate
-const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
-const std::string cacertURL = "https://curl.se/ca/cacert.pem";
+constexpr char cacertPath[] = "sdmc:/config/ultrahand/cacert.pem";
+//const std::string cacertURL = "https://curl.se/ca/cacert.pem";
 
 // Shared atomic flag to indicate whether to abort the download operation
 std::atomic<bool> abortDownload(false);
@@ -297,11 +297,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     static bool cacertChecked = false;
     static bool cacertExists = false;
     if (!cacertChecked) {
-        cacertExists = isFileOrDirectory(cacertPath);
+        cacertExists = isFileOrDirectory(std::string(cacertPath));
         cacertChecked = true;
     }
     if (cacertExists) {
-        curl_easy_setopt(curlPtr, CURLOPT_CAINFO, cacertPath.c_str());
+        curl_easy_setopt(curlPtr, CURLOPT_CAINFO, cacertPath);
     }
 
     #if USING_LOGGING_DIRECTIVE
@@ -614,7 +614,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             continue;
         }
         // Set larger buffer
-        outputFile.rdbuf()->pubsetbuf(nullptr, UNZIP_BUFFER_SIZE);
+        outputFile.rdbuf()->pubsetbuf(nullptr, UNZIP_WRITE_BUFFER);
         #endif
 
         // Extract file data in chunks
