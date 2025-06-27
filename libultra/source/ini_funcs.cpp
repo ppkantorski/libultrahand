@@ -46,16 +46,16 @@ namespace ult {
         while (fgets(buffer, sizeof(buffer), file)) {
             line = std::string(buffer);
     #else
-            std::ifstream file(filePath);
-            if (!file) {
-                return packageHeader; // Return default-constructed PackageHeader if file opening fails
-            }
-            
-            std::string line;
-            
+        std::ifstream file(filePath);
+        if (!file) {
+            return packageHeader; // Return default-constructed PackageHeader if file opening fails
+        }
+        
+        std::string line;
+        
 
-            std::map<std::string, std::string*> fieldMap;
-            while (getline(file, line)) {
+        std::map<std::string, std::string*> fieldMap;
+        while (getline(file, line)) {
     #endif
     
             // Map to store references to the fields of the structure
@@ -217,10 +217,11 @@ namespace ult {
         
         // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
-    
+        
+        size_t len;
         while (fgets(buffer, sizeof(buffer), file)) {
             // More efficient newline removal
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len-1] == '\n') {
                 buffer[len-1] = '\0';
                 if (len > 1 && buffer[len-2] == '\r') {
@@ -444,6 +445,7 @@ namespace ult {
     }
     
     
+    
     /**
      * @brief Parses sections from an INI file and returns them as a list of strings.
      *
@@ -458,43 +460,66 @@ namespace ult {
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
-            // logMessage("Failed to open the file: " + filePath);
-            return sections;  // Early return if the file cannot be opened
+            return sections;
         }
     
         char buffer[1024];
         std::string line;
-    
+        line.reserve(1024); // Add reservation for efficiency
+        
+        size_t len;
+        std::string sectionName;
         while (fgets(buffer, sizeof(buffer), file)) {
-            line = std::string(buffer);
-    #else
-        std::ifstream file(filePath);
-        if (!file) {
-            // logMessage("Failed to open the file: " + filePath);
-            return sections;  // Early return if the file cannot be opened
-        }
-    
-        std::string line;
-    
-        while (std::getline(file, line)) {
-    #endif
-    
+            // CRITICAL FIX: Remove newlines from fgets
+            len = strlen(buffer);
+            if (len > 0 && buffer[len-1] == '\n') {
+                buffer[len-1] = '\0';
+                if (len > 1 && buffer[len-2] == '\r') {
+                    buffer[len-2] = '\0';
+                }
+            }
+            
+            line.assign(buffer); // More efficient than string constructor
             trim(line);
             
             // Check if the line contains a section header
             if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                std::string sectionName = line.substr(1, line.size() - 2);
-                sections.push_back(sectionName);
+                sectionName.assign(line, 1, line.size() - 2); // More efficient
+                sections.push_back(std::move(sectionName)); // Move for efficiency
             }
         }
     
-    #if NO_FSTREAM_DIRECTIVE
         fclose(file);
+    #else
+        std::ifstream file(filePath);
+        if (!file) {
+            return sections;
+        }
+    
+        std::string line;
+        line.reserve(1024); // Add reservation for efficiency
+    
+        while (std::getline(file, line)) {
+            // Remove carriage return if present
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            
+            trim(line);
+            
+            // Check if the line contains a section header
+            if (!line.empty() && line.front() == '[' && line.back() == ']') {
+                std::string sectionName;
+                sectionName.assign(line, 1, line.size() - 2);
+                sections.push_back(std::move(sectionName));
+            }
+        }
+        
+        file.close(); // Add explicit close
     #endif
     
         return sections;
     }
-
     
     
     
@@ -508,29 +533,29 @@ namespace ult {
      */
     std::string parseValueFromIniSection(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
         std::string value;
-        value.reserve(256); // Reserve for typical value length
+        value.reserve(256);
     
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
-            // logMessage("Failed to open the file: " + filePath);
-            return value;  // Return empty if the file cannot be opened
+            return value;
         }
     
         char buffer[1024];
         std::string line, currentSection;
-        line.reserve(1024); // Reserve to match buffer size
-        currentSection.reserve(64); // Reserve for section names
+        line.reserve(1024);
+        currentSection.reserve(64);
         
         std::string currentKey;
-        currentKey.reserve(128); // Reserve for key names
+        currentKey.reserve(128);
         
         size_t delimiterPos;
         bool inTargetSection = false;
-    
+        bool wasInTargetSection = false; // Track if we've been in the target section
+        
+        size_t len;
         while (fgets(buffer, sizeof(buffer), file)) {
-            // More efficient newline removal
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len-1] == '\n') {
                 buffer[len-1] = '\0';
                 if (len > 1 && buffer[len-2] == '\r') {
@@ -538,28 +563,32 @@ namespace ult {
                 }
             }
             
-            line.assign(buffer); // More efficient than string constructor
+            line.assign(buffer);
             trim(line);
             
             if (line.empty()) continue;
             
             if (line[0] == '[' && line.back() == ']') {
-                currentSection.assign(line, 1, line.size() - 2); // More efficient than substr
+                currentSection.assign(line, 1, line.size() - 2);
                 inTargetSection = (currentSection == sectionName);
                 
-                // Early exit: if we were in target section and hit a new section, we're done
-                if (!inTargetSection && !value.empty()) {
-                    break; // Found target section and processed it, key not found
+                // Early exit: if we WERE in target section and now we're not, key wasn't found
+                if (wasInTargetSection && !inTargetSection) {
+                    break; // Left target section without finding key
+                }
+                
+                if (inTargetSection) {
+                    wasInTargetSection = true;
                 }
             } else if (inTargetSection) {
                 delimiterPos = line.find('=');
                 if (delimiterPos != std::string::npos) {
-                    currentKey.assign(line, 0, delimiterPos); // More efficient than substr
+                    currentKey.assign(line, 0, delimiterPos);
                     trim(currentKey);
                     if (currentKey == keyName) {
-                        value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
+                        value.assign(line, delimiterPos + 1, std::string::npos);
                         trim(value);
-                        break;  // Found the key, exit the loop
+                        break;  // Found the key, exit
                     }
                 }
             }
@@ -569,22 +598,21 @@ namespace ult {
     #else
         std::ifstream file(filePath);
         if (!file) {
-            // logMessage("Failed to open the file: " + filePath);
-            return value;  // Return empty if the file cannot be opened
+            return value;
         }
         
         std::string line, currentSection;
-        line.reserve(1024); // Reserve for typical line length
-        currentSection.reserve(64); // Reserve for section names
+        line.reserve(1024);
+        currentSection.reserve(64);
         
         std::string currentKey;
-        currentKey.reserve(128); // Reserve for key names
+        currentKey.reserve(128);
         
         size_t delimiterPos;
         bool inTargetSection = false;
+        bool wasInTargetSection = false; // Track if we've been in the target section
     
         while (std::getline(file, line)) {
-            // Remove carriage return if present (getline already removes \n)
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
@@ -594,22 +622,26 @@ namespace ult {
             if (line.empty()) continue;
             
             if (line[0] == '[' && line.back() == ']') {
-                currentSection.assign(line, 1, line.size() - 2); // More efficient than substr
+                currentSection.assign(line, 1, line.size() - 2);
                 inTargetSection = (currentSection == sectionName);
                 
-                // Early exit: if we were in target section and hit a new section, we're done
-                if (!inTargetSection && !value.empty()) {
-                    break; // Found target section and processed it, key not found
+                // Early exit: if we WERE in target section and now we're not, key wasn't found
+                if (wasInTargetSection && !inTargetSection) {
+                    break; // Left target section without finding key
+                }
+                
+                if (inTargetSection) {
+                    wasInTargetSection = true;
                 }
             } else if (inTargetSection) {
                 delimiterPos = line.find('=');
                 if (delimiterPos != std::string::npos) {
-                    currentKey.assign(line, 0, delimiterPos); // More efficient than substr
+                    currentKey.assign(line, 0, delimiterPos);
                     trim(currentKey);
                     if (currentKey == keyName) {
-                        value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
+                        value.assign(line, delimiterPos + 1, std::string::npos);
                         trim(value);
-                        break;  // Found the key, exit the loop
+                        break;  // Found the key, exit
                     }
                 }
             }
@@ -620,8 +652,7 @@ namespace ult {
     
         return value;
     }
-
-    
+        
     /**
      * @brief Cleans the formatting of an INI file by removing empty lines and standardizing section formatting.
      *
@@ -652,14 +683,18 @@ namespace ult {
             return;
         }
     
+        // Declare all variables outside the loop
         char line[1024];
-        bool isNewSection = false;
         std::string lineStr;
-        lineStr.reserve(1024); // Reserve to match buffer size
+        lineStr.reserve(1024);
+        
+        bool isNewSection = false;
+        bool isSection = false;
+        size_t len = 0;
         
         while (fgets(line, sizeof(line), inputFile)) {
-            // More efficient newline removal
-            size_t len = strlen(line);
+            // Efficient newline removal
+            len = strlen(line);
             if (len > 0 && line[len-1] == '\n') {
                 line[len-1] = '\0';
                 if (len > 1 && line[len-2] == '\r') {
@@ -667,20 +702,20 @@ namespace ult {
                 }
             }
             
-            lineStr.assign(line); // More efficient than assignment
-            trim(lineStr); // Pass the std::string to the trim function
+            lineStr.assign(line);
+            trim(lineStr);
     
             if (!lineStr.empty()) {
-                bool isSection = (lineStr[0] == '[' && lineStr.back() == ']');
+                isSection = (lineStr[0] == '[' && lineStr.back() == ']');
                 
                 if (isSection) {
                     if (isNewSection) {
-                        fputc('\n', outputFile); // More efficient than fprintf for single character
+                        fputc('\n', outputFile);
                     }
                     isNewSection = true;
                 }
                 
-                fputs(lineStr.c_str(), outputFile); // More efficient than fprintf for strings
+                fputs(lineStr.c_str(), outputFile);
                 fputc('\n', outputFile);
             }
         }
@@ -704,20 +739,23 @@ namespace ult {
             return;
         }
     
+        // Declare all variables outside the loop
         std::string line;
-        line.reserve(1024); // Reserve for typical line length
+        line.reserve(1024);
+        
         bool isNewSection = false;
+        bool isSection = false;
     
         while (std::getline(inputFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
+            // Remove carriage return if present
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
             
-            trim(line); // Pass the lvalue std::string to the trim function
+            trim(line);
             
             if (!line.empty()) {
-                bool isSection = (line[0] == '[' && line.back() == ']');
+                isSection = (line[0] == '[' && line.back() == ']');
                 
                 if (isSection) {
                     if (isNewSection) {
@@ -734,10 +772,22 @@ namespace ult {
         outputFile.close();
     #endif
     
-        std::remove(filePath.c_str());
-        std::rename(tempPath.c_str(), filePath.c_str());
-    }
+        // Replace the original file with the temp file with error checking
+        if (std::remove(filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to delete the original file: " + filePath);
+            #endif
+            // Clean up temp file on error
+            std::remove(tempPath.c_str());
+            return;
+        }
     
+        if (std::rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to rename the temporary file: " + tempPath);
+            #endif
+        }
+    }
 
     
     
@@ -978,7 +1028,7 @@ namespace ult {
     }
     
     
-    
+        
     /**
      * @brief Adds a new section to an INI file.
      *
@@ -990,11 +1040,18 @@ namespace ult {
      */
     void addIniSection(const std::string& filePath, const std::string& sectionName) {
     #if NO_FSTREAM_DIRECTIVE
-        // Use C-style file handling if NO_FSTREAM_DIRECTIVE is defined
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
+            // Create new file with just the section if file doesn't exist
+            FILE* newFile = fopen(filePath.c_str(), "w");
+            if (newFile) {
+                fprintf(newFile, "[%s]\n", sectionName.c_str());
+                fclose(newFile);
+            }
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Failed to open INI file for reading.");
+            else {
+                logMessage("Error: Failed to create new INI file.");
+            }
             #endif
             return;
         }
@@ -1009,40 +1066,64 @@ namespace ult {
             return;
         }
     
+        // Declare all variables outside the loop
         char line[1024];
+        char tempLine[1024];
+        const std::string fullSectionName = "[" + sectionName + "]";
         bool sectionExists = false;
-        const std::string fullSectionName = "[" + sectionName + "]";  // const for compiler optimization
+        size_t len = 0;
     
+        // First pass: check if section exists and copy all content
         while (fgets(line, sizeof(line), inputFile)) {
-            line[strcspn(line, "\n\r")] = 0; // Remove newline/carriage return
-            if (fullSectionName == line) {
-                sectionExists = true;
-                break;  // Section already exists, no need to continue
+            // Check for section (but don't modify the line)
+            len = strlen(line);
+            if (len > 0) {
+                // Create a temporary copy for comparison
+                strcpy(tempLine, line);
+                // Remove all newline characters for comparison
+                tempLine[strcspn(tempLine, "\n\r")] = '\0';
+                
+                if (fullSectionName == tempLine) {
+                    sectionExists = true;
+                }
             }
+            
+            // Always write the line as-is
             fputs(line, tempFile);
-            fputc('\n', tempFile);
         }
     
-        // If the section does not exist, add it
+        // If the section does not exist, add it at the end
         if (!sectionExists) {
-            fputs(fullSectionName.c_str(), tempFile);
-            fputc('\n', tempFile);
-        }
-    
-        // Continue copying the rest of the file
-        while (fgets(line, sizeof(line), inputFile)) {
-            fputs(line, tempFile);  // fgets preserves newlines, so just write as-is
+            // Check if we need a newline before the new section
+            if (ftell(tempFile) > 0) {
+                fseek(tempFile, -1, SEEK_END);
+                char lastChar;
+                if (fread(&lastChar, 1, 1, tempFile) == 1 && lastChar != '\n') {
+                    fseek(tempFile, 0, SEEK_END);
+                    fputc('\n', tempFile);
+                } else {
+                    fseek(tempFile, 0, SEEK_END);
+                }
+            }
+            
+            fprintf(tempFile, "%s\n", fullSectionName.c_str());
         }
     
         fclose(inputFile);
         fclose(tempFile);
     
     #else
-        // Use C++ streams if NO_FSTREAM_DIRECTIVE is not defined
         std::ifstream inputFile(filePath);
         if (!inputFile) {
+            // Create new file with just the section if file doesn't exist
+            std::ofstream newFile(filePath);
+            if (newFile) {
+                newFile << "[" << sectionName << "]\n";
+            }
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Failed to open INI file for reading.");
+            else {
+                logMessage("Error: Failed to create new INI file.");
+            }
             #endif
             return;
         }
@@ -1056,15 +1137,28 @@ namespace ult {
             return;
         }
     
+        // Declare variables outside the loop
         std::string line;
-        const std::string fullSectionName = "[" + sectionName + "]";  // const for compiler optimization
+        line.reserve(1024);
+        std::string trimmedLine;
+        trimmedLine.reserve(1024);
+        
+        const std::string fullSectionName = "[" + sectionName + "]";
         bool sectionExists = false;
     
+        // Read entire file and check for section
         while (std::getline(inputFile, line)) {
-            if (line == fullSectionName) {
-                sectionExists = true;
-                break;  // Section already exists, no need to continue
+            // Create trimmed copy for comparison
+            trimmedLine = line;
+            // Remove carriage return if present
+            if (!trimmedLine.empty() && trimmedLine.back() == '\r') {
+                trimmedLine.pop_back();
             }
+            
+            if (trimmedLine == fullSectionName) {
+                sectionExists = true;
+            }
+            
             tempFile << line << '\n';
         }
     
@@ -1073,24 +1167,23 @@ namespace ult {
             tempFile << fullSectionName << '\n';
         }
     
-        // Continue copying the rest of the file
-        while (std::getline(inputFile, line)) {
-            tempFile << line << '\n';
-        }
-    
+        inputFile.close();
+        tempFile.close();
     #endif
     
         // Replace the original file with the temp file
         if (std::remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file.");
+            logMessage("Failed to delete the original file: " + filePath);
             #endif
+            // Clean up temp file on error
+            std::remove(tempPath.c_str());
             return;
         }
     
         if (std::rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file.");
+            logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }
@@ -1213,7 +1306,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         std::string tempPath = filePath + ".tmp";
@@ -1223,25 +1316,39 @@ namespace ult {
             logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             fclose(configFile);
-            return; // Handle the error accordingly
+            return;
         }
     
         char line[1024];
         std::string currentSection;
         bool inSectionToRemove = false;
-
+        //bool firstLine = true;
+        
         std::string lineStr;
         while (fgets(line, sizeof(line), configFile)) {
             lineStr = line;
-            trim(lineStr); // Modify lineStr directly
-            if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
+            
+            // Remove trailing newline if present
+            if (!lineStr.empty() && lineStr.back() == '\n') {
+                lineStr.pop_back();
+            }
+            if (!lineStr.empty() && lineStr.back() == '\r') {
+                lineStr.pop_back();
+            }
+            
+            trim(lineStr); // Remove leading/trailing spaces
+            
+            // Check if this is a section header
+            if (!lineStr.empty() && lineStr.front() == '[' && lineStr.back() == ']') {
                 currentSection = lineStr.substr(1, lineStr.length() - 2);
                 inSectionToRemove = (currentSection == sectionName);
                 if (!inSectionToRemove) {
-                    fprintf(tempFile, "%s\n", lineStr.c_str());
+                    // Preserve original line format
+                    fprintf(tempFile, "%s", line);
                 }
             } else if (!inSectionToRemove) {
-                fprintf(tempFile, "%s\n", lineStr.c_str());
+                // Write the line as-is to preserve formatting
+                fprintf(tempFile, "%s", line);
             }
         }
     
@@ -1253,7 +1360,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         std::string tempPath = filePath + ".tmp";
@@ -1262,16 +1369,19 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         std::string line, currentSection;
         bool inSectionToRemove = false;
-    
+        
+        std::string trimmedLine;
         while (getline(configFile, line)) {
-            trim(line); // Assuming line is modified in place
-            if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                currentSection = line.substr(1, line.length() - 2);
+            trimmedLine = line;
+            trim(trimmedLine);
+            
+            if (!trimmedLine.empty() && trimmedLine.front() == '[' && trimmedLine.back() == ']') {
+                currentSection = trimmedLine.substr(1, trimmedLine.length() - 2);
                 inSectionToRemove = (currentSection == sectionName);
                 if (!inSectionToRemove) {
                     tempFile << line << '\n';
@@ -1290,20 +1400,19 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
-            // Handle the error accordingly
         }
     }
     
-    
-    
-    // Removes a key-value pair from an INI file accordingly.
+    /**
+     * @brief Removes a key-value pair from an INI file.
+     */
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
     #if NO_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
@@ -1311,7 +1420,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         std::string tempPath = filePath + ".tmp";
@@ -1321,27 +1430,56 @@ namespace ult {
             logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             fclose(configFile);
-            return; // Handle the error accordingly
+            return;
         }
     
+        // Declare all variables outside the loop for efficiency
         char line[1024];
         std::string currentSection;
-        bool inTargetSection = false;
-
+        currentSection.reserve(64);
+        
         std::string lineStr;
+        lineStr.reserve(1024);
+        
+        std::string trimmedLine;
+        trimmedLine.reserve(1024);
+        
+        std::string lineKey;
+        lineKey.reserve(128);
+        
+        bool inTargetSection = false;
+        size_t eqPos;
+        
         while (fgets(line, sizeof(line), configFile)) {
-            lineStr = line;
-            trim(lineStr); // Trim the line
+            lineStr.assign(line);
+            
+            // Create a trimmed copy for parsing
+            trimmedLine = lineStr;
+            if (!trimmedLine.empty() && trimmedLine.back() == '\n') {
+                trimmedLine.pop_back();
+                if (!trimmedLine.empty() && trimmedLine.back() == '\r') {
+                    trimmedLine.pop_back();
+                }
+            }
+            trim(trimmedLine);
     
-            if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
-                currentSection = lineStr.substr(1, lineStr.length() - 2);
+            if (!trimmedLine.empty() && trimmedLine.front() == '[' && trimmedLine.back() == ']') {
+                currentSection.assign(trimmedLine, 1, trimmedLine.length() - 2);
                 inTargetSection = (currentSection == sectionName);
-                fprintf(tempFile, "%s\n", lineStr.c_str()); // Always write section headers
-            } else if (inTargetSection && lineStr.find(keyName + "=") == 0) {
-                // If we're in the target section and the line starts with the key, skip it
-                continue;
+                fprintf(tempFile, "%s", line); // Write original line
+            } else if (inTargetSection) {
+                // Check if line starts with the key (handle spaces around =)
+                eqPos = trimmedLine.find('=');
+                if (eqPos != std::string::npos) {
+                    lineKey.assign(trimmedLine, 0, eqPos);
+                    trim(lineKey);
+                    if (lineKey == keyName) {
+                        continue; // Skip this line
+                    }
+                }
+                fprintf(tempFile, "%s", line);
             } else {
-                fprintf(tempFile, "%s\n", lineStr.c_str());
+                fprintf(tempFile, "%s", line);
             }
         }
     
@@ -1353,7 +1491,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to open the input file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         std::string tempPath = filePath + ".tmp";
@@ -1362,22 +1500,48 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to create the temporary file: " + tempPath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
-        std::string line, currentSection;
+        // Declare all variables outside the loop for efficiency
+        std::string line;
+        line.reserve(1024);
+        
+        std::string currentSection;
+        currentSection.reserve(64);
+        
+        std::string trimmedLine;
+        trimmedLine.reserve(1024);
+        
+        std::string lineKey;
+        lineKey.reserve(128);
+        
         bool inTargetSection = false;
+        size_t eqPos;
     
         while (getline(configFile, line)) {
-            trim(line); // Trim the line
+            trimmedLine = line;
+            // Remove carriage return if present
+            if (!trimmedLine.empty() && trimmedLine.back() == '\r') {
+                trimmedLine.pop_back();
+            }
+            trim(trimmedLine);
     
-            if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                currentSection = line.substr(1, line.length() - 2);
+            if (!trimmedLine.empty() && trimmedLine.front() == '[' && trimmedLine.back() == ']') {
+                currentSection.assign(trimmedLine, 1, trimmedLine.length() - 2);
                 inTargetSection = (currentSection == sectionName);
-                tempFile << line << '\n'; // Always write section headers
-            } else if (inTargetSection && line.find(keyName + "=") == 0) {
-                // If we're in the target section and the line starts with the key, skip it
-                continue;
+                tempFile << line << '\n';
+            } else if (inTargetSection) {
+                // Better key matching that handles spaces
+                eqPos = trimmedLine.find('=');
+                if (eqPos != std::string::npos) {
+                    lineKey.assign(trimmedLine, 0, eqPos);
+                    trim(lineKey);
+                    if (lineKey == keyName) {
+                        continue; // Skip this line
+                    }
+                }
+                tempFile << line << '\n';
             } else {
                 tempFile << line << '\n';
             }
@@ -1392,18 +1556,15 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to delete the original file: " + filePath);
             #endif
-            return; // Handle the error accordingly
+            return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
-            // Handle the error accordingly
         }
     }
-
-    
     
     //void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
     //    std::ofstream file(filePath);
@@ -1601,11 +1762,12 @@ namespace ult {
         std::string strLine;
         strLine.reserve(1024); // Reserve to match buffer size
         
+        size_t end;
         while (fgets(line, sizeof(line), packageFile)) {
             strLine.assign(line); // More efficient than assignment
             
             // Find and remove only the trailing newline/carriage return
-            size_t end = strLine.find_last_not_of("\r\n");
+            end = strLine.find_last_not_of("\r\n");
             if (end != std::string::npos) {
                 strLine.resize(end + 1);
             } else {
