@@ -18,10 +18,29 @@ ifeq ($(ULTRA_DIR),$(ULTRA_ABS))
   ULTRA_DIR := $(ULTRA_ABS)
 endif
 
+
 # Now add folder paths relative to TOPDIR (or absolute if fallback)
 SOURCES += \
+  $(ULTRA_DIR)/external/cJSON \
   $(ULTRA_DIR)/libultra/source
 
 INCLUDES += \
+  $(ULTRA_DIR)/external/cJSON \
   $(ULTRA_DIR)/libultra/include \
   $(ULTRA_DIR)/libtesla/include
+
+# Disable other cJSON headers
+ifneq (,$(wildcard $(ULTRA_DIR)/external/cJSON/*.h))
+  $(foreach file,$(wildcard $(ULTRA_DIR)/external/cJSON/*.h), \
+    $(eval base := $(notdir $(file))) \
+    $(if $(filter $(base),cJSON.h),, \
+      $(shell mv -f $(file) $(file).disabled)) \
+  )
+endif
+ifneq (,$(wildcard $(ULTRA_DIR)/external/cJSON/*.c))
+  $(foreach file,$(wildcard $(ULTRA_DIR)/external/cJSON/*.c), \
+    $(eval base := $(notdir $(file))) \
+    $(if $(filter $(base),cJSON.c),, \
+      $(shell mv -f $(file) $(file).disabled)) \
+  )
+endif
