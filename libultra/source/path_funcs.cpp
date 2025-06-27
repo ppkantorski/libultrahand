@@ -491,14 +491,16 @@ namespace ult {
             #endif
         }
     }
-    
-    void moveFile(const std::string& sourcePath, const std::string& destinationPath,
-                  const std::string& logSource, const std::string& logDestination) {
+        
+    bool moveFile(const std::string& sourcePath,
+                  const std::string& destinationPath,
+                  const std::string& logSource,
+                  const std::string& logDestination) {
         if (!isFileOrDirectory(sourcePath)) {
-            #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
             logMessage("Source file doesn't exist or is not a regular file: " + sourcePath);
-            #endif
-            return;
+        #endif
+            return false;
         }
     
     #if NO_FSTREAM_DIRECTIVE
@@ -512,9 +514,9 @@ namespace ult {
             if (logSourceFile) {
                 logSourceGuard.reset(new FileGuard(logSourceFile));
             } else {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to open source log file: " + logSource);
-                #endif
+        #endif
             }
         }
     
@@ -524,9 +526,9 @@ namespace ult {
             if (logDestinationFile) {
                 logDestGuard.reset(new FileGuard(logDestinationFile));
             } else {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to open destination log file: " + logDestination);
-                #endif
+        #endif
             }
         }
     #else
@@ -536,9 +538,9 @@ namespace ult {
             createDirectory(getParentDirFromPath(logSource));
             logSourceFile.open(logSource, std::ios::app);
             if (!logSourceFile.is_open()) {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to open source log file: " + logSource);
-                #endif
+        #endif
             }
         }
     
@@ -546,9 +548,9 @@ namespace ult {
             createDirectory(getParentDirFromPath(logDestination));
             logDestinationFile.open(logDestination, std::ios::app);
             if (!logDestinationFile.is_open()) {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to open destination log file: " + logDestination);
-                #endif
+        #endif
             }
         }
     #endif
@@ -560,37 +562,44 @@ namespace ult {
             std::string destFile = destinationPath + getFileName(sourcePath);
             remove(destFile.c_str());
             if (rename(sourcePath.c_str(), destFile.c_str()) != 0) {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to move file to directory: " + sourcePath);
-                #endif
+        #endif
+                return false;
             } else {
-    #if NO_FSTREAM_DIRECTIVE
+        #if NO_FSTREAM_DIRECTIVE
                 if (logSourceFile) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile) writeLog(logDestinationFile, destFile);
-    #else
+        #else
                 if (logSourceFile.is_open()) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile.is_open()) writeLog(logDestinationFile, destFile);
-    #endif
+        #endif
+                return true;
             }
         } else {
             // Destination is a file path, directly rename the file
             remove(destinationPath.c_str());
             createDirectory(getParentDirFromPath(destinationPath));
             if (rename(sourcePath.c_str(), destinationPath.c_str()) != 0) {
-                #if USING_LOGGING_DIRECTIVE
+        #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to move file: " + sourcePath + " -> " + destinationPath);
                 logMessage("Error: " + std::string(strerror(errno)));
-                #endif
+        #endif
+                return false;
             } else {
-    #if NO_FSTREAM_DIRECTIVE
+        #if NO_FSTREAM_DIRECTIVE
                 if (logSourceFile) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile) writeLog(logDestinationFile, destinationPath);
-    #else
+        #else
                 if (logSourceFile.is_open()) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile.is_open()) writeLog(logDestinationFile, destinationPath);
-    #endif
+        #endif
+                return true;
             }
         }
+    
+        // If we reach here, something unexpected happened
+        return false;
     }
     
     /**
