@@ -397,7 +397,7 @@ namespace ult {
 
     extern std::string GAP_1;
     extern std::string GAP_2;
-    
+    extern float halfGap;
 
     extern std::string EMPTY;
     
