@@ -461,6 +461,7 @@ namespace ult {
 
     std::string GAP_1 = "     ";
     std::string GAP_2 = "  ";
+    float halfGap = 0.0;
     
 
     std::string EMPTY = "Empty";
