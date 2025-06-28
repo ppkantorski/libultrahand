@@ -50,8 +50,8 @@ namespace ult {
     extern size_t UNZIP_WRITE_BUFFER;
     
     // Path to the CA certificate
-    extern const char cacertPath[];
-    //extern const std::string cacertURL;
+    extern const std::string cacertPath;
+    extern const std::string cacertURL;
     
     // Thread-safe atomic flags for operation control
     extern std::atomic<bool> abortDownload;
@@ -60,17 +60,22 @@ namespace ult {
     extern std::atomic<int> unzipPercentage;
     
     // User agent string for curl requests
-    extern const char userAgent[];
+    extern const std::string userAgent;
     
     // Custom deleters for CURL handles
     struct CurlDeleter {
         void operator()(CURL* curl) const;
     };
     
-    // Optimized callback functions
-    size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata);
-    int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, 
-                        curl_off_t totalToUpload, curl_off_t nowUploaded);
+    // Thread-safe callback functions
+    #if NO_FSTREAM_DIRECTIVE
+    size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
+    #else
+    size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
+    #endif
+    
+    extern "C" int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
+    
     
     // Thread-safe initialization and cleanup functions
     void initializeCurl();
