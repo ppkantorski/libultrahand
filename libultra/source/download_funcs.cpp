@@ -172,12 +172,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
 
     // ADD THIS: Set up write buffer for better performance
-    std::unique_ptr<char[]> writeBuffer;
-    if (DOWNLOAD_WRITE_BUFFER > 0) {
-        writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
-        // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
-        setvbuf(file, writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
-    }
+    //std::unique_ptr<char[]> writeBuffer;
+    //if (DOWNLOAD_WRITE_BUFFER > 0) {
+    //    writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
+    //    // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
+    //    setvbuf(file, writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
+    //}
 #endif
 
     // Ensure curl is initialized
