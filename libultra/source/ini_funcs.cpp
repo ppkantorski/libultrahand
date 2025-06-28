@@ -112,7 +112,7 @@ namespace ult {
         
         if (str.empty()) return out;
         
-        out.reserve(std::count(str.begin(), str.end(), delim) + 1);
+        //out.reserve(std::count(str.begin(), str.end(), delim) + 1);
         
         const char* data = str.data();
         const char* end = data + str.size();
@@ -205,15 +205,15 @@ namespace ult {
         
         char buffer[1024];
         std::string line;
-        line.reserve(1024); // Reserve to match buffer size
+        //line.reserve(1024); // Reserve to match buffer size
         
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         size_t delimiterPos;
         std::string key, value;
-        key.reserve(128); // Reserve for key names
-        value.reserve(256); // Reserve for values
+        //key.reserve(128); // Reserve for key names
+        //value.reserve(256); // Reserve for values
         
         // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
@@ -261,15 +261,15 @@ namespace ult {
         }
         
         std::string line;
-        line.reserve(1024); // Reserve for typical line length
+        //line.reserve(1024); // Reserve for typical line length
         
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         size_t delimiterPos;
         std::string key, value;
-        key.reserve(128); // Reserve for key names
-        value.reserve(256); // Reserve for values
+        //key.reserve(128); // Reserve for key names
+        //value.reserve(256); // Reserve for values
         
         // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
@@ -332,15 +332,15 @@ namespace ult {
         
         char buffer[1024];
         std::string line;
-        line.reserve(1024); // Reserve to match buffer size
+        //line.reserve(1024); // Reserve to match buffer size
         
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         size_t delimiterPos;
         std::string key, value;
-        key.reserve(128); // Reserve for key names
-        value.reserve(256); // Reserve for values
+        //key.reserve(128); // Reserve for key names
+        //value.reserve(256); // Reserve for values
         
         bool inTargetSection = false;  // To track if we're in the desired section
 
@@ -393,15 +393,15 @@ namespace ult {
         }
     
         std::string line;
-        line.reserve(1024); // Reserve for typical line length
+        //line.reserve(1024); // Reserve for typical line length
         
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         size_t delimiterPos;
         std::string key, value;
-        key.reserve(128); // Reserve for key names
-        value.reserve(256); // Reserve for values
+        //key.reserve(128); // Reserve for key names
+        //value.reserve(256); // Reserve for values
         
         bool inTargetSection = false;  // To track if we're in the desired section
     
@@ -465,7 +465,7 @@ namespace ult {
     
         char buffer[1024];
         std::string line;
-        line.reserve(1024); // Add reservation for efficiency
+        //line.reserve(1024); // Add reservation for efficiency
         
         size_t len;
         std::string sectionName;
@@ -497,7 +497,7 @@ namespace ult {
         }
     
         std::string line;
-        line.reserve(1024); // Add reservation for efficiency
+        //line.reserve(1024); // Add reservation for efficiency
     
         while (std::getline(file, line)) {
             // Remove carriage return if present
@@ -533,7 +533,7 @@ namespace ult {
      */
     std::string parseValueFromIniSection(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
         std::string value;
-        value.reserve(256);
+        //value.reserve(256);
     
     #if NO_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
@@ -543,11 +543,11 @@ namespace ult {
     
         char buffer[1024];
         std::string line, currentSection;
-        line.reserve(1024);
-        currentSection.reserve(64);
+        //line.reserve(1024);
+        //currentSection.reserve(64);
         
         std::string currentKey;
-        currentKey.reserve(128);
+        //currentKey.reserve(128);
         
         size_t delimiterPos;
         bool inTargetSection = false;
@@ -602,11 +602,11 @@ namespace ult {
         }
         
         std::string line, currentSection;
-        line.reserve(1024);
-        currentSection.reserve(64);
+        //line.reserve(1024);
+        //currentSection.reserve(64);
         
         std::string currentKey;
-        currentKey.reserve(128);
+        //currentKey.reserve(128);
         
         size_t delimiterPos;
         bool inTargetSection = false;
@@ -686,7 +686,7 @@ namespace ult {
         // Declare all variables outside the loop
         char line[1024];
         std::string lineStr;
-        lineStr.reserve(1024);
+        //lineStr.reserve(1024);
         
         bool isNewSection = false;
         bool isSection = false;
@@ -741,7 +741,7 @@ namespace ult {
     
         // Declare all variables outside the loop
         std::string line;
-        line.reserve(1024);
+        //line.reserve(1024);
         
         bool isNewSection = false;
         bool isSection = false;
@@ -830,13 +830,13 @@ namespace ult {
         bool keyFound = false;
         bool firstSection = true;  // Flag to control new line before first section
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
     
         std::string lineStr;
-        lineStr.reserve(1024); // Reserve to match buffer size
+        //lineStr.reserve(1024); // Reserve to match buffer size
         
         std::string key;
-        key.reserve(128); // Reserve for key names
+        //key.reserve(128); // Reserve for key names
         
         size_t delimiterPos;
         
@@ -918,17 +918,17 @@ namespace ult {
         }
     
         std::string line;
-        line.reserve(1024); // Reserve for typical line length
+        //line.reserve(1024); // Reserve for typical line length
         
         bool sectionFound = false;
         bool keyFound = false;
         bool firstSection = true;  // Flag to control new line before first section
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         size_t delimiterPos;
         std::string key;
-        key.reserve(128); // Reserve for key names
+        //key.reserve(128); // Reserve for key names
     
         while (std::getline(configFile, line)) {
             // Remove carriage return if present (getline already removes \n)
@@ -1139,9 +1139,9 @@ namespace ult {
     
         // Declare variables outside the loop
         std::string line;
-        line.reserve(1024);
+        //line.reserve(1024);
         std::string trimmedLine;
-        trimmedLine.reserve(1024);
+        //trimmedLine.reserve(1024);
         
         const std::string fullSectionName = "[" + sectionName + "]";
         bool sectionExists = false;
@@ -1436,16 +1436,16 @@ namespace ult {
         // Declare all variables outside the loop for efficiency
         char line[1024];
         std::string currentSection;
-        currentSection.reserve(64);
+        //currentSection.reserve(64);
         
         std::string lineStr;
-        lineStr.reserve(1024);
+        //lineStr.reserve(1024);
         
         std::string trimmedLine;
-        trimmedLine.reserve(1024);
+        //trimmedLine.reserve(1024);
         
         std::string lineKey;
-        lineKey.reserve(128);
+        //lineKey.reserve(128);
         
         bool inTargetSection = false;
         size_t eqPos;
@@ -1505,16 +1505,16 @@ namespace ult {
     
         // Declare all variables outside the loop for efficiency
         std::string line;
-        line.reserve(1024);
+        //line.reserve(1024);
         
         std::string currentSection;
-        currentSection.reserve(64);
+        //currentSection.reserve(64);
         
         std::string trimmedLine;
-        trimmedLine.reserve(1024);
+        //trimmedLine.reserve(1024);
         
         std::string lineKey;
-        lineKey.reserve(128);
+        //lineKey.reserve(128);
         
         bool inTargetSection = false;
         size_t eqPos;
@@ -1612,12 +1612,12 @@ namespace ult {
         std::vector<std::string> commandParts;
         bool inQuotes = false;
         std::string part;
-        part.reserve(64);  // Reserve space to avoid reallocations
+        //part.reserve(64);  // Reserve space to avoid reallocations
     
         StringStream iss(line);
         
         std::string arg;
-        arg.reserve(32);   // Reserve space for args too
+        //arg.reserve(32);   // Reserve space for args too
         
         while (iss.getline(part, '\'')) {
             if (inQuotes) {
@@ -1649,17 +1649,17 @@ namespace ult {
         if (!packageFile) return {}; // Return empty vector if file can't be opened
         
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
-        options.reserve(16); // Reserve space for common case
+        //options.reserve(16); // Reserve space for common case
         
         char line[1024];
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(32); // Reserve for commands per section
+        //sectionCommands.reserve(32); // Reserve for commands per section
         
         std::string strLine;
-        strLine.reserve(1024); // Reserve to match buffer size
+        //strLine.reserve(1024); // Reserve to match buffer size
         size_t end;
 
         while (fgets(line, sizeof(line), packageFile)) {
@@ -1679,7 +1679,7 @@ namespace ult {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
                     sectionCommands.clear();
-                    sectionCommands.reserve(32); // Re-reserve after clear
+                    //sectionCommands.reserve(32); // Re-reserve after clear
                 }
                 currentSection.assign(strLine, 1, strLine.size() - 2); // More efficient than substr
             } else if (!currentSection.empty()) { // Command lines within sections
@@ -1697,14 +1697,14 @@ namespace ult {
         if (!packageFile) return {}; // Return empty vector if file can't be opened
     
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
-        options.reserve(16); // Reserve space for common case
+        //options.reserve(16); // Reserve space for common case
         
         std::string line, currentSection;
-        line.reserve(1024); // Reserve for typical line length
-        currentSection.reserve(64); // Reserve for section names
+        //line.reserve(1024); // Reserve for typical line length
+        //currentSection.reserve(64); // Reserve for section names
         
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(32); // Reserve for commands per section
+        //sectionCommands.reserve(32); // Reserve for commands per section
     
         while (std::getline(packageFile, line)) {
             // Find and remove only the trailing carriage return (getline already removes \n)
@@ -1718,7 +1718,7 @@ namespace ult {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
                     sectionCommands.clear();
-                    sectionCommands.reserve(32); // Re-reserve after clear
+                    //sectionCommands.reserve(32); // Re-reserve after clear
                 }
                 currentSection.assign(line, 1, line.size() - 2); // More efficient than substr
             } else if (!currentSection.empty()) { // Command lines within sections
@@ -1752,15 +1752,15 @@ namespace ult {
         if (!packageFile) return {}; // Return empty vector if file can't be opened
         
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(32); // Reserve for commands in section
+        //sectionCommands.reserve(32); // Reserve for commands in section
         
         char line[1024];
         std::string currentSection;
-        currentSection.reserve(64); // Reserve for section names
+        //currentSection.reserve(64); // Reserve for section names
         
         bool inTargetSection = false;
         std::string strLine;
-        strLine.reserve(1024); // Reserve to match buffer size
+        //strLine.reserve(1024); // Reserve to match buffer size
         
         size_t end;
         while (fgets(line, sizeof(line), packageFile)) {
@@ -1796,11 +1796,11 @@ namespace ult {
         if (!packageFile) return {}; // Return empty vector if file can't be opened
         
         std::string line, currentSection;
-        line.reserve(1024); // Reserve for typical line length
-        currentSection.reserve(64); // Reserve for section names
+        //line.reserve(1024); // Reserve for typical line length
+        //currentSection.reserve(64); // Reserve for section names
         
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(32); // Reserve for commands in section
+        //sectionCommands.reserve(32); // Reserve for commands in section
         
         bool inTargetSection = false;
     
