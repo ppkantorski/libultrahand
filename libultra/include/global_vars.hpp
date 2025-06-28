@@ -36,6 +36,7 @@ namespace ult {
     extern const std::string LANG_PATH;
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
+    extern const std::string FLAGS_PATH;
     extern const std::string HB_APPSTORE_JSON;
     
     // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
@@ -127,7 +128,7 @@ namespace ult {
     extern const std::string NULL_STR;
     extern const std::string THEME_STR;
     extern const std::string NOT_AVAILABLE_STR;
-    extern const std::string BUFFERS;
+    extern const std::string MEMORY_STR;
 
     // Pre-defined symbols
     extern const std::string OPTION_SYMBOL;
