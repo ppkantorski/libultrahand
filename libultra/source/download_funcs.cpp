@@ -22,8 +22,8 @@
 
 namespace ult {
 
-size_t DOWNLOAD_READ_BUFFER = 64 * 1024;//4096*10;
-size_t DOWNLOAD_WRITE_BUFFER = 64 * 1024;
+size_t DOWNLOAD_READ_BUFFER = 64 * 1024;//64 * 1024;//4096*10;
+size_t DOWNLOAD_WRITE_BUFFER = 16 * 1024;//64 * 1024;
 size_t UNZIP_READ_BUFFER = 64 * 1024;//131072*2;//4096*4;
 size_t UNZIP_WRITE_BUFFER = 64 * 1024;//131072*2;//4096*4;
 
@@ -84,16 +84,17 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
     auto* progressData = static_cast<ProgressData*>(ptr);
     
     // Time-based abort check - only check every 2 seconds
-    const u64 currentTick = armGetSystemTick();
+    const u64 currentNanos = armTicksToNs(armGetSystemTick());
     
     // Single comparison for time check
-    if ((currentTick - progressData->lastAbortCheck) >= 2000000000ULL) { // Pre-calculated nanoseconds
+    if ((currentNanos - progressData->lastAbortCheck) >= 2000000000ULL) { // Pre-calculated nanoseconds
         if (abortDownload.load(std::memory_order_relaxed)) {
             progressData->percentage->store(-1, std::memory_order_relaxed);
             return 1;  // Abort
         }
-        progressData->lastAbortCheck = currentTick;
+        progressData->lastAbortCheck = currentNanos;
     }
+    
     
     // Smart percentage calculation - only when crossing boundaries
     if (nowDownloaded >= progressData->nextPercentBoundary) {
@@ -104,10 +105,12 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
         // Update if changed
         if (newProgress > progressData->lastReportedProgress) {
             // Fill any gaps to ensure smooth progress
-            while (progressData->lastReportedProgress < newProgress) {
-                progressData->lastReportedProgress++;
-                progressData->percentage->store(progressData->lastReportedProgress, std::memory_order_relaxed);
-            }
+            //while (progressData->lastReportedProgress < newProgress) {
+            //    progressData->lastReportedProgress++;
+            //    progressData->percentage->store(progressData->lastReportedProgress, std::memory_order_relaxed);
+            //}
+            progressData->lastReportedProgress = newProgress;
+            progressData->percentage->store(newProgress, std::memory_order_relaxed);
             
             // Calculate next boundary
             progressData->nextPercentBoundary = ((progressData->lastReportedProgress + 1) * totalToDownload) / 100;
@@ -150,6 +153,7 @@ void cleanupCurl() {
  * @brief Downloads a file from a URL to a specified destination.
  *
  * Ultra-optimized with FILE* only, smart progress, and micro-optimizations.
+ * Fixed memory leaks with RAII for proper resource cleanup on abort.
  *
  * @param url The URL of the file to download.
  * @param toDestination The destination path where the file should be saved.
@@ -212,9 +216,36 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     size_t WRITE_BUFFER_SIZE = DOWNLOAD_WRITE_BUFFER;
     std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(WRITE_BUFFER_SIZE);
 
-    // Open file with write buffer
-    FILE* file = fopen(tempFilePath.c_str(), "wb");
-    if (!file) {
+    // RAII wrapper for FILE* to ensure cleanup on any exit path
+    struct FileManager {
+        FILE* file = nullptr;
+        std::string tempPath;
+        
+        FileManager(const std::string& path) : tempPath(path) {
+            file = fopen(path.c_str(), "wb");
+        }
+        
+        ~FileManager() {
+            if (file) {
+                fclose(file);
+                file = nullptr;
+            }
+            // Always clean up temp file on destruction
+            if (!tempPath.empty()) {
+                deleteFileOrDirectory(tempPath);
+            }
+        }
+        
+        bool is_valid() const { return file != nullptr; }
+        
+        void release_temp() {
+            // Call this only on successful completion to avoid deleting the temp file
+            tempPath.clear();
+        }
+    };
+
+    FileManager fileManager(tempFilePath);
+    if (!fileManager.is_valid()) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
         #endif
@@ -222,19 +253,14 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
     
     // Set write buffer for optimal performance
-    setvbuf(file, writeBuffer.get(), _IOFBF, WRITE_BUFFER_SIZE);
+    setvbuf(fileManager.file, writeBuffer.get(), _IOFBF, WRITE_BUFFER_SIZE);
 
-    // Ensure curl is initialized
-    //initializeCurl(); // already initialized in main.cpp of ultrahand
-
-    // Initialize CURL
+    // Initialize CURL with RAII
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error initializing curl.");
         #endif
-        fclose(file);
-        deleteFileOrDirectory(tempFilePath);
         return false;
     }
 
@@ -253,7 +279,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     // Core transfer options
     curl_easy_setopt(curlPtr, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curlPtr, CURLOPT_WRITEFUNCTION, +writeCallback);
-    curl_easy_setopt(curlPtr, CURLOPT_WRITEDATA, file);
+    curl_easy_setopt(curlPtr, CURLOPT_WRITEDATA, fileManager.file);
     curl_easy_setopt(curlPtr, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_MAXREDIRS, 5L);
     
@@ -311,9 +337,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     // Perform download
     CURLcode result = curl_easy_perform(curlPtr);
 
-    // Ensure all data is written and close file
-    fflush(file);
-    fclose(file);
+    // Ensure all data is written
+    if (fileManager.file) {
+        fflush(fileManager.file);
+    }
 
     // Handle errors
     if (result != CURLE_OK) {
@@ -333,7 +360,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
                 logMessage(std::string("Download error: ") + errorStr);
         }
         #endif
-        deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(abortDownload.load() ? -2 : -1, std::memory_order_relaxed);
         return false;
     }
@@ -344,20 +370,19 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Downloaded file is empty or missing");
         #endif
-        deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-1, std::memory_order_relaxed);
         return false;
     }
 
     // Final abort check
     if (abortDownload.load(std::memory_order_acquire)) {
-        deleteFileOrDirectory(tempFilePath);
         downloadPercentage.store(-2, std::memory_order_relaxed);
         return false;
     }
 
     // Success - update progress and move file
     downloadPercentage.store(100, std::memory_order_relaxed);
+    fileManager.release_temp(); // Don't delete temp file since we're moving it
     moveFile(tempFilePath, destination);
     
     #if USING_LOGGING_DIRECTIVE
@@ -366,6 +391,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     
     return true;
 }
+
 
 
 /**
@@ -397,7 +423,8 @@ static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* file
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
  * Ultra-optimized single-pass extraction with smooth byte-based progress reporting
- * using miniz with proper 64-bit file support and streaming extraction
+ * using miniz with proper 64-bit file support and streaming extraction.
+ * Fixed memory leaks with RAII for proper resource cleanup on abort.
  * 
  * @param zipFilePath The path to the ZIP archive file.
  * @param toDestination The destination directory where files should be extracted.
@@ -407,14 +434,103 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     abortUnzip.store(false, std::memory_order_release);
     unzipPercentage.store(0, std::memory_order_release);
 
-    // Set up custom I/O with 64KB buffer for ZIP reading
-    zlib_filefunc64_def ffunc;
-    fill_fopen64_filefunc(&ffunc);
-    ffunc.zopen64_file = fopen64_file_func_custom; // Override open function for larger buffer
+    // Time-based abort checking - pre-calculated constants
+    u64 lastAbortCheck = armTicksToNs(armGetSystemTick());
+    u64 currentNanos; // Reused for all tick operations
+    bool success = true;
 
-    // Open ZIP file using custom I/O
-    unzFile zipFile = unzOpen2_64(zipFilePath.c_str(), &ffunc);
-    if (!zipFile) {
+    // RAII wrapper for unzFile
+    struct UnzFileManager {
+        unzFile file = nullptr;
+        
+        UnzFileManager(const std::string& path) {
+            zlib_filefunc64_def ffunc;
+            fill_fopen64_filefunc(&ffunc);
+            ffunc.zopen64_file = fopen64_file_func_custom;
+            file = unzOpen2_64(path.c_str(), &ffunc);
+        }
+        
+        ~UnzFileManager() {
+            if (file) {
+                unzClose(file);
+                file = nullptr;
+            }
+        }
+        
+        bool is_valid() const { return file != nullptr; }
+        operator unzFile() const { return file; }
+    };
+
+    // RAII wrapper for output file
+    struct OutputFileManager {
+        #if NO_FSTREAM_DIRECTIVE
+        FILE* file = nullptr;
+        std::unique_ptr<char[]> buffer;
+        size_t bufferSize;
+        
+        OutputFileManager(size_t bufSize) : bufferSize(bufSize) {
+            buffer = std::make_unique<char[]>(bufferSize);
+        }
+        
+        bool open(const std::string& path) {
+            close();
+            file = fopen(path.c_str(), "wb");
+            if (file) {
+                setvbuf(file, buffer.get(), _IOFBF, bufferSize);
+            }
+            return file != nullptr;
+        }
+        
+        void close() {
+            if (file) {
+                fclose(file);
+                file = nullptr;
+            }
+        }
+        
+        bool is_open() const { return file != nullptr; }
+        
+        size_t write(const void* data, size_t size) {
+            return file ? fwrite(data, 1, size, file) : 0;
+        }
+        
+        ~OutputFileManager() { close(); }
+        #else
+        std::ofstream file;
+        
+        OutputFileManager(size_t bufSize) {
+            // Constructor for consistency with FILE* version
+        }
+        
+        bool open(const std::string& path) {
+            close();
+            file.open(path, std::ios::binary);
+            if (file.is_open()) {
+                file.rdbuf()->pubsetbuf(nullptr, UNZIP_WRITE_BUFFER);
+            }
+            return file.is_open();
+        }
+        
+        void close() {
+            if (file.is_open()) {
+                file.close();
+            }
+        }
+        
+        bool is_open() const { return file.is_open(); }
+        
+        size_t write(const void* data, size_t size) {
+            if (file.is_open()) {
+                file.write(static_cast<const char*>(data), size);
+                return file.good() ? size : 0;
+            }
+            return 0;
+        }
+        #endif
+    };
+
+    UnzFileManager zipFile(zipFilePath);
+    if (!zipFile.is_valid()) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Failed to open zip file: " + zipFilePath);
         #endif
@@ -424,7 +540,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // Get global info about the ZIP file
     unz_global_info64 globalInfo;
     if (unzGetGlobalInfo64(zipFile, &globalInfo) != UNZ_OK) {
-        unzClose(zipFile);
         #if USING_LOGGING_DIRECTIVE
         logMessage("Failed to get zip file info");
         #endif
@@ -433,7 +548,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     const uLong numFiles = globalInfo.number_entry;
     if (numFiles == 0) {
-        unzClose(zipFile);
         #if USING_LOGGING_DIRECTIVE
         logMessage("No files found in archive");
         #endif
@@ -448,6 +562,19 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // First pass: calculate total uncompressed size
     int result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK) {
+        // Time-based abort check at start of each file (only if 2+ seconds have passed)
+        currentNanos = armTicksToNs(armGetSystemTick());
+        if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
+            if (abortUnzip.load(std::memory_order_relaxed)) {
+                unzipPercentage.store(-1, std::memory_order_release);
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Extraction aborted during size calculation");
+                #endif
+                return false;
+            }
+            lastAbortCheck = currentNanos;
+        }
+
         if (unzGetCurrentFileInfo64(zipFile, &fileInfo, tempFilenameBuffer, sizeof(tempFilenameBuffer), 
                                    nullptr, 0, nullptr, 0) == UNZ_OK) {
             const size_t nameLen = strlen(tempFilenameBuffer);
@@ -475,7 +602,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     directoryPath.reserve(1024);
     
     // Single large buffer for extraction - reused for all files
-    const size_t bufferSize = UNZIP_WRITE_BUFFER;//std::max(UNZIP_BUFFER_SIZE, static_cast<size_t>(512 * 1024)); // At least 512KB
+    const size_t bufferSize = UNZIP_WRITE_BUFFER;
     std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
     char filenameBuffer[512]; // Stack allocated for filename reading
     
@@ -484,24 +611,15 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     uLong filesProcessed = 0;
     int currentProgress = 0;  // Current percentage (0-100)
     
-    // Calculate bytes per percentage point for smooth updates
-    const ZPOS64_T bytesPerPercent = totalUncompressedSize / 100;
-    ZPOS64_T nextPercentBoundary = bytesPerPercent;  // Next byte count that triggers a percentage update
+    // Calculate bytes per percentage point for smooth updates - FIXED CALCULATION
+    const ZPOS64_T bytesPerPercent = (totalUncompressedSize + 99) / 100;  // Round up to avoid missing last percent
+    ZPOS64_T nextPercentBoundary = bytesPerPercent;  // First boundary at 1%
     
-    // Time-based abort checking - pre-calculated constants
-    const u64 abortCheckInterval = armNsToTicks(2000000000ULL); // 2 seconds in ticks
-    u64 lastAbortCheck = armGetSystemTick();
-    u64 currentTick; // Reused for all tick operations
     
-    // File operation variables - moved outside loop
-    #if NO_FSTREAM_DIRECTIVE
-    FILE* outputFile = nullptr;
-    #else
-    std::ofstream outputFile;
-    #endif
+    // Create output file manager
+    OutputFileManager outputFile(bufferSize);
     
     // Loop variables moved outside
-    bool success = true;
     bool extractSuccess;
     ZPOS64_T fileBytesProcessed;
     int bytesRead;
@@ -528,13 +646,13 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK && success) {
         // Time-based abort check at start of each file (only if 2+ seconds have passed)
-        currentTick = armGetSystemTick();
-        if ((currentTick - lastAbortCheck) >= abortCheckInterval) {
+        currentNanos = armTicksToNs(armGetSystemTick());
+        if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
             if (abortUnzip.load(std::memory_order_relaxed)) {
                 success = false;
-                break;
+                break; // RAII will handle cleanup
             }
-            lastAbortCheck = currentTick;
+            lastAbortCheck = currentNanos;
         }
         
         // Get current file info - reuse fileInfo variable
@@ -591,9 +709,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         }
 
         // Open output file
-        #if NO_FSTREAM_DIRECTIVE
-        outputFile = fopen(extractedFilePath.c_str(), "wb");
-        if (!outputFile) {
+        if (!outputFile.open(extractedFilePath)) {
             unzCloseCurrentFile(zipFile);
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error creating file: " + extractedFilePath);
@@ -601,21 +717,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             result = unzGoToNextFile(zipFile);
             continue;
         }
-        // Set buffer for consistent performance
-        setvbuf(outputFile, buffer.get(), _IOFBF, bufferSize);
-        #else
-        outputFile.open(extractedFilePath, std::ios::binary);
-        if (!outputFile.is_open()) {
-            unzCloseCurrentFile(zipFile);
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + extractedFilePath);
-            #endif
-            result = unzGoToNextFile(zipFile);
-            continue;
-        }
-        // Set larger buffer
-        outputFile.rdbuf()->pubsetbuf(nullptr, UNZIP_WRITE_BUFFER);
-        #endif
 
         // Extract file data in chunks
         extractSuccess = true;
@@ -623,38 +724,29 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         
         while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
             // Time-based abort check - only every 2 seconds for optimal performance
-            currentTick = armGetSystemTick();
-            if ((currentTick - lastAbortCheck) >= abortCheckInterval) {
+            currentNanos = armTicksToNs(armGetSystemTick());
+            if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
                 if (abortUnzip.load(std::memory_order_relaxed)) {
                     extractSuccess = false;
-                    break;
+                    break; // RAII will handle cleanup
                 }
-                lastAbortCheck = currentTick;
+                lastAbortCheck = currentNanos;
             }
             
             // Write data to file
-            #if NO_FSTREAM_DIRECTIVE
-            if (fwrite(buffer.get(), 1, bytesRead, outputFile) != static_cast<size_t>(bytesRead)) {
+            if (outputFile.write(buffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
                 extractSuccess = false;
                 break;
             }
-            #else
-            outputFile.write(buffer.get(), bytesRead);
-            if (!outputFile.good()) {
-                extractSuccess = false;
-                break;
-            }
-            #endif
             
             // Update progress tracking
             fileBytesProcessed += bytesRead;
             totalBytesProcessed += bytesRead;
             
-            // OPTIMIZED: Check if we've crossed any percentage boundaries
-            // This ensures we never skip a percentage point
-            while (totalBytesProcessed >= nextPercentBoundary && currentProgress < 99) {
+            // FIXED: Check if we've crossed the next percentage boundary
+            if (totalBytesProcessed >= nextPercentBoundary && currentProgress < 99) {
                 currentProgress++;
-                nextPercentBoundary = static_cast<ZPOS64_T>(currentProgress + 1) * bytesPerPercent;
+                nextPercentBoundary = (static_cast<ZPOS64_T>(currentProgress + 1) * totalUncompressedSize) / 100;
                 
                 // Update the atomic progress value
                 unzipPercentage.store(currentProgress, std::memory_order_relaxed);
@@ -675,16 +767,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             extractSuccess = false;
         }
 
-        // Close files
-        #if NO_FSTREAM_DIRECTIVE
-        if (outputFile) {
-            fclose(outputFile);
-            outputFile = nullptr;
-        }
-        #else
+        // Close current file handles
         outputFile.close();
-        #endif
-        
         unzCloseCurrentFile(zipFile);
 
         if (!extractSuccess) {
@@ -705,9 +789,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         result = unzGoToNextFile(zipFile);
     }
 
-    // Clean up
-    unzClose(zipFile);
-
+    // Check final abort state
     if (abortUnzip.load(std::memory_order_relaxed)) {
         unzipPercentage.store(-2, std::memory_order_release);
         #if USING_LOGGING_DIRECTIVE
@@ -730,4 +812,5 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         return false;
     }
 }
+
 }
