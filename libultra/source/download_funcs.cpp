@@ -59,16 +59,14 @@ void CurlDeleter::operator()(CURL* curl) const {
 struct ProgressData {
     std::atomic<int>* percentage;
     int lastReportedProgress;
-    u64 lastAbortCheck;
-    curl_off_t bytesPerPercent;
-    curl_off_t nextPercentBoundary;
 };
 
 // Optimized write callback - minimal overhead
 size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+
     // Quick validation - single branch
-    if (!ptr || !userdata) return 0;
-    
+    if (!ptr || !userdata || abortDownload.load(std::memory_order_relaxed)) return 0;
+
     FILE* stream = static_cast<FILE*>(userdata);
     
     // Direct write - let fwrite handle the multiplication
@@ -77,55 +75,35 @@ size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
 
 // Optimized progress callback - minimal branching and calculations
 int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, 
-                               curl_off_t totalToUpload, curl_off_t nowUploaded) {
-    // Early exit for invalid state
-    if (!ptr || totalToDownload <= 0) return 0;
+                     curl_off_t totalToUpload, curl_off_t nowUploaded) {
+    if (!ptr) return 0;
     
     auto* progressData = static_cast<ProgressData*>(ptr);
     
-    // Time-based abort check - only check every 2 seconds
-    const u64 currentNanos = armTicksToNs(armGetSystemTick());
-    
-    // Single comparison for time check
-    if ((currentNanos - progressData->lastAbortCheck) >= 2000000000ULL) { // Pre-calculated nanoseconds
-        if (abortDownload.load(std::memory_order_relaxed)) {
-            progressData->percentage->store(-1, std::memory_order_relaxed);
-            return 1;  // Abort
-        }
-        progressData->lastAbortCheck = currentNanos;
+    if (abortDownload.load(std::memory_order_relaxed)) {
+        progressData->percentage->store(-1, std::memory_order_relaxed);
+        return 1;  // Abort transfer
     }
     
-    
-    // Smart percentage calculation - only when crossing boundaries
-    if (nowDownloaded >= progressData->nextPercentBoundary) {
-        // Calculate new percentage
-        int newProgress = static_cast<int>((nowDownloaded * 100LL) / totalToDownload);
-        newProgress = (newProgress > 99) ? 99 : newProgress; // Branchless min
+    if (totalToDownload > 0) {
+        int currentPercent = static_cast<int>((nowDownloaded * 100LL) / totalToDownload);
+        int newProgress = std::min(currentPercent, 99);
         
-        // Update if changed
         if (newProgress > progressData->lastReportedProgress) {
-            // Fill any gaps to ensure smooth progress
-            //while (progressData->lastReportedProgress < newProgress) {
-            //    progressData->lastReportedProgress++;
-            //    progressData->percentage->store(progressData->lastReportedProgress, std::memory_order_relaxed);
-            //}
             progressData->lastReportedProgress = newProgress;
             progressData->percentage->store(newProgress, std::memory_order_relaxed);
             
-            // Calculate next boundary
-            progressData->nextPercentBoundary = ((progressData->lastReportedProgress + 1) * totalToDownload) / 100;
-            
             #if USING_LOGGING_DIRECTIVE
-            // Log at 10% intervals only
-            if ((progressData->lastReportedProgress % 10) == 0) {
-                logMessage("Download: " + std::to_string(progressData->lastReportedProgress) + "%");
+            if ((newProgress % 10) == 0) {
+                logMessage("Download: " + std::to_string(newProgress) + "%");
             }
             #endif
         }
     }
     
-    return 0;  // Continue
+    return 0;
 }
+
 
 // Global initialization function
 void initializeCurl() {
@@ -160,11 +138,16 @@ void cleanupCurl() {
  * @return True if the download was successful, false otherwise.
  */
 bool downloadFile(const std::string& url, const std::string& toDestination) {
-    // Reset state
-    abortDownload.store(false, std::memory_order_release);
+    // CRITICAL: Don't reset abort flag - check if we should abort immediately
+    if (abortDownload.load(std::memory_order_acquire)) {
+        downloadPercentage.store(-1, std::memory_order_relaxed);
+        return false;
+    }
+    
+    // Only reset percentage
     downloadPercentage.store(0, std::memory_order_release);
 
-    // Quick URL validation - single check
+    // URL validation
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Invalid URL: " + url);
@@ -172,12 +155,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-    // Pre-allocate strings to avoid reallocations
+    // Prepare destination path
     std::string destination;
-    destination.reserve(toDestination.size() + 256); // Extra space for filename
+    destination.reserve(toDestination.size() + 256);
     destination = toDestination;
     
-    // Handle directory destination
     if (destination.back() == '/') {
         createDirectory(destination);
         size_t lastSlash = url.find_last_of('/');
@@ -189,7 +171,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         }
         destination.append(url, lastSlash + 1, std::string::npos);
     } else {
-        // Create parent directory - avoid substr allocation
         size_t lastSlash = destination.find_last_of('/');
         if (lastSlash != std::string::npos) {
             std::string parentDir(destination, 0, lastSlash);
@@ -197,7 +178,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         }
     }
 
-    // Build temp file path efficiently
+    // Build temp file path
     std::string tempFilePath;
     tempFilePath.reserve(destination.size() + 16);
     
@@ -212,17 +193,18 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
     tempFilePath += ".tmp";
 
-    // Allocate write buffer - 256KB for optimal throughput
-    size_t WRITE_BUFFER_SIZE = DOWNLOAD_WRITE_BUFFER;
-    std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(WRITE_BUFFER_SIZE);
-
-    // RAII wrapper for FILE* to ensure cleanup on any exit path
+    // RAII file manager
     struct FileManager {
         FILE* file = nullptr;
         std::string tempPath;
+        std::unique_ptr<char[]> buffer;
         
-        FileManager(const std::string& path) : tempPath(path) {
+        FileManager(const std::string& path, size_t bufSize) : tempPath(path) {
             file = fopen(path.c_str(), "wb");
+            if (file && bufSize > 0) {
+                buffer = std::make_unique<char[]>(bufSize);
+                setvbuf(file, buffer.get(), _IOFBF, bufSize);
+            }
         }
         
         ~FileManager() {
@@ -230,32 +212,24 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
                 fclose(file);
                 file = nullptr;
             }
-            // Always clean up temp file on destruction
             if (!tempPath.empty()) {
                 deleteFileOrDirectory(tempPath);
             }
         }
         
         bool is_valid() const { return file != nullptr; }
-        
-        void release_temp() {
-            // Call this only on successful completion to avoid deleting the temp file
-            tempPath.clear();
-        }
+        void release_temp() { tempPath.clear(); }
     };
 
-    FileManager fileManager(tempFilePath);
+    FileManager fileManager(tempFilePath, DOWNLOAD_WRITE_BUFFER);
     if (!fileManager.is_valid()) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
         #endif
         return false;
     }
-    
-    // Set write buffer for optimal performance
-    setvbuf(fileManager.file, writeBuffer.get(), _IOFBF, WRITE_BUFFER_SIZE);
 
-    // Initialize CURL with RAII
+    // Initialize CURL
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
@@ -264,19 +238,15 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-    // Initialize progress tracking - all data in one struct
+    // Progress tracking data
     ProgressData progressData = {
         &downloadPercentage,
-        0,
-        armGetSystemTick(),
-        0,
-        0
+        -1
     };
 
-    // Set CURL options - grouped by category for cache efficiency
-    CURL* curlPtr = curl.get(); // Cache pointer
+    CURL* curlPtr = curl.get();
     
-    // Core transfer options
+    // Core options
     curl_easy_setopt(curlPtr, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curlPtr, CURLOPT_WRITEFUNCTION, +writeCallback);
     curl_easy_setopt(curlPtr, CURLOPT_WRITEDATA, fileManager.file);
@@ -288,7 +258,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curlPtr, CURLOPT_XFERINFOFUNCTION, +progressCallback);
     curl_easy_setopt(curlPtr, CURLOPT_XFERINFODATA, &progressData);
     
-    // Buffer size - 256KB for optimal throughput
+    // Small buffer for responsive abort
     curl_easy_setopt(curlPtr, CURLOPT_BUFFERSIZE, static_cast<long>(DOWNLOAD_READ_BUFFER));
     
     // Protocol settings
@@ -296,14 +266,14 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curlPtr, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
     curl_easy_setopt(curlPtr, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
     
-    // TCP optimizations - grouped together
+    // TCP optimizations
     curl_easy_setopt(curlPtr, CURLOPT_TCP_NODELAY, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_TCP_FASTOPEN, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPIDLE, 60L);
     curl_easy_setopt(curlPtr, CURLOPT_TCP_KEEPINTVL, 60L);
     
-    // HTTP/2 and connection reuse
+    // Connection settings
     curl_easy_setopt(curlPtr, CURLOPT_PIPEWAIT, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_HTTP09_ALLOWED, 0L);
     curl_easy_setopt(curlPtr, CURLOPT_DNS_CACHE_TIMEOUT, 300L);
@@ -314,18 +284,14 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curlPtr, CURLOPT_LOW_SPEED_LIMIT, 1000L);
     curl_easy_setopt(curlPtr, CURLOPT_LOW_SPEED_TIME, 30L);
     
-    // SSL optimizations
+    // SSL settings
     curl_easy_setopt(curlPtr, CURLOPT_SSL_ENABLE_ALPN, 1L);
     curl_easy_setopt(curlPtr, CURLOPT_SSL_ENABLE_NPN, 0L);
     curl_easy_setopt(curlPtr, CURLOPT_SSL_FALSESTART, 1L);
+    curl_easy_setopt(curlPtr, CURLOPT_NOSIGNAL, 1L);
     
-    // Set CA cert if exists - avoid repeated string construction
-    static bool cacertChecked = false;
-    static bool cacertExists = false;
-    if (!cacertChecked) {
-        cacertExists = isFileOrDirectory(std::string(cacertPath));
-        cacertChecked = true;
-    }
+    // CA cert
+    static const bool cacertExists = isFileOrDirectory(cacertPath);
     if (cacertExists) {
         curl_easy_setopt(curlPtr, CURLOPT_CAINFO, cacertPath);
     }
@@ -334,15 +300,30 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     logMessage("Downloading: " + url);
     #endif
 
+    // Final abort check before starting
+    if (abortDownload.load(std::memory_order_acquire)) {
+        downloadPercentage.store(-1, std::memory_order_relaxed);
+        return false;
+    }
+
     // Perform download
     CURLcode result = curl_easy_perform(curlPtr);
 
-    // Ensure all data is written
+    // Ensure data is written
     if (fileManager.file) {
         fflush(fileManager.file);
     }
 
-    // Handle errors
+    // Check if aborted even if curl says OK
+    if (abortDownload.load(std::memory_order_acquire)) {
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Download aborted by user");
+        #endif
+        downloadPercentage.store(-1, std::memory_order_relaxed);
+        return false;
+    }
+
+    // Handle curl result
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
         const char* errorStr = curl_easy_strerror(result);
@@ -356,33 +337,30 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
             case CURLE_ABORTED_BY_CALLBACK:
                 logMessage("Download aborted by user");
                 break;
+            case CURLE_WRITE_ERROR:
+                logMessage("Write error (possibly aborted)");
+                break;
             default:
                 logMessage(std::string("Download error: ") + errorStr);
         }
-        #endif
-        downloadPercentage.store(abortDownload.load() ? -2 : -1, std::memory_order_relaxed);
-        return false;
-    }
-
-    // Verify file exists and is not empty - single syscall
-    struct stat fileStat;
-    if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Downloaded file is empty or missing");
         #endif
         downloadPercentage.store(-1, std::memory_order_relaxed);
         return false;
     }
 
-    // Final abort check
-    if (abortDownload.load(std::memory_order_acquire)) {
-        downloadPercentage.store(-2, std::memory_order_relaxed);
+    // Verify file
+    struct stat fileStat;
+    if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Downloaded file is empty or missing");
+        #endif
+        downloadPercentage.store(-1, std::memory_order_release);
         return false;
     }
 
-    // Success - update progress and move file
+    // Success
     downloadPercentage.store(100, std::memory_order_relaxed);
-    fileManager.release_temp(); // Don't delete temp file since we're moving it
+    fileManager.release_temp();
     moveFile(tempFilePath, destination);
     
     #if USING_LOGGING_DIRECTIVE
@@ -570,6 +548,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Extraction aborted during size calculation");
                 #endif
+                abortUnzip.store(false, std::memory_order_release);
                 return false;
             }
             lastAbortCheck = currentNanos;
@@ -791,14 +770,16 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // Check final abort state
     if (abortUnzip.load(std::memory_order_relaxed)) {
-        unzipPercentage.store(-2, std::memory_order_release);
+        unzipPercentage.store(-1, std::memory_order_release);
         #if USING_LOGGING_DIRECTIVE
         logMessage("Extraction aborted by user");
         #endif
+        abortUnzip.store(false, std::memory_order_release);
         return false;
     }
 
     if (success && filesProcessed > 0) {
+        abortUnzip.store(false, std::memory_order_release);
         unzipPercentage.store(100, std::memory_order_release);
         
         #if USING_LOGGING_DIRECTIVE
@@ -808,6 +789,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         
         return true;
     } else {
+        abortUnzip.store(false, std::memory_order_release);
         unzipPercentage.store(-1, std::memory_order_release);
         return false;
     }
