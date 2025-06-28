@@ -31,6 +31,7 @@ namespace ult {
     const std::string LANG_PATH = SETTINGS_PATH + "lang/";
     const std::string THEMES_PATH = SETTINGS_PATH + "themes/";
     const std::string WALLPAPERS_PATH = SETTINGS_PATH + "wallpapers/";
+    const std::string FLAGS_PATH = SETTINGS_PATH+"flags/";
     const std::string HB_APPSTORE_JSON = "/switch/appstore/.get/packages/UltrahandOverlay/info.json";
     
     std::string THEME_CONFIG_INI_PATH = SETTINGS_PATH + "theme.ini";
@@ -121,7 +122,7 @@ namespace ult {
     const std::string NULL_STR = "null";
     const std::string THEME_STR = "theme";
     const std::string NOT_AVAILABLE_STR = "Not available";
-    const std::string BUFFERS = "buffers";
+    const std::string MEMORY_STR = "memory";
     
     // Pre-defined symbols
     const std::string OPTION_SYMBOL = "\u22EF";
