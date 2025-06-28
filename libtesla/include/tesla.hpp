@@ -3986,33 +3986,47 @@ namespace tsl {
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
                 
                 if (FullMode && !deactivateOriginalFooter) {
-                    // Use getTextDimensions instead of calculateStringWidth
-                    auto [backWidth, backHeight] = renderer->getTextDimensions(ult::BACK, false, 23);
-                    ult::backWidth = backWidth;
+                    // Get the exact gap width from ult::GAP_1
+                    auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                    ult::halfGap = gapWidth / 2.0f;
                     
+                    // Calculate text dimensions for buttons without gaps
+                    auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
+                    auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
+                    
+                    // Update widths to include the half-gap padding on each side
+                    ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                    ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                    
+                    // Use consistent edge padding equal to halfGap
+                    float edgePadding = ult::halfGap;
+                    float buttonStartX = edgePadding;
+                    
+                    // Draw back button rectangle
                     if (ult::touchingBack) {
-                        renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::backWidth, 73.0f, 6.0f, a(clickColor));
                     }
                     
-                    // Use getTextDimensions instead of calculateStringWidth
-                    auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
-                    ult::selectWidth = selectWidth;
-                    
+                    // Draw select button rectangle (starts right after back button)
                     if (ult::touchingSelect && !m_noClickableItems) {
-                        renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::selectWidth, 73.0f, 6.0f, a(clickColor));
                     }
                 }
                 
-                if (m_noClickableItems)
-                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1;
-                else
-                    menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
+                // Pre-build menu bottom line efficiently
+                menuBottomLine.clear();
+                menuBottomLine.reserve(128); // Reserve space to avoid reallocations
                 
+                menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
+                if (!m_noClickableItems) {
+                    menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                }
+
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter) 
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, xStartOffset, 693, 23, a(bottomTextColor), a(buttonColor));
                 
                 
                 if (this->m_contentElement != nullptr)
@@ -4339,40 +4353,65 @@ namespace tsl {
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+
+                // Get the exact gap width from ult::GAP_1
+                auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                ult::halfGap = gapWidth / 2.0f;
                 
-                // Use getTextDimensions instead of calculateStringWidth
-                auto [backWidth, backHeight] = renderer->getTextDimensions(ult::BACK, false, 23);
-                ult::backWidth = backWidth;
+                // Calculate text dimensions for buttons without gaps
+                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
+                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
+                
+                // Update widths to include the half-gap padding on each side
+                ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                
+                // Use consistent edge padding equal to halfGap
+                float edgePadding = ult::halfGap;
+                float buttonStartX = edgePadding;
+                
+                // Draw back button rectangle
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::backWidth, 73.0f, 6.0f, a(clickColor));
                 }
             
-                auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
-                ult::selectWidth = selectWidth;
+                // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
                 }
                 
             #if IS_LAUNCHER_DIRECTIVE
-                if (!m_pageLeftName.empty()) {
-                    auto [pageWidth, pageHeight] = renderer->getTextDimensions(m_pageLeftName, false, 23);
-                    ult::nextPageWidth = pageWidth;
-                } else if (!m_pageRightName.empty()) {
-                    auto [pageWidth, pageHeight] = renderer->getTextDimensions(m_pageRightName, false, 23);
-                    ult::nextPageWidth = pageWidth;
-                } else if (ult::inMainMenu) {
-                    auto [pageWidth, pageHeight] = renderer->getTextDimensions(
-                        ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS, false, 23);
-                    ult::nextPageWidth = pageWidth;
-                }
-            
+                // Calculate next page button dimensions and position
                 if (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty()) {
+                    std::string pageText;
+                    std::string pageIcon;
+                    
+                    if (!m_pageLeftName.empty()) {
+                        pageText = ult::GAP_2 + m_pageLeftName;
+                        pageIcon = "\uE0ED";
+                    } else if (!m_pageRightName.empty()) {
+                        pageText = ult::GAP_2 + m_pageRightName;
+                        pageIcon = "\uE0EE";
+                    } else if (ult::inMainMenu) {
+                        pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS);
+                        pageIcon = (m_menuMode == "packages") ? 
+                                   (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
+                                   (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
+                    }
+                    
+                    auto [pageTextWidth, pageHeight] = renderer->getTextDimensions(pageIcon + pageText, false, 23);
+                    ult::nextPageWidth = pageTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                    
+                    // Position next page button
+                    float nextPageX = m_noClickableItems ? 
+                                      (buttonStartX + ult::backWidth) :
+                                      (buttonStartX + ult::backWidth + ult::selectWidth);
+                    
                     if (ult::touchingNextPage) {
-                        renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f + ((!m_noClickableItems) ? ult::selectWidth+68.0f : 0), 
-                                                  static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::nextPageWidth+70.0f, 73.0f, 6.0f, a(clickColor));
+                        renderer->drawRoundedRect(nextPageX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                                  ult::nextPageWidth, 73.0f, 6.0f, a(clickColor));
                     }
                 }
             #endif
@@ -4408,9 +4447,11 @@ namespace tsl {
                 }
             #endif
                 
-                // Render the text with special character handling
+                // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"};
-                renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 30, 693, 23, a(bottomTextColor), a(buttonColor));
+                renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
+                                                        edgePadding + ult::halfGap, 693, 23, 
+                                                        a(bottomTextColor), a(buttonColor));
             
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
@@ -4528,26 +4569,37 @@ namespace tsl {
                 renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
                 
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+
+                // Get the exact gap width from ult::GAP_1
+                auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                ult::halfGap = gapWidth / 2.0f;
                 
-                //renderer->drawString(("\uE0E1  "+ult::BACK+"     \uE0E0  "+ult::OK), false, 30, 693, 23, a(defaultTextColor)); // CUSTOM MODIFICATION
+                // Calculate text dimensions for buttons without gaps
+                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
+                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
                 
-                // Use getTextDimensions instead of calculateStringWidth
-                auto [backWidth, backHeight] = renderer->getTextDimensions(ult::BACK, false, 23);
-                ult::backWidth = backWidth;
+                // Update widths to include the half-gap padding on each side
+                ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                
+                // Use consistent edge padding equal to halfGap
+                float edgePadding = ult::halfGap;
+                float buttonStartX = edgePadding;
+                
+                // Draw back button rectangle
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(18.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::backWidth, 73.0f, 6.0f, a(clickColor));
                 }
                 
-                auto [selectWidth, selectHeight] = renderer->getTextDimensions(ult::OK, false, 23);
-                ult::selectWidth = selectWidth;
+                // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect) {
-                    renderer->drawRoundedRect(18.0f + ult::backWidth+68.0f, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth+68.0f, 73.0f, 6.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
                 }
                 
                 std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
-                renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, 30, 693, 23, a(bottomTextColor), a(buttonColor));
+                renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, buttonStartX, 693, 23, a(bottomTextColor), a(buttonColor));
                 
                 if (this->m_header != nullptr)
                     this->m_header->frame(renderer);
@@ -8765,11 +8817,20 @@ namespace tsl {
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
             }
-        
+
             // Cache common calculations
-            const float backLeftEdge = 20.0f + ult::layerEdge;
-            const float backRightEdge = ult::backWidth + 86.0f + ult::layerEdge;
-            const float selectRightEdge = backRightEdge + ult::selectWidth + 68.0f;
+            // Use consistent edge padding equal to halfGap (matching drawing code)
+            const float edgePadding = ult::halfGap;
+            const float buttonStartX = edgePadding;
+            
+            // Calculate button positions matching the drawing code
+            const float backLeftEdge = buttonStartX + ult::layerEdge;
+            const float backRightEdge = backLeftEdge + ult::backWidth;
+            const float selectLeftEdge = backRightEdge;
+            const float selectRightEdge = selectLeftEdge + ult::selectWidth;
+            const float nextPageLeftEdge = ult::noClickableItems ? backRightEdge : selectRightEdge;
+            const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth;
+            
             const float menuRightEdge = 245.0f + ult::layerEdge;
             const u32 footerY = cfg::FramebufferHeight - 73U;
             
@@ -8778,15 +8839,11 @@ namespace tsl {
                                 (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY);
             
             ult::touchingSelect = !ult::noClickableItems && 
-                                  (touchPos.x >= backRightEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
-                                  (initialTouchPos.x >= backRightEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
+                                  (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
+                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
             
-            if (!ult::noClickableItems)
-                ult::touchingNextPage = (touchPos.x >= selectRightEdge && (touchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && touchPos.y > footerY) && 
-                                        (initialTouchPos.x >= selectRightEdge && (initialTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY);
-            else
-                ult::touchingNextPage = (touchPos.x >= backRightEdge && (touchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && touchPos.y > footerY) && 
-                                        (initialTouchPos.x >= backRightEdge && (initialTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY);
+            ult::touchingNextPage = (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
+                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
             
             ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
                                 (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
@@ -8847,16 +8904,12 @@ namespace tsl {
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedBackComplete = false;
                         ult::simulatedBack = true;
-                    } else if (!ult::noClickableItems && (oldTouchPos.x >= backRightEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= backRightEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
+                    } else if (!ult::noClickableItems && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedSelectComplete = false;
                         ult::simulatedSelect = true;
-                    } else if (!ult::noClickableItems && (oldTouchPos.x >= selectRightEdge && (oldTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= selectRightEdge && (initialTouchPos.x <= selectRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY)) {
-                        ult::simulatedNextPageComplete = false;
-                        ult::simulatedNextPage = true;
-                    } else if (ult::noClickableItems && (oldTouchPos.x >= backRightEdge && (oldTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= backRightEdge && (initialTouchPos.x <= backRightEdge + ult::nextPageWidth + 70.0f) && initialTouchPos.y > footerY)) {
+                    } else if ((oldTouchPos.x >= nextPageLeftEdge && oldTouchPos.x < nextPageRightEdge && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedNextPageComplete = false;
                         ult::simulatedNextPage = true;
                     } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
