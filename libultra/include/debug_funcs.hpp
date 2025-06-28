@@ -29,7 +29,7 @@
 #include <ctime>
 
 namespace ult {
-    //#if USING_LOGGING_DIRECTIVE
+    #if USING_LOGGING_DIRECTIVE
 
     // Specify the log file path
     const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
@@ -46,7 +46,7 @@ namespace ult {
      * @param message The message to be logged.
      */
     void logMessage(const std::string& message);
-    //#endif
+    #endif
 }
 
 #endif // DEBUG_FUNCS_HPP

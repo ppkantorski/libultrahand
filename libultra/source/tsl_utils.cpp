@@ -458,6 +458,7 @@ namespace ult {
 
     std::string OK = "OK";
     std::string BACK = "Back";
+    std::string HIDE = "Hide";
 
     std::string GAP_1 = "     ";
     std::string GAP_2 = "  ";
@@ -600,6 +601,7 @@ namespace ult {
         _CREDITS = "Credits";
         OK = "OK";
         BACK = "Back";
+        HIDE = "Hide";
         REBOOT_TO = "Reboot To";
         REBOOT = "Reboot";
         SHUTDOWN = "Shutdown";
@@ -799,6 +801,7 @@ namespace ult {
 
             {"OK", &OK},
             {"BACK", &BACK},
+            {"HIDE", &HIDE},
 
             {"GAP_1", &GAP_1},
             {"GAP_2", &GAP_2},

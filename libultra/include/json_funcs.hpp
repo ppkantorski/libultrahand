@@ -3,7 +3,7 @@
  * Author: ppkantorski
  * Description:
  *   This header file provides functions for working with JSON files in C++ using
- *   the `jansson` library. It includes a function to read JSON data from a file.
+ *   the `cJSON` library. It includes a function to read JSON data from a file.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -23,14 +23,18 @@
 #include <fstream>
 #endif
 #include <string>
-#include <jansson.h>
+#include <cJSON.h>
 #include "string_funcs.hpp"
+
 namespace ult {
+    // Define json_t as an opaque type to maintain API compatibility
+    typedef void json_t;
+    
     // Define a custom deleter for json_t*
     struct JsonDeleter {
         void operator()(json_t* json) const {
             if (json) {
-                json_decref(json);
+                cJSON_Delete(reinterpret_cast<cJSON*>(json));
             }
         }
     };
@@ -48,7 +52,7 @@ namespace ult {
     /**
      * @brief Parses a JSON string into a json_t object.
      *
-     * This function takes a JSON string as input and parses it into a json_t object using Jansson library's `json_loads` function.
+     * This function takes a JSON string as input and parses it into a json_t object using cJSON library's `cJSON_Parse` function.
      * If parsing fails, it logs the error and returns nullptr.
      *
      * @param input The input JSON string to parse.

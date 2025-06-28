@@ -22,17 +22,10 @@
 #ifndef GET_FUNCS_HPP
 #define GET_FUNCS_HPP
 
-//#include <sys/stat.h>
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
-#include <stdio.h>
-#else
-#include <fstream>
-#endif
 
 #include <cstring>
 #include <dirent.h>
 #include <fnmatch.h>
-//#include <jansson.h>
 #include "debug_funcs.hpp"
 #include "string_funcs.hpp"
 
@@ -52,7 +45,7 @@ namespace ult {
      * @param filePath The path to the file to be read.
      * @return The content of the file as a string with line endings normalized to '\n'.
      */
-    std::string getFileContents(const std::string& filePath);
+    //std::string getFileContents(const std::string& filePath);
     
     
     /**

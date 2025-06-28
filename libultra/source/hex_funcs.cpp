@@ -43,7 +43,7 @@ namespace ult {
     // Function to convert ASCII string to Hex string
     std::string asciiToHex(const std::string& asciiStr) {
         std::string hexStr;
-        hexStr.reserve(asciiStr.length() * 2); // Reserve space for the hexadecimal string
+        //hexStr.reserve(asciiStr.length() * 2); // Reserve space for the hexadecimal string
     
         for (unsigned char c : asciiStr) {
             hexStr.push_back(hexLookup[c >> 4]); // High nibble

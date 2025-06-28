@@ -149,7 +149,7 @@ namespace ult {
     
     
     
-    void moveFile(const std::string& sourcePath, const std::string& destinationPath,
+    bool moveFile(const std::string& sourcePath, const std::string& destinationPath,
                   const std::string& logSource = "", const std::string& logDestination = "");
     
     

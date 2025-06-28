@@ -22,6 +22,7 @@
 #ifndef STRING_FUNCS_HPP
 #define STRING_FUNCS_HPP
 
+#include <cstring>
 #include <string>
 #include <iterator> 
 #include <vector>
@@ -90,8 +91,6 @@ namespace ult {
         bool hexMode;
         bool validState;  // Track if the stream is in a valid state
     };
-    
-
     
 
 

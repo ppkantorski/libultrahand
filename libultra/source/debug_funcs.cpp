@@ -9,21 +9,20 @@
 #include "debug_funcs.hpp"
 
 namespace ult {
-    //#if USING_LOGGING_DIRECTIVE
+    #if USING_LOGGING_DIRECTIVE
     // Define static variables
-    std::string logFilePath = defaultLogFilePath; 
+    std::string logFilePath = defaultLogFilePath.c_str(); 
     bool disableLogging = true;
     std::mutex logMutex;
-
+    
     void logMessage(const std::string& message) {
         if (disableLogging)
             return;
         
         std::time_t currentTime = std::time(nullptr);
         std::tm* timeInfo = std::localtime(&currentTime);
-        char buffer[30];
-        strftime(buffer, sizeof(buffer), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
-        std::string timestamp(buffer);
+        char timestamp[30]; // Exact size for "[YYYY-MM-DD HH:MM:SS] " + null terminator
+        strftime(timestamp, sizeof(timestamp), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
         
         // Depending on the directive, use either std::ofstream or stdio functions
         #if NO_FSTREAM_DIRECTIVE
@@ -33,7 +32,7 @@ namespace ult {
             
             FILE* file = fopen(logFilePath.c_str(), "a"); // Open the file in append mode
             if (file != nullptr) {
-                fprintf(file, "%s%s\n", timestamp.c_str(), message.c_str());
+                fprintf(file, "%s%s\n", timestamp, message.c_str());
                 fclose(file); // Close the file after writing
             } else {
                 // Handle error when file opening fails (if necessary)
@@ -47,7 +46,7 @@ namespace ult {
             
             std::ofstream file(logFilePath.c_str(), std::ios::app);
             if (file.is_open()) {
-                file << timestamp + message + "\n";
+                file << timestamp << message << "\n";
             } else {
                 // Handle error when file opening fails
                 // std::cerr << "Failed to open log file: " << logFilePath << std::endl;
@@ -55,5 +54,5 @@ namespace ult {
         }
         #endif
     }
-    //#endif
+    #endif
 }

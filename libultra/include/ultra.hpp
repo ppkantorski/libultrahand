@@ -30,6 +30,7 @@
 #define ULTRA_HPP
 
 // Include all functional headers used in the libUltra library
+
 #include "global_vars.hpp"
 #include "debug_funcs.hpp"
 #include "string_funcs.hpp"

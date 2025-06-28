@@ -21,7 +21,8 @@
 #include "string_funcs.hpp"
 
 namespace ult {
-    
+
+
     // Custom string conversion methods in place of std::
     std::string to_string(int value) {
         char buffer[12]; // Sufficient for 32-bit int

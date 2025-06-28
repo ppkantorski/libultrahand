@@ -4137,7 +4137,8 @@ namespace tsl {
             float x, y;
             int offset, y_offset;
             int fontSize;
-        
+            
+            std::string bKeyLabel = ult::BACK;
             std::string menuBottomLine;
             
         #if IS_LAUNCHER_DIRECTIVE
@@ -4181,9 +4182,7 @@ namespace tsl {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
                     ult::themeIsInitialized = true;
                 }
-            
-                if (m_noClickableItems != ult::noClickableItems)
-                    ult::noClickableItems = m_noClickableItems;
+                
                 
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
@@ -4192,6 +4191,30 @@ namespace tsl {
                 offset = 0;
                 
             #if IS_LAUNCHER_DIRECTIVE
+                // Current interpreter state (atomic<bool>)
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed);
+                
+                // --- edge-detector state (static, kept between calls) ---
+                static bool ranLastFrame = false;      // previous frame’s state
+                static bool savedNoClick = false;     // backup of clickable flag
+                // --------------------------------------------------------
+                
+                if ( interpreterIsRunningNow && !ranLastFrame ) // NOT-running → RUNNING edge
+                {
+                    savedNoClick  = m_noClickableItems;
+                    bKeyLabel = ult::HIDE; 
+                    m_noClickableItems = true;
+                }
+                else if ( !interpreterIsRunningNow && ranLastFrame ) // RUNNING → NOT-running edge
+                {
+                    bKeyLabel = ult::BACK;
+                    m_noClickableItems = savedNoClick;
+                }
+                ranLastFrame = interpreterIsRunningNow; // remember for next tick
+
+                if (m_noClickableItems != ult::noClickableItems)
+                    ult::noClickableItems = m_noClickableItems;
+
                 const bool isUltrahand = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                         m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                         m_subtitle.find("Ultrahand Script") == std::string::npos);
@@ -4343,6 +4366,8 @@ namespace tsl {
                 }
             
             #else
+                if (m_noClickableItems != ult::noClickableItems)
+                    ult::noClickableItems = m_noClickableItems;
                 {
                 #if USING_WIDGET_DIRECTIVE
                     renderer->drawWidget();
@@ -4359,7 +4384,7 @@ namespace tsl {
                 ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text dimensions for buttons without gaps
-                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
+                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + bKeyLabel, false, 23);
                 auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
                 
                 // Update widths to include the half-gap padding on each side
@@ -4420,7 +4445,7 @@ namespace tsl {
                 menuBottomLine.clear();
                 menuBottomLine.reserve(128); // Reserve space to avoid reallocations
                 
-                menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
+                menuBottomLine += "\uE0E1" + ult::GAP_2 + bKeyLabel + ult::GAP_1;
                 if (!m_noClickableItems) {
                     menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                 }
@@ -8917,6 +8942,11 @@ namespace tsl {
                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
                         ult::simulatedMenuComplete = false;
                         ult::simulatedMenu = true;
+                    }
+                } else if (ult::runningInterpreter.load(std::memory_order_acquire)) {
+                    if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
+                        (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
+                        this->hide();
                     }
                 }
                 

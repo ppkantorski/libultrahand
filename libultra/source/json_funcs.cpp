@@ -3,7 +3,7 @@
  * Author: ppkantorski
  * Description:
  *   This source file provides functions for working with JSON files in C++ using
- *   the `jansson` library. It includes a function to read JSON data from a file.
+ *   the `cJSON` library. It includes a function to read JSON data from a file.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -57,57 +57,58 @@ namespace ult {
             // Optionally log: Failed to open file
             return nullptr;
         }
-    
+        
         file.seekg(0, std::ios::end);
         size_t fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
-    
+        
         std::string content;
         content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
-    
+        
         file.read(&content[0], fileSize);  // Read directly into the string's buffer
         if (file.fail() && !file.eof()) {
             // Optionally log: Failed to read file
             return nullptr;
         }
-    
+        
         file.close();  // Close the file after reading
     #endif
-    
+        
         // Parse the JSON content
-        json_error_t error;
-        json_t* root = json_loads(content.c_str(), 0, &error);
+        cJSON* root = cJSON_Parse(content.c_str());
         if (!root) {
-            // Optionally log: JSON parsing error at line `error.line`: `error.text`
+            // Optionally log: JSON parsing error
             return nullptr;
         }
-    
+        
         // Optionally log: JSON file successfully parsed
-        return root;
+        return reinterpret_cast<json_t*>(root);
     }
-
+    
     
     /**
      * @brief Parses a JSON string into a json_t object.
      *
-     * This function takes a JSON string as input and parses it into a json_t object using Jansson library's `json_loads` function.
+     * This function takes a JSON string as input and parses it into a json_t object using cJSON library's `cJSON_Parse` function.
      * If parsing fails, it logs the error and returns nullptr.
      *
      * @param input The input JSON string to parse.
      * @return A json_t object representing the parsed JSON, or nullptr if parsing fails.
      */
     json_t* stringToJson(const std::string& input) {
-        json_error_t error;
-        json_t* jsonObj = json_loads(input.c_str(), 0, &error);
+        cJSON* jsonObj = cJSON_Parse(input.c_str());
     
         if (!jsonObj) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + to_string(error.line));
+            const char* error_ptr = cJSON_GetErrorPtr();
+            if (error_ptr != nullptr) {
+                logMessage("Failed to parse JSON: " + std::string(error_ptr));
+            }
             #endif
             return nullptr; // Return nullptr to indicate failure clearly
         }
     
-        return jsonObj;
+        return reinterpret_cast<json_t*>(jsonObj);
     }
     
     
@@ -116,9 +117,10 @@ namespace ult {
     
     // Function to get a string from a JSON object
     std::string getStringFromJson(const json_t* root, const char* key) {
-        const json_t* value = json_object_get(root, key);
-        if (value && json_is_string(value)) {
-            return json_string_value(value);
+        const cJSON* croot = reinterpret_cast<const cJSON*>(root);
+        const cJSON* value = cJSON_GetObjectItemCaseSensitive(croot, key);
+        if (value && cJSON_IsString(value) && value->valuestring) {
+            return value->valuestring;
         } else {
             return ""; // Key not found or not a string, return empty string/char*
         }
@@ -146,8 +148,9 @@ namespace ult {
         }
     
         // Retrieve the string value associated with the key
-        json_t* jsonKey = json_object_get(root.get(), key.c_str());
-        const char* value = json_is_string(jsonKey) ? json_string_value(jsonKey) : nullptr;
+        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+        cJSON* jsonKey = cJSON_GetObjectItemCaseSensitive(croot, key.c_str());
+        const char* value = (cJSON_IsString(jsonKey) && jsonKey->valuestring) ? jsonKey->valuestring : nullptr;
     
         // Check if the value was found and return it
         if (value) {
@@ -174,31 +177,36 @@ namespace ult {
         // Try to load existing file
         std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
         
+        cJSON* croot = nullptr;
+        
         // If file doesn't exist, create new JSON object if allowed
         if (!root) {
             if (!createIfNotExists) {
                 return false;
             }
-            root.reset(json_object());
-            if (!root) {
+            croot = cJSON_CreateObject();
+            if (!croot) {
                 return false;
             }
+            root.reset(reinterpret_cast<json_t*>(croot));
+        } else {
+            croot = reinterpret_cast<cJSON*>(root.get());
         }
 
         // Determine value type and create appropriate JSON value
-        json_t* jsonValue = nullptr;
+        cJSON* jsonValue = nullptr;
         if (value == "true") {
-            jsonValue = json_true();
+            jsonValue = cJSON_CreateBool(1);
         } else if (value == "false") {
-            jsonValue = json_false();
+            jsonValue = cJSON_CreateBool(0);
         } else {
             // Try parsing as integer
             std::size_t pos = 0;
             int intValue = ult::stoi(value, &pos, 10);
             if (pos == value.length() && !value.empty()) {
-                jsonValue = json_integer(intValue);
+                jsonValue = cJSON_CreateNumber(intValue);
             } else {
-                jsonValue = json_string(value.c_str());
+                jsonValue = cJSON_CreateString(value.c_str());
             }
         }
 
@@ -206,16 +214,14 @@ namespace ult {
             return false;
         }
 
-        // Set the value
-        int result = json_object_set(root.get(), key.c_str(), jsonValue);
-        json_decref(jsonValue);
+        // Delete existing item if it exists
+        cJSON_DeleteItemFromObject(croot, key.c_str());
         
-        if (result != 0) {
-            return false;
-        }
+        // Add the new value
+        cJSON_AddItemToObject(croot, key.c_str(), jsonValue);
 
         // Save to file
-        char* jsonString = json_dumps(root.get(), JSON_INDENT(2) | JSON_PRESERVE_ORDER);
+        char* jsonString = cJSON_PrintUnformatted(croot);
         if (!jsonString) {
             return false;
         }
@@ -238,7 +244,7 @@ namespace ult {
         }
     #endif
 
-        free(jsonString);
+        cJSON_free(jsonString);
         return success;
     }
 
@@ -257,31 +263,23 @@ namespace ult {
         if (!root) {
             return false; // File doesn't exist or couldn't be loaded
         }
+        
+        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
     
         // Check if old key exists
-        json_t* value = json_object_get(root.get(), oldKey.c_str());
+        cJSON* value = cJSON_GetObjectItemCaseSensitive(croot, oldKey.c_str());
         if (!value) {
             return false; // Old key doesn't exist
         }
     
-        // Increment reference count since we're going to use this value twice
-        json_incref(value);
-    
-        // Set the new key with the old value
-        int setResult = json_object_set(root.get(), newKey.c_str(), value);
+        // Detach the value from the object (this doesn't delete it)
+        cJSON_DetachItemFromObject(croot, oldKey.c_str());
         
-        // Delete the old key
-        int delResult = json_object_del(root.get(), oldKey.c_str());
-        
-        // Decrement reference count
-        json_decref(value);
-        
-        if (setResult != 0 || delResult != 0) {
-            return false;
-        }
+        // Add it back with the new key
+        cJSON_AddItemToObject(croot, newKey.c_str(), value);
     
         // Save to file
-        char* jsonString = json_dumps(root.get(), JSON_INDENT(2) | JSON_PRESERVE_ORDER);
+        char* jsonString = cJSON_PrintUnformatted(croot);
         if (!jsonString) {
             return false;
         }
@@ -304,7 +302,7 @@ namespace ult {
         }
     #endif
     
-        free(jsonString);
+        cJSON_free(jsonString);
         return success;
     }
 }
