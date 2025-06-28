@@ -5482,7 +5482,7 @@ namespace tsl {
                 }
                 
                 // If holding and at boundary, try to scroll first
-                if (m_isHolding && m_stoppedAtBoundary && canScrollDown()) {
+                if (m_isHolding && m_stoppedAtBoundary && !isAtBottom()) {
                     scrollDown();
                     m_stoppedAtBoundary = false;
                     return oldFocus;
@@ -5497,7 +5497,7 @@ namespace tsl {
                 }
                 
                 // Check if we can still scroll down
-                if (canScrollDown()) {
+                if (!isAtBottom()) {
                     scrollDown();
                     return oldFocus;
                 }
@@ -5529,7 +5529,7 @@ namespace tsl {
                 }
                 
                 // If holding and at boundary, try to scroll first
-                if (m_isHolding && m_stoppedAtBoundary && canScrollUp()) {
+                if (m_isHolding && m_stoppedAtBoundary && !isAtTop()) {
                     scrollUp();
                     m_stoppedAtBoundary = false;
                     return oldFocus;
@@ -5544,7 +5544,7 @@ namespace tsl {
                 }
                 
                 // Check if we can still scroll up
-                if (canScrollUp()) {
+                if (!isAtTop()) {
                     scrollUp();
                     return oldFocus;
                 }
@@ -5565,17 +5565,18 @@ namespace tsl {
             }
                         
             inline bool isAtTop() {
-                // We're at top if we're scrolled to the very beginning AND focused on first element
-                bool scrolledToTop = (m_nextOffset == 0.0f && m_offset == 0.0f);
-                bool focusedOnFirst = (m_focusedIndex == 0);
-                return scrolledToTop && focusedOnFirst;
+                if (m_items.empty()) return true;
+                
+                return m_offset == 0.0f;
             }
             
             inline bool isAtBottom() {
-                // We're at bottom if we can't scroll down AND focused on last element
-                bool cannotScrollDown = !canScrollDown();
-                bool focusedOnLast = (m_focusedIndex >= m_items.size() - 1);
-                return cannotScrollDown && focusedOnLast;
+                if (m_items.empty()) return true;
+                
+                // Check if we're at the scroll boundary
+                float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                
+                return m_offset == maxOffset;
             }
 
             // Helper to check if there are any focusable items
@@ -5768,15 +5769,15 @@ namespace tsl {
             }
 
             // Enhanced scroll methods that ensure we always reach boundaries
-            inline bool canScrollDown() {
-                if (m_listHeight <= getHeight()) return false;
-                float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                return (m_nextOffset < maxOffset - 0.1f) && (m_offset < maxOffset - 0.1f);
-            }
-            
-            inline bool canScrollUp() {
-                return (m_nextOffset > 0.1f) || (m_offset > 0.1f);
-            }
+            //inline bool canScrollDown() {
+            //    if (m_listHeight <= getHeight()) return false;
+            //    float maxOffset = static_cast<float>(m_listHeight - getHeight());
+            //    return (m_nextOffset < maxOffset - 0.1f) && (m_offset < maxOffset - 0.1f);
+            //}
+            //
+            //inline bool canScrollUp() {
+            //    return (m_nextOffset > 0.1f) || (m_offset > 0.1f);
+            //}
             
             
             //u64 m_lastScrollNavigationTime = 0;
@@ -5800,11 +5801,11 @@ namespace tsl {
                 m_nextOffset = std::min(m_nextOffset + scrollStep, maxOffset);
                 
                 // BOUNDARY SNAP: If we're very close to the bottom boundary, snap both positions exactly
-                if (m_nextOffset >= maxOffset - 2.0f) {
-                    m_nextOffset = maxOffset;
-                    m_offset = maxOffset;  // Also snap current position immediately
-                    m_scrollVelocity = 0.0f;
-                }
+                //if (m_nextOffset >= maxOffset - 2.0f) {
+                //    m_nextOffset = maxOffset;
+                //    m_offset = maxOffset;  // Also snap current position immediately
+                //    m_scrollVelocity = 0.0f;
+                //}
             }
             
             inline void scrollUp() {
@@ -5813,11 +5814,11 @@ namespace tsl {
                 m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
                 
                 // ENHANCED BOUNDARY SNAP: More aggressive snapping to zero
-                if (m_nextOffset <= 5.0f) {  // Increased threshold
-                    m_nextOffset = 0.0f;
-                    m_offset = 0.0f;  
-                    m_scrollVelocity = 0.0f;
-                }
+               //if (m_nextOffset <= 5.0f) {  // Increased threshold
+               //    m_nextOffset = 0.0f;
+               //    m_offset = 0.0f;  
+               //    m_scrollVelocity = 0.0f;
+               //}
             }
             
             //Element* wrapToTop(Element* oldFocus) {
