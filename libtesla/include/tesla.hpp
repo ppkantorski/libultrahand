@@ -164,7 +164,7 @@ inline bool hideHidden = false;
 namespace tsl {
 
     // Booleans
-    inline bool clearCacheNow = false;
+    inline bool clearGlyphCacheNow = false;
 
     // Constants
     
@@ -926,6 +926,9 @@ namespace tsl {
             // Use unique_ptr to ensure proper cleanup
             inline static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
             
+            inline static std::chrono::steady_clock::time_point s_lastClearTime{};
+            inline static constexpr std::chrono::milliseconds CLEAR_COOLDOWN{500}; // 100ms minimum between clears
+
             // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 10000;
             static constexpr size_t CLEANUP_THRESHOLD = 8000;
@@ -1046,8 +1049,16 @@ namespace tsl {
             }
             
             static void clearCache() {
+                auto now = std::chrono::steady_clock::now();
+                
+                // Rate limit cache clearing
+                if (now - s_lastClearTime < CLEAR_COOLDOWN) {
+                    return; // Skip clearing if too recent
+                }
+                
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                s_sharedGlyphCache.clear(); // unique_ptr will handle cleanup
+                s_sharedGlyphCache.clear();
+                s_lastClearTime = now;
             }
             
             static void cleanup() {
@@ -3197,10 +3208,7 @@ namespace tsl {
                 framebufferEnd(&this->m_framebuffer);
                 
                 this->m_currentFramebuffer = nullptr;
-                if (tsl::clearCacheNow) {
-                    tsl::gfx::FontManager::clearCache();
-                    tsl::clearCacheNow = false;
-                }
+
             }
 
         #if IS_STATUS_MONITOR_DIRECTIVE
@@ -4780,6 +4788,16 @@ namespace tsl {
                 
             }
             virtual ~List() {
+                if (m_pendingJump) {
+                    if (!m_itemsToAdd.empty()){
+                        addPendingItems();
+                    }
+                    if (!m_items.empty()){
+                        clearItems();
+                    }
+                    clearStaticCache();
+                    return;
+                }
                 if (!skipDeconstruction) {
                     if (s_isForwardCache)
                         clearStaticCache(true);
@@ -4798,6 +4816,7 @@ namespace tsl {
                 } else if (skipDeconstruction) {
                     skipOnce = true;
                 }
+
             }
             
             
@@ -8638,6 +8657,10 @@ namespace tsl {
             this->getCurrentGui()->draw(&renderer);
             
             renderer.endFrame();
+            if (tsl::clearGlyphCacheNow) {
+                tsl::gfx::FontManager::clearCache();
+                tsl::clearGlyphCacheNow = false;
+            }
         }
         
         // Calculate transition using ease-in-out curve instead of linear
