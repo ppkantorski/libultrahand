@@ -2147,22 +2147,19 @@ namespace tsl {
 
 
             inline void drawWallpaper() {
-                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire)) {
-                    //ult::inPlot = true;
-                    ult::inPlot.store(true, std::memory_order_release);
-                    //std::lock_guard<std::mutex> lock(wallpaperMutex);
-                    if (!ult::wallpaperData.empty()) {
-                        // Draw the bitmap at position (0, 0) on the screen
-                        //static bool ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720);
-                        if (!ult::refreshWallpaper.load(std::memory_order_acquire) && ult::correctFrameSize) { // hard coded width and height for consistency
-                            drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
-                        } else
-                            ult::inPlot.store(false, std::memory_order_release);
-                    } else {
-                        ult::inPlot.store(false, std::memory_order_release);
-                    }
-                    //ult::inPlot = false;
+                if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
+                    return;
                 }
+                
+                ult::inPlot.store(true, std::memory_order_release);
+                
+                if (!ult::wallpaperData.empty() && 
+                    !ult::refreshWallpaper.load(std::memory_order_acquire) && 
+                    ult::correctFrameSize) {
+                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
+                }
+                
+                ult::inPlot.store(false, std::memory_order_release);
             }
 
 
@@ -3311,7 +3308,9 @@ namespace tsl {
         public:
             
             Element() {}
-            virtual ~Element() { }
+            virtual ~Element() {
+                m_clickListener = {};   // frees captures immediately
+            }
             
             bool m_isTable = false;  // Default to false for non-table elements
             bool m_isItem = true;
@@ -4192,7 +4191,7 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Current interpreter state (atomic<bool>)
-                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed);
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed) && (ult::downloadPercentage.load(std::memory_order_relaxed) != -1 || ult::unzipPercentage.load(std::memory_order_relaxed) != -1) ;
                 
                 // --- edge-detector state (static, kept between calls) ---
                 static bool ranLastFrame = false;      // previous frame’s state
@@ -5589,19 +5588,50 @@ namespace tsl {
                 return oldFocus;
             }
                         
+            
             inline bool isAtTop() {
                 if (m_items.empty()) return true;
                 
-                return m_offset == 0.0f;
+                // Check if we're at scroll position 0
+                if (m_offset != 0.0f) return false;
+                
+                // Even at offset 0, check if the first item is actually visible
+                // This handles cases where the first item might be partially above viewport
+                if (!m_items.empty()) {
+                    Element* firstItem = m_items[0];
+                    return firstItem->getTopBound() >= getTopBound();
+                }
+                
+                return true;
             }
             
             inline bool isAtBottom() {
                 if (m_items.empty()) return true;
                 
-                // Check if we're at the scroll boundary
+                // First check: are we at the maximum scroll offset?
                 float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                bool atMaxOffset = (m_offset >= maxOffset);
                 
-                return m_offset == maxOffset;
+                // If list is shorter than viewport, we're always at bottom
+                if (m_listHeight <= getHeight()) return true;
+                
+                // If we're not at max offset, we're definitely not at bottom
+                if (!atMaxOffset) return false;
+                
+                // At max offset - now check if the last item is actually fully visible
+                // This prevents wrap-around when there's still content below viewport
+                if (!m_items.empty()) {
+                    Element* lastItem = m_items.back();
+                    s32 lastItemBottom = lastItem->getBottomBound();
+                    s32 viewportBottom = getBottomBound();
+                    
+                    // We're truly at bottom only if:
+                    // 1. We're at max scroll offset AND
+                    // 2. The last item's bottom is at or above the viewport bottom
+                    return lastItemBottom <= viewportBottom;
+                }
+                
+                return atMaxOffset;
             }
 
             // Helper to check if there are any focusable items
@@ -8629,7 +8659,7 @@ namespace tsl {
         
             auto& currentGui = this->getCurrentGui();
             //static bool isTopElement = true;
-        
+            bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_relaxed);
             // Return early if current GUI is not available
             if (!currentGui) return;
             if (!ult::internalTouchReleased) return;
@@ -8638,7 +8668,7 @@ namespace tsl {
             auto topElement = currentGui->getTopElement();
         
         #if !IS_STATUS_MONITOR_DIRECTIVE
-            if (ult::runningInterpreter.load()) {
+            if (interpreterIsRunning) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Up);
                 else if (keysDown & KEY_DOWN && !(keysDown & ~KEY_DOWN & ALL_KEYS_MASK))
@@ -8689,7 +8719,7 @@ namespace tsl {
                 lastGuiPtr = currentGui.get();  // or just currentGui
             }
             
-            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !oldTouchDetected && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
                 
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
@@ -8744,7 +8774,7 @@ namespace tsl {
                     isNavigatingBackwards = false;
                 }
             } else {
-                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !interpreterIsRunning) {
                     static bool shouldShake = true;
                     bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                     
@@ -8831,11 +8861,11 @@ namespace tsl {
                 }
             }
             
-            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning) {
                 jumpToTop = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
-            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning) {
                 jumpToBottom = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
@@ -8894,7 +8924,7 @@ namespace tsl {
                 if (!oldTouchDetected) {
                     initialTouchPos = touchPos;
                     elm::Element::setInputMode(InputMode::Touch);
-                    if (!ult::runningInterpreter.load(std::memory_order_acquire)) {
+                    if (!interpreterIsRunning) {
                         ult::touchInBounds = (initialTouchPos.y <= footerY && initialTouchPos.y > 73U && 
                                             initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U && 
                                             initialTouchPos.x > 40U + ult::layerEdge);
@@ -8903,7 +8933,7 @@ namespace tsl {
                     touchEvent = elm::TouchEvent::Touch;
                 }
                 
-                if (currentGui && topElement && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                if (currentGui && topElement && !interpreterIsRunning) {
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
                     if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth - 30U + ult::layerEdge && 
                         touchPos.y > 73U && touchPos.y <= footerY) {
@@ -8925,7 +8955,7 @@ namespace tsl {
                 }
                 ult::stillTouching = true;
             } else {
-                if (!ult::interruptedTouch && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                if (!ult::interruptedTouch && !interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         ult::simulatedBackComplete = false;
@@ -8943,7 +8973,7 @@ namespace tsl {
                         ult::simulatedMenuComplete = false;
                         ult::simulatedMenu = true;
                     }
-                } else if (ult::runningInterpreter.load(std::memory_order_acquire)) {
+                } else if (interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         this->hide();

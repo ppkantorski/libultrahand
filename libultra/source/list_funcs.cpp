@@ -55,8 +55,8 @@ namespace ult {
     }
     
     
-    // Function to read file into a vector of strings
-    std::vector<std::string> readListFromFile(const std::string& filePath) {
+    // Function to read file into a vector of strings with optional cap
+    std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::vector<std::string> lines;
     
@@ -71,9 +71,15 @@ namespace ult {
     
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
+        size_t len;
         while (fgets(buffer, BUFFER_SIZE, file)) {
+            // Check cap before adding
+            if (maxLines > 0 && lines.size() >= maxLines) {
+                break;
+            }
+            
             // Remove newline character from the buffer if present
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -92,6 +98,10 @@ namespace ult {
     
         std::string line;
         while (std::getline(file, line)) {
+            // Check cap before adding
+            if (maxLines > 0 && lines.size() >= maxLines) {
+                break;
+            }
             lines.push_back(std::move(line));
         }
     
@@ -100,7 +110,7 @@ namespace ult {
     
         return lines;
     }
-
+    
     
     // Function to get an entry from the list based on the index
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
@@ -118,7 +128,9 @@ namespace ult {
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         std::string line;
-        
+
+        size_t len;
+
         // Read lines until reaching the desired index
         for (size_t i = 0; i <= listIndex; ++i) {
             if (!fgets(buffer, BUFFER_SIZE, file)) {
@@ -128,7 +140,7 @@ namespace ult {
             if (i == listIndex) {
                 line = buffer;
                 // Remove newline character if present
-                size_t len = line.length();
+                len = line.length();
                 if (len > 0 && line[len - 1] == '\n') {
                     line.pop_back();
                 }
@@ -228,9 +240,10 @@ namespace ult {
     
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
+        size_t len;
         while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove trailing newline character if it exists
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -328,9 +341,10 @@ namespace ult {
     
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
+        size_t len;
         while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove newline character, if present
-            size_t len = strlen(buffer);
+            len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }

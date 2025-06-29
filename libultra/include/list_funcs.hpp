@@ -62,7 +62,7 @@ namespace ult {
     
     
     // Function to read file into a vector of strings
-    std::vector<std::string> readListFromFile(const std::string& filePath);
+    std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines=0);
 
     
     // Function to get an entry from the list based on the index

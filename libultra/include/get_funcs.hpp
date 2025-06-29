@@ -141,9 +141,9 @@ namespace ult {
     //    return S_ISDIR(st.st_mode);
     //}
     
-    // Recursive function to handle wildcard directories and file patterns
-    void handleDirectory(const std::string& basePath, const std::vector<std::string>& parts, size_t partIndex, std::vector<std::string>& results, bool directoryOnly);
     
+
+    void handleDirectory(const std::string& basePath, const std::vector<std::string>& parts, size_t partIndex, std::vector<std::string>& results, bool directoryOnly, size_t maxLines=0);
     /**
      * @brief Gets a list of files and folders based on a wildcard pattern.
      *
@@ -153,7 +153,7 @@ namespace ult {
      * @param pathPattern The wildcard pattern to match files and folders.
      * @return A vector of strings containing the paths of matching files and folders.
      */
-    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern);
+    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern, size_t maxLines=0);
     
 }
 

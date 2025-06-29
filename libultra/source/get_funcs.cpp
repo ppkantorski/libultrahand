@@ -322,46 +322,64 @@ namespace ult {
     //    return S_ISDIR(st.st_mode);
     //}
     
-    // Recursive function to handle wildcard directories and file patterns
+    // Iterative function to handle wildcard directories and file patterns
     void handleDirectory(const std::string& basePath, 
                         const std::vector<std::string>& parts, 
                         size_t partIndex, 
                         std::vector<std::string>& results, 
-                        bool directoryOnly) {
-        if (partIndex >= parts.size()) return;
-
-        std::unique_ptr<DIR, DirCloser> dir(opendir(basePath.c_str()));
-        if (!dir) return;
-
-        const std::string& pattern = parts[partIndex];
-        const bool isLastPart = (partIndex == parts.size() - 1);
-        const bool needsSlash = basePath.back() != '/';
-
-        struct dirent* entry;
-        while ((entry = readdir(dir.get())) != nullptr) {
-            const std::string entryName = entry->d_name;
-            if (entryName == "." || entryName == "..") continue;
+                        bool directoryOnly,
+                        size_t maxLines) {
+        
+        std::vector<std::pair<std::string, size_t>> stack;
+        stack.emplace_back(basePath, partIndex);
+        
+        std::string fullPath;
+        std::string result;
+        struct stat st;
+        
+        while (!stack.empty()) {
+            if (maxLines > 0 && results.size() >= maxLines) return;
             
-            // Check pattern match first (cheap operation)
-            if (fnmatch(pattern.c_str(), entryName.c_str(), FNM_NOESCAPE) != 0) {
-                continue;
-            }
+            auto [currentPath, currentPartIndex] = stack.back();
+            stack.pop_back();
             
-            std::string fullPath = basePath;
-            if (needsSlash) fullPath += '/';
-            fullPath += entryName;
-            
-            const bool isDir = isDirectory(entry, fullPath);
-            
-            if (isLastPart) {
-                // Final part - add to results if criteria match
-                if (!directoryOnly || isDir) {
-                    if (isDir) fullPath += '/';
-                    results.emplace_back(std::move(fullPath));
+            if (currentPartIndex >= parts.size()) continue;
+    
+            DIR* dirPtr = opendir(currentPath.c_str());
+            if (!dirPtr) continue;
+            std::unique_ptr<DIR, DirCloser> dir(dirPtr);
+    
+            const std::string& pattern = parts[currentPartIndex];
+            const bool isLastPart = (currentPartIndex == parts.size() - 1);
+            const bool needsSlash = currentPath.back() != '/';
+    
+            struct dirent* entry;
+            while ((entry = readdir(dir.get())) != nullptr) {
+                if (maxLines > 0 && results.size() >= maxLines) return;
+                
+                const char* name = entry->d_name;
+                if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) continue;
+                
+                if (fnmatch(pattern.c_str(), name, FNM_NOESCAPE) != 0) continue;
+                
+                bool isDir;
+                if (entry->d_type != DT_UNKNOWN) {
+                    isDir = (entry->d_type == DT_DIR);
+                } else {
+                    fullPath = currentPath + (needsSlash ? "/" : "") + name;
+                    isDir = (stat(fullPath.c_str(), &st) == 0) && S_ISDIR(st.st_mode);
                 }
-            } else if (isDir) {
-                // Recurse into directories for non-final parts
-                handleDirectory(fullPath, parts, partIndex + 1, results, directoryOnly);
+                
+                if (isLastPart) {
+                    if (!directoryOnly || isDir) {
+                        result = currentPath + (needsSlash ? "/" : "") + name;
+                        if (isDir) result += '/';
+                        results.emplace_back(std::move(result));
+                        if (maxLines > 0 && results.size() >= maxLines) return;
+                    }
+                } else if (isDir) {
+                    stack.emplace_back(currentPath + (needsSlash ? "/" : "") + name, currentPartIndex + 1);
+                }
             }
         }
     }
@@ -375,7 +393,7 @@ namespace ult {
      * @param pathPattern The wildcard pattern to match files and folders.
      * @return A vector of strings containing the paths of matching files and folders.
      */
-    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern) {
+    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern, size_t maxLines) {
         std::vector<std::string> results;
         
         if (pathPattern.empty()) return results;
@@ -383,14 +401,11 @@ namespace ult {
         const bool directoryOnly = pathPattern.back() == '/';
         const size_t prefixEnd = pathPattern.find(":/");
         
-        if (prefixEnd == std::string::npos) {
-            return results; // Invalid pattern
-        }
+        if (prefixEnd == std::string::npos) return results;
         
         const std::string basePath = pathPattern.substr(0, prefixEnd + 2);
         std::vector<std::string> parts;
         
-        // Parse path components
         size_t start = prefixEnd + 2;
         size_t pos;
         while ((pos = pathPattern.find('/', start)) != std::string::npos) {
@@ -400,13 +415,12 @@ namespace ult {
             start = pos + 1;
         }
         
-        // Add final component if not directoryOnly
         if (start < pathPattern.length() && !directoryOnly) {
             parts.emplace_back(pathPattern.substr(start));
         }
         
         if (!parts.empty()) {
-            handleDirectory(basePath, parts, 0, results, directoryOnly);
+            handleDirectory(basePath, parts, 0, results, directoryOnly, maxLines);
         }
         
         return results;
