@@ -4788,15 +4788,11 @@ namespace tsl {
                 
             }
             virtual ~List() {
-                if (m_pendingJump) {
-                    if (!m_itemsToAdd.empty()){
-                        addPendingItems();
-                    }
+                if (!m_itemsToAdd.empty()){
+                    addPendingItems();
                     if (!m_items.empty()){
                         clearItems();
                     }
-                    clearStaticCache();
-                    return;
                 }
                 if (!skipDeconstruction) {
                     if (s_isForwardCache)
