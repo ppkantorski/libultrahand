@@ -155,11 +155,16 @@ inline std::string jumpItemName;
 inline std::string jumpItemValue;
 inline bool jumpItemExactMatch = true;
 
+
+
 #if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
 #endif
 
 namespace tsl {
+
+    // Booleans
+    inline bool clearCacheNow = false;
 
     // Constants
     
@@ -3180,6 +3185,7 @@ namespace tsl {
              * @warning Don't call this before calling \ref startFrame once
              */
             inline void endFrame() {
+
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (!FullMode || deactivateOriginalFooter) {
                     __builtin_memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
@@ -3191,6 +3197,10 @@ namespace tsl {
                 framebufferEnd(&this->m_framebuffer);
                 
                 this->m_currentFramebuffer = nullptr;
+                if (tsl::clearCacheNow) {
+                    tsl::gfx::FontManager::clearCache();
+                    tsl::clearCacheNow = false;
+                }
             }
 
         #if IS_STATUS_MONITOR_DIRECTIVE
@@ -4191,34 +4201,17 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Current interpreter state (atomic<bool>)
-                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed) && (ult::downloadPercentage.load(std::memory_order_relaxed) != -1 || ult::unzipPercentage.load(std::memory_order_relaxed) != -1) ;
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed) && (ult::downloadPercentage.load(std::memory_order_relaxed) != -1 || ult::unzipPercentage.load(std::memory_order_relaxed) != -1 || ult::copyPercentage.load(std::memory_order_relaxed) != -1) ;
                 
-                // --- edge-detector state (static, kept between calls) ---
-                static bool ranLastFrame = false;      // previous frame’s state
-                static bool savedNoClick = false;     // backup of clickable flag
-                // --------------------------------------------------------
-                
-                if ( interpreterIsRunningNow && !ranLastFrame ) // NOT-running → RUNNING edge
-                {
-                    savedNoClick  = m_noClickableItems;
-                    bKeyLabel = ult::HIDE; 
-                    m_noClickableItems = true;
-                }
-                else if ( !interpreterIsRunningNow && ranLastFrame ) // RUNNING → NOT-running edge
-                {
-                    bKeyLabel = ult::BACK;
-                    m_noClickableItems = savedNoClick;
-                }
-                ranLastFrame = interpreterIsRunningNow; // remember for next tick
 
                 if (m_noClickableItems != ult::noClickableItems)
                     ult::noClickableItems = m_noClickableItems;
 
-                const bool isUltrahand = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
+                const bool isUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                         m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                         m_subtitle.find("Ultrahand Script") == std::string::npos);
-            
-                if (isUltrahand) {
+                
+                if (isUltrahandMenu) {
                 #if USING_WIDGET_DIRECTIVE
                     renderer->drawWidget();
                 #endif
@@ -4383,8 +4376,8 @@ namespace tsl {
                 ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text dimensions for buttons without gaps
-                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + bKeyLabel, false, 23);
-                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
+                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23);
+                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23);
                 
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
@@ -4399,14 +4392,15 @@ namespace tsl {
                     renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               ult::backWidth, 73.0f, 6.0f, a(clickColor));
                 }
-            
+                
+                
+            #if IS_LAUNCHER_DIRECTIVE
                 // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
                                               ult::selectWidth, 73.0f, 6.0f, a(clickColor));
                 }
-                
-            #if IS_LAUNCHER_DIRECTIVE
+
                 // Calculate next page button dimensions and position
                 if (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty()) {
                     std::string pageText;
@@ -4438,18 +4432,29 @@ namespace tsl {
                                                   ult::nextPageWidth, 73.0f, 6.0f, a(clickColor));
                     }
                 }
+            #else
+                // Draw select button rectangle (starts right after back button)
+                if (ult::touchingSelect && !m_noClickableItems) {
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
+                }
             #endif
-            
+
                 // Pre-build menu bottom line efficiently
                 menuBottomLine.clear();
-                menuBottomLine.reserve(128); // Reserve space to avoid reallocations
+                menuBottomLine.reserve(60); // Reserve space to avoid reallocations
                 
-                menuBottomLine += "\uE0E1" + ult::GAP_2 + bKeyLabel + ult::GAP_1;
-                if (!m_noClickableItems) {
+                menuBottomLine += "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE) + ult::GAP_1;
+
+                if (!m_noClickableItems && !interpreterIsRunningNow) {
                     menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                 }
             
             #if IS_LAUNCHER_DIRECTIVE
+                if (interpreterIsRunningNow) {
+                    menuBottomLine += "\uE0E5"+ ult::GAP_2 + ult::CANCEL + ult::GAP_1;
+                }
+
                 if (!ult::usePageSwap) {
                     if (m_menuMode == "packages") {
                         menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS;
@@ -4472,7 +4477,7 @@ namespace tsl {
             #endif
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
-                static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"};
+                static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
                                                         edgePadding + ult::halfGap, 693, 23, 
                                                         a(bottomTextColor), a(buttonColor));
@@ -8977,6 +8982,9 @@ namespace tsl {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         this->hide();
+                    } else if ((oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
+                               (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
+                        ult::externalAbortCommands.store(true, std::memory_order_release);
                     }
                 }
                 

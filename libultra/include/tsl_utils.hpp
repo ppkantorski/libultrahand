@@ -164,6 +164,7 @@ namespace ult {
     extern std::atomic<bool> shakingProgress;
     
     extern std::atomic<bool> isHidden;
+    extern std::atomic<bool> externalAbortCommands;
     
     //bool progressAnimation = false;
     extern bool disableTransparency;
@@ -395,6 +396,7 @@ namespace ult {
     extern std::string OK;
     extern std::string BACK;
     extern std::string HIDE;
+    extern std::string CANCEL;
 
     extern std::string GAP_1;
     extern std::string GAP_2;

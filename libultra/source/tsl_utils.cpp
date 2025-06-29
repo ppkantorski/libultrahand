@@ -247,6 +247,7 @@ namespace ult {
     std::atomic<bool> shakingProgress(true);
     
     std::atomic<bool> isHidden(false);
+    std::atomic<bool> externalAbortCommands(false);
     
     //bool progressAnimation = false;
     bool disableTransparency = false;
@@ -459,6 +460,7 @@ namespace ult {
     std::string OK = "OK";
     std::string BACK = "Back";
     std::string HIDE = "Hide";
+    std::string CANCEL = "Cancel";
 
     std::string GAP_1 = "     ";
     std::string GAP_2 = "  ";
@@ -602,6 +604,8 @@ namespace ult {
         OK = "OK";
         BACK = "Back";
         HIDE = "Hide";
+        CANCEL = "Cancel";
+
         REBOOT_TO = "Reboot To";
         REBOOT = "Reboot";
         SHUTDOWN = "Shutdown";
@@ -802,6 +806,7 @@ namespace ult {
             {"OK", &OK},
             {"BACK", &BACK},
             {"HIDE", &HIDE},
+            {"CANCEL", &CANCEL},
 
             {"GAP_1", &GAP_1},
             {"GAP_2", &GAP_2},
