@@ -4759,7 +4759,7 @@ namespace tsl {
         static u32 s_cachedScrollbarOffset = 0;
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
-        static bool cacheForwardFrameOnce = true;
+        static bool s_cacheForwardFrameOnce = true;
         static bool lastInternalTouchRelease = true;
 
         static bool skipDeconstruction = false;
@@ -4782,28 +4782,25 @@ namespace tsl {
                         clearItems();
                     }
                 } else {
-                    cacheForwardFrameOnce = true;
+                    s_cacheForwardFrameOnce = true;
                     skipOnce = false;
                 }
                 
             }
             virtual ~List() {
-                if (!m_itemsToAdd.empty()){
+                if (!m_itemsToRemove.empty()) removePendingItems();
+                if (!m_itemsToAdd.empty()) {
                     addPendingItems();
-                    if (!m_items.empty()){
-                        clearItems();
-                        return;
-                    }
-                }
-                if (!m_items.empty() && !s_hasValidFrame && !m_hasForwardCached){
                     clearItems();
+                    s_cacheForwardFrameOnce = true;
+                    s_isForwardCache = false;
                     return;
                 }
                 if (!skipDeconstruction) {
                     if (s_isForwardCache)
                         clearStaticCache(true);
                     cacheCurrentFrame();
-                    cacheForwardFrameOnce = true;
+                    s_cacheForwardFrameOnce = true;
                     s_isForwardCache = false;
                 }
 
@@ -4830,7 +4827,7 @@ namespace tsl {
 
                 // Draw: backup reset if instance missed its chance  
                 if (!m_hasForwardCached) {
-                    cacheForwardFrameOnce = true;
+                    s_cacheForwardFrameOnce = true;
                     
                 }
 
@@ -4907,12 +4904,12 @@ namespace tsl {
                 if (!s_isForwardCache && s_hasValidFrame)
                     clearStaticCache(); // clear cache after rendering (for smoother transitions)
                 
-                if (cacheForwardFrameOnce && !s_hasValidFrame) {
+                if (s_cacheForwardFrameOnce && !s_hasValidFrame) {
                     s_lastFrameItems.clear();
                     s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
                     s_isForwardCache = true;
-                    cacheForwardFrameOnce = false;
+                    s_cacheForwardFrameOnce = false;
                     m_hasForwardCached = true;
                 }
 
@@ -5252,8 +5249,8 @@ namespace tsl {
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset+SCROLLBAR_Y_OFFSET;
                 }
                 //s_isForwardCache = isForwardCache;
-                if (!isForwardCache)
-                    s_hasValidFrame = true;
+                //if (!isForwardCache)
+                s_hasValidFrame = true;
             }
                                     
             void renderCachedFrame(gfx::Renderer* renderer) {
