@@ -317,8 +317,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     unzipPercentage.store(0, std::memory_order_release);
 
     // Time-based abort checking - pre-calculated constants
-    u64 lastAbortCheck = armTicksToNs(armGetSystemTick());
-    u64 currentNanos; // Reused for all tick operations
+    //u64 lastAbortCheck = armTicksToNs(armGetSystemTick());
+    //u64 currentNanos; // Reused for all tick operations
     bool success = true;
 
     // RAII wrapper for unzFile
@@ -445,17 +445,25 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     int result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK) {
         // Time-based abort check at start of each file (only if 2+ seconds have passed)
-        currentNanos = armTicksToNs(armGetSystemTick());
-        if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-            if (abortUnzip.load(std::memory_order_relaxed)) {
-                unzipPercentage.store(-1, std::memory_order_release);
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Extraction aborted during size calculation");
-                #endif
-                abortUnzip.store(false, std::memory_order_release);
-                return false;
-            }
-            lastAbortCheck = currentNanos;
+        //currentNanos = armTicksToNs(armGetSystemTick());
+        //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
+        //    if (abortUnzip.load(std::memory_order_relaxed)) {
+        //        unzipPercentage.store(-1, std::memory_order_release);
+        //        #if USING_LOGGING_DIRECTIVE
+        //        logMessage("Extraction aborted during size calculation");
+        //        #endif
+        //        abortUnzip.store(false, std::memory_order_release);
+        //        return false;
+        //    }
+        //    lastAbortCheck = currentNanos;
+        //}
+        if (abortUnzip.load(std::memory_order_relaxed)) {
+            unzipPercentage.store(-1, std::memory_order_release);
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Extraction aborted during size calculation");
+            #endif
+            abortUnzip.store(false, std::memory_order_release);
+            return false;
         }
 
         if (unzGetCurrentFileInfo64(zipFile, &fileInfo, tempFilenameBuffer, sizeof(tempFilenameBuffer), 
@@ -520,7 +528,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // Ensure destination ends with '/' - pre-allocate final string
     std::string destination;
     //destination.reserve(toDestination.size() + 1);
-    
+
     destination = toDestination;
     if (!destination.empty() && destination.back() != '/') {
         destination += '/';
@@ -530,13 +538,18 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK && success) {
         // Time-based abort check at start of each file (only if 2+ seconds have passed)
-        currentNanos = armTicksToNs(armGetSystemTick());
-        if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-            if (abortUnzip.load(std::memory_order_relaxed)) {
-                success = false;
-                break; // RAII will handle cleanup
-            }
-            lastAbortCheck = currentNanos;
+        //currentNanos = armTicksToNs(armGetSystemTick());
+        //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
+        //    if (abortUnzip.load(std::memory_order_relaxed)) {
+        //        success = false;
+        //        break; // RAII will handle cleanup
+        //    }
+        //    lastAbortCheck = currentNanos;
+        //}
+
+        if (abortUnzip.load(std::memory_order_relaxed)) {
+            success = false;
+            break; // RAII will handle cleanup
         }
         
         // Get current file info - reuse fileInfo variable
@@ -608,14 +621,19 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         
         while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
             // Time-based abort check - only every 2 seconds for optimal performance
-            currentNanos = armTicksToNs(armGetSystemTick());
-            if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-                if (abortUnzip.load(std::memory_order_relaxed)) {
-                    extractSuccess = false;
-                    break; // RAII will handle cleanup
-                }
-                lastAbortCheck = currentNanos;
+            //currentNanos = armTicksToNs(armGetSystemTick());
+            //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
+            //    if (abortUnzip.load(std::memory_order_relaxed)) {
+            //        extractSuccess = false;
+            //        break; // RAII will handle cleanup
+            //    }
+            //    lastAbortCheck = currentNanos;
+            //}
+            if (abortUnzip.load(std::memory_order_relaxed)) {
+                extractSuccess = false;
+                break; // RAII will handle cleanup
             }
+
             
             // Write data to file
             if (outputFile.write(buffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
