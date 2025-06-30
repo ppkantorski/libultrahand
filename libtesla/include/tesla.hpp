@@ -4790,9 +4790,14 @@ namespace tsl {
             virtual ~List() {
                 if (!m_itemsToAdd.empty()){
                     addPendingItems();
+                    if (!m_items.empty()){
+                        clearItems();
+                        return;
+                    }
                 }
-                if (!m_hasForwardCached && !m_items.empty()){
+                if (!m_items.empty() && !s_hasValidFrame && !m_hasForwardCached){
                     clearItems();
+                    return;
                 }
                 if (!skipDeconstruction) {
                     if (s_isForwardCache)
