@@ -484,8 +484,8 @@ int main(int arg, char **argv)
 
    #ifndef STBTT_memcpy
    #include <string.h>
-   #define STBTT_memcpy       __builtin_memcpy
-   #define STBTT_memset       __builtin_memset
+   #define STBTT_memcpy       memcpy
+   #define STBTT_memset       memset
    #endif
 #endif
 

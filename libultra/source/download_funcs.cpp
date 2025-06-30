@@ -480,9 +480,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // Pre-allocate ALL reusable strings and variables outside the main loop
     std::string fileName, extractedFilePath, directoryPath;
-    fileName.reserve(512);
-    extractedFilePath.reserve(1024);
-    directoryPath.reserve(1024);
+    //fileName.reserve(512);
+    //extractedFilePath.reserve(1024);
+    //directoryPath.reserve(1024);
     
     // Single large buffer for extraction - reused for all files
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
@@ -519,7 +519,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     
     // Ensure destination ends with '/' - pre-allocate final string
     std::string destination;
-    destination.reserve(toDestination.size() + 1);
+    //destination.reserve(toDestination.size() + 1);
+    
     destination = toDestination;
     if (!destination.empty() && destination.back() != '/') {
         destination += '/';

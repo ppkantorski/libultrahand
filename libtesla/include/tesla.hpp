@@ -113,8 +113,8 @@ struct KeyPairHash {
             char c[8];
             std::size_t s;
         } value;
-        __builtin_memcpy(&value.c[0], &key.first, 4);
-        __builtin_memcpy(&value.c[4], &key.second, 4);
+        memcpy(&value.c[0], &key.first, 4);
+        memcpy(&value.c[4], &key.second, 4);
         return value.s;
     }
 };
@@ -892,7 +892,7 @@ namespace tsl {
                     : currFont(other.currFont), currFontSize(other.currFontSize)
                     , xAdvance(other.xAdvance), glyphBmp(other.glyphBmp)
                     , width(other.width), height(other.height) {
-                    __builtin_memcpy(bounds, other.bounds, sizeof(bounds));
+                    memcpy(bounds, other.bounds, sizeof(bounds));
                     other.glyphBmp = nullptr; // Prevent double-free
                 }
                 
@@ -907,7 +907,7 @@ namespace tsl {
                         glyphBmp = other.glyphBmp;
                         width = other.width;
                         height = other.height;
-                        __builtin_memcpy(bounds, other.bounds, sizeof(bounds));
+                        memcpy(bounds, other.bounds, sizeof(bounds));
                         other.glyphBmp = nullptr;
                     }
                     return *this;
@@ -2736,7 +2736,7 @@ namespace tsl {
                         ult::ReadSocTemperature(&ult::SOC_temperature);
                         snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
                     } else {
-                        __builtin_strcpy(SOC_temperatureStr, "");
+                        strcpy(SOC_temperatureStr, "");
                         ult::SOC_temperature = 0;
                     }
                     
@@ -2744,7 +2744,7 @@ namespace tsl {
                         ult::ReadPcbTemperature(&ult::PCB_temperature);
                         snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::PCB_temperature)));
                     } else {
-                        __builtin_strcpy(PCB_temperatureStr, "");
+                        strcpy(PCB_temperatureStr, "");
                         ult::PCB_temperature = 0;
                     }
                     
@@ -2753,7 +2753,7 @@ namespace tsl {
                         ult::batteryCharge = std::min(ult::batteryCharge, 100U);
                         sprintf(chargeString, "%d%%", ult::batteryCharge);
                     } else {
-                        __builtin_strcpy(chargeString, "");
+                        strcpy(chargeString, "");
                         ult::batteryCharge = 0;
                     }
                     
@@ -3199,7 +3199,7 @@ namespace tsl {
 
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (!FullMode || deactivateOriginalFooter) {
-                    __builtin_memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
+                    memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
                     svcSleepThread(1000*1000*1000 / TeslaFPS);
                 }
                 #endif
@@ -4034,7 +4034,7 @@ namespace tsl {
                 
                 // Pre-build menu bottom line efficiently
                 menuBottomLine.clear();
-                menuBottomLine.reserve(128); // Reserve space to avoid reallocations
+                //menuBottomLine.reserve(128); // Reserve space to avoid reallocations
                 
                 menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
                 if (!m_noClickableItems) {
@@ -4450,7 +4450,7 @@ namespace tsl {
 
                 // Pre-build menu bottom line efficiently
                 menuBottomLine.clear();
-                menuBottomLine.reserve(60); // Reserve space to avoid reallocations
+                //menuBottomLine.reserve(60); // Reserve space to avoid reallocations
                 
                 menuBottomLine += "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE) + ult::GAP_1;
 
@@ -6338,7 +6338,7 @@ namespace tsl {
                 m_truncated = width > m_maxWidth + 20;
             
                 if (m_truncated) [[unlikely]] {
-                    m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate
+                    //m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate
                     m_scrollText = m_text + "        ";
                     auto [scrollWidth, scrollHeight] = renderer->getTextDimensions(m_scrollText, false, 23);
                     m_textWidth = scrollWidth;
@@ -9622,18 +9622,18 @@ namespace tsl {
             if (src[0] == '-' && src[1] == '-') {
                 
                 // Check what flag this is
-                if (__builtin_strncmp(src, "--skipCombo", 11) == 0 && (src[11] == ' ' || src[11] == '\0')) {
+                if (strncmp(src, "--skipCombo", 11) == 0 && (src[11] == ' ' || src[11] == '\0')) {
                     hasSkipCombo = true;
                     // Copy this flag
                     while (src < end && *src != ' ') *p++ = *src++;
                 }
-                else if (__builtin_strncmp(src, "--foregroundFix", 15) == 0) {
+                else if (strncmp(src, "--foregroundFix", 15) == 0) {
                     // Skip this flag and its value
                     src += 15;
                     while (src < end && *src == ' ') src++; // Skip spaces
                     if (src < end && (*src == '0' || *src == '1')) src++; // Skip value
                 }
-                else if (__builtin_strncmp(src, "--lastTitleID", 13) == 0) {
+                else if (strncmp(src, "--lastTitleID", 13) == 0) {
                     // Skip this flag and its value
                     src += 13;
                     while (src < end && *src == ' ') src++; // Skip spaces
@@ -9652,17 +9652,17 @@ namespace tsl {
         
         // Add required flags
         if (!hasSkipCombo) {
-            __builtin_memcpy(p, " --skipCombo", 12);
+            memcpy(p, " --skipCombo", 12);
             p += 12;
         }
         
         // Add foreground flag
-        __builtin_memcpy(p, " --foregroundFix ", 17);
+        memcpy(p, " --foregroundFix ", 17);
         p += 17;
         *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
         
         // Add last title ID
-        __builtin_memcpy(p, " --lastTitleID ", 15);
+        memcpy(p, " --lastTitleID ", 15);
         p += 15;
         const char* titleId = ult::lastTitleID.c_str();
         while (*titleId) *p++ = *titleId++;
@@ -9725,7 +9725,7 @@ namespace tsl {
             // Check each option directly - memcmp handles both length and content
             for (u8 i = 0; i < 4; i++) {
                 // memcmp returns 0 for exact match, and checks the null terminator position
-                if (__builtin_memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
+                if (memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
                     
                     switch (options[i].action) {
                         case 1: // direct

@@ -305,7 +305,7 @@ namespace ult {
             } else if (isDirectory(entry, fullPath)) {
                 // Recursively get files from subdirectories
                 auto subDirFiles = getFilesListFromDirectory(fullPath);
-                fileList.reserve(fileList.size() + subDirFiles.size());
+                //fileList.reserve(fileList.size() + subDirFiles.size());
                 fileList.insert(fileList.end(), 
                               std::make_move_iterator(subDirFiles.begin()),
                               std::make_move_iterator(subDirFiles.end()));

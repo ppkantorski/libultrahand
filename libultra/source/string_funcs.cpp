@@ -178,7 +178,7 @@ namespace ult {
      */
     std::string removeWhiteSpaces(const std::string& str) {
         std::string result;
-        result.reserve(str.size()); // Reserve space for the result to avoid reallocations
+        //result.reserve(str.size()); // Reserve space for the result to avoid reallocations
         
         std::remove_copy_if(str.begin(), str.end(), std::back_inserter(result), [](unsigned char c) {
             return std::isspace(c);
@@ -219,7 +219,7 @@ namespace ult {
      */
     std::string replaceMultipleSlashes(const std::string& input) {
         std::string output;
-        output.reserve(input.size()); // Reserve space for the output string
+        //output.reserve(input.size()); // Reserve space for the output string
         
         bool previousSlash = false;
         for (char c : input) {
@@ -448,7 +448,7 @@ namespace ult {
     // This will take a string like "v1.3.5-abasdfasdfa" and output "1.3.5". string could also look like "test-1.3.5-1" or "v1.3.5" and we will only want "1.3.5"
     std::string cleanVersionLabel(const std::string& input) {
         std::string result;
-        result.reserve(input.size());
+        //esult.reserve(input.size());
         
         size_t start = 0;
         
