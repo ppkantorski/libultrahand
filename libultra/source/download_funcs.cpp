@@ -22,10 +22,10 @@
 
 namespace ult {
 
-size_t DOWNLOAD_READ_BUFFER = 4 * 1024;//64 * 1024;//4096*10;
-size_t DOWNLOAD_WRITE_BUFFER = 4 * 1024;//64 * 1024;
-size_t UNZIP_READ_BUFFER = 4 * 1024;//131072*2;//4096*4;
-size_t UNZIP_WRITE_BUFFER = 4 * 1024;//131072*2;//4096*4;
+size_t DOWNLOAD_READ_BUFFER = 131072;//64 * 1024;//4096*10;
+size_t DOWNLOAD_WRITE_BUFFER = 32768;//64 * 1024;
+size_t UNZIP_READ_BUFFER = 131072;//131072*2;//4096*4;
+size_t UNZIP_WRITE_BUFFER = 32768;//131072*2;//4096*4;
 
 
 // Path to the CA certificate
@@ -172,12 +172,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
 
     // ADD THIS: Set up write buffer for better performance
-    //std::unique_ptr<char[]> writeBuffer;
-    //if (DOWNLOAD_WRITE_BUFFER > 0) {
-    //    writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
-    //    // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
-    //    setvbuf(file, writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
-    //}
+    std::unique_ptr<char[]> writeBuffer;
+    if (DOWNLOAD_WRITE_BUFFER > 0) {
+        writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
+        // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
+        setvbuf(file, writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
+    }
 #endif
 
     // Ensure curl is initialized
@@ -651,7 +651,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                 nextPercentBoundary = (static_cast<ZPOS64_T>(currentProgress + 1) * totalUncompressedSize) / 100;
                 
                 // Update the atomic progress value
-                unzipPercentage.store(currentProgress, std::memory_order_relaxed);
+                unzipPercentage.store(currentProgress, std::memory_order_release);
                 
                 #if USING_LOGGING_DIRECTIVE
                 // Only log at 10% intervals to avoid spam
