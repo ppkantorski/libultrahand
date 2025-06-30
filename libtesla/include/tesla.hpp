@@ -4790,9 +4790,9 @@ namespace tsl {
             virtual ~List() {
                 if (!m_itemsToAdd.empty()){
                     addPendingItems();
-                    if (!m_items.empty()){
-                        clearItems();
-                    }
+                }
+                if (!m_hasForwardCached && !m_items.empty()){
+                    clearItems();
                 }
                 if (!skipDeconstruction) {
                     if (s_isForwardCache)
@@ -4826,7 +4826,7 @@ namespace tsl {
                 // Draw: backup reset if instance missed its chance  
                 if (!m_hasForwardCached) {
                     cacheForwardFrameOnce = true;
-                    m_hasForwardCached = true;
+                    
                 }
 
                 
@@ -4908,6 +4908,7 @@ namespace tsl {
                     s_lastFrameItems = m_items;
                     s_isForwardCache = true;
                     cacheForwardFrameOnce = false;
+                    m_hasForwardCached = true;
                 }
 
                 if (s_isForwardCache)
