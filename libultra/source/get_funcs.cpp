@@ -337,6 +337,7 @@ namespace ult {
         std::string result;
         struct stat st;
         
+        bool isDir;
         while (!stack.empty()) {
             if (maxLines > 0 && results.size() >= maxLines) return;
             
@@ -362,7 +363,7 @@ namespace ult {
                 
                 if (fnmatch(pattern.c_str(), name, FNM_NOESCAPE) != 0) continue;
                 
-                bool isDir;
+                
                 if (entry->d_type != DT_UNKNOWN) {
                     isDir = (entry->d_type == DT_DIR);
                 } else {

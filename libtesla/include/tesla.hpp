@@ -4421,7 +4421,7 @@ namespace tsl {
                         pageText = ult::GAP_2 + m_pageRightName;
                         pageIcon = "\uE0EE";
                     } else if (ult::inMainMenu) {
-                        pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS);
+                        pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR);
                         pageIcon = (m_menuMode == "packages") ? 
                                    (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
                                    (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
@@ -4465,13 +4465,13 @@ namespace tsl {
 
                 if (!ult::usePageSwap) {
                     if (m_menuMode == "packages") {
-                        menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS;
+                        menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR;
                     } else if (m_menuMode == "overlays") {
                         menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::PACKAGES;
                     }
                 } else {
                     if (m_menuMode == "packages") {
-                        menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::OVERLAYS;
+                        menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR;
                     } else if (m_menuMode == "overlays") {
                         menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::PACKAGES;
                     }

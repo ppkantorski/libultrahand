@@ -361,6 +361,7 @@ namespace ult {
     std::string SIMPLIFIED_CHINESE = "Simplified Chinese";
     std::string TRADITIONAL_CHINESE = "Traditional Chinese";
     std::string OVERLAYS = "Overlays"; //defined in libTesla now
+    std::string OVERLAYS_ABBR = "Overlays";
     std::string OVERLAY = "Overlay";
     std::string HIDDEN_OVERLAYS = "Hidden Overlays";
     std::string PACKAGES = "Packages"; //defined in libTesla now
@@ -534,6 +535,7 @@ namespace ult {
         DEFAULT_CHAR_WIDTH = "0.33";
         UNAVAILABLE_SELECTION = "Not available";
         OVERLAYS = "Overlays"; //defined in libTesla now
+        OVERLAYS_ABBR = "Overlays";
         OVERLAY = "Overlay";
         HIDDEN_OVERLAYS = "Hidden Overlays";
         PACKAGES = "Packages"; //defined in libTesla now
@@ -708,6 +710,7 @@ namespace ult {
             {"SIMPLIFIED_CHINESE", &SIMPLIFIED_CHINESE},
             {"TRADITIONAL_CHINESE", &TRADITIONAL_CHINESE},
             {"OVERLAYS", &OVERLAYS},
+            {"OVERLAYS_ABBR", &OVERLAYS_ABBR},
             {"OVERLAY", &OVERLAY},
             {"HIDDEN_OVERLAYS", &HIDDEN_OVERLAYS},
             {"PACKAGES", &PACKAGES},
