@@ -24,7 +24,7 @@
 namespace ult {
     std::atomic<bool> abortFileOp(false);
     
-    size_t COPY_BUFFER_SIZE = 4096*4; // Back to non-const as requested
+    size_t COPY_BUFFER_SIZE = 65536; // Back to non-const as requested
 
     std::atomic<int> copyPercentage(-1);
     
