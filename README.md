@@ -32,7 +32,7 @@ INCLUDES += lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 
 Including the following libraries are also essential for compilation.
 ```sh
-LIBS := -lcurl -lz -lminizip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+LIBS := -lcurl -lz -lminizip -lmbedtls -lmbedx509 -lmbedcrypto -lnx
 ```
 
 ### Active Services
