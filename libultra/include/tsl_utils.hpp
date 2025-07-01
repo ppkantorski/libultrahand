@@ -534,8 +534,8 @@ namespace ult {
     extern bool simulatedBackComplete;
     extern bool simulatedSelect;
     extern bool simulatedSelectComplete;
-    extern bool simulatedNextPage;
-    extern bool simulatedNextPageComplete;
+    extern std::atomic<bool> simulatedNextPage;
+    extern std::atomic<bool> simulatedNextPageComplete;
     extern bool simulatedMenu;
     extern bool simulatedMenuComplete;
     extern bool stillTouching;

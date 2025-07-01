@@ -4762,6 +4762,9 @@ namespace tsl {
         static bool s_cacheForwardFrameOnce = true;
         static bool lastInternalTouchRelease = true;
 
+
+        static std::atomic<bool> safeToSwap{false};
+
         static bool skipDeconstruction = false;
         static bool skipOnce = false;
 
@@ -4771,7 +4774,7 @@ namespace tsl {
         
         public:
             List() : Element() {
-                
+                safeToSwap.store(false, std::memory_order_release);
                 m_isItem = false;
 
                 if (skipDeconstruction) {
@@ -4788,6 +4791,7 @@ namespace tsl {
                 
             }
             virtual ~List() {
+                safeToSwap.store(false, std::memory_order_release);
                 if (!m_itemsToRemove.empty()) removePendingItems();
                 if (!m_itemsToAdd.empty()) {
                     addPendingItems();
@@ -4814,7 +4818,6 @@ namespace tsl {
                 } else if (skipDeconstruction) {
                     skipOnce = true;
                 }
-
             }
             
             
@@ -4824,17 +4827,16 @@ namespace tsl {
                     clearItems();
                     return;
                 }
+                
+                // Process pending operations in batch
+                if (!m_itemsToAdd.empty()) addPendingItems();
+                if (!m_itemsToRemove.empty()) removePendingItems();
 
                 // Draw: backup reset if instance missed its chance  
                 if (!m_hasForwardCached) {
                     s_cacheForwardFrameOnce = true;
                     
                 }
-
-                
-                // Process pending operations in batch
-                if (!m_itemsToAdd.empty()) addPendingItems();
-                if (!m_itemsToRemove.empty()) removePendingItems();
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
@@ -4909,13 +4911,19 @@ namespace tsl {
                     s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
                     s_isForwardCache = true;
-                    s_cacheForwardFrameOnce = false;
+                    
                     m_hasForwardCached = true;
                 }
 
-                if (s_isForwardCache)
+                if (s_isForwardCache) {
                     cacheCurrentFrame(true);
-                
+                    s_cacheForwardFrameOnce = false;
+                }
+
+                if (m_hasForwardCached) {
+                    safeToSwap.store(true, std::memory_order_release);
+                }
+
                 //svcSleepThread(300'000'000); // for testing
             }
 
@@ -5158,6 +5166,7 @@ namespace tsl {
             //}
         
             static void clearStaticCache(bool preservePointers = false) {
+
                 if (preservePointers) {
                     // For forward cache: just clear the vector without deleting elements
                     s_lastFrameItems.clear();
@@ -8368,7 +8377,12 @@ namespace tsl {
         
     };
     
-    
+
+    // Swap state tracking variables
+    u64 lastNextPageTapTime = 0;
+    static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 500'000'000; // 400ms in nanoseconds
+    bool swapComplete = true;
+
     // Overlay
     
     /**
@@ -8666,9 +8680,8 @@ namespace tsl {
         float easeInOutCubic(float t) {
             return t < 0.5f ? 4.0f * t * t * t : 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
         }
-                        
+        
 
-                        
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
             // Static variables to maintain state between function calls
             static HidTouchState initialTouchPos = { 0 };
@@ -8680,7 +8693,7 @@ namespace tsl {
             static bool singlePressHandled = false;
             static const u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
-            
+
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
         
@@ -8693,7 +8706,7 @@ namespace tsl {
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
-        
+
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (interpreterIsRunning) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
@@ -8993,8 +9006,15 @@ namespace tsl {
                         ult::simulatedSelect = true;
                     } else if ((oldTouchPos.x >= nextPageLeftEdge && oldTouchPos.x < nextPageRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY)) {
-                        ult::simulatedNextPageComplete = false;
-                        ult::simulatedNextPage = true;
+                        u64 currentTimeNs = armTicksToNs(armGetSystemTick());
+                        u64 timeSinceLastTap = currentTimeNs - lastNextPageTapTime;
+                        
+                        if (timeSinceLastTap >= NEXT_PAGE_COOLDOWN_NS && tsl::swapComplete) {
+                            lastNextPageTapTime = currentTimeNs;
+                            bool expected = false;
+                            ult::simulatedNextPage.compare_exchange_strong(expected, true, std::memory_order_release);
+                            
+                        }
                     } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
                         ult::simulatedMenuComplete = false;
@@ -9018,9 +9038,10 @@ namespace tsl {
                 ult::stillTouching = false;
                 ult::interruptedTouch = false;
             }
-            
+
             oldTouchDetected = touchDetected;
             oldTouchEvent = touchEvent;
+
         }
         
 

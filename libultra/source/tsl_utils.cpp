@@ -1224,8 +1224,8 @@ namespace ult {
     bool simulatedBackComplete = true;
     bool simulatedSelect = false;
     bool simulatedSelectComplete = true;
-    bool simulatedNextPage = false;
-    bool simulatedNextPageComplete = true;
+    std::atomic<bool> simulatedNextPage(false);
+    std::atomic<bool> simulatedNextPageComplete(true);
     bool simulatedMenu = false;
     bool simulatedMenuComplete = true;
     bool stillTouching = false;
