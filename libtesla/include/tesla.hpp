@@ -2706,6 +2706,9 @@ namespace tsl {
                 if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
                     y_offset += 10;
                 }
+
+                //drawUniformRoundedRect(260, 15, tsl::cfg::FramebufferWidth-245 + 45, 67, a(tableBGColor));
+                //drawUniformRoundedRect(260, 15, tsl::cfg::FramebufferWidth-260, 69, a(tableBGColor));
             
                 // Use simpler time() function instead of clock_gettime for seconds precision
                 time_t currentTime = time(nullptr);
@@ -5525,8 +5528,9 @@ namespace tsl {
                 return nullptr;
             }
             
-                                                                                                                                
+                                                                                                                                            
             inline Element* handleDownFocus(Element* oldFocus) {
+                static bool triggerShakeOnce = true;
                 updateHoldState();
                 
                 // Check if the next item is non-focusable BEFORE we do anything else
@@ -5549,6 +5553,7 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
+                    triggerShakeOnce = true;
                     return result;
                 }
                 
@@ -5562,18 +5567,32 @@ namespace tsl {
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
+                    triggerShakeOnce = true;  // Reset when wrapping
                     return handleJumpToTop(oldFocus);
                 }
                 
                 // Set boundary flag
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
-                }
+                    if (triggerShakeOnce) {
+                        // Find the last focusable item to shake
+                        for (ssize_t i = static_cast<ssize_t>(m_focusedIndex); i >= 0; --i) {
+                            if (m_items[i]->m_isItem) {
+                                m_items[i]->shakeHighlight(FocusDirection::Down);
+                                break;
+                            }
+                        }
+                        triggerShakeOnce = false;
+                    }
+                } else
+                    triggerShakeOnce = true;
+                
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
             
             inline Element* handleUpFocus(Element* oldFocus) {
+                static bool triggerShakeOnce = true;
                 updateHoldState();
                 
                 // Check if the previous item is non-focusable BEFORE we do anything else
@@ -5596,6 +5615,7 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
+                    triggerShakeOnce = true;
                     return result;
                 }
                 
@@ -5609,13 +5629,26 @@ namespace tsl {
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
+                    triggerShakeOnce = true;  // Reset when wrapping
                     return handleJumpToBottom(oldFocus);
                 }
                 
                 // Set boundary flag
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
-                }
+                    if (triggerShakeOnce) {
+                        // Find the first focusable item to shake
+                        for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
+                            if (m_items[i]->m_isItem) {
+                                m_items[i]->shakeHighlight(FocusDirection::Up);
+                                break;
+                            }
+                        }
+                        triggerShakeOnce = false;
+                    }
+                } else
+                    triggerShakeOnce = true;
+            
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
