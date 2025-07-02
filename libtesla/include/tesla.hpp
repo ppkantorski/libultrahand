@@ -3914,7 +3914,7 @@ namespace tsl {
                 //renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 - 4);
                 
                 if (!hideTableBackground)
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-6, this->getWidth() +2, this->getHeight() + 20 - endGap+2, 10.0, a(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4, this->getWidth() +2, this->getHeight() + 20 - endGap, 10.0, a(tableBGColor));
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
