@@ -346,7 +346,7 @@ namespace ult {
             deleteFileOrDirectory(path, logSource);
         }
     }
-    
+        
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
                        const std::string& logSource, const std::string& logDestination) {
         
@@ -421,20 +421,22 @@ namespace ult {
         std::vector<std::string> directoriesToRemove;
         stack.push_back({sourcePath, destinationPath});
     
+        // Variables moved outside the loop to avoid repeated allocation
+        std::string name, fullPathSrc, fullPathDst;
+        dirent* entry;
+        DIR* dir;
+    
         while (!stack.empty()) {
             auto [currentSource, currentDestination] = stack.back();
             stack.pop_back();
     
-            DIR* dir = opendir(currentSource.c_str());
+            dir = opendir(currentSource.c_str());
             if (!dir) {
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Failed to open source directory: " + currentSource);
                 #endif
                 continue;
             }
-    
-            dirent* entry;
-            std::string name, fullPathSrc, fullPathDst;
     
             while ((entry = readdir(dir)) != nullptr) {
                 name = entry->d_name;
@@ -491,7 +493,7 @@ namespace ult {
             #endif
         }
     }
-        
+    
     bool moveFile(const std::string& sourcePath,
                   const std::string& destinationPath,
                   const std::string& logSource,
@@ -674,17 +676,21 @@ namespace ult {
      */
     void copySingleFile(const std::string& fromFile, const std::string& toFile, long long& totalBytesCopied, 
                         const long long totalSize, const std::string& logSource, const std::string& logDestination) {
-        size_t maxRetries = 10;
+        constexpr size_t maxRetries = 10;
         size_t retryCount = 0;
         
-        // Create parent directory for destination file
-        createDirectory(getParentDirFromPath(toFile));
+        // Pre-calculate parent directory to avoid repeated calls
+        const std::string toFileParentDir = getParentDirFromPath(toFile);
+        createDirectory(toFileParentDir);
+        
+        // Pre-allocate buffer outside any loops
+        std::unique_ptr<char[]> buffer(new char[COPY_BUFFER_SIZE]);
         
     #if NO_FSTREAM_DIRECTIVE
         FILE* srcFile = nullptr;
         FILE* destFile = nullptr;
-        std::unique_ptr<char[]> buffer(new char[COPY_BUFFER_SIZE]);
         
+        // Retry loop for opening files
         while (true) {
             srcFile = fopen(fromFile.c_str(), "rb");
             destFile = fopen(toFile.c_str(), "wb");
@@ -702,8 +708,7 @@ namespace ult {
                     #endif
                     return;
                 }
-                else
-                    continue;
+                // else continue is implicit
             } else {
                 break;
             }
@@ -717,6 +722,7 @@ namespace ult {
         FILE* logDestinationFile = nullptr;
         std::unique_ptr<FileGuard> logSourceGuard, logDestGuard;
         
+        // Pre-calculate log parent directories if needed
         if (!logSource.empty()) {
             createDirectory(getParentDirFromPath(logSource));
             logSourceFile = fopen(logSource.c_str(), "a");
@@ -741,8 +747,15 @@ namespace ult {
             }
         }
         
+        // Pre-declare variables used in the copy loop
+        size_t bytesRead;
+        size_t bytesWritten;
+        size_t written;
+        char* bufferPtr = buffer.get();  // Cache buffer pointer
+        
+        // Main copy loop
         while (true) {
-            size_t bytesRead = fread(buffer.get(), 1, COPY_BUFFER_SIZE, srcFile);
+            bytesRead = fread(bufferPtr, 1, COPY_BUFFER_SIZE, srcFile);
             if (bytesRead == 0) {
                 if (feof(srcFile)) break; // End of file
                 #if USING_LOGGING_DIRECTIVE
@@ -757,9 +770,9 @@ namespace ult {
                 return;
             }
             
-            size_t bytesWritten = 0;
+            bytesWritten = 0;
             while (bytesWritten < bytesRead) {
-                size_t written = fwrite(buffer.get() + bytesWritten, 1, bytesRead - bytesWritten, destFile);
+                written = fwrite(bufferPtr + bytesWritten, 1, bytesRead - bytesWritten, destFile);
                 if (written == 0) {
                     #if USING_LOGGING_DIRECTIVE
                     logMessage("Error writing to destination file.");
@@ -781,10 +794,10 @@ namespace ult {
         if (logDestinationFile) writeLog(logDestinationFile, toFile);
         
     #else
-        std::unique_ptr<char[]> buffer(new char[COPY_BUFFER_SIZE]);
         std::ifstream srcFile;
         std::ofstream destFile;
         
+        // Retry loop for opening files
         while (true) {
             srcFile.open(fromFile, std::ios::binary);
             destFile.open(toFile, std::ios::binary);
@@ -804,8 +817,7 @@ namespace ult {
                     #endif
                     return;
                 }
-                else
-                    continue;
+                // else continue is implicit
             }
         }
         
@@ -830,7 +842,12 @@ namespace ult {
             }
         }
         
-        while (srcFile.read(buffer.get(), COPY_BUFFER_SIZE) || srcFile.gcount() > 0) {
+        // Pre-declare variables used in the copy loop
+        std::streamsize bytesToWrite;
+        char* bufferPtr = buffer.get();  // Cache buffer pointer
+        
+        // Main copy loop
+        while (srcFile.read(bufferPtr, COPY_BUFFER_SIZE) || srcFile.gcount() > 0) {
             if (abortFileOp.load(std::memory_order_acquire)) {
                 destFile.close();
                 srcFile.close();
@@ -839,8 +856,8 @@ namespace ult {
                 return;
             }
             
-            std::streamsize bytesToWrite = srcFile.gcount();
-            destFile.write(buffer.get(), bytesToWrite);
+            bytesToWrite = srcFile.gcount();
+            destFile.write(bufferPtr, bytesToWrite);
             
             if (!destFile) {
                 #if USING_LOGGING_DIRECTIVE
