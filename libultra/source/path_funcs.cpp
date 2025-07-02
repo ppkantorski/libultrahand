@@ -19,7 +19,7 @@
  ********************************************************************************/
 
 #include "path_funcs.hpp"
-#include <memory>
+
 
 namespace ult {
     std::atomic<bool> abortFileOp(false);
