@@ -321,6 +321,7 @@ namespace ult {
     extern std::string BATTERY;
     extern std::string SOC_TEMPERATURE;
     extern std::string PCB_TEMPERATURE;
+    extern std::string BACKDROP;
     extern std::string MISCELLANEOUS;
     extern std::string MENU_ITEMS;
     extern std::string USER_GUIDE;
@@ -604,7 +605,8 @@ namespace ult {
     // Widget settings
     //static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    
+    extern bool hideWidgetBackdrop;
+
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars();
     #endif

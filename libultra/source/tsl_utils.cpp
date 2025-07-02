@@ -384,6 +384,7 @@ namespace ult {
     std::string BATTERY = "Battery";
     std::string SOC_TEMPERATURE = "SOC Temperature";
     std::string PCB_TEMPERATURE = "PCB Temperature";
+    std::string BACKDROP = "Backdrop";
     std::string MISCELLANEOUS = "Miscellaneous";
     std::string MENU_ITEMS = "Menu Items";
     std::string USER_GUIDE = "User Guide";
@@ -557,6 +558,7 @@ namespace ult {
         BATTERY = "Battery";
         SOC_TEMPERATURE = "SOC Temperature";
         PCB_TEMPERATURE = "PCB Temperature";
+        BACKDROP = "Backdrop";
         MISCELLANEOUS = "Miscellaneous";
         MENU_ITEMS = "Menu Items";
         USER_GUIDE = "User Guide";
@@ -733,6 +735,7 @@ namespace ult {
             {"BATTERY", &BATTERY},
             {"SOC_TEMPERATURE", &SOC_TEMPERATURE},
             {"PCB_TEMPERATURE", &PCB_TEMPERATURE},
+            {"BACKDROP", &BACKDROP},
             {"MISCELLANEOUS", &MISCELLANEOUS},
             {"MENU_ITEMS", &MENU_ITEMS},
             {"USER_GUIDE", &USER_GUIDE},
@@ -1444,7 +1447,8 @@ namespace ult {
     // Widget settings
     //std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    
+    bool hideWidgetBackdrop;
+
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
         
@@ -1452,6 +1456,7 @@ namespace ult {
         hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
         hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
         hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
+        hideWidgetBackdrop = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_widget_backdrop") != FALSE_STR);
         
     }
     #endif

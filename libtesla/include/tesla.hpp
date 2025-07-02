@@ -1948,62 +1948,103 @@ namespace tsl {
                 }
             }
             
-                        
+                                    
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
                 // Early exit for degenerate cases
                 //if (w <= 0 || h <= 0) return;
                 
-                // Radius is half of height to create perfect half circles on each side
-                const s32 radius = h / 2;
+                // Calculate radius and bounds
+                const s32 radius = h >> 1;  // h / 2
                 //if (radius <= 0) return;
                 
-                const s32 x_start = x + radius;
-                const s32 x_end = x + w - radius;
-                const s32 radius_sq = radius * radius;
+                // Get framebuffer bounds
+                const s32 fb_width = cfg::FramebufferWidth;
+                const s32 fb_height = cfg::FramebufferHeight;
+                
+                // Calculate clipped drawing bounds
+                const s32 clip_left = std::max(0, x);
+                const s32 clip_top = std::max(0, y);
+                const s32 clip_right = std::min(fb_width, x + w);
+                const s32 clip_bottom = std::min(fb_height, y + h);
+                
+                // Early exit if completely clipped
+                if (clip_left >= clip_right || clip_top >= clip_bottom) return;
+                
+                // Shape parameters
                 const s32 center_y = y + radius;
+                const s32 rect_left = x + radius;
+                const s32 rect_right = x + w - radius;
+                const s32 radius_sq = radius * radius;
                 
-                // Pre-declare all loop variables outside loops
-                s32 y1, x1, x_offset;
-                s32 dy, dy_sq, dist_sq;
-                s32 max_x_offset_for_row;
-                s32 left_x, right_x;
+                // Choose drawing method based on alpha
+                const bool fullOpacity = (color.a == 0xF);
                 
-                // Draw the central rectangle (unchanged - this is already optimal)
-                for (y1 = y; y1 < y + h; ++y1) {
-                    for (x1 = x_start; x1 < x_end; ++x1) {
-                        this->setPixelBlendDst(x1, y1, color);
-                    }
-                }
+                // Pre-compute variables
+                s32 y_curr, x_curr;
+                s32 dy, dy_sq, x_offset_sq;
+                s32 x_offset, row_start, row_end;
+                u32 pixel_offset;
                 
-                // Optimized semicircle drawing with precomputed values
-                for (y1 = y; y1 < y + h; ++y1) {
-                    dy = y1 - center_y;
+                // Main drawing loop
+                for (y_curr = clip_top; y_curr < clip_bottom; ++y_curr) {
+                    dy = y_curr - center_y;
                     dy_sq = dy * dy;
                     
-                    // Calculate the exact maximum x_offset for this row to avoid unnecessary iterations
-                    // max_x_offset^2 + dy^2 = radius^2, so max_x_offset = sqrt(radius^2 - dy^2)
-                    if (dy_sq >= radius_sq) continue; // Skip rows completely outside the circle
+                    // Skip rows outside the shape
+                    if (dy_sq > radius_sq) continue;
                     
-                    // Use integer square root approximation or simple bound
-                    max_x_offset_for_row = radius; // Conservative bound, could be optimized further
+                    // Calculate horizontal extent for this row
+                    x_offset_sq = radius_sq - dy_sq;
                     
-                    // Precompute the x coordinates
-                    left_x = x + radius;
-                    right_x = x + w - radius;
-                    
-                    for (x_offset = 0; x_offset < max_x_offset_for_row; ++x_offset) {
-                        dist_sq = x_offset * x_offset + dy_sq;
-                        
-                        if (dist_sq <= radius_sq) {
-                            // Left semicircle
-                            this->setPixelBlendDst(left_x - x_offset, y1, color);
-                            // Right semicircle (only if x_offset > 0 to avoid double-drawing center)
-                            if (x_offset > 0) {
-                                this->setPixelBlendDst(right_x + x_offset, y1, color);
+                    // Fast integer square root with better rounding
+                    if (radius <= 32) {
+                        // Direct calculation for small values
+                        x_offset = 0;
+                        while (x_offset * x_offset <= x_offset_sq) {
+                            x_offset++;
+                        }
+                        // More intelligent step-back: only if we're significantly over
+                        // This reduces the "flat edge" appearance
+                        if (x_offset > 0) {
+                            s32 current_sq = x_offset * x_offset;
+                            s32 prev_sq = (x_offset - 1) * (x_offset - 1);
+                            // Only step back if we're closer to the previous value
+                            if (current_sq - x_offset_sq > x_offset_sq - prev_sq) {
+                                x_offset--;
                             }
-                        } else {
-                            // Once we're outside the circle, no need to check further x values
-                            break;
+                        }
+                    } else {
+                        // Newton's method for larger values (converges in ~4 iterations)
+                        x_offset = radius; // Initial guess
+                        for (int i = 0; i < 4; ++i) {
+                            x_offset = (x_offset + x_offset_sq / x_offset) >> 1;
+                        }
+                        // Ensure we're close to the actual value
+                        while ((x_offset + 1) * (x_offset + 1) <= x_offset_sq) x_offset++;
+                        while (x_offset * x_offset > x_offset_sq) x_offset--;
+                    }
+                    
+                    // Calculate row bounds
+                    row_start = rect_left - x_offset;
+                    row_end = rect_right + x_offset;
+                    
+                    // Clip to visible area
+                    row_start = std::max(row_start, clip_left);
+                    row_end = std::min(row_end, clip_right);
+                    
+                    if (row_start >= row_end) continue;
+                    
+                    // Draw the row
+                    if (fullOpacity) {
+                        // Use setPixel for full opacity
+                        for (x_curr = row_start; x_curr < row_end; ++x_curr) {
+                            pixel_offset = this->getPixelOffset(x_curr, y_curr);
+                            this->setPixel(x_curr, y_curr, color, pixel_offset);
+                        }
+                    } else {
+                        // Blended drawing
+                        for (x_curr = row_start; x_curr < row_end; ++x_curr) {
+                            this->setPixelBlendDst(x_curr, y_curr, color);
                         }
                     }
                 }
@@ -2698,17 +2739,18 @@ namespace tsl {
                 static time_t lastTimeUpdate = 0;
                 static char timeStr[20]; // Allocate a buffer to store the time string
                 size_t y_offset = 45;
-            
+                
+                
                 if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
-                    drawRect(245, 23, 1, 49, a(separatorColor));
+                    drawRect(245 - 6, 23, 1, 49, a(separatorColor));
+                    //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 - 4 , 64, a(tableBGColor));
+                    if (!ult::hideWidgetBackdrop)
+                        drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
                 }
             
                 if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
                     y_offset += 10;
                 }
-
-                //drawUniformRoundedRect(260, 15, tsl::cfg::FramebufferWidth-245 + 45, 67, a(tableBGColor));
-                //drawUniformRoundedRect(260, 15, tsl::cfg::FramebufferWidth-260, 69, a(tableBGColor));
             
                 // Use simpler time() function instead of clock_gettime for seconds precision
                 time_t currentTime = time(nullptr);
@@ -9268,6 +9310,11 @@ namespace tsl {
             std::string hideSOCTempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
             ult::removeQuotes(hideSOCTempStr);
             ult::hideSOCTemp = hideSOCTempStr != ult::FALSE_STR;
+
+            std::string hideWidgetBackdropStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_widget_backdrop"];
+            ult::removeQuotes(hideWidgetBackdropStr);
+            ult::hideWidgetBackdrop = hideWidgetBackdropStr != ult::FALSE_STR;
+
             #endif
             
         }
@@ -9604,7 +9651,7 @@ namespace tsl {
                         case WaiterObject_CaptureButton:
                             ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
-                            svcSleepThread(800'000'000);
+                            svcSleepThread(1'000'000'000);
                             ult::disableTransparency = false;
                             break;
                     }
