@@ -28,6 +28,7 @@
 #include <fstream>
 #endif
 
+#include <memory>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "global_vars.hpp"
