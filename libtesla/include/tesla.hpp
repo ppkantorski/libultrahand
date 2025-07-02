@@ -9571,7 +9571,7 @@ namespace tsl {
                         case WaiterObject_CaptureButton:
                             ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
-                            svcSleepThread(500'000'000);
+                            svcSleepThread(800'000'000);
                             ult::disableTransparency = false;
                             break;
                     }
