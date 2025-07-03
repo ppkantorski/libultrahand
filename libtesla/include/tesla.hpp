@@ -1247,8 +1247,11 @@ namespace tsl {
             static Color a(const Color& c) {
                 const u8 opacity_limit = static_cast<u8>(0xF * Renderer::s_opacity);
                 return (c.rgba & 0x0FFF) | (static_cast<u32>(
-                    (ult::disableTransparency && ult::useOpaqueScreenshots) ? 0xF : 
-                    (c.a < opacity_limit ? c.a : opacity_limit)
+                    ult::disableTransparency
+                        ? (ult::useOpaqueScreenshots
+                               ? 0xF                       // fully opaque when both flags on
+                               : (c.a < 0xE ? c.a : 0xE)) // clamp to 14, keep lower values
+                        : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
                 ) << 12);
             }
             
@@ -2743,87 +2746,67 @@ namespace tsl {
             #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
             inline void drawWidget() {
-                // Draw clock if it's not hidden
                 static time_t lastTimeUpdate = 0;
-                static char timeStr[20]; // Allocate a buffer to store the time string
+                static char timeStr[20];
                 size_t y_offset = 44;
                 
+                // Draw separator and backdrop if any widget is visible
                 if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
-                    drawRect(245 - 6, 23, 1, 49, a(separatorColor));
-                    //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 - 4 , 64, a(tableBGColor));
+                    drawRect(239, 15, 1, 64, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
-                        drawUniformRoundedRect(248, 16-1, tsl::cfg::FramebufferWidth-248 -7 , 64, a(widgetBackdropColor));
+                        drawUniformRoundedRect(248, 15, tsl::cfg::FramebufferWidth - 255, 64, a(widgetBackdropColor));
                     }
                 }
             
+                // Adjust offset if only clock is shown or no widgets
                 if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
                     y_offset += 11;
                 }
             
-                // Use simpler time() function instead of clock_gettime for seconds precision
+                int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
                 time_t currentTime = time(nullptr);
+                
+                // Draw clock
                 if (!ult::hideClock) {
-                    // Only update time string if a second has passed
                     if (currentTime != lastTimeUpdate) {
                         strftime(timeStr, sizeof(timeStr), ult::datetimeFormat.c_str(), localtime(&currentTime));
                         ult::localizeTimeStr(timeStr);
                         lastTimeUpdate = currentTime;
                     }
                     auto [timeWidth, timeHeight] = getTextDimensions(timeStr, false, 20);
-                    
-                    // Always center clock text within the backdrop region
-                    int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
-                    int clockX = backdropCenterX - timeWidth / 2;
-                    
+                    int clockX = backdropCenterX - timeWidth / 2.;
                     drawString(timeStr, false, clockX, y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
             
-                // Draw temperatures and battery percentage
+                // Update sensor data
                 static char PCB_temperatureStr[10];
                 static char SOC_temperatureStr[10];
                 static char chargeString[6];
-            
-                size_t statusChange = size_t(ult::hideSOCTemp) + size_t(ult::hidePCBTemp) + size_t(ult::hideBattery);
-                static size_t lastStatusChange = 0;
                 static time_t lastSensorUpdate = 0;
                 
-                // Update sensors every second or when visibility settings change
-                if ((currentTime - lastSensorUpdate) >= 1 || statusChange != lastStatusChange) {
+                if ((currentTime - lastSensorUpdate) >= 1) {
                     if (!ult::hideSOCTemp) {
                         ult::ReadSocTemperature(&ult::SOC_temperature);
                         snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
-                    } else {
-                        strcpy(SOC_temperatureStr, "");
-                        ult::SOC_temperature = 0;
                     }
                     
                     if (!ult::hidePCBTemp) {
                         ult::ReadPcbTemperature(&ult::PCB_temperature);
                         snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::PCB_temperature)));
-                    } else {
-                        strcpy(PCB_temperatureStr, "");
-                        ult::PCB_temperature = 0;
                     }
                     
                     if (!ult::hideBattery) {
                         ult::powerGetDetails(&ult::batteryCharge, &ult::isCharging);
                         ult::batteryCharge = std::min(ult::batteryCharge, 100U);
                         sprintf(chargeString, "%d%%", ult::batteryCharge);
-                    } else {
-                        strcpy(chargeString, "");
-                        ult::batteryCharge = 0;
                     }
                     
                     lastSensorUpdate = currentTime;
-                    lastStatusChange = statusChange;
                 }
                 
-                // Build combined string to get accurate total width
-                std::string combinedString = "";
+                // Build elements list and combined string for total width calculation
                 std::vector<std::string> elements;
-                
                 if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
                     elements.push_back(SOC_temperatureStr);
                 }
@@ -2834,48 +2817,43 @@ namespace tsl {
                     elements.push_back(chargeString);
                 }
                 
-                // Create combined string with spaces between elements
-                for (size_t i = 0; i < elements.size(); i++) {
-                    combinedString += elements[i];
-                    if (i < elements.size() - 1) {
-                        combinedString += " ";
+                if (!elements.empty()) {
+                    // Build combined string for centering calculation
+                    std::string combinedString = "";
+                    for (size_t i = 0; i < elements.size(); i++) {
+                        combinedString += elements[i];
+                        if (i < elements.size() - 1) {
+                            combinedString += " ";
+                        }
                     }
-                }
-                
-                // Get total width of combined string
-                auto [totalWidth, totalHeight] = getTextDimensions(combinedString.c_str(), false, 20);
-                
-                // Calculate center position within backdrop region
-                int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
-                int groupStartX = backdropCenterX - totalWidth / 2;
-                
-                // Draw each element at its correct position
-                int currentX = groupStartX;
-                
-                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                    drawString(SOC_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
-                    auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
-                    currentX += width;
-                    if ((!ult::hidePCBTemp && ult::PCB_temperature > 0) || (!ult::hideBattery && ult::batteryCharge > 0)) {
-                        auto [spaceWidth, spaceHeight] = getTextDimensions(" ", false, 20);
-                        currentX += spaceWidth;
+                    
+                    // Get total width and calculate starting position
+                    auto [totalWidth, totalHeight] = getTextDimensions(combinedString.c_str(), false, 20);
+                    float currentX = backdropCenterX - totalWidth / 2.;
+                    
+                    // Get space width once
+                    static float spaceWidth = getTextDimensions(" ", false, 20).first;
+                    
+                    // Draw each element with proper colors
+                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                        currentX += drawString(SOC_temperatureStr, false, currentX, y_offset, 20, (tsl::GradientColor(ult::SOC_temperature))).first;
+                        if ((!ult::hidePCBTemp && ult::PCB_temperature > 0) || (!ult::hideBattery && ult::batteryCharge > 0)) {
+                            currentX += spaceWidth;
+                        }
                     }
-                }
-                
-                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                    drawString(PCB_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
-                    auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
-                    currentX += width;
+                    
+                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                        currentX += drawString(PCB_temperatureStr, false, currentX, y_offset, 20, (tsl::GradientColor(ult::PCB_temperature))).first;
+                        if (!ult::hideBattery && ult::batteryCharge > 0) {
+                            currentX += spaceWidth;
+                        }
+                    }
+                    
                     if (!ult::hideBattery && ult::batteryCharge > 0) {
-                        auto [spaceWidth, spaceHeight] = getTextDimensions(" ", false, 20);
-                        currentX += spaceWidth;
+                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                        drawString(chargeString, false, currentX, y_offset, 20, (batteryColorToUse));
                     }
-                }
-                
-                if (!ult::hideBattery && ult::batteryCharge > 0) {
-                    Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    drawString(chargeString, false, currentX, y_offset, 20, a(batteryColorToUse));
                 }
             }
             #endif
@@ -4231,7 +4209,7 @@ namespace tsl {
             std::string m_pageRightName; // CUSTOM MODIFICATION
         
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
-            static constexpr double cycleDuration = 1.5;
+            static constexpr double cycleDuration = 1.6;
             float counter = 0;
             float countOffset;
             float progress;
@@ -4319,38 +4297,53 @@ namespace tsl {
                     fontSize = 42;
                     offset = 6;
                     countOffset = 0;
-            
+                                                                                                                                    
                     if (!disableColorfulLogo && ult::useDynamicLogo) {
                         const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                        const double currentTimeCount = currentTime_ns / 1000000000.0;
-            
+                        
+                        // High precision time calculation to prevent stepping artifacts
+                        const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
+                        
+                        // Pre-calculate time base once per frame for consistent wave sync
+                        const double timeBase = std::fmod(currentTimeCount, cycleDuration);
+                        
+                        // Pre-calculate wave constants - NOW MATCHES CYCLE DURATION
+                        const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
+                        const double phaseShift = ult::_M_PI / 2.0;
+                        
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
-                            counter = (2 * ult::_M_PI * (std::fmod(currentTimeCount, cycleDuration) + countOffset) / 1.5);
-                            progress = std::cos(counter - ult::_M_PI / 2.0);
+                            // Smooth, precise wave calculation
+                            const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
+                            const double rawProgress = std::cos(wavePhase - phaseShift);
                             
+                            // Apply double smoothstep for ultra-smooth color transitions
+                            const double normalizedProgress = (rawProgress + 1.0) * 0.5; // Convert to 0-1
+                            const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
+                            // Apply smoothstep again for even smoother transitions
+                            const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
+                            
+                            // Pure floating point interpolation - no dithering to eliminate flicker
+                            const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
+                            
+                            // High precision floating point color interpolation
                             const tsl::Color highlightColor = {
-                                static_cast<u8>((dynamicLogoRGB2.r - dynamicLogoRGB1.r) * (progress + 1.0) * 0.5 + dynamicLogoRGB1.r),
-                                static_cast<u8>((dynamicLogoRGB2.g - dynamicLogoRGB1.g) * (progress + 1.0) * 0.5 + dynamicLogoRGB1.g),
-                                static_cast<u8>((dynamicLogoRGB2.b - dynamicLogoRGB1.b) * (progress + 1.0) * 0.5 + dynamicLogoRGB1.b),
+                                static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
+                                static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
+                                static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
                                 15
                             };
                             
                             const std::string letterStr(1, letter);
-                            renderer->drawString(letterStr, false, x, y + offset, fontSize, a(highlightColor));
-                            auto [letterWidth, letterHeight] = renderer->getTextDimensions(letterStr, false, fontSize);
-                            x += letterWidth;
-                            countOffset -= 0.2F;
+                            x += std::get<0>(renderer->drawString(letterStr, false, x, y + offset, fontSize, highlightColor));
+                            countOffset -= static_cast<float>(cycleDuration / 8.0);
                         }
                     } else {
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                             const std::string letterStr(1, letter);
-                            renderer->drawString(letterStr, false, x, y + offset, fontSize, a(logoColor1));
-                            auto [letterWidth, letterHeight] = renderer->getTextDimensions(letterStr, false, fontSize);
-                            x += letterWidth;
-                            countOffset -= 0.2F;
+                            x += std::get<0>(renderer->drawString(letterStr, false, x, y + offset, fontSize, logoColor1));
                         }
                     }
-                    
+                                                                                                    
                     renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
                     
                 } else {
