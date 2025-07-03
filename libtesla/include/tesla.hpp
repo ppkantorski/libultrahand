@@ -301,7 +301,7 @@ namespace tsl {
     static bool disableSelectionBG = false;
     static bool invertBGClickColor = false;
 
-    static size_t selectionBGAlpha = 13;
+    static size_t selectionBGAlpha = 11;
     static Color selectionBGColor = RGB888(ult::blackColor, selectionBGAlpha);
 
     static Color highlightColor1 = RGB888("2288CC");
@@ -327,11 +327,11 @@ namespace tsl {
     static Color invalidTextColor = RGB888("FF0000");
     static Color clickTextColor = RGB888(ult::whiteColor);
 
-    static size_t tableBGAlpha = 10;
-    static Color tableBGColor = RGB888("303030", tableBGAlpha);
+    static size_t tableBGAlpha = 14;
+    static Color tableBGColor = RGB888("2f2f30", tableBGAlpha); //RGB888("303030", tableBGAlpha);
     static Color sectionTextColor = RGB888(ult::whiteColor);
     //static Color infoTextColor = RGB888("00FFDD");
-    static Color infoTextColor =RGB888("85c4ff");
+    static Color infoTextColor =RGB888("9ed0ff");
     static Color warningTextColor = RGB888("FF7777");
 
     static Color healthyRamTextColor = RGB888("00FF00");
@@ -2748,13 +2748,11 @@ namespace tsl {
                 static char timeStr[20]; // Allocate a buffer to store the time string
                 size_t y_offset = 44;
                 
-                size_t backDropOffset = 0;
                 if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
                     drawRect(245 - 6, 23, 1, 49, a(separatorColor));
                     //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 - 4 , 64, a(tableBGColor));
                     if (!ult::hideWidgetBackdrop) {
                         //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
-                        backDropOffset = 4;
                         drawUniformRoundedRect(248, 16-1, tsl::cfg::FramebufferWidth-248 -7 , 64, a(widgetBackdropColor));
                     }
                 }
@@ -2773,7 +2771,12 @@ namespace tsl {
                         lastTimeUpdate = currentTime;
                     }
                     auto [timeWidth, timeHeight] = getTextDimensions(timeStr, false, 20);
-                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 20 - backDropOffset, y_offset, 20, a(clockColor));
+                    
+                    // Always center clock text within the backdrop region
+                    int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
+                    int clockX = backdropCenterX - timeWidth / 2;
+                    
+                    drawString(timeStr, false, clockX, y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
             
@@ -2817,36 +2820,62 @@ namespace tsl {
                     lastStatusChange = statusChange;
                 }
                 
-                // Calculate string widths only when needed
-                s32 chargeWidth = 0, pcbWidth = 0, socWidth = 0;
+                // Build combined string to get accurate total width
+                std::string combinedString = "";
+                std::vector<std::string> elements;
                 
-
-
-                // Draw battery percentage
+                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                    elements.push_back(SOC_temperatureStr);
+                }
+                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                    elements.push_back(PCB_temperatureStr);
+                }
+                if (!ult::hideBattery && ult::batteryCharge > 0) {
+                    elements.push_back(chargeString);
+                }
+                
+                // Create combined string with spaces between elements
+                for (size_t i = 0; i < elements.size(); i++) {
+                    combinedString += elements[i];
+                    if (i < elements.size() - 1) {
+                        combinedString += " ";
+                    }
+                }
+                
+                // Get total width of combined string
+                auto [totalWidth, totalHeight] = getTextDimensions(combinedString.c_str(), false, 20);
+                
+                // Calculate center position within backdrop region
+                int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
+                int groupStartX = backdropCenterX - totalWidth / 2;
+                
+                // Draw each element at its correct position
+                int currentX = groupStartX;
+                
+                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                    drawString(SOC_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
+                    auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
+                    currentX += width;
+                    if ((!ult::hidePCBTemp && ult::PCB_temperature > 0) || (!ult::hideBattery && ult::batteryCharge > 0)) {
+                        auto [spaceWidth, spaceHeight] = getTextDimensions(" ", false, 20);
+                        currentX += spaceWidth;
+                    }
+                }
+                
+                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                    drawString(PCB_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
+                    auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
+                    currentX += width;
+                    if (!ult::hideBattery && ult::batteryCharge > 0) {
+                        auto [spaceWidth, spaceHeight] = getTextDimensions(" ", false, 20);
+                        currentX += spaceWidth;
+                    }
+                }
+                
                 if (!ult::hideBattery && ult::batteryCharge > 0) {
                     Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
                                             (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    auto [width, height] = getTextDimensions(chargeString, false, 20);
-                    chargeWidth = width;
-                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(batteryColorToUse));
-                }
-            
-                // Draw PCB and SOC temperatures
-                int offset = 0;
-                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                    if (!ult::hideBattery)
-                        offset -= 5;
-                    auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
-                    pcbWidth = width;
-                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
-                }
-            
-                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                    if (!ult::hidePCBTemp || !ult::hideBattery)
-                        offset -= 5;
-                    auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
-                    socWidth = width;
-                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
+                    drawString(chargeString, false, currentX, y_offset, 20, a(batteryColorToUse));
                 }
             }
             #endif
@@ -9805,7 +9834,7 @@ namespace tsl {
                 *p++ = '3';
                 break;
             default:
-                *p++ = '1'; // Default to InFocus
+                *p++ = '3'; // Default to Background
                 break;
         }
         
