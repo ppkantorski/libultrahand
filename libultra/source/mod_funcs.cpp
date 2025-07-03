@@ -443,21 +443,20 @@ namespace ult {
         }
     
         std::vector<std::pair<uint32_t, std::vector<uint8_t>>> patches;
+        char lineBuffer[512];  // Fixed: Use char buffer for fgets
         std::string line;
         uint32_t lineNum = 0;
         std::string nsobid;
         int offset = 0; // Default offset
         bool enabled = true;
     
-        // Move variable declarations outside the loop
         uint32_t address;
         uint8_t byte;
         std::vector<uint8_t> valueBytes;
         std::string offsetStr;
-        std::string addressStr, valueStr;
-        char* endPtr;
     
-        while (fgets(&line[0], line.size(), pchtxtFile) != nullptr) {
+        while (fgets(lineBuffer, sizeof(lineBuffer), pchtxtFile) != nullptr) {
+            line = lineBuffer;  // Convert to string
             ++lineNum;
             if (line.empty() || line.front() == '@' || !enabled) {
                 if (line.find("@nsobid-") == 0) {
@@ -482,11 +481,13 @@ namespace ult {
             }
             
             StringStream iss(line);
+            std::string addressStr, valueStr;
     
             if (!(iss >> addressStr >> valueStr)) {
                 continue;
             }
             
+            char* endPtr;
             address = std::strtoul(addressStr.c_str(), &endPtr, 16) + offset; // Adjust address by offset
             if (*endPtr != '\0') {
                 continue;
@@ -528,13 +529,10 @@ namespace ult {
         std::string nsobid;
         int offset = 0; // Default offset
     
-        // Move variable declarations outside the loop
         uint32_t address;
         uint8_t byte;
         std::vector<uint8_t> valueBytes;
         std::string offsetStr;
-        std::string addressStr, valueStr;
-        char* endPtr;
     
         while (std::getline(pchtxtFile, line)) {
             ++lineNum;
@@ -553,11 +551,13 @@ namespace ult {
             }
     
             StringStream iss(line);
+            std::string addressStr, valueStr;
     
             if (!(iss >> addressStr >> valueStr)) {
                 continue;
             }
     
+            char* endPtr;
             address = std::strtoul(addressStr.c_str(), &endPtr, 16) + offset; // Adjust address by offset
             if (*endPtr != '\0') {
                 continue;
@@ -603,7 +603,6 @@ namespace ult {
     
         fwrite(IPS32_HEAD_MAGIC, sizeof(char), std::strlen(IPS32_HEAD_MAGIC), ipsFile);
     
-        // Move variable declarations outside the loop
         uint16_t valueLength;
         uint32_t bigEndianAddress;
     
@@ -620,6 +619,7 @@ namespace ult {
         fwrite(IPS32_FOOT_MAGIC, sizeof(char), std::strlen(IPS32_FOOT_MAGIC), ipsFile);
         fclose(ipsFile);
     
+    
         FILE* _pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!_pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -634,6 +634,7 @@ namespace ult {
             pchtxt += buffer;
         }
         fclose(_pchtxtFile);
+    
     
         std::string tid = findTitleID(pchtxt);
         if (!tid.empty()) {
@@ -659,10 +660,8 @@ namespace ult {
     
         ipsFile.write(IPS32_HEAD_MAGIC, std::strlen(IPS32_HEAD_MAGIC));
     
-        // Move variable declarations outside the loop
         uint16_t valueLength;
         uint32_t bigEndianAddress;
-        
         for (const auto& patch : patches) {
             bigEndianAddress = toBigEndian(patch.first);  // Convert address to big-endian
             ipsFile.write(reinterpret_cast<const char*>(&bigEndianAddress), sizeof(bigEndianAddress));  // Write address
@@ -675,6 +674,7 @@ namespace ult {
     
         ipsFile.write(IPS32_FOOT_MAGIC, std::strlen(IPS32_FOOT_MAGIC));
         ipsFile.close();
+    
     
         std::ifstream _pchtxtFile(pchtxtPath);
         if (!_pchtxtFile) {

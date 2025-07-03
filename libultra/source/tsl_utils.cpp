@@ -1002,6 +1002,8 @@ namespace ult {
         {"default_package_color", "00FF00"},
         {"default_script_color", "FF33FF"},
         {"clock_color", whiteColor},
+        {"widget_backdrop_alpha", "15"},
+        {"widget_backdrop_color", blackColor},
         {"bg_alpha", "13"},
         {"bg_color", blackColor},
         {"separator_alpha", "15"},

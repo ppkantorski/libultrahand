@@ -286,6 +286,9 @@ namespace tsl {
     static Color defaultScriptColor = RGB888("FF33FF");
     static Color clockColor = RGB888(ult::whiteColor);
     static Color batteryColor = RGB888("ffff45");
+    static size_t widgetBackdropAlpha = 15;
+    static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
+
     static Color versionTextColor = RGB888("AAAAAA");
     static Color onTextColor = RGB888("00FFDD");
     static Color offTextColor = RGB888("AAAAAA");
@@ -386,6 +389,8 @@ namespace tsl {
 
             clockColor = getColor("clock_color");
             batteryColor = getColor("battery_color");
+            widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
+            widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
             versionTextColor = getColor("version_text_color");
             onTextColor = getColor("on_text_color");
@@ -926,8 +931,8 @@ namespace tsl {
             // Use unique_ptr to ensure proper cleanup
             inline static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
             
-            inline static std::chrono::steady_clock::time_point s_lastClearTime{};
-            inline static constexpr std::chrono::milliseconds CLEAR_COOLDOWN{500}; // 100ms minimum between clears
+            inline static u64 s_lastClearTimeNs = 0;
+            inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
 
             // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 10000;
@@ -1049,16 +1054,16 @@ namespace tsl {
             }
             
             static void clearCache() {
-                auto now = std::chrono::steady_clock::now();
+                u64 nowNs = armTicksToNs(armGetSystemTick());
                 
                 // Rate limit cache clearing
-                if (now - s_lastClearTime < CLEAR_COOLDOWN) {
+                if (nowNs - s_lastClearTimeNs < CLEAR_COOLDOWN_NS) {
                     return; // Skip clearing if too recent
                 }
                 
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
-                s_lastClearTime = now;
+                s_lastClearTimeNs = nowNs;
             }
             
             static void cleanup() {
@@ -1295,8 +1300,8 @@ namespace tsl {
              */
             static constexpr u8 inv_alpha_table[16] = {15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0};
             
-            inline u8 blendColor(const u8 src, const u8 dst, const u8 alpha) {
-                return (src * inv_alpha_table[alpha] + dst * alpha) >> 4;
+            inline u8 __attribute__((always_inline)) blendColor(const u8 src, const u8 dst, const u8 alpha) {
+                return ((src * inv_alpha_table[alpha]) + (dst * alpha)) >> 4;
             }
             
             /**
@@ -1307,62 +1312,57 @@ namespace tsl {
              * @param color Color
              */
             inline void setPixelBlendSrc(const u32 x, const u32 y, const Color& color) {
-                // Early exit for fully transparent pixels
-                //if (color.a == 0)
-                //    return;
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                //const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                const Color src(static_cast<const u16*>(this->getCurrentFramebuffer())[offset]);
+                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                const Color src = framebuffer[offset];
                 
-                // Inline the blending and Color construction
-                //const Color end = {
-                //    blendColor(src.r, color.r, color.a),
-                //    blendColor(src.g, color.g, color.a), 
-                //    blendColor(src.b, color.b, color.a),
-                //    src.a
-                //};
+                // Direct write instead of calling setPixel
+                framebuffer[offset] = Color(
+                    blendColor(src.r, color.r, color.a),
+                    blendColor(src.g, color.g, color.a),
+                    blendColor(src.b, color.b, color.a),
+                    src.a
+                );
+            }
             
-                this->setPixel(x, y, {blendColor(src.r, color.r, color.a), blendColor(src.g, color.g, color.a),  blendColor(src.b, color.b, color.a), src.a}, offset);
-            }
-
             // Alternative batch version for processing multiple pixels at once
-            inline void setPixelBlendSrcBatch(const u32 baseX, const u32 baseY, 
-                                              const u8 red[16], const u8 green[16], 
-                                              const u8 blue[16], const u8 alpha[16], 
-                                              const s32 count) {
-                // All variables moved outside the loop
-                const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                u32 offset;
-                u8 currentAlpha;
-                Color src = {0}, end = {0};
-                u32 currentX;
-                
-                for (s32 i = 0; i < count; ++i) {
-                    // Early exit for transparent pixels
-                    currentAlpha = alpha[i];
-                    if (currentAlpha == 0)
-                        continue;
-                    
-                    currentX = baseX + i;
-                    offset = this->getPixelOffset(currentX, baseY);
-                    if (offset == UINT32_MAX) [[unlikely]]
-                        continue;
-                    
-                    // Direct framebuffer access and color construction
-                    src = Color(framebuffer[offset]);
-                    
-                    // Direct member assignment instead of constructor
-                    end.r = blendColor(src.r, red[i], currentAlpha);
-                    end.g = blendColor(src.g, green[i], currentAlpha);
-                    end.b = blendColor(src.b, blue[i], currentAlpha);
-                    end.a = src.a;
-                    
-                    this->setPixel(currentX, baseY, end, offset);
-                }
-            }
+            //inline void setPixelBlendSrcBatch(const u32 baseX, const u32 baseY, 
+            //                                  const u8 red[16], const u8 green[16], 
+            //                                  const u8 blue[16], const u8 alpha[16], 
+            //                                  const s32 count) {
+            //    // All variables moved outside the loop
+            //    const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+            //    u32 offset;
+            //    u8 currentAlpha;
+            //    Color src = {0}, end = {0};
+            //    u32 currentX;
+            //    
+            //    for (s32 i = 0; i < count; ++i) {
+            //        // Early exit for transparent pixels
+            //        currentAlpha = alpha[i];
+            //        if (currentAlpha == 0)
+            //            continue;
+            //        
+            //        currentX = baseX + i;
+            //        offset = this->getPixelOffset(currentX, baseY);
+            //        if (offset == UINT32_MAX) [[unlikely]]
+            //            continue;
+            //        
+            //        // Direct framebuffer access and color construction
+            //        src = framebuffer[offset];
+            //        
+            //        // Direct member assignment instead of constructor
+            //        end.r = blendColor(src.r, red[i], currentAlpha);
+            //        end.g = blendColor(src.g, green[i], currentAlpha);
+            //        end.b = blendColor(src.b, blue[i], currentAlpha);
+            //        end.a = src.a;
+            //        
+            //        this->setPixel(currentX, baseY, end, offset);
+            //    }
+            //}
 
             
             /**
@@ -1402,14 +1402,16 @@ namespace tsl {
                 if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                const Color src(static_cast<const u16*>(this->getCurrentFramebuffer())[offset]);
+                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                const Color src = framebuffer[offset];
                 
-                this->setPixel(x, y, {
+                // Direct write instead of calling setPixel
+                framebuffer[offset] = Color(
                     blendColor(src.r, color.r, color.a),
                     blendColor(src.g, color.g, color.a),
                     blendColor(src.b, color.b, color.a),
-                    static_cast<u8>(color.a + (src.a * (0xF - color.a) >> 4))
-                }, offset);
+                    (color.a + (src.a * (0xF - color.a) >> 4))
+                );
             }
 
             // Batch version for setPixelBlendDst
@@ -1437,14 +1439,14 @@ namespace tsl {
                         continue;
                     
                     // Direct framebuffer access and color construction
-                    src = Color(framebuffer[offset]);
+                    src = framebuffer[offset];
                     invAlpha = 0xF - currentAlpha;
                     
                     // Direct member assignment instead of constructor
                     end.r = blendColor(src.r, red[i], currentAlpha);
                     end.g = blendColor(src.g, green[i], currentAlpha);
                     end.b = blendColor(src.b, blue[i], currentAlpha);
-                    end.a = static_cast<u8>(currentAlpha + (src.a * invAlpha >> 4));
+                    end.a = (currentAlpha + (src.a * invAlpha >> 4));
                     
                     this->setPixel(currentX, baseY, end, offset);
                 }
@@ -1806,6 +1808,7 @@ namespace tsl {
                 }
                 
                 s32 span_start, span_end;
+                s32 dx;
                 // Direct rendering - no intermediate span storage, minimal variables in loop
                 for (s32 y_current = startRow; y_current < endRow; ++y_current) {
                     
@@ -1815,12 +1818,17 @@ namespace tsl {
                         span_start = x;
                         span_end = x_end;
                     } else {
-                        // Corner section
-                        const s32 dy = y_current - (y_current < y_top ? y_top : y_bottom);
-                        const s32 dy2 = dy * dy;
+                        // Corner section - use absolute distance for symmetry
+                        const s32 dy_abs = (y_current < y_top) ? (y_top - y_current) : (y_current - y_bottom);
+                        const s32 dy2 = dy_abs * dy_abs;
                         if (dy2 > r2) continue;
                         
-                        const s32 dx = static_cast<s32>(std::sqrt(r2 - dy2));
+                        // Use integer-only calculation to avoid floating-point precision issues
+                        dx = 0;
+                        while ((dx + 1) * (dx + 1) + dy2 <= r2) {
+                            dx++;
+                        }
+                        
                         span_start = std::max(x_left - dx, x);
                         span_end = std::min(x_right + dx, x_end);
                     }
@@ -2738,18 +2746,21 @@ namespace tsl {
                 // Draw clock if it's not hidden
                 static time_t lastTimeUpdate = 0;
                 static char timeStr[20]; // Allocate a buffer to store the time string
-                size_t y_offset = 45;
+                size_t y_offset = 44;
                 
-                
+                size_t backDropOffset = 0;
                 if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
                     drawRect(245 - 6, 23, 1, 49, a(separatorColor));
                     //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 - 4 , 64, a(tableBGColor));
-                    if (!ult::hideWidgetBackdrop)
-                        drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
+                    if (!ult::hideWidgetBackdrop) {
+                        //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
+                        backDropOffset = 9;
+                        drawUniformRoundedRect(248, 16-1, tsl::cfg::FramebufferWidth-248 -7 , 64, a(widgetBackdropColor));
+                    }
                 }
             
                 if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
-                    y_offset += 10;
+                    y_offset += 11;
                 }
             
                 // Use simpler time() function instead of clock_gettime for seconds precision
@@ -2762,7 +2773,7 @@ namespace tsl {
                         lastTimeUpdate = currentTime;
                     }
                     auto [timeWidth, timeHeight] = getTextDimensions(timeStr, false, 20);
-                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 20, y_offset, 20, a(clockColor));
+                    drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 20 - backDropOffset, y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
             
@@ -2815,7 +2826,7 @@ namespace tsl {
                                             (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
                     auto [width, height] = getTextDimensions(chargeString, false, 20);
                     chargeWidth = width;
-                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20, y_offset, 20, a(batteryColorToUse));
+                    drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(batteryColorToUse));
                 }
             
                 // Draw PCB and SOC temperatures
@@ -2825,7 +2836,7 @@ namespace tsl {
                         offset -= 5;
                     auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
                     pcbWidth = width;
-                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
+                    drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
                 }
             
                 if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
@@ -2833,7 +2844,7 @@ namespace tsl {
                         offset -= 5;
                     auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
                     socWidth = width;
-                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
+                    drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20 - backDropOffset, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
                 }
             }
             #endif
@@ -3015,7 +3026,7 @@ namespace tsl {
              * @return Offset
              */
 
-            inline u32 getPixelOffset(const u32 x, const u32 y) {
+            inline u32 __attribute__((always_inline)) getPixelOffset(const u32 x, const u32 y) {
                 // Check for scissoring boundaries
                 if (!this->m_scissoringStack.empty()) {
                     const auto& currScissorConfig = this->m_scissoringStack.top();
@@ -4067,13 +4078,13 @@ namespace tsl {
                     // Draw back button rectangle
                     if (ult::touchingBack) {
                         renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::backWidth, 73.0f, 6.0f, a(clickColor));
+                                                  ult::backWidth, 73.0f, 10.0f, a(clickColor));
                     }
                     
                     // Draw select button rectangle (starts right after back button)
                     if (ult::touchingSelect && !m_noClickableItems) {
                         renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::selectWidth, 73.0f, 6.0f, a(clickColor));
+                                                  ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
                 
@@ -4270,7 +4281,7 @@ namespace tsl {
                 #endif
             
                     if (ult::touchingMenu && ult::inMainMenu) {
-                        renderer->drawRoundedRect(0.0f, 12.0f, 245.0f, 73.0f, 6.0f, a(clickColor));
+                        renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
                     }
                     
                     x = 20;
@@ -4443,7 +4454,7 @@ namespace tsl {
                 // Draw back button rectangle
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 
@@ -4451,7 +4462,7 @@ namespace tsl {
                 // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
 
                 // Calculate next page button dimensions and position
@@ -4482,14 +4493,14 @@ namespace tsl {
                     
                     if (ult::touchingNextPage) {
                         renderer->drawRoundedRect(nextPageX, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                                  ult::nextPageWidth, 73.0f, 6.0f, a(clickColor));
+                                                  ult::nextPageWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
             #else
                 // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect && !m_noClickableItems) {
                     renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
             #endif
 
@@ -4671,13 +4682,13 @@ namespace tsl {
                 // Draw back button rectangle
                 if (ult::touchingBack) {
                     renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::backWidth, 73.0f, 6.0f, a(clickColor));
+                                              ult::backWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 // Draw select button rectangle (starts right after back button)
                 if (ult::touchingSelect) {
                     renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
-                                              ult::selectWidth, 73.0f, 6.0f, a(clickColor));
+                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
@@ -9002,7 +9013,7 @@ namespace tsl {
             const float nextPageLeftEdge = ult::noClickableItems ? backRightEdge : selectRightEdge;
             const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth;
             
-            const float menuRightEdge = 245.0f + ult::layerEdge;
+            const float menuRightEdge = 245.0f + ult::layerEdge - 13;
             const u32 footerY = cfg::FramebufferHeight - 73U;
             
             // Touch region calculations
@@ -9016,9 +9027,8 @@ namespace tsl {
             ult::touchingNextPage = (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
                                     (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
             
-            ult::touchingMenu = (touchPos.x > ult::layerEdge && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
-                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
-            
+            ult::touchingMenu = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
+                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
         
             if (touchDetected) {
                 if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
