@@ -116,7 +116,6 @@ namespace ult {
     std::string getTitleIdAsString();
     
     extern std::string lastTitleID;
-    extern AppletFocusState lastFocusState;
     extern bool resetForegroundCheck;
 
 

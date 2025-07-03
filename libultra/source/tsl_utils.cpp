@@ -202,7 +202,6 @@ namespace ult {
 
     
     std::string lastTitleID;
-    AppletFocusState lastFocusState = AppletFocusState_Background;
     bool resetForegroundCheck = false; // initialize as true
 
 
