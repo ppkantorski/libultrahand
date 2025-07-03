@@ -9474,6 +9474,9 @@ namespace tsl {
 
             u64 elapsedTime_ns;
             static int captureButtonPressCount = 0;
+            static u64 disableTransparencyStartTick = 0;
+            static const u64 TRANSPARENCY_TIMEOUT_NS = 2'000'000'000ULL; // 2 seconds in nanoseconds
+
 
             while (shData->running) {
             
@@ -9503,7 +9506,16 @@ namespace tsl {
                     }
                 }
 
-
+                if (ult::disableTransparency && disableTransparencyStartTick != 0) {
+                    u64 transparencyElapsedNs = armTicksToNs(nowTick - disableTransparencyStartTick);
+                    if (transparencyElapsedNs >= TRANSPARENCY_TIMEOUT_NS) {
+                        // Timeout reached, reset transparency
+                        ult::disableTransparency = false;
+                        disableTransparencyStartTick = 0;
+                        captureButtonPressCount = 0; // Reset counter as well
+                    }
+                }
+                
                 // Scan for input changes
                 padUpdate(&pad);
                 
@@ -9687,13 +9699,17 @@ namespace tsl {
                         case WaiterObject_CaptureButton:
                         {
                             captureButtonPressCount++;
-                            ult::disableTransparency = true;
-                            if (captureButtonPressCount == 2) {
+                            
+                            if (captureButtonPressCount == 1) {
+                                // First event (press) - start transparency disable
+                                ult::disableTransparency = true;
+                                disableTransparencyStartTick = nowTick; // Record when we started
+                            } else if (captureButtonPressCount == 2) {
                                 // Second event (release) - trigger the action
-                                
                                 eventClear(&captureButtonPressEvent);
                                 svcSleepThread(1'000'000'000);
                                 ult::disableTransparency = false;
+                                disableTransparencyStartTick = 0; // Reset timestamp
                                 
                                 // Reset counter for next cycle
                                 captureButtonPressCount = 0;
