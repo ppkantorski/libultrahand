@@ -2754,7 +2754,7 @@ namespace tsl {
                     //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 - 4 , 64, a(tableBGColor));
                     if (!ult::hideWidgetBackdrop) {
                         //drawUniformRoundedRect(251, 16, tsl::cfg::FramebufferWidth-251 + 40 , 64, a(tsl::RGB888(ult::blackColor)));
-                        backDropOffset = 9;
+                        backDropOffset = 4;
                         drawUniformRoundedRect(248, 16-1, tsl::cfg::FramebufferWidth-248 -7 , 64, a(widgetBackdropColor));
                     }
                 }
@@ -2820,6 +2820,8 @@ namespace tsl {
                 // Calculate string widths only when needed
                 s32 chargeWidth = 0, pcbWidth = 0, socWidth = 0;
                 
+
+
                 // Draw battery percentage
                 if (!ult::hideBattery && ult::batteryCharge > 0) {
                     Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
@@ -9442,6 +9444,7 @@ namespace tsl {
             }
 
             u64 elapsedTime_ns;
+            static int captureButtonPressCount = 0;
 
             while (shData->running) {
             
@@ -9630,6 +9633,7 @@ namespace tsl {
                     shData->keysDownPending |= shData->keysDown;
                 }
                 
+                
                 //20 ms
                 //s32 idx = 0;
                 rc = waitObjects(&idx, objects, WaiterObject_Count, 20'000'000ul);
@@ -9659,11 +9663,22 @@ namespace tsl {
                             
                             break;
                         case WaiterObject_CaptureButton:
+                        {
+                            captureButtonPressCount++;
                             ult::disableTransparency = true;
-                            eventClear(&captureButtonPressEvent);
-                            svcSleepThread(1'000'000'000);
-                            ult::disableTransparency = false;
+                            if (captureButtonPressCount == 2) {
+                                // Second event (release) - trigger the action
+                                
+                                eventClear(&captureButtonPressEvent);
+                                svcSleepThread(1'000'000'000);
+                                ult::disableTransparency = false;
+                                
+                                // Reset counter for next cycle
+                                captureButtonPressCount = 0;
+                            }
+                            
                             break;
+                        }
                     }
                 } else if (rc != KERNELRESULT(TimedOut)) {
                     ASSERT_FATAL(rc);
