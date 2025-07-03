@@ -9473,16 +9473,11 @@ namespace tsl {
             }
 
             u64 elapsedTime_ns;
-            u64 transparencyElapsedNs;
-            static int captureButtonPressCount = 0;
-            static u64 disableTransparencyStartTick = 0;
-            static const u64 TRANSPARENCY_TIMEOUT_NS = 2'000'000'000ULL; // 2 seconds in nanoseconds
-
 
             while (shData->running) {
             
                 nowTick = armGetSystemTick();
-                elapsedNs = armTicksToNs(armGetSystemTick() - lastPollTick);
+                elapsedNs = armTicksToNs(nowTick - lastPollTick);
 
                 // Poll Title ID every 1 seconds
                 if (!ult::resetForegroundCheck && elapsedNs >= 1'000'000'000ULL) {
@@ -9495,6 +9490,13 @@ namespace tsl {
                         resetStartTick = nowTick;
                     }
                 }
+
+                //currentTitleID = ult::getTitleIdAsString();
+                //if (currentTitleID != ult::lastTitleID) {
+                //    ult::lastTitleID = currentTitleID;
+                //    ult::resetForegroundCheck = true;
+                //    resetStartTick = nowTick;
+                //}
             
                 // If a reset is scheduled, trigger after 3.5s delay
                 if (ult::resetForegroundCheck) {
@@ -9507,16 +9509,7 @@ namespace tsl {
                     }
                 }
 
-                if (ult::disableTransparency && disableTransparencyStartTick != 0) {
-                    transparencyElapsedNs = armTicksToNs(nowTick - disableTransparencyStartTick);
-                    if (transparencyElapsedNs >= TRANSPARENCY_TIMEOUT_NS) {
-                        // Timeout reached, reset transparency
-                        ult::disableTransparency = false;
-                        disableTransparencyStartTick = 0;
-                        captureButtonPressCount = 0; // Reset counter as well
-                    }
-                }
-                
+
                 // Scan for input changes
                 padUpdate(&pad);
                 
@@ -9668,7 +9661,6 @@ namespace tsl {
                     shData->keysDownPending |= shData->keysDown;
                 }
                 
-                
                 //20 ms
                 //s32 idx = 0;
                 rc = waitObjects(&idx, objects, WaiterObject_Count, 20'000'000ul);
@@ -9698,26 +9690,11 @@ namespace tsl {
                             
                             break;
                         case WaiterObject_CaptureButton:
-                        {
-                            captureButtonPressCount++;
-                            
-                            if (captureButtonPressCount == 1) {
-                                // First event (press) - start transparency disable
-                                ult::disableTransparency = true;
-                                disableTransparencyStartTick = nowTick; // Record when we started
-                            } else if (captureButtonPressCount == 2) {
-                                // Second event (release) - trigger the action
-                                eventClear(&captureButtonPressEvent);
-                                svcSleepThread(1'000'000'000);
-                                ult::disableTransparency = false;
-                                disableTransparencyStartTick = 0; // Reset timestamp
-                                
-                                // Reset counter for next cycle
-                                captureButtonPressCount = 0;
-                            }
-                            
+                            ult::disableTransparency = true;
+                            eventClear(&captureButtonPressEvent);
+                            svcSleepThread(1'500'000'000);
+                            ult::disableTransparency = false;
                             break;
-                        }
                     }
                 } else if (rc != KERNELRESULT(TimedOut)) {
                     ASSERT_FATAL(rc);
