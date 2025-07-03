@@ -9430,16 +9430,19 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
             ult::launchingOverlay = false;
         #endif
-            std::string currentTitleID;
+            //std::string currentTitleID;
+            //bool isInFocus;
             u64 nowTick, resetElapsedNs;
             u64 elapsedNs;
 
             static u64 lastPollTick = 0;
             static u64 resetStartTick = armGetSystemTick();
             static bool runOnce = true;
+            // Fallback: Use system state indicators if direct reading fails
+            AppletFocusState focusState = AppletFocusState_Background;
 
             if (runOnce) {
-                ult::lastTitleID = ult::getTitleIdAsString();
+                ult::lastFocusState = focusState;
                 runOnce = false;
             }
 
@@ -9449,18 +9452,22 @@ namespace tsl {
             while (shData->running) {
             
                 nowTick = armGetSystemTick();
-                elapsedNs = armTicksToNs(nowTick - lastPollTick);
+                elapsedNs = armTicksToNs(armGetSystemTick() - lastPollTick);
 
-                // Poll Title ID every 1 seconds
+                // Poll focus state changes every 1 seconds
                 if (!ult::resetForegroundCheck && elapsedNs >= 1'000'000'000ULL) {
                     lastPollTick = nowTick;
                 
-                    currentTitleID = ult::getTitleIdAsString();
-                    if (currentTitleID != ult::lastTitleID) {
-                        ult::lastTitleID = currentTitleID;
+                    // Fallback: Use system state indicators if direct reading fails
+                    focusState = appletGetFocusState();
+
+                    if (focusState != ult::lastFocusState) {
+                        ult::lastFocusState = focusState;
                         ult::resetForegroundCheck = true;
                         resetStartTick = nowTick;
                     }
+                    
+                    
                 }
 
                 //currentTitleID = ult::getTitleIdAsString();
@@ -9756,11 +9763,11 @@ namespace tsl {
                     while (src < end && *src == ' ') src++; // Skip spaces
                     if (src < end && (*src == '0' || *src == '1')) src++; // Skip value
                 }
-                else if (strncmp(src, "--lastTitleID", 13) == 0) {
+                else if (strncmp(src, "--lastFocusState", 16) == 0) {
                     // Skip this flag and its value
-                    src += 13;
+                    src += 16;
                     while (src < end && *src == ' ') src++; // Skip spaces
-                    while (src < end && *src != ' ' && *src != '\0') src++; // Skip title ID
+                    if (src < end && (*src >= '1' && *src <= '3')) src++; // Skip value (1, 2, or 3)
                 }
                 else {
                     // Copy unknown flag
@@ -9779,16 +9786,28 @@ namespace tsl {
             p += 12;
         }
         
-        // Add foreground flag
+        // Add foreground flag - trigger reset if focus state changed
         memcpy(p, " --foregroundFix ", 17);
         p += 17;
-        *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+        *p++ = (ult::resetForegroundCheck) ? '1' : '0';
         
-        // Add last title ID
-        memcpy(p, " --lastTitleID ", 15);
-        p += 15;
-        const char* titleId = ult::lastTitleID.c_str();
-        while (*titleId) *p++ = *titleId++;
+        // Add last focus state (1=InFocus, 2=OutOfFocus, 3=Background)
+        memcpy(p, " --lastFocusState ", 18);
+        p += 18;
+        switch (ult::lastFocusState) {
+            case AppletFocusState_InFocus:
+                *p++ = '1';
+                break;
+            case AppletFocusState_OutOfFocus:
+                *p++ = '2';
+                break;
+            case AppletFocusState_Background:
+                *p++ = '3';
+                break;
+            default:
+                *p++ = '1'; // Default to InFocus
+                break;
+        }
         
         *p = '\0';
         
@@ -9806,7 +9825,7 @@ namespace tsl {
     static const struct option_entry options[] = {
         {"direct", 6, 1},
         {"skipCombo", 9, 2},
-        {"lastTitleID", 11, 3}, 
+        {"lastFocusState", 14, 3}, 
         {"foregroundFix", 13, 4}
     };
 
@@ -9863,14 +9882,39 @@ namespace tsl {
                             ult::firstBoot = false;
                             break;
                             
-                        case 3: // lastTitleID
+                        case 3: // lastFocusState
                             if (++arg < argc) {
-                                const char* providedID = argv[arg];
-                                if (ult::getTitleIdAsString() != providedID) {
+                                const char* providedState = argv[arg];
+                                
+                                AppletFocusState providedFocusState;
+                                switch (providedState[0]) {
+                                    case '1':
+                                        providedFocusState = AppletFocusState_InFocus;
+                                        break;
+                                    case '2':
+                                        providedFocusState = AppletFocusState_OutOfFocus;
+                                        break;
+                                    case '3':
+                                        providedFocusState = AppletFocusState_Background;
+                                        break;
+                                    default:
+                                        providedFocusState = AppletFocusState_InFocus; // Default fallback
+                                        break;
+                                }
+                                
+                                // Get current focus state
+                                AppletFocusState currentFocusState = appletGetFocusState();
+                                
+                                // If focus state changed, trigger reset
+                                if (currentFocusState != providedFocusState) {
                                     ult::resetForegroundCheck = true;
                                 }
+                                
+                                // Update the stored focus state
+                                ult::lastFocusState = currentFocusState;
                             }
                             break;
+                            
                             
                         case 4: // foregroundFix
                             if (++arg < argc) {

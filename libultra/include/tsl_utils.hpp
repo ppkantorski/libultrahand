@@ -116,6 +116,7 @@ namespace ult {
     std::string getTitleIdAsString();
     
     extern std::string lastTitleID;
+    extern AppletFocusState lastFocusState;
     extern bool resetForegroundCheck;
 
 
@@ -514,7 +515,7 @@ namespace ult {
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
     void loadWallpaperFileWhenSafe();
-    
+
     void reloadWallpaper();
     
     // Global variables for FPS calculation
