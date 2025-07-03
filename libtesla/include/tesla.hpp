@@ -9473,6 +9473,7 @@ namespace tsl {
             }
 
             u64 elapsedTime_ns;
+            u64 transparencyElapsedNs;
             static int captureButtonPressCount = 0;
             static u64 disableTransparencyStartTick = 0;
             static const u64 TRANSPARENCY_TIMEOUT_NS = 2'000'000'000ULL; // 2 seconds in nanoseconds
@@ -9507,7 +9508,7 @@ namespace tsl {
                 }
 
                 if (ult::disableTransparency && disableTransparencyStartTick != 0) {
-                    u64 transparencyElapsedNs = armTicksToNs(nowTick - disableTransparencyStartTick);
+                    transparencyElapsedNs = armTicksToNs(nowTick - disableTransparencyStartTick);
                     if (transparencyElapsedNs >= TRANSPARENCY_TIMEOUT_NS) {
                         // Timeout reached, reset transparency
                         ult::disableTransparency = false;
