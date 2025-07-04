@@ -4061,12 +4061,12 @@ namespace tsl {
                 
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
-                    auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                    auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                     ult::halfGap = gapWidth / 2.0f;
                     
                     // Calculate text dimensions for buttons without gaps
-                    auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
-                    auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
+                    auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                     
                     // Update widths to include the half-gap padding on each side
                     ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
@@ -4406,7 +4406,7 @@ namespace tsl {
                                             
                                             const std::string letterStr(1, letter);
                                             renderer->drawString(letterStr.c_str(), false, x, y, fontSize, a(highlightColor));
-                                            auto [letterWidth, letterHeight] = renderer->getTextDimensions(letterStr, false, fontSize);
+                                            auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
                                             x += letterWidth;
                                             counter -= 0.00004F;
                                         }
@@ -4452,12 +4452,12 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
-                auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text dimensions for buttons without gaps
-                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23);
-                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23);
+                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
+                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
                 
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
@@ -4499,7 +4499,7 @@ namespace tsl {
                                    (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
                     }
                     
-                    auto [pageTextWidth, pageHeight] = renderer->getTextDimensions(pageIcon + pageText, false, 23);
+                    auto pageTextWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first;
                     ult::nextPageWidth = pageTextWidth + gapWidth;  // halfGap on left + halfGap on right
                     
                     // Position next page button
@@ -4680,12 +4680,12 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
-                auto [gapWidth, gapHeight] = renderer->getTextDimensions(ult::GAP_1, false, 23);
+                auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text dimensions for buttons without gaps
-                auto [backTextWidth, backHeight] = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23);
-                auto [selectTextWidth, selectHeight] = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23);
+                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
@@ -6437,18 +6437,18 @@ namespace tsl {
                 if (m_value.empty()) {
                     m_maxWidth = getWidth() - 62;
                 } else {
-                    auto [valueWidth, valueHeight] = renderer->getTextDimensions(m_value, false, 20);
+                    auto valueWidth = renderer->getTextDimensions(m_value, false, 20).first;
                     m_maxWidth = getWidth() - valueWidth - 66;
                 }
             
-                auto [textWidth, textHeight] = renderer->getTextDimensions(m_text, false, 23);
+                auto textWidth = renderer->getTextDimensions(m_text, false, 23).first;
                 const u32 width = textWidth;
                 m_truncated = width > m_maxWidth + 20;
             
                 if (m_truncated) [[unlikely]] {
                     //m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate
                     m_scrollText = m_text + "        ";
-                    auto [scrollWidth, scrollHeight] = renderer->getTextDimensions(m_scrollText, false, 23);
+                    auto scrollWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
                     m_textWidth = scrollWidth;
                     m_scrollText += m_text;
                     m_ellipsisText = renderer->limitStringLength(m_text, false, 23, m_maxWidth);
@@ -6607,7 +6607,7 @@ namespace tsl {
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
                         //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
-                        auto [valueWidth, valueHeight] = renderer->getTextDimensions(this->m_value, false, 20);
+                        auto valueWidth = renderer->getTextDimensions(this->m_value, false, 20).first;
                         width = valueWidth;
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
@@ -6615,14 +6615,14 @@ namespace tsl {
                     }
                     
                     //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                    auto [textWidth, textHeight] = renderer->getTextDimensions(this->m_text, false, 23);
+                    auto textWidth = renderer->getTextDimensions(this->m_text, false, 23).first;
                     width = textWidth;
                     this->m_trunctuated = width > this->m_maxWidth+20;
                     
                     if (this->m_trunctuated) {
                         this->m_scrollText = this->m_text + "        ";
                         //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                        auto [scrollWidth, scrollHeight] = renderer->getTextDimensions(this->m_scrollText, false, 23);
+                        auto scrollWidth = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
                         width = scrollWidth;
                         this->m_scrollText += this->m_text;
                         this->m_textWidth = width;
@@ -7505,7 +7505,7 @@ namespace tsl {
                 }
                 
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
-                auto [descWidth, descHeight] = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15);
+                auto descWidth = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15).first;
                 renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
                 
                 // Draw the parent trackbar
@@ -7880,7 +7880,7 @@ namespace tsl {
                 else
                     valuePart = this->m_selection;
             
-                auto [valueWidth, valueHeight] = renderer->getTextDimensions(valuePart, false, 16);
+                auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
             
                 renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
                 renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, a(onTextColor));
