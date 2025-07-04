@@ -2748,22 +2748,27 @@ namespace tsl {
             inline void drawWidget() {
                 static time_t lastTimeUpdate = 0;
                 static char timeStr[20];
-                size_t y_offset = 44;
+                static char PCB_temperatureStr[10];
+                static char SOC_temperatureStr[10];
+                static char chargeString[6];
+                static time_t lastSensorUpdate = 0;
                 
-                // Draw separator and backdrop if any widget is visible
-                if (!(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock)) {
+                const bool showAnyWidget = !(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock);
+                
+                // Draw separator and backdrop if showing any widget
+                if (showAnyWidget) {
                     drawRect(239, 15, 1, 64, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(248, 15, tsl::cfg::FramebufferWidth - 255, 64, a(widgetBackdropColor));
+                        drawUniformRoundedRect(247, 15, tsl::cfg::FramebufferWidth - 255, 64, a(widgetBackdropColor));
                     }
                 }
-            
-                // Adjust offset if only clock is shown or no widgets
-                if ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) {
-                    y_offset += 11;
-                }
-            
-                int backdropCenterX = 248 + (tsl::cfg::FramebufferWidth - 248 - 7) / 2;
+                
+                // Calculate base Y offset
+                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55 : 44;
+                
+                // Constants for centering calculations
+                const int backdropCenterX = 247 + ((tsl::cfg::FramebufferWidth - 255) >> 1);
+                
                 time_t currentTime = time(nullptr);
                 
                 // Draw clock
@@ -2773,27 +2778,22 @@ namespace tsl {
                         ult::localizeTimeStr(timeStr);
                         lastTimeUpdate = currentTime;
                     }
-                    auto [timeWidth, timeHeight] = getTextDimensions(timeStr, false, 20);
-                    int clockX = backdropCenterX - timeWidth / 2.;
-                    drawString(timeStr, false, clockX, y_offset, 20, a(clockColor));
+                    
+                    auto timeWidth = getTextDimensions(timeStr, false, 20).first;
+                    drawString(timeStr, false, backdropCenterX - (timeWidth >> 1), y_offset, 20, a(clockColor));
                     y_offset += 22;
                 }
-            
-                // Update sensor data
-                static char PCB_temperatureStr[10];
-                static char SOC_temperatureStr[10];
-                static char chargeString[6];
-                static time_t lastSensorUpdate = 0;
                 
+                // Update sensor data every second
                 if ((currentTime - lastSensorUpdate) >= 1) {
                     if (!ult::hideSOCTemp) {
                         ult::ReadSocTemperature(&ult::SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::SOC_temperature)));
+                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr), "%d°C", static_cast<int>(round(ult::SOC_temperature)));
                     }
                     
                     if (!ult::hidePCBTemp) {
                         ult::ReadPcbTemperature(&ult::PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr) - 1, "%d°C", static_cast<int>(round(ult::PCB_temperature)));
+                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr), "%d°C", static_cast<int>(round(ult::PCB_temperature)));
                     }
                     
                     if (!ult::hideBattery) {
@@ -2805,55 +2805,47 @@ namespace tsl {
                     lastSensorUpdate = currentTime;
                 }
                 
-                // Build elements list and combined string for total width calculation
-                std::vector<std::string> elements;
+                // Calculate total width for centering
+                int totalWidth = 0;
+                int socWidth = 0, pcbWidth = 0, chargeWidth = 0;
+                bool hasMultiple = false;
+                
                 if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                    elements.push_back(SOC_temperatureStr);
-                }
-                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                    elements.push_back(PCB_temperatureStr);
-                }
-                if (!ult::hideBattery && ult::batteryCharge > 0) {
-                    elements.push_back(chargeString);
+                    socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
+                    totalWidth += socWidth;
+                    hasMultiple = true;
                 }
                 
-                if (!elements.empty()) {
-                    // Build combined string for centering calculation
-                    std::string combinedString = "";
-                    for (size_t i = 0; i < elements.size(); i++) {
-                        combinedString += elements[i];
-                        if (i < elements.size() - 1) {
-                            combinedString += " ";
-                        }
-                    }
-                    
-                    // Get total width and calculate starting position
-                    auto [totalWidth, totalHeight] = getTextDimensions(combinedString.c_str(), false, 20);
-                    float currentX = backdropCenterX - totalWidth / 2.;
-                    
-                    // Get space width once
-                    static float spaceWidth = getTextDimensions(" ", false, 20).first;
-                    
-                    // Draw each element with proper colors
-                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                        currentX += drawString(SOC_temperatureStr, false, currentX, y_offset, 20, (tsl::GradientColor(ult::SOC_temperature))).first;
-                        if ((!ult::hidePCBTemp && ult::PCB_temperature > 0) || (!ult::hideBattery && ult::batteryCharge > 0)) {
-                            currentX += spaceWidth;
-                        }
-                    }
-                    
-                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                        currentX += drawString(PCB_temperatureStr, false, currentX, y_offset, 20, (tsl::GradientColor(ult::PCB_temperature))).first;
-                        if (!ult::hideBattery && ult::batteryCharge > 0) {
-                            currentX += spaceWidth;
-                        }
-                    }
-                    
-                    if (!ult::hideBattery && ult::batteryCharge > 0) {
-                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                        drawString(chargeString, false, currentX, y_offset, 20, (batteryColorToUse));
-                    }
+                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                    pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
+                    if (hasMultiple) totalWidth += 5;
+                    totalWidth += pcbWidth;
+                    hasMultiple = true;
+                }
+                
+                if (!ult::hideBattery && ult::batteryCharge > 0) {
+                    chargeWidth = getTextDimensions(chargeString, false, 20).first;
+                    if (hasMultiple) totalWidth += 5;
+                    totalWidth += chargeWidth;
+                }
+                
+                // Draw temperature/battery info centered
+                int currentX = backdropCenterX - (totalWidth >> 1);
+                
+                if (socWidth > 0) {
+                    drawString(SOC_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
+                    currentX += socWidth + 5;
+                }
+                
+                if (pcbWidth > 0) {
+                    drawString(PCB_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
+                    currentX += pcbWidth + 5;
+                }
+                
+                if (chargeWidth > 0) {
+                    Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                            (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                    drawString(chargeString, false, currentX, y_offset, 20, a(batteryColorToUse));
                 }
             }
             #endif
