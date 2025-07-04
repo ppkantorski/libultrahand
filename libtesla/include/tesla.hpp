@@ -327,8 +327,8 @@ namespace tsl {
     static Color invalidTextColor = RGB888("FF0000");
     static Color clickTextColor = RGB888(ult::whiteColor);
 
-    static size_t tableBGAlpha = 14;
-    static Color tableBGColor = RGB888("2f2f30", tableBGAlpha); //RGB888("303030", tableBGAlpha);
+    static size_t tableBGAlpha = 15;
+    static Color tableBGColor = RGB888("2C2C2C", tableBGAlpha); //RGB888("303030", tableBGAlpha);
     static Color sectionTextColor = RGB888(ult::whiteColor);
     //static Color infoTextColor = RGB888("00FFDD");
     static Color infoTextColor =RGB888("9ed0ff");
@@ -7023,7 +7023,7 @@ namespace tsl {
             
             virtual void draw(gfx::Renderer *renderer) override {
                 if (this->m_hasSeparator) {
-                    renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, a(headerSeparatorColor));
+                    renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, (headerSeparatorColor));
                     renderer->drawString(this->m_text, false, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor));
                 } else {
                     renderer->drawString(this->m_text, false, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor));
@@ -8775,6 +8775,7 @@ namespace tsl {
             if (tsl::clearGlyphCacheNow) {
                 tsl::gfx::FontManager::clearCache();
                 tsl::clearGlyphCacheNow = false;
+                svcSleepThread(50'000);
             }
         }
         
