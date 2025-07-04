@@ -604,8 +604,8 @@ namespace ult {
     
     // Widget settings
     //static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    extern bool hideWidgetBackdrop;
+    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    extern bool hideWidgetBackdrop, centerWidgetAlignment, extendedWidgetBackdrop;
 
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars();

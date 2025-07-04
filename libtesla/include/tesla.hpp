@@ -1244,13 +1244,22 @@ namespace tsl {
              * @param c Original color
              * @return Color with applied opacity
              */
-            static Color a(const Color& c) {
+            static inline Color a(const Color& c) {
                 const u8 opacity_limit = static_cast<u8>(0xF * Renderer::s_opacity);
-                return (c.rgba & 0x0FFF) | (static_cast<u32>(
+                return (c.rgba & 0x0FFF) | (static_cast<u16>(
                     ult::disableTransparency
                         ? (ult::useOpaqueScreenshots
                                ? 0xF                       // fully opaque when both flags on
-                               : (c.a < 0xE ? c.a : 0xE)) // clamp to 14, keep lower values
+                               : (c.a > 0xE ? c.a : 0xE)) // clamp to 14, keep lower values
+                        : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
+                ) << 12);
+            }
+
+            static inline Color aWithOpacity(const Color& c) {
+                const u8 opacity_limit = static_cast<u8>(0xF * Renderer::s_opacity);
+                return (c.rgba & 0x0FFF) | (static_cast<u16>(
+                    ult::disableTransparency
+                        ? 0xF                       // fully opaque when both flags on
                         : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
                 ) << 12);
             }
@@ -2759,7 +2768,7 @@ namespace tsl {
                 if (showAnyWidget) {
                     drawRect(239, 15, 1, 64, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(247, 15, tsl::cfg::FramebufferWidth - 255, 64, a(widgetBackdropColor));
+                        drawUniformRoundedRect(247, 15, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64, (widgetBackdropColor));
                     }
                 }
                 
@@ -2780,7 +2789,15 @@ namespace tsl {
                     }
                     
                     auto timeWidth = getTextDimensions(timeStr, false, 20).first;
-                    drawString(timeStr, false, backdropCenterX - (timeWidth >> 1), y_offset, 20, a(clockColor));
+                    
+                    if (ult::centerWidgetAlignment) {
+                        // Centered alignment
+                        drawString(timeStr, false, backdropCenterX - (timeWidth >> 1), y_offset, 20, (clockColor));
+                    } else {
+                        // Right alignment (old code style)
+                        drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 20 -5, y_offset, 20, (clockColor));
+                    }
+                    
                     y_offset += 22;
                 }
                 
@@ -2805,47 +2822,84 @@ namespace tsl {
                     lastSensorUpdate = currentTime;
                 }
                 
-                // Calculate total width for centering
-                int totalWidth = 0;
-                int socWidth = 0, pcbWidth = 0, chargeWidth = 0;
-                bool hasMultiple = false;
+                if (ult::centerWidgetAlignment) {
+                    // CENTERED ALIGNMENT (current code logic)
+                    
+                    // Calculate total width for centering
+                    int totalWidth = 0;
+                    int socWidth = 0, pcbWidth = 0, chargeWidth = 0;
+                    bool hasMultiple = false;
+                    
+                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                        socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
+                        totalWidth += socWidth;
+                        hasMultiple = true;
+                    }
+                    
+                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                        pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
+                        if (hasMultiple) totalWidth += 5;
+                        totalWidth += pcbWidth;
+                        hasMultiple = true;
+                    }
+                    
+                    if (!ult::hideBattery && ult::batteryCharge > 0) {
+                        chargeWidth = getTextDimensions(chargeString, false, 20).first;
+                        if (hasMultiple) totalWidth += 5;
+                        totalWidth += chargeWidth;
+                    }
+                    
+                    // Draw temperature/battery info centered
+                    int currentX = backdropCenterX - (totalWidth >> 1);
+                    
+                    if (socWidth > 0) {
+                        drawString(SOC_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : defaultTextColor);
+                        currentX += socWidth + 5;
+                    }
+                    
+                    if (pcbWidth > 0) {
+                        drawString(PCB_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : defaultTextColor);
+                        currentX += pcbWidth + 5;
+                    }
+                    
+                    if (chargeWidth > 0) {
+                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                        drawString(chargeString, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (batteryColorToUse) : defaultTextColor);
+                    }
+                    
+                } else {
+                    // RIGHT ALIGNMENT (old code style)
+                    
+                    // Calculate string widths only when needed
+                    s32 chargeWidth = 0, pcbWidth = 0, socWidth = 0;
+                    
+                    // Draw battery percentage
+                    if (!ult::hideBattery && ult::batteryCharge > 0) {
+                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
+                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                        auto [width, height] = getTextDimensions(chargeString, false, 20);
+                        chargeWidth = width;
+                        drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (batteryColorToUse) : defaultTextColor);
+                    }
                 
-                if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                    socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
-                    totalWidth += socWidth;
-                    hasMultiple = true;
-                }
+                    // Draw PCB and SOC temperatures
+                    int offset = 0;
+                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                        if (!ult::hideBattery)
+                            offset -= 5;
+                        auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
+                        pcbWidth = width;
+                        drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : defaultTextColor);
+                    }
                 
-                if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                    pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
-                    if (hasMultiple) totalWidth += 5;
-                    totalWidth += pcbWidth;
-                    hasMultiple = true;
-                }
-                
-                if (!ult::hideBattery && ult::batteryCharge > 0) {
-                    chargeWidth = getTextDimensions(chargeString, false, 20).first;
-                    if (hasMultiple) totalWidth += 5;
-                    totalWidth += chargeWidth;
-                }
-                
-                // Draw temperature/battery info centered
-                int currentX = backdropCenterX - (totalWidth >> 1);
-                
-                if (socWidth > 0) {
-                    drawString(SOC_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::SOC_temperature)));
-                    currentX += socWidth + 5;
-                }
-                
-                if (pcbWidth > 0) {
-                    drawString(PCB_temperatureStr, false, currentX, y_offset, 20, a(tsl::GradientColor(ult::PCB_temperature)));
-                    currentX += pcbWidth + 5;
-                }
-                
-                if (chargeWidth > 0) {
-                    Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                            (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                    drawString(chargeString, false, currentX, y_offset, 20, a(batteryColorToUse));
+                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                        if (!ult::hidePCBTemp || !ult::hideBattery)
+                            offset -= 5;
+                        auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
+                        socWidth = width;
+                        drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : defaultTextColor);
+                    }
                 }
             }
             #endif
@@ -3549,7 +3603,7 @@ namespace tsl {
                 if (!m_isItem)
                     return;
                 if (!disableSelectionBG)
-                    renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                    renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
             
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
             
@@ -3560,7 +3614,7 @@ namespace tsl {
                 } else {
                     animColor = {saturation, saturation, saturation, saturation};
                 }
-                renderer->drawRect(ELEMENT_BOUNDS(this), a(animColor));
+                renderer->drawRect(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
             
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
@@ -3721,7 +3775,7 @@ namespace tsl {
                 
                 if (this->m_clickAnimationProgress == 0) {
                     if (!disableSelectionBG)
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
             
                     #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
@@ -3734,7 +3788,7 @@ namespace tsl {
                         activePercentage = ult::copyPercentage;
                     }
                     if (activePercentage > 0){
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), a(progressColor)); // Direct percentage conversion
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
                     }
                     #endif
             
@@ -3852,6 +3906,7 @@ namespace tsl {
             
         protected:
             constexpr static inline auto a = &gfx::Renderer::a;
+            constexpr static inline auto aWithOpacity = &gfx::Renderer::aWithOpacity;
             bool m_focused = false;
             u8 m_clickAnimationProgress = 0;
             
@@ -3971,7 +4026,7 @@ namespace tsl {
                 //renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 - 4);
                 
                 if (!hideTableBackground)
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4, this->getWidth() +2, this->getHeight() + 20 - endGap, 10.0, a(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4, this->getWidth() +2, this->getHeight() + 20 - endGap, 10.0, aWithOpacity(tableBGColor));
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
@@ -8434,6 +8489,7 @@ namespace tsl {
         
     protected:
         constexpr static inline auto a = &gfx::Renderer::a;
+        constexpr static inline auto aWithOpacity = &gfx::Renderer::aWithOpacity;
         
     private:
         elm::Element *m_focusedElement = nullptr;
@@ -9338,9 +9394,21 @@ namespace tsl {
             ult::removeQuotes(hideSOCTempStr);
             ult::hideSOCTemp = hideSOCTempStr != ult::FALSE_STR;
 
+            std::string dynamicWidgetColorsStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_widget_colors"];
+            ult::removeQuotes(dynamicWidgetColorsStr);
+            ult::dynamicWidgetColors = dynamicWidgetColorsStr != ult::FALSE_STR;
+
             std::string hideWidgetBackdropStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_widget_backdrop"];
             ult::removeQuotes(hideWidgetBackdropStr);
             ult::hideWidgetBackdrop = hideWidgetBackdropStr != ult::FALSE_STR;
+
+            std::string centerWidgetAlignmentStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["center_widget_alignment"];
+            ult::removeQuotes(centerWidgetAlignmentStr);
+            ult::centerWidgetAlignment = centerWidgetAlignmentStr != ult::FALSE_STR;
+
+            std::string extendedWidgetBackdropStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["extended_widget_backdrop"];
+            ult::removeQuotes(extendedWidgetBackdropStr);
+            ult::extendedWidgetBackdrop = extendedWidgetBackdropStr != ult::FALSE_STR;
 
             #endif
             

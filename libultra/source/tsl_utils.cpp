@@ -1448,8 +1448,8 @@ namespace ult {
     
     // Widget settings
     //std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    bool hideWidgetBackdrop;
+    bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    bool hideWidgetBackdrop, centerWidgetAlignment, extendedWidgetBackdrop;
 
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
@@ -1458,8 +1458,11 @@ namespace ult {
         hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
         hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
         hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
+        dynamicWidgetColors = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "dynamic_widget_colors") != FALSE_STR);
         hideWidgetBackdrop = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_widget_backdrop") != FALSE_STR);
-        
+        centerWidgetAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "center_widget_alignment") != FALSE_STR);
+        extendedWidgetBackdrop = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "extended_widget_backdrop") != FALSE_STR);
+
     }
     #endif
     
