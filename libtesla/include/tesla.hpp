@@ -4914,12 +4914,13 @@ namespace tsl {
             }
             virtual ~List() {
 
-                while (!safeToSwap.load(std::memory_order_acquire)) {
-                    //std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    svcSleepThread(100'000);
-                }
 
                 if (!skipDeconstruction) {
+                    while (!safeToSwap.load(std::memory_order_acquire)) {
+                        //std::this_thread::sleep_for(std::chrono::microseconds(100));
+                        svcSleepThread(100'000);
+                    }
+
                     bool deleteRemainingItems = (!m_itemsToAdd.empty());
                     // Incase deconstruction happens too fast
                     if (!m_itemsToRemove.empty())
@@ -8850,9 +8851,9 @@ namespace tsl {
             this->getCurrentGui()->draw(&renderer);
             
             renderer.endFrame();
-            //if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
-            //    tsl::gfx::FontManager::clearCache();       // exclusive clear
-            //}
+            if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                tsl::gfx::FontManager::clearCache();       // exclusive clear
+            }
         }
         
         // Calculate transition using ease-in-out curve instead of linear
@@ -9721,7 +9722,8 @@ namespace tsl {
                                         } else {
                                             overlayLaunchArgs = "--direct";
                                         }
-                                        
+                                        tsl::elm::skipDeconstruction = true;
+
                                         // Set the next overlay directly
                                         if (useOverlayLaunchArgs == ult::TRUE_STR)
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
