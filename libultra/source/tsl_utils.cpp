@@ -206,7 +206,7 @@ namespace ult {
 
 
 
-    bool internalTouchReleased = true;
+    std::atomic<bool> internalTouchReleased(true);
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
@@ -255,11 +255,25 @@ namespace ult {
     bool useMemoryExpansion = false;
     bool useOpaqueScreenshots = false;
     
-    bool onTrackBar = false;
-    bool allowSlide = false;
-    bool unlockedSlide = false;
+    std::atomic<bool> onTrackBar(false);
+    std::atomic<bool> allowSlide(false);
+    std::atomic<bool> unlockedSlide(false);
     
     
+
+    void atomicToggle(std::atomic<bool>& b) {
+        bool expected = b.load(std::memory_order_relaxed);
+        for (;;) {
+            bool desired = !expected;
+            if (b.compare_exchange_weak(expected, desired,
+                                        std::memory_order_acq_rel,
+                                        std::memory_order_relaxed)) {
+                break; // success
+            }
+            // expected has been updated with the current value on failure; loop continues
+        }
+    }
+
     
     bool updateMenuCombos = false;
     
@@ -1018,7 +1032,7 @@ namespace ult {
         {"bottom_text_color", whiteColor},
         {"bottom_separator_color", whiteColor},
         {"table_bg_color", "2C2C2C"},
-        {"table_bg_alpha", "15"},
+        {"table_bg_alpha", "14"},
         {"table_section_text_color", whiteColor},
         //{"table_info_text_color", "00FFDD"},
         {"table_info_text_color", "9ed0ff"},
@@ -1218,24 +1232,24 @@ namespace ult {
     //float fps = 0.0f;
     //double elapsedTime = 0.0;
     
-    bool themeIsInitialized = false; // for loading the theme once in OverlayFrame / HeaderOverlayFrame
+    std::atomic<bool> themeIsInitialized(false); // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     
     // Variables for touch commands
-    bool touchingBack = false;
-    bool touchingSelect = false;
-    bool touchingNextPage = false;
-    bool touchingMenu = false;
-    bool simulatedBack = false;
-    bool simulatedBackComplete = true;
-    bool simulatedSelect = false;
-    bool simulatedSelectComplete = true;
+    std::atomic<bool> touchingBack(false);
+    std::atomic<bool> touchingSelect(false);
+    std::atomic<bool> touchingNextPage(false);
+    std::atomic<bool> touchingMenu(false);
+    std::atomic<bool> simulatedBack(false);
+    //bool simulatedBackComplete = true;
+    std::atomic<bool> simulatedSelect(false);
+    //bool simulatedSelectComplete = true;
     std::atomic<bool> simulatedNextPage(false);
-    std::atomic<bool> simulatedNextPageComplete(true);
-    bool simulatedMenu = false;
-    bool simulatedMenuComplete = true;
-    bool stillTouching = false;
-    bool interruptedTouch = false;
-    bool touchInBounds = false;
+    //std::atomic<bool> simulatedNextPageComplete(true);
+    std::atomic<bool> simulatedMenu(false);
+    //bool simulatedMenuComplete = true;
+    std::atomic<bool> stillTouching(false);
+    std::atomic<bool> interruptedTouch(false);
+    std::atomic<bool> touchInBounds(false);
     
     
     #if USING_WIDGET_DIRECTIVE
@@ -1490,7 +1504,7 @@ namespace ult {
     // Number of renderer threads to use
     const unsigned numThreads = expandedMemory ? 4 : 0;
     std::vector<std::thread> threads(numThreads);
-    s32 bmpChunkSize = (720 + numThreads - 1) / numThreads;
+    s32 bmpChunkSize = (numThreads > 0) ? ((720 + numThreads - 1) / numThreads) : 0;
     std::atomic<s32> currentRow;
     
     //std::atomic<unsigned int> barrierCounter{0};

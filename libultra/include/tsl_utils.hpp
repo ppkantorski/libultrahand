@@ -120,7 +120,7 @@ namespace ult {
 
 
     //extern bool isLauncher;
-    extern bool internalTouchReleased;
+    extern std::atomic<bool> internalTouchReleased;
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
@@ -172,10 +172,12 @@ namespace ult {
     extern bool useMemoryExpansion;
     extern bool useOpaqueScreenshots;
     
-    extern bool onTrackBar;
-    extern bool allowSlide;
-    extern bool unlockedSlide;
+    extern std::atomic<bool> onTrackBar;
+    extern std::atomic<bool> allowSlide;
+    extern std::atomic<bool> unlockedSlide;
     
+    void atomicToggle(std::atomic<bool>& b);
+
     /**
      * @brief Shutdown modes for the Ultrahand-Overlay project.
      *
@@ -524,24 +526,24 @@ namespace ult {
     //extern double elapsedTime;
     
     
-    extern bool themeIsInitialized;
+    extern std::atomic<bool> themeIsInitialized;
 
     // Variables for touch commands
-    extern bool touchingBack;
-    extern bool touchingSelect;
-    extern bool touchingNextPage;
-    extern bool touchingMenu;
-    extern bool simulatedBack;
-    extern bool simulatedBackComplete;
-    extern bool simulatedSelect;
-    extern bool simulatedSelectComplete;
+    extern std::atomic<bool> touchingBack;
+    extern std::atomic<bool> touchingSelect;
+    extern std::atomic<bool> touchingNextPage;
+    extern std::atomic<bool> touchingMenu;
+    extern std::atomic<bool> simulatedBack;
+    //extern bool simulatedBackComplete;
+    extern std::atomic<bool> simulatedSelect;
+    //extern bool simulatedSelectComplete;
     extern std::atomic<bool> simulatedNextPage;
-    extern std::atomic<bool> simulatedNextPageComplete;
-    extern bool simulatedMenu;
-    extern bool simulatedMenuComplete;
-    extern bool stillTouching;
-    extern bool interruptedTouch;
-    extern bool touchInBounds;
+    //extern std::atomic<bool> simulatedNextPageComplete;
+    extern std::atomic<bool> simulatedMenu;
+    //extern bool simulatedMenuComplete;
+    extern std::atomic<bool> stillTouching;
+    extern std::atomic<bool> interruptedTouch;
+    extern std::atomic<bool> touchInBounds;
     
     
     #if USING_WIDGET_DIRECTIVE

@@ -164,7 +164,7 @@ inline bool hideHidden = false;
 namespace tsl {
 
     // Booleans
-    inline bool clearGlyphCacheNow = false;
+    inline std::atomic<bool> clearGlyphCacheNow(false);
 
     // Constants
     
@@ -327,7 +327,7 @@ namespace tsl {
     static Color invalidTextColor = RGB888("FF0000");
     static Color clickTextColor = RGB888(ult::whiteColor);
 
-    static size_t tableBGAlpha = 15;
+    static size_t tableBGAlpha = 14;
     static Color tableBGColor = RGB888("2C2C2C", tableBGAlpha); //RGB888("303030", tableBGAlpha);
     static Color sectionTextColor = RGB888(ult::whiteColor);
     //static Color infoTextColor = RGB888("00FFDD");
@@ -928,12 +928,12 @@ namespace tsl {
             inline static std::shared_mutex s_cacheMutex;
             inline static std::mutex s_initMutex;
             
-            // Use unique_ptr to ensure proper cleanup
-            inline static std::unordered_map<u64, std::unique_ptr<Glyph>> s_sharedGlyphCache;
+            // Changed from unique_ptr to shared_ptr
+            inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
             
             inline static u64 s_lastClearTimeNs = 0;
             inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
-
+        
             // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 10000;
             static constexpr size_t CLEANUP_THRESHOLD = 8000;
@@ -995,7 +995,8 @@ namespace tsl {
                 return s_stdFont;
             }
             
-            static Glyph* getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
+            // Now returns shared_ptr instead of raw pointer
+            static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 const u64 key = generateCacheKey(character, monospace, fontSize);
                 
                 // First, try to find existing glyph with shared lock
@@ -1006,7 +1007,7 @@ namespace tsl {
                     
                     auto it = s_sharedGlyphCache.find(key);
                     if (it != s_sharedGlyphCache.end()) {
-                        return it->second.get();
+                        return it->second;  // Return shared_ptr directly
                     }
                 }
                 
@@ -1018,7 +1019,7 @@ namespace tsl {
                 // Double-check pattern
                 auto it = s_sharedGlyphCache.find(key);
                 if (it != s_sharedGlyphCache.end()) {
-                    return it->second.get();
+                    return it->second;  // Return shared_ptr directly
                 }
                 
                 // Check cache size and cleanup if needed
@@ -1026,8 +1027,8 @@ namespace tsl {
                     cleanupOldEntries();
                 }
                 
-                // Create new glyph
-                auto glyph = std::make_unique<Glyph>();
+                // Create new glyph using make_shared
+                auto glyph = std::make_shared<Glyph>();
                 glyph->currFont = selectFontForCharacterUnsafe(character);
                 if (!glyph->currFont) {
                     return nullptr;
@@ -1047,23 +1048,16 @@ namespace tsl {
                     glyph->currFontSize, glyph->currFontSize, character, 
                     &glyph->width, &glyph->height, nullptr, nullptr);
                 
-                Glyph* glyphPtr = glyph.get();
-                s_sharedGlyphCache[key] = std::move(glyph);
+                s_sharedGlyphCache[key] = glyph;
                 
-                return glyphPtr;
+                return glyph;  // Return shared_ptr
             }
             
             static void clearCache() {
-                u64 nowNs = armTicksToNs(armGetSystemTick());
-                
-                // Rate limit cache clearing
-                if (nowNs - s_lastClearTimeNs < CLEAR_COOLDOWN_NS) {
-                    return; // Skip clearing if too recent
-                }
-                
+                // Note: This is now safe because any code holding a shared_ptr
+                // will keep the Glyph alive even after the cache is cleared
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
-                s_lastClearTimeNs = nowNs;
             }
             
             static void cleanup() {
@@ -1198,7 +1192,7 @@ namespace tsl {
                 }
                 
                 // Use u32 fontSize to match drawString - now thread-safe
-                FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSizeInt);
+                std::shared_ptr<FontManager::Glyph> glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSizeInt);
                 if (!glyph) continue;
                 
                 // CRITICAL: Use the same calculation as drawString
@@ -2446,7 +2440,7 @@ namespace tsl {
                 // Pre-declare variables used in loops to avoid repeated allocations
                 u32 currCharacter;
                 ssize_t codepointWidth;
-                FontManager::Glyph* glyph;
+                std::shared_ptr<FontManager::Glyph> glyph;
                 bool symbolProcessed;
                 size_t remainingLength;
                 u32 symChar;
@@ -2650,7 +2644,7 @@ namespace tsl {
                 
                 // Get ellipsis width using shared cache (now thread-safe)
                 constexpr u32 ellipsisChar = 0x2026;
-                FontManager::Glyph* ellipsisGlyph = FontManager::getOrCreateGlyph(ellipsisChar, monospace, fontSize);
+                std::shared_ptr<FontManager::Glyph> ellipsisGlyph = FontManager::getOrCreateGlyph(ellipsisChar, monospace, fontSize);
                 if (!ellipsisGlyph) return text;
                 
                 // Fixed: Use consistent s32 calculation like other functions
@@ -2691,7 +2685,7 @@ namespace tsl {
                     }
                     
                     // FontManager::getOrCreateGlyph is now thread-safe
-                    FontManager::Glyph* glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                    std::shared_ptr<FontManager::Glyph> glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                     if (!glyph) {
                         itStr += codepointWidth;
                         continue;
@@ -2766,14 +2760,14 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15, 1, 64, a(separatorColor));
+                    drawRect(239, 15+2, 1, 64, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(247, 15, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64, (widgetBackdropColor));
+                        drawUniformRoundedRect(247, 15+2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64, (widgetBackdropColor));
                     }
                 }
                 
                 // Calculate base Y offset
-                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55 : 44;
+                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55+2 : 44+2;
                 
                 // Constants for centering calculations
                 const int backdropCenterX = 247 + ((tsl::cfg::FramebufferWidth - 255) >> 1);
@@ -2878,8 +2872,8 @@ namespace tsl {
                     if (!ult::hideBattery && ult::batteryCharge > 0) {
                         Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
                                                 (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                        auto [width, height] = getTextDimensions(chargeString, false, 20);
-                        chargeWidth = width;
+                        //auto [width, height] = getTextDimensions(chargeString, false, 20);
+                        chargeWidth = getTextDimensions(chargeString, false, 20).first;
                         drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (batteryColorToUse) : defaultTextColor);
                     }
                 
@@ -2888,16 +2882,16 @@ namespace tsl {
                     if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
                         if (!ult::hideBattery)
                             offset -= 5;
-                        auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
-                        pcbWidth = width;
+                        //auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
+                        pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
                         drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : defaultTextColor);
                     }
                 
                     if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
                         if (!ult::hidePCBTemp || !ult::hideBattery)
                             offset -= 5;
-                        auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
-                        socWidth = width;
+                        //auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
+                        socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
                         drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : defaultTextColor);
                     }
                 }
@@ -2908,7 +2902,7 @@ namespace tsl {
             //inline static std::unordered_map<u64, Glyph> s_unifiedGlyphCache;
             
             // Helper to select appropriate font for a character
-            inline FontManager::Glyph* getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
+            inline std::shared_ptr<FontManager::Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 return FontManager::getOrCreateGlyph(character, monospace, fontSize);
             }
             
@@ -2917,7 +2911,7 @@ namespace tsl {
             }
             
             // Optimized glyph rendering
-            inline void renderGlyph(const FontManager::Glyph* glyph, float x, float y, const Color& color) {
+            inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color) {
                 if (!glyph->glyphBmp || color.a == 0) return;
                 
                 const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
@@ -3795,7 +3789,7 @@ namespace tsl {
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
                 
-                ult::onTrackBar = false;
+                ult::onTrackBar.exchange(false, std::memory_order_acq_rel);
             }
             
             
@@ -4090,9 +4084,9 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized) {
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized = true;
+                    //ult::themeIsInitialized = true;
                 }
                 if (m_noClickableItems != ult::noClickableItems)
                     ult::noClickableItems = m_noClickableItems;
@@ -4132,14 +4126,14 @@ namespace tsl {
                     float buttonStartX = edgePadding;
                     
                     // Draw back button rectangle
-                    if (ult::touchingBack) {
-                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                    if (ult::touchingBack.load(std::memory_order_acquire)) {
+                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                                   ult::backWidth, 73.0f, 10.0f, a(clickColor));
                     }
                     
                     // Draw select button rectangle (starts right after back button)
-                    if (ult::touchingSelect && !m_noClickableItems) {
-                        renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                    if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
+                        renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                                   ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
@@ -4154,8 +4148,10 @@ namespace tsl {
                 }
 
                 // Render the text with special character handling
-                if (!deactivateOriginalFooter) 
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, xStartOffset, 693, 23, a(bottomTextColor), a(buttonColor));
+                if (!deactivateOriginalFooter)  {
+                    static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, xStartOffset, 693, 23, a(bottomTextColor), a(buttonColor));
+                }
                 
                 
                 if (this->m_contentElement != nullptr)
@@ -4307,9 +4303,9 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized) {
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized = true;
+                    //ult::themeIsInitialized = true;
                 }
                 
                 
@@ -4336,7 +4332,7 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
             
-                    if (ult::touchingMenu && ult::inMainMenu) {
+                    if (ult::touchingMenu.load(std::memory_order_acquire) && ult::inMainMenu) {
                         renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
                     }
                     
@@ -4381,13 +4377,13 @@ namespace tsl {
                             };
                             
                             const std::string letterStr(1, letter);
-                            x += std::get<0>(renderer->drawString(letterStr, false, x, y + offset, fontSize, highlightColor));
+                            x += renderer->drawString(letterStr, false, x, y + offset, fontSize, highlightColor).first;
                             countOffset -= static_cast<float>(cycleDuration / 8.0);
                         }
                     } else {
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                             const std::string letterStr(1, letter);
-                            x += std::get<0>(renderer->drawString(letterStr, false, x, y + offset, fontSize, logoColor1));
+                            x += renderer->drawString(letterStr, false, x, y + offset, fontSize, logoColor1).first;
                         }
                     }
                                                                                                     
@@ -4524,15 +4520,15 @@ namespace tsl {
                 
                 // Draw back button rectangle
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                               ult::backWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Draw select button rectangle (starts right after back button)
-                if (ult::touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
 
@@ -4562,15 +4558,15 @@ namespace tsl {
                                       (buttonStartX + ult::backWidth) :
                                       (buttonStartX + ult::backWidth + ult::selectWidth);
                     
-                    if (ult::touchingNextPage) {
-                        renderer->drawRoundedRect(nextPageX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                    if (ult::touchingNextPage.load(std::memory_order_acquire)) {
+                        renderer->drawRoundedRect(nextPageX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                                   ult::nextPageWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
             #else
                 // Draw select button rectangle (starts right after back button)
-                if (ult::touchingSelect && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73 +1), 
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
             #endif
@@ -4655,7 +4651,7 @@ namespace tsl {
             
             inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!m_contentElement || !m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased)
+                if (!m_contentElement || !m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased.load(std::memory_order_acquire))
                     return false;
                 
                 return m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
@@ -4723,9 +4719,9 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized) {
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized = true;
+                    //ult::themeIsInitialized = true;
                 }
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
@@ -4751,14 +4747,14 @@ namespace tsl {
                 float buttonStartX = edgePadding;
                 
                 // Draw back button rectangle
-                if (ult::touchingBack) {
-                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73), 
+                if (ult::touchingBack.load(std::memory_order_acquire)) {
+                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                               ult::backWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 // Draw select button rectangle (starts right after back button)
-                if (ult::touchingSelect) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73), 
+                if (ult::touchingSelect.load(std::memory_order_acquire)) {
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
@@ -4874,21 +4870,21 @@ namespace tsl {
         class ListItem; // forward declaration
 
         static std::vector<Element*> s_lastFrameItems;
-        static bool s_isForwardCache = false; // NEW VARIABLE FOR FORWARD CACHING
-        static bool s_hasValidFrame = false;
+        static std::atomic<bool> s_isForwardCache(false); // NEW VARIABLE FOR FORWARD CACHING
+        static std::atomic<bool> s_hasValidFrame(false);
         static s32 s_cachedTopBound = 0;
         static s32 s_cachedBottomBound = 0;
         static s32 s_cachedHeight = 0;
         static s32 s_cachedListHeight = 0;
         static s32 s_cachedActualContentBottom = 0;
-        static bool s_shouldDrawScrollbar = false;
+        static std::atomic<bool> s_shouldDrawScrollbar(false);
         static u32 s_cachedScrollbarHeight = 0;
         static u32 s_cachedScrollbarOffset = 0;
         static u32 s_cachedScrollbarX = 0;
         static u32 s_cachedScrollbarY = 0;
-        static bool s_cacheForwardFrameOnce = true;
-        static bool lastInternalTouchRelease = true;
-
+        static std::atomic<bool> s_cacheForwardFrameOnce(true);
+        static std::atomic<bool> lastInternalTouchRelease(true);
+        static std::atomic<bool> s_hasClearedCache(false);
 
         static std::atomic<bool> safeToSwap{false};
 
@@ -4901,47 +4897,78 @@ namespace tsl {
         
         public:
             List() : Element() {
-                safeToSwap.store(false, std::memory_order_release);
+                s_hasClearedCache.exchange(false, std::memory_order_acq_rel);
+                safeToSwap.exchange(false, std::memory_order_acq_rel);
                 m_isItem = false;
 
                 if (skipDeconstruction) {
-                    if (!m_itemsToAdd.empty()){
-                        addPendingItems();
-                    }
-                    if (!m_items.empty()){
-                        clearItems();
-                    }
+                    removePendingItems();
+                    addPendingItems();
+                    clearItems();
                 } else {
-                    s_cacheForwardFrameOnce = true;
+                    //if (!s_hasValidFrame.load(std::memory_order_acquire))
+                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
                     skipOnce = false;
                 }
                 
             }
             virtual ~List() {
-                safeToSwap.store(false, std::memory_order_release);
-                if (!m_itemsToRemove.empty()) removePendingItems();
-                if (!m_itemsToAdd.empty()) {
-                    addPendingItems();
-                    clearItems();
-                    s_cacheForwardFrameOnce = true;
-                    s_isForwardCache = false;
-                    return;
+
+                while (!safeToSwap.load(std::memory_order_acquire)) {
+                    //std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    svcSleepThread(100'000);
                 }
+
                 if (!skipDeconstruction) {
-                    if (s_isForwardCache)
-                        clearStaticCache(true);
-                    cacheCurrentFrame();
-                    s_cacheForwardFrameOnce = true;
-                    s_isForwardCache = false;
+                    bool deleteRemainingItems = (!m_itemsToAdd.empty());
+                    // Incase deconstruction happens too fast
+                    if (!m_itemsToRemove.empty())
+                        removePendingItems();
+                    if (!m_itemsToAdd.empty())
+                        addPendingItems();
+
+                    if (!s_hasClearedCache.load(std::memory_order_acquire)) { // if cache was never cleared in draw
+                        
+                        if (s_isForwardCache.load(std::memory_order_acquire))
+                            clearStaticCache(true);
+                        else
+                            clearStaticCache();
+
+                        s_isForwardCache.exchange(false, std::memory_order_acq_rel);
+                        s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
+                        s_hasClearedCache.exchange(true, std::memory_order_acq_rel); // reset check
+                    }
+                    
+                    if (deleteRemainingItems) {
+
+                        if (s_lastFrameItems.empty()) {
+                            cacheCurrentFrame();
+                        } else {
+                            if (!m_items.empty())
+                                clearItems();
+                        }
+                    } else {
+                        if (s_lastFrameItems.empty()) {
+                            cacheCurrentFrame();
+                        }
+                    }
+
+                    //if (s_isForwardCache.load(std::memory_order_acquire)) {
+                    //    clearStaticCache();
+                    //    clearItems();
+                    //}
+
+                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
+                    s_isForwardCache.exchange(false, std::memory_order_acq_rel);
                 }
 
                 if (skipOnce && skipDeconstruction) {
-                    if (!m_itemsToAdd.empty()){
+                    if (!m_itemsToRemove.empty())
+                        removePendingItems();
+                    if (!m_itemsToAdd.empty())
                         addPendingItems();
-                    }
-                    if (!m_items.empty()){
+                    if (!m_items.empty())
                         clearItems();
-                    }
                 } else if (skipDeconstruction) {
                     skipOnce = true;
                 }
@@ -4949,6 +4976,7 @@ namespace tsl {
             
             
             virtual void draw(gfx::Renderer* renderer) override {
+
                 // Early exit optimizations
                 if (m_clearList) {
                     clearItems();
@@ -4960,15 +4988,16 @@ namespace tsl {
                 if (!m_itemsToRemove.empty()) removePendingItems();
 
                 // Draw: backup reset if instance missed its chance  
-                if (!m_hasForwardCached) {
-                    s_cacheForwardFrameOnce = true;
-                    
+                if (!s_hasValidFrame.load(std::memory_order_acquire) && 
+                    s_lastFrameItems.empty() && 
+                    !s_cacheForwardFrameOnce.load(std::memory_order_acquire)) {
+                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
                 }
 
                 // This part is for fixing returing to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
-                if (checkOnce && m_pendingJump && !s_hasValidFrame && !s_isForwardCache && ult::internalTouchReleased) {
-                    if (lastInternalTouchRelease == ult::internalTouchReleased) {
+                if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && !s_isForwardCache.load(std::memory_order_acquire) && ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                    if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
                         checkOnce = false;
                         return;
                     }
@@ -4976,25 +5005,28 @@ namespace tsl {
                     static bool checkOnce2 = true;
                     if (checkOnce2) {
                         checkOnce = true;
-                        lastInternalTouchRelease = ult::internalTouchReleased;
+                        lastInternalTouchRelease = ult::internalTouchReleased.load(std::memory_order_acquire);
                         checkOnce2 = false;
                     }
                 }
 
-                if (m_pendingJump && (s_hasValidFrame || s_isForwardCache)) {
+                if (m_pendingJump && (s_hasValidFrame.load(std::memory_order_acquire) || s_isForwardCache.load(std::memory_order_acquire))) {
                     
 
                     // Render using cached frame state if available
                     renderCachedFrame(renderer);
 
                     if (!skipDeconstruction) {
-                        if (s_isForwardCache)
+                        if (s_isForwardCache.load(std::memory_order_acquire))
                             clearStaticCache(true);
                         else
                             clearStaticCache();
-                        s_isForwardCache = false;
-                        s_hasValidFrame = false;
+                        s_isForwardCache.exchange(false, std::memory_order_acq_rel);
+                        s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
+                        
                     }
+                    //m_hasRenderedCache = true;
+                    
                     return;
                 }
 
@@ -5030,25 +5062,27 @@ namespace tsl {
                     updateScrollAnimation();
                 }
 
-                if (!s_isForwardCache && s_hasValidFrame)
+                if (!s_isForwardCache.load(std::memory_order_acquire) && s_hasValidFrame.load(std::memory_order_acquire)) {
                     clearStaticCache(); // clear cache after rendering (for smoother transitions)
+                    s_hasClearedCache.exchange(true, std::memory_order_acq_rel);
+                }
                 
-                if (s_cacheForwardFrameOnce && !s_hasValidFrame) {
+                if (s_cacheForwardFrameOnce && !s_hasValidFrame.load(std::memory_order_acquire)) {
                     s_lastFrameItems.clear();
                     s_lastFrameItems.shrink_to_fit();
                     s_lastFrameItems = m_items;
-                    s_isForwardCache = true;
-                    
+                    s_isForwardCache.exchange(true, std::memory_order_acq_rel);
+                    s_hasValidFrame.exchange(true, std::memory_order_acq_rel);
                     m_hasForwardCached = true;
                 }
 
-                if (s_isForwardCache) {
+                if (s_isForwardCache.load(std::memory_order_acquire)) {
                     cacheCurrentFrame(true);
-                    s_cacheForwardFrameOnce = false;
+                    s_cacheForwardFrameOnce.exchange(false, std::memory_order_acq_rel);
                 }
 
-                if (m_hasForwardCached) {
-                    safeToSwap.store(true, std::memory_order_release);
+                if (s_hasValidFrame.load(std::memory_order_acquire)) {
+                    safeToSwap.exchange(true, std::memory_order_acq_rel);
                 }
 
                 //svcSleepThread(300'000'000); // for testing
@@ -5244,6 +5278,7 @@ namespace tsl {
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
             bool m_hasForwardCached = false;
+            //bool m_hasRenderedCache = false;
 
             // Stack variables for hot path - reused to avoid allocations
             u32 scrollbarHeight;
@@ -5294,45 +5329,41 @@ namespace tsl {
         
             static void clearStaticCache(bool preservePointers = false) {
 
-                if (preservePointers) {
-                    // For forward cache: just clear the vector without deleting elements
-                    s_lastFrameItems.clear();
-                    s_lastFrameItems.shrink_to_fit();
-                } else {
+                if (!preservePointers) {
                     // Normal case: delete elements and clear
                     for (Element* el : s_lastFrameItems) {
                         delete el;
                     }
-                    s_lastFrameItems.clear();
-                    s_lastFrameItems.shrink_to_fit();
                 }
                 
+                s_lastFrameItems.clear();
+                s_lastFrameItems.shrink_to_fit();
+
                 // CRITICAL: Always reset these, even for forward cache!
-                s_hasValidFrame = false;  // This MUST be false after clearing
-                s_isForwardCache = false;
+                s_hasValidFrame.exchange(false, std::memory_order_acq_rel);  // This MUST be false after clearing
+                s_isForwardCache.exchange(false, std::memory_order_acq_rel);
                 s_cachedTopBound = 0;
                 s_cachedBottomBound = 0;
                 s_cachedHeight = 0;
                 s_cachedListHeight = 0;
                 s_cachedActualContentBottom = 0;
-                s_shouldDrawScrollbar = false;
+                s_shouldDrawScrollbar.exchange(false, std::memory_order_acq_rel);
                 s_cachedScrollbarHeight = 0;
                 s_cachedScrollbarOffset = 0;
                 s_cachedScrollbarX = 0;
                 s_cachedScrollbarY = 0;
             }
-
                     
-            void cacheCurrentFrame(bool isForwardCache = false) {
+            void cacheCurrentFrame(bool preservePointers = false) {
 
-                if (!isForwardCache) {
-                    // Clear previous cache (including memory!)
+                if (!preservePointers) {
                     for (Element* el : s_lastFrameItems) {
                         delete el;
                     }
-                    s_lastFrameItems.clear();
-                    s_lastFrameItems.shrink_to_fit();
                 }
+                s_lastFrameItems.clear();
+                s_lastFrameItems.shrink_to_fit();
+                s_lastFrameItems = m_items;
                 
                 // Cache bounds for visibility calculations
                 const s32 topBound = getTopBound();
@@ -5346,11 +5377,6 @@ namespace tsl {
                 //    s_lastFrameItems.push_back(element);
                 //    //}
                 //}
-                if (!isForwardCache) {
-                    s_lastFrameItems.clear();
-                    s_lastFrameItems.shrink_to_fit();
-                    s_lastFrameItems = m_items;
-                }
                 
                 
                 // Cache all the bounds and calculations (unchanged)
@@ -5367,9 +5393,9 @@ namespace tsl {
                 //s_cachedActualContentBottom = m_listHeight;
                 
                 // Cache scrollbar parameters (unchanged - uses full m_listHeight for correct sizing)
-                s_shouldDrawScrollbar = (s_cachedListHeight > s_cachedHeight);
+                s_shouldDrawScrollbar.exchange((s_cachedListHeight > s_cachedHeight), std::memory_order_acq_rel);
                 
-                if (s_shouldDrawScrollbar) {
+                if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
                     const float viewHeight = static_cast<float>(s_cachedHeight);
                     const float totalHeight = static_cast<float>(s_cachedListHeight);
                     const u32 maxScrollableHeight = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
@@ -5384,9 +5410,11 @@ namespace tsl {
                     s_cachedScrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
                     s_cachedScrollbarY = getY() + s_cachedScrollbarOffset+SCROLLBAR_Y_OFFSET;
                 }
-                //s_isForwardCache = isForwardCache;
+                if (preservePointers)
+                    s_isForwardCache = true;
+
                 //if (!isForwardCache)
-                s_hasValidFrame = true;
+                s_hasValidFrame.exchange(true, std::memory_order_acq_rel);
             }
                                     
             void renderCachedFrame(gfx::Renderer* renderer) {
@@ -5402,7 +5430,7 @@ namespace tsl {
                 renderer->disableScissoring();
                 
                 // Draw cached scrollbar
-                if (s_shouldDrawScrollbar) {
+                if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
                     renderer->drawRect(s_cachedScrollbarX, s_cachedScrollbarY, 5, s_cachedScrollbarHeight, a(trackBarColor));
                     renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY, 2, true, a(trackBarColor));
                     renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY + s_cachedScrollbarHeight, 2, true, a(trackBarColor));
@@ -6360,14 +6388,12 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect && !ult::simulatedSelectComplete) [[unlikely]] {
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) [[unlikely]] {
                     keys |= KEY_A;
-                    ult::simulatedSelect = false;
                 }
                 
                 if (keys & KEY_A) [[likely]] {
                     triggerClickAnimation();
-                    ult::simulatedSelectComplete = true;
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
                 }
@@ -6781,13 +6807,11 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
                     keys |= KEY_A;
-                    ult::simulatedSelect = false;
                 }
                 if (keys & KEY_A) {
                     this->triggerClickAnimation();
-                    ult::simulatedSelectComplete = true;
                 }
                 else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
                     this->m_clickAnimationProgress = 0;
@@ -6936,9 +6960,8 @@ namespace tsl {
             virtual ~ToggleListItem() {}
             
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
                     keys |= KEY_A;
-                    ult::simulatedSelect = false;
                 }
                 // Handle KEY_A for toggling
                 if (keys & HidNpadButton_A) {
@@ -6947,7 +6970,6 @@ namespace tsl {
                     this->setState(this->m_state);
                     this->m_stateChangedListener(this->m_state);
                     
-                    ult::simulatedSelectComplete = true;
                     return ListItem::onClick(keys);
                 }
                 #if IS_LAUNCHER_DIRECTIVE
@@ -7252,10 +7274,10 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    ult::unlockedSlide = m_unlockedTrackbar;
+                    ult::unlockedSlide.exchange(m_unlockedTrackbar, std::memory_order_acq_rel);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
 
 
@@ -7364,7 +7386,7 @@ namespace tsl {
                 //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
                 //}
 
-                ult::onTrackBar = true;
+                ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
             }
 
             /**
@@ -7718,22 +7740,22 @@ namespace tsl {
                     return true;
                 }
         
-                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
                     keysDown |= KEY_A;
-                    ult::simulatedSelect = false;
                 }
         
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if (keysDown & KEY_A) {
                     if (!m_unlockedTrackbar) {
-                        ult::allowSlide = !ult::allowSlide;
+                        //ult::allowSlide = !ult::allowSlide;
+                        //ult::allowSlide.fetch_xor(true, std::memory_order_acq_rel);
+                        ult::atomicToggle(ult::allowSlide);
                         holding = false; // Reset holding state when KEY_A is pressed
                     }
-                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide)) {
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         updateAndExecute();
                         triggerClick = true;
                     }
-                    ult::simulatedSelectComplete = true;
                     return true;
                 }
         
@@ -7747,7 +7769,7 @@ namespace tsl {
                 
         
                 // Allow sliding only if KEY_A has been pressed
-                if (ult::allowSlide || m_unlockedTrackbar) {
+                if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
         
                     if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
                         (wasLastHeld && !((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)))) {
@@ -7858,7 +7880,7 @@ namespace tsl {
                 
                 bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
-                if (!m_unlockedTrackbar && !ult::allowSlide)
+                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))
                     return false;
         
                 if ((touchInCircle || touchInSliderBounds)) {
@@ -7920,10 +7942,10 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    ult::unlockedSlide = m_unlockedTrackbar;
+                    ult::unlockedSlide.exchange(m_unlockedTrackbar, std::memory_order_acq_rel);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
                  
                 std::string labelPart = this->m_label;
@@ -8004,7 +8026,7 @@ namespace tsl {
         
                 } else {
         
-                    if (ult::allowSlide || m_unlockedTrackbar) {
+                    if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
                         highlightColor = {
                             static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
                             static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
@@ -8059,7 +8081,7 @@ namespace tsl {
         
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
         
-                ult::onTrackBar = true;
+                ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
         
                 if (clickActive) {
                     u64 elapsedTime_ns = currentTime_ns - clickStartTime_ns;
@@ -8170,25 +8192,25 @@ namespace tsl {
                     return true;
                 }
 
-                if (ult::simulatedSelect && !ult::simulatedSelectComplete) {
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
                     keysDown |= KEY_A;
-                    ult::simulatedSelect = false;
                 }
 
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A)) {
                     if (!m_unlockedTrackbar) {
-                        ult::allowSlide = !ult::allowSlide;
+                        //ult::allowSlide = !ult::allowSlide;
+                        //ult::allowSlide.fetch_xor(true, std::memory_order_acq_rel);
+                        ult::atomicToggle(ult::allowSlide);
                         holding = false; // Reset holding state when KEY_A is pressed
                     //} else {
                     //    m_unlockedTrackbar = !m_unlockedTrackbar;
                     //    holding = false; // Reset holding state when KEY_A is pressed
                     }
-                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide)) {
+                    if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         updateAndExecute();
                         triggerClick = true;
                     }
-                    ult::simulatedSelectComplete = true;
                     return true;
                 }
 
@@ -8200,7 +8222,7 @@ namespace tsl {
                     return true;
                 }
 
-                if (ult::allowSlide || m_unlockedTrackbar) {
+                if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
                     if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
                         (wasLastHeld && !(keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)))) {
                         //if (!m_executeOnEveryTick)
@@ -8538,7 +8560,7 @@ namespace tsl {
 
     // Swap state tracking variables
     u64 lastNextPageTapTime = 0;
-    static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 500'000'000; // 400ms in nanoseconds
+    static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 400'000'000; // 400ms in nanoseconds
     bool swapComplete = true;
 
     // Overlay
@@ -8828,11 +8850,9 @@ namespace tsl {
             this->getCurrentGui()->draw(&renderer);
             
             renderer.endFrame();
-            if (tsl::clearGlyphCacheNow) {
-                tsl::gfx::FontManager::clearCache();
-                tsl::clearGlyphCacheNow = false;
-                svcSleepThread(50'000);
-            }
+            //if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
+            //    tsl::gfx::FontManager::clearCache();       // exclusive clear
+            //}
         }
         
         // Calculate transition using ease-in-out curve instead of linear
@@ -8861,7 +8881,7 @@ namespace tsl {
             bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_relaxed);
             // Return early if current GUI is not available
             if (!currentGui) return;
-            if (!ult::internalTouchReleased) return;
+            if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
@@ -8881,27 +8901,26 @@ namespace tsl {
         
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
-                if (ult::simulatedBack) {
-                    ult::simulatedBack = false;
-                    ult::stillTouching = false;
+                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
+                    //ult::simulatedBack = false;
+                    ult::stillTouching.exchange(false, std::memory_order_acq_rel);
                     this->goBack();
-                    ult::simulatedBackComplete = true;
+                    //ult::simulatedBackComplete = true;
                     return;
                 }
             } else {
-                ult::simulatedBack = false;
-                ult::simulatedBackComplete = true;
+                ult::simulatedBack.exchange(false, std::memory_order_acq_rel)
             }
         #else
             if (!overrideBackButton) {
-                if (ult::simulatedBack) {
+                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
                     keysDown |= KEY_B;
-                    ult::simulatedBack = false;
+                    //ult::simulatedBack = false;
                 }
                 if (keysDown & KEY_B) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
-                        ult::simulatedBackComplete = true;
+                        //ult::simulatedBackComplete = true;
                     }
                     return;
                 }
@@ -8918,7 +8937,7 @@ namespace tsl {
                 lastGuiPtr = currentGui.get();  // or just currentGui
             }
             
-            if (!currentFocus && !ult::simulatedBack && ult::simulatedBackComplete && !ult::stillTouching && !oldTouchDetected && !interpreterIsRunning) {
+            if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
                 
                 if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
@@ -8939,7 +8958,7 @@ namespace tsl {
             
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!(isNavigatingBackwards) && !ult::simulatedBack && ult::simulatedBackComplete && topElement) {
+                if (!(isNavigatingBackwards) && !ult::simulatedBack.load(std::memory_order_acquire) && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -8973,7 +8992,7 @@ namespace tsl {
                     isNavigatingBackwards = false;
                 }
             } else {
-                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching && !interpreterIsRunning) {
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
                     bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                     
@@ -9047,9 +9066,9 @@ namespace tsl {
         #if !IS_STATUS_MONITOR_DIRECTIVE
                     } else {
                         // Handle the rest of the input
-                        if (ult::simulatedBack) {
+                        if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
                             keysDown |= KEY_B;
-                            ult::simulatedBack = false;
+                            //ult::simulatedBack = false;
                         }
         
                         if (keysDown & KEY_B)
@@ -9087,25 +9106,27 @@ namespace tsl {
             const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth;
             
             const float menuRightEdge = 245.0f + ult::layerEdge - 13;
-            const u32 footerY = cfg::FramebufferHeight - 73U;
+            const u32 footerY = cfg::FramebufferHeight - 73U +1;
             
             // Touch region calculations
-            ult::touchingBack = (touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
-                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY);
+            ult::touchingBack.exchange((touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
+                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
             
-            ult::touchingSelect = !ult::noClickableItems && 
+            ult::touchingSelect.exchange(!ult::noClickableItems && 
                                   (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
-                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
+                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
             
-            ult::touchingNextPage = (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
-                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
+            ult::touchingNextPage.exchange((touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
+                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
             
-            ult::touchingMenu = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
-                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+            ult::touchingMenu.exchange((touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
+                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U), std::memory_order_acq_rel);
         
             if (touchDetected) {
-                if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
+                //if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
+                ult::interruptedTouch.exchange(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_acq_rel);
+
                 u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
                 
@@ -9151,32 +9172,37 @@ namespace tsl {
                     this->hide();
         #endif
                 }
-                ult::stillTouching = true;
+                ult::stillTouching.exchange(true, std::memory_order_acq_rel);
             } else {
-                if (!ult::interruptedTouch && !interpreterIsRunning) {
+                if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
-                        ult::simulatedBackComplete = false;
-                        ult::simulatedBack = true;
+                        //ult::simulatedBackComplete = false;
+                        //ult::simulatedBack = true;
+                        ult::simulatedBack.exchange(true, std::memory_order_acq_rel);
                     } else if (!ult::noClickableItems && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
-                        ult::simulatedSelectComplete = false;
-                        ult::simulatedSelect = true;
+                        //ult::simulatedSelectComplete = false;
+                        //ult::simulatedSelect = true;
+                        ult::simulatedSelect.exchange(true, std::memory_order_acq_rel);
                     } else if ((oldTouchPos.x >= nextPageLeftEdge && oldTouchPos.x < nextPageRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY)) {
-                        u64 currentTimeNs = armTicksToNs(armGetSystemTick());
-                        u64 timeSinceLastTap = currentTimeNs - lastNextPageTapTime;
-                        
-                        if (timeSinceLastTap >= NEXT_PAGE_COOLDOWN_NS && tsl::swapComplete) {
-                            lastNextPageTapTime = currentTimeNs;
-                            bool expected = false;
-                            ult::simulatedNextPage.compare_exchange_strong(expected, true, std::memory_order_release);
-                            
-                        }
+                        //u64 currentTimeNs = armTicksToNs(armGetSystemTick());
+                        //u64 timeSinceLastTap = currentTimeNs - lastNextPageTapTime;
+                        //
+                        //if (timeSinceLastTap >= NEXT_PAGE_COOLDOWN_NS) {
+                        //    lastNextPageTapTime = currentTimeNs;
+                        //    //bool expected = false;
+                        //    //ult::simulatedNextPage.compare_exchange_strong(expected, true, std::memory_order_release);
+                        //    ult::simulatedNextPage.exchange(true, std::memory_order_acq_rel);
+                        //    
+                        //}
+                        ult::simulatedNextPage.exchange(true, std::memory_order_acq_rel);
                     } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
-                        ult::simulatedMenuComplete = false;
-                        ult::simulatedMenu = true;
+                        //ult::simulatedMenuComplete = false;
+                        //ult::simulatedMenu = true;
+                        ult::simulatedMenu.exchange(true, std::memory_order_acq_rel);
                     }
                 } else if (interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
@@ -9193,8 +9219,8 @@ namespace tsl {
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
-                ult::stillTouching = false;
-                ult::interruptedTouch = false;
+                ult::stillTouching.exchange(false, std::memory_order_acq_rel);
+                ult::interruptedTouch.exchange(false, std::memory_order_acq_rel);
             }
 
             oldTouchDetected = touchDetected;
@@ -9528,6 +9554,7 @@ namespace tsl {
 
             u64 elapsedTime_ns;
 
+            bool isMainComboMatch;
             while (shData->running) {
             
                 nowTick = armGetSystemTick();
@@ -9583,8 +9610,8 @@ namespace tsl {
                         
                     
                         if (!shData->overlayOpen) {
-                            ult::internalTouchReleased = false;
-                            // ult::internalTouchReleased.store(false, std::memory_order_release);
+                            //ult::internalTouchReleased = false;
+                            ult::internalTouchReleased.exchange(false, std::memory_order_acq_rel);
                         }
                         
                         elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
@@ -9604,7 +9631,8 @@ namespace tsl {
                     
                         // Handle touch release state
                         if (currentTouch.x == 0 && currentTouch.y == 0) {
-                            ult::internalTouchReleased = true;  // Indicate that the touch has been released
+                            ult::internalTouchReleased.exchange(true, std::memory_order_acq_rel);
+                            //ult::internalTouchReleased = true;  // Indicate that the touch has been released
                             //ult::internalTouchReleased.store(true, std::memory_order_release);
                             lastTouchX = currentTouch.x;
                         }
@@ -9618,7 +9646,8 @@ namespace tsl {
                     } else {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
-                        ult::internalTouchReleased = true;
+                        //ult::internalTouchReleased = true;
+                        ult::internalTouchReleased.exchange(true, std::memory_order_acq_rel);
                         //ult::internalTouchReleased.store(true, std::memory_order_release);
                     
                         // Reset touch history to invalid state
@@ -9658,7 +9687,7 @@ namespace tsl {
                     // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)
                     else if (!shData->overlayOpen && shData->keysDown != 0) {
                         // Make sure this isn't a subset of the main launch combos
-                        bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
+                        isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
                         if (!isMainComboMatch) {
                             std::string overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
