@@ -285,7 +285,10 @@ namespace tsl {
     static Color defaultPackageColor = RGB888(ult::whiteColor);//RGB888("#00FF00");
     static Color defaultScriptColor = RGB888("FF33FF");
     static Color clockColor = RGB888(ult::whiteColor);
+    static Color temperatureColor = RGB888(ult::whiteColor);
     static Color batteryColor = RGB888("ffff45");
+    static Color batteryChargingColor = RGB888("00FF00");
+    static Color batteryLowColor = RGB888("FF0000");
     static size_t widgetBackdropAlpha = 15;
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
@@ -388,7 +391,10 @@ namespace tsl {
             defaultScriptColor = getColor("default_script_color");
 
             clockColor = getColor("clock_color");
+            temperatureColor = getColor("temperature_color");
             batteryColor = getColor("battery_color");
+            batteryChargingColor = getColor("battery_charging_color");
+            batteryLowColor = getColor("battery_low_color");
             widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
             widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
@@ -2847,19 +2853,19 @@ namespace tsl {
                     int currentX = backdropCenterX - (totalWidth >> 1);
                     
                     if (socWidth > 0) {
-                        drawString(SOC_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : defaultTextColor);
+                        drawString(SOC_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : temperatureColor);
                         currentX += socWidth + 5;
                     }
                     
                     if (pcbWidth > 0) {
-                        drawString(PCB_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : defaultTextColor);
+                        drawString(PCB_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : temperatureColor);
                         currentX += pcbWidth + 5;
                     }
                     
                     if (chargeWidth > 0) {
-                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
-                        drawString(chargeString, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (batteryColorToUse) : defaultTextColor);
+                        Color batteryColorToUse = ult::isCharging ? batteryChargingColor : 
+                                                (ult::batteryCharge < 20 ? batteryLowColor : batteryColor);
+                        drawString(chargeString, false, currentX, y_offset, 20,  (batteryColorToUse));
                     }
                     
                 } else {
@@ -2870,11 +2876,11 @@ namespace tsl {
                     
                     // Draw battery percentage
                     if (!ult::hideBattery && ult::batteryCharge > 0) {
-                        Color batteryColorToUse = ult::isCharging ? tsl::Color(0x0, 0xF, 0x0, 0xF) : 
-                                                (ult::batteryCharge < 20 ? tsl::Color(0xF, 0x0, 0x0, 0xF) : batteryColor);
+                        Color batteryColorToUse = ult::isCharging ? batteryChargingColor : 
+                                                (ult::batteryCharge < 20 ? batteryLowColor : batteryColor);
                         //auto [width, height] = getTextDimensions(chargeString, false, 20);
                         chargeWidth = getTextDimensions(chargeString, false, 20).first;
-                        drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (batteryColorToUse) : defaultTextColor);
+                        drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 -5, y_offset, 20, (batteryColorToUse));
                     }
                 
                     // Draw PCB and SOC temperatures
@@ -4084,10 +4090,11 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    //ult::themeIsInitialized = true;
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                 }
+
                 if (m_noClickableItems != ult::noClickableItems)
                     ult::noClickableItems = m_noClickableItems;
                 
@@ -4303,9 +4310,9 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    //ult::themeIsInitialized = true;
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                 }
                 
                 
@@ -4719,9 +4726,9 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
                     tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    //ult::themeIsInitialized = true;
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                 }
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
@@ -4899,13 +4906,12 @@ namespace tsl {
         
         public:
             List() : Element() {
+                m_isItem = false; // not a list item
                 s_hasClearedCache.exchange(false, std::memory_order_acq_rel);
                 s_safeToSwap.exchange(false, std::memory_order_acq_rel);
-                m_isItem = false;
 
                 if (skipDeconstruction) {
                     purgePendingItems();
-                    //clearItems();
                 } else {
                     //if (!s_hasValidFrame.load(std::memory_order_acquire))
                     s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
@@ -4917,10 +4923,10 @@ namespace tsl {
                 s_safeToSwap.exchange(false, std::memory_order_acq_rel);
 
                 if (!skipDeconstruction) {
-                   //while (!s_safeToSwap.load(std::memory_order_acquire)) {
-                   //    //std::this_thread::sleep_for(std::chrono::microseconds(100));
-                   //    svcSleepThread(100'000);
-                   //}
+                    //while (!s_safeToSwap.load(std::memory_order_acquire)) {
+                    //    //std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    //    svcSleepThread(100'000);
+                    //}
 
                     //bool deleteRemainingItems = (!m_itemsToAdd.empty());
                     // Incase deconstruction happens too fast
@@ -4932,7 +4938,6 @@ namespace tsl {
 
                     if (!s_isForwardCache.load(std::memory_order_acquire)) {
                         clearStaticCache();
-                        clearItems();
                     }
 
 
@@ -4941,10 +4946,9 @@ namespace tsl {
                     //s_skipCaching.exchange(false, std::memory_order_acq_rel);
                 }
 
-                else if (skipOnce && skipDeconstruction) {
+                if (skipOnce && skipDeconstruction) {
                     purgePendingItems();
-                    if (!m_items.empty())
-                        clearItems();
+                    clearItems();
                 } else if (skipDeconstruction) {
                     skipOnce = true;
                 }
