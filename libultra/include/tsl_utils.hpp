@@ -319,11 +319,16 @@ namespace ult {
     extern std::string UI_SETTINGS;
 
     extern std::string WIDGET;
+    extern std::string WIDGET_ITEMS;
+    extern std::string WIDGET_SETTINGS;
     extern std::string CLOCK;
     extern std::string BATTERY;
     extern std::string SOC_TEMPERATURE;
     extern std::string PCB_TEMPERATURE;
     extern std::string BACKDROP;
+    extern std::string DYNAMIC_COLORS;
+    extern std::string CENTER_ALIGNMENT;
+    extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
     extern std::string MENU_ITEMS;
     extern std::string USER_GUIDE;

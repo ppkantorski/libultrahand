@@ -394,11 +394,16 @@ namespace ult {
     std::string UI_SETTINGS = "UI Settings";
 
     std::string WIDGET = "Widget";
+    std::string WIDGET_ITEMS = "Widget Items";
+    std::string WIDGET_SETTINGS = "Widget Settings";
     std::string CLOCK = "Clock";
     std::string BATTERY = "Battery";
     std::string SOC_TEMPERATURE = "SOC Temperature";
     std::string PCB_TEMPERATURE = "PCB Temperature";
     std::string BACKDROP = "Backdrop";
+    std::string DYNAMIC_COLORS = "Dynamic Colors";
+    std::string CENTER_ALIGNMENT = "Center Alignment";
+    std::string EXTENDED_BACKDROP = "Extended Backdrop";
     std::string MISCELLANEOUS = "Miscellaneous";
     std::string MENU_ITEMS = "Menu Items";
     std::string USER_GUIDE = "User Guide";
@@ -568,11 +573,16 @@ namespace ult {
         MAIN_SETTINGS = "Main Settings";
         UI_SETTINGS = "UI Settings";
         WIDGET = "Widget";
+        WIDGET_ITEMS = "Widget Items";
+        WIDGET_SETTINGS = "Widget Settings";
         CLOCK = "Clock";
         BATTERY = "Battery";
         SOC_TEMPERATURE = "SOC Temperature";
         PCB_TEMPERATURE = "PCB Temperature";
         BACKDROP = "Backdrop";
+        DYNAMIC_COLORS = "Dynamic Colors";
+        CENTER_ALIGNMENT = "Center Alignment";
+        EXTENDED_BACKDROP = "Extended Backdrop";
         MISCELLANEOUS = "Miscellaneous";
         MENU_ITEMS = "Menu Items";
         USER_GUIDE = "User Guide";
@@ -745,11 +755,16 @@ namespace ult {
             {"UI_SETTINGS", &UI_SETTINGS},
 
             {"WIDGET", &WIDGET},
+            {"WIDGET_ITEMS", &WIDGET_ITEMS},
+            {"WIDGET_SETTINGS", &WIDGET_SETTINGS},
             {"CLOCK", &CLOCK},
             {"BATTERY", &BATTERY},
             {"SOC_TEMPERATURE", &SOC_TEMPERATURE},
             {"PCB_TEMPERATURE", &PCB_TEMPERATURE},
             {"BACKDROP", &BACKDROP},
+            {"DYNAMIC_COLORS", &DYNAMIC_COLORS},
+            {"CENTER_ALIGNMENT", &CENTER_ALIGNMENT},
+            {"EXTENDED_BACKDROP", &EXTENDED_BACKDROP},
             {"MISCELLANEOUS", &MISCELLANEOUS},
             {"MENU_ITEMS", &MENU_ITEMS},
             {"USER_GUIDE", &USER_GUIDE},

@@ -8685,7 +8685,9 @@ namespace tsl {
          *
          */
         void close() {
+            tsl::elm::skipDeconstruction = true;
             this->m_shouldClose = true;
+
         }
         
         /**
@@ -8708,12 +8710,6 @@ namespace tsl {
         template<typename T, typename ... Args>
         constexpr inline std::unique_ptr<T> initially(Args&&... args) {
             return std::make_unique<T>(args...);
-        }
-
-        // Template version with clearGlyphCache as the last parameter
-        template<typename G, typename ...Args>
-        std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
-            return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), true);
         }
         
     private:
@@ -9315,7 +9311,7 @@ namespace tsl {
             
             if (tsl::elm::skipDeconstruction)
                 tsl::elm::skipDeconstruction = false;
-            
+
             // Close overlay if stack is empty
             if (this->m_guiStack.empty()) {
                 this->close();
@@ -9799,10 +9795,6 @@ namespace tsl {
         return Overlay::get()->changeTo<G, Args...>(std::forward<Args>(args)...);
     }
     
-    template<typename G, typename ...Args>
-    std::unique_ptr<tsl::Gui>& changeToWithCacheClear(Args&&... args) {
-        return Overlay::get()->changeToWithCacheClear<G, Args...>(std::forward<Args>(args)...);
-    }
 
     /**
      * @brief Pops the top Gui from the stack and goes back to the last one
@@ -9924,11 +9916,21 @@ namespace tsl {
     static inline int loop(int argc, char** argv) {
         static_assert(std::is_base_of_v<tsl::Overlay, TOverlay>, "tsl::loop expects a type derived from tsl::Overlay");
 
+        // cleanup any lingering items (if they exist)
+        if (!tsl::elm::s_lastFrameItems.empty()) {
+            for (auto* el : tsl::elm::s_lastFrameItems) {
+                delete el;
+            }
+            tsl::elm::s_lastFrameItems.clear();
+            tsl::elm::s_lastFrameItems.shrink_to_fit();
+        }
+
+
         // CUSTOM SECTION START
         // Argument parsing
-    #if IS_LAUNCHER_DIRECTIVE
-        const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
-    #endif
+    //#if IS_LAUNCHER_DIRECTIVE
+    //    const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
+    //#endif
 
         if (argc > 0) {
             //std::string overlayPath = argv[0];
@@ -10060,8 +10062,10 @@ namespace tsl {
                     break;
                 }
                 
-                if (overlay->shouldClose())
+                if (overlay->shouldClose()) {
+
                     shData.running = false;
+                }
             }
             
             overlay->clearScreen();
@@ -10082,8 +10086,9 @@ namespace tsl {
         overlay->exitScreen();
         overlay->exitServices();
         
+
         delete overlay;
-        
+
         return 0;
     }
 
