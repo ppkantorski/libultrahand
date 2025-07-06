@@ -4888,7 +4888,7 @@ namespace tsl {
 
         //static std::atomic<bool> s_skipCaching(false);
 
-        static std::atomic<bool> safeToSwap{false};
+        static std::atomic<bool> s_safeToSwap{false};
 
         static bool skipDeconstruction = false;
         static bool skipOnce = false;
@@ -4900,7 +4900,7 @@ namespace tsl {
         public:
             List() : Element() {
                 s_hasClearedCache.exchange(false, std::memory_order_acq_rel);
-                safeToSwap.exchange(false, std::memory_order_acq_rel);
+                s_safeToSwap.exchange(false, std::memory_order_acq_rel);
                 m_isItem = false;
 
                 if (skipDeconstruction) {
@@ -4914,13 +4914,13 @@ namespace tsl {
                 
             }
             virtual ~List() {
-
+                s_safeToSwap.exchange(false, std::memory_order_acq_rel);
 
                 if (!skipDeconstruction) {
-                    //while (!safeToSwap.load(std::memory_order_acquire)) {
-                    //    //std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    //    svcSleepThread(100'000);
-                    //}
+                   //while (!s_safeToSwap.load(std::memory_order_acquire)) {
+                   //    //std::this_thread::sleep_for(std::chrono::microseconds(100));
+                   //    svcSleepThread(100'000);
+                   //}
 
                     //bool deleteRemainingItems = (!m_itemsToAdd.empty());
                     // Incase deconstruction happens too fast
@@ -4932,6 +4932,7 @@ namespace tsl {
 
                     if (!s_isForwardCache.load(std::memory_order_acquire)) {
                         clearStaticCache();
+                        clearItems();
                     }
 
 
@@ -5055,10 +5056,11 @@ namespace tsl {
                 }
 
                 //if (s_hasValidFrame.load(std::memory_order_acquire)) {
-                //    safeToSwap.exchange(true, std::memory_order_acq_rel);
+                
                 //}
 
                 cacheCurrentScrollbar();
+                s_safeToSwap.exchange(true, std::memory_order_acq_rel);
                 //svcSleepThread(300'000'000); // for testing
             }
 
