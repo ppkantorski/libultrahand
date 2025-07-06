@@ -2766,9 +2766,9 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15+2, 1, 64, a(separatorColor));
+                    drawRect(239, 15+2-1, 1, 64+1, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(247, 15+2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64, (widgetBackdropColor));
+                        drawUniformRoundedRect(247, 15+2-1, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+1, (widgetBackdropColor));
                     }
                 }
                 
@@ -4935,6 +4935,7 @@ namespace tsl {
 
                     if (!s_isForwardCache.load(std::memory_order_acquire)) {
                         clearStaticCache();
+                        clearItems();
                     }
 
 
