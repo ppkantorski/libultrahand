@@ -2766,14 +2766,14 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15+2-1, 1, 64+1, a(separatorColor));
+                    drawRect(239, 15+2-2, 1, 64+2, a(separatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(247, 15+2-1, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+1, (widgetBackdropColor));
+                        drawUniformRoundedRect(247, 15+2-2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+2, (widgetBackdropColor));
                     }
                 }
                 
                 // Calculate base Y offset
-                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55+2 : 44+2;
+                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55+2-1 : 44+2-1;
                 
                 // Constants for centering calculations
                 const int backdropCenterX = 247 + ((tsl::cfg::FramebufferWidth - 255) >> 1);
