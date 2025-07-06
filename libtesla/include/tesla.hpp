@@ -4090,9 +4090,8 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
-                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                    tsl::initializeThemeVars();
                 }
 
                 if (m_noClickableItems != ult::noClickableItems)
@@ -4310,9 +4309,8 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
-                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                    tsl::initializeThemeVars();
                 }
                 
                 
@@ -4726,9 +4724,8 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
-                    tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                    tsl::initializeThemeVars();
                 }
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
