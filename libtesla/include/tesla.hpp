@@ -6431,10 +6431,11 @@ namespace tsl {
                 }
             }
         
-            inline void setValue(const std::string& value, bool faint = false) {
+            inline void setValue(const std::string& value, bool faint = false, bool useVersionColor = false) {
                 if (m_value != value || m_faint != faint) [[likely]] {
                     m_value = value;
                     m_faint = faint;
+                    m_useVersionColor = useVersionColor;
                     m_maxWidth = 0;
                     if (!value.empty()) applyInitialTranslations(true);
                 }
@@ -6487,6 +6488,7 @@ namespace tsl {
             bool m_scroll = false;
             bool m_truncated = false;
             bool m_faint = false;
+            bool m_useVersionColor = false;
             bool m_touched = false;
         
             float m_scrollOffset = 0.0f;
@@ -6591,7 +6593,7 @@ namespace tsl {
                     return m_faint ? offTextColor : a(invalidTextColor);
                 }
                 
-                return m_faint ? offTextColor : a(onTextColor);
+                return m_useVersionColor ? versionTextColor : (m_faint ? offTextColor : a(onTextColor));
             }
         
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
@@ -9303,10 +9305,16 @@ namespace tsl {
                 return;
             }
             
+            if (actualCount > 1)
+                tsl::elm::skipDeconstruction = true;
+
             // Pop the specified number of GUIs
             for (u32 i = 0; i < actualCount && !this->m_guiStack.empty(); ++i) {
                 this->m_guiStack.pop();
             }
+            
+            if (tsl::elm::skipDeconstruction)
+                tsl::elm::skipDeconstruction = false;
             
             // Close overlay if stack is empty
             if (this->m_guiStack.empty()) {
@@ -9320,10 +9328,14 @@ namespace tsl {
             // Clamp count to available stack size to prevent underflow
             u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
             
+            if (actualCount > 1)
+                tsl::elm::skipDeconstruction = true;
             // Pop the specified number of GUIs
             for (u32 i = 0; i < actualCount; ++i) {
                 this->m_guiStack.pop();
             }
+            if (tsl::elm::skipDeconstruction)
+                tsl::elm::skipDeconstruction = false;
         }
 
         
