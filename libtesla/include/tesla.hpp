@@ -4930,9 +4930,9 @@ namespace tsl {
                     //clearStaticCache(true); // destroy forward cache
                     
 
-                    //if (!s_isForwardCache.load(std::memory_order_acquire)) {
-                    //    clearStaticCache();
-                    //}
+                    if (!s_isForwardCache.load(std::memory_order_acquire)) {
+                        clearStaticCache();
+                    }
 
 
                     s_isForwardCache.exchange(false, std::memory_order_acq_rel); // label cache as backwards cache for deletion in draw
