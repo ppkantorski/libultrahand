@@ -4938,7 +4938,7 @@ namespace tsl {
                         clearItems();
                     }
 
-
+                    
                     s_isForwardCache.exchange(false, std::memory_order_acq_rel); // label cache as backwards cache for deletion in draw
                     s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
                     //s_skipCaching.exchange(false, std::memory_order_acq_rel);
@@ -4992,7 +4992,7 @@ namespace tsl {
                     }
                 }
 
-                if (m_pendingJump && (s_hasValidFrame.load(std::memory_order_acquire) || s_isForwardCache.load(std::memory_order_acquire))) {
+                if ((m_pendingJump || !m_hasForwardCached) && (s_hasValidFrame.load(std::memory_order_acquire) || s_isForwardCache.load(std::memory_order_acquire))) {
                     
 
                     // Render using cached frame state if available

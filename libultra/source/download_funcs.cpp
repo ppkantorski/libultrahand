@@ -45,6 +45,10 @@ static std::atomic<bool> curlInitialized(false);
 
 const std::string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
+struct FileDeleter {
+    void operator()(FILE* f) const { if (f) fclose(f); }
+};
+
 // Definition of CurlDeleter
 void CurlDeleter::operator()(CURL* curl) const {
     if (curl) {
@@ -163,7 +167,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     }
 #else
     // Alternative method of opening file (depending on your platform, like using POSIX open())
-    FILE* file = fopen(tempFilePath.c_str(), "wb");
+    std::unique_ptr<FILE, FileDeleter> file(fopen(tempFilePath.c_str(), "wb"));
     if (!file) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error opening file: " + tempFilePath);
@@ -176,7 +180,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     if (DOWNLOAD_WRITE_BUFFER > 0) {
         writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
         // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
-        setvbuf(file, writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
+        setvbuf(file.get(), writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
     }
 #endif
 
@@ -191,7 +195,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
         file.close();
 #else
-        fclose(file);
+        file.reset();
 #endif
         return false;
     }
@@ -203,7 +207,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
 #else
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
 #endif
 
     // Small buffer for responsive abort
@@ -227,7 +231,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 #ifndef NO_FSTREAM_DIRECTIVE
     file.close();
 #else
-    fclose(file);
+    file.reset();
 #endif
 
     if (result != CURLE_OK) {
@@ -301,6 +305,14 @@ static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* file
     return file;
 }
 
+static int ZCALLBACK fclose64_file_func_custom(voidpf opaque, voidpf stream) {
+    int ret = EOF;
+    if (stream != nullptr) {
+        ret = fclose((FILE*)stream);
+    }
+    return ret;
+}
+
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
@@ -329,6 +341,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             zlib_filefunc64_def ffunc;
             fill_fopen64_filefunc(&ffunc);
             ffunc.zopen64_file = fopen64_file_func_custom;
+            ffunc.zclose_file = fclose64_file_func_custom;
             file = unzOpen2_64(path.c_str(), &ffunc);
         }
         
