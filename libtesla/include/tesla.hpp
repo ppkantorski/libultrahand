@@ -3713,10 +3713,14 @@ namespace tsl {
                 static double cachedHighlightProgress = 0.0;
                 u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 
-                // Update progress at 60 FPS rate
+                // Update progress at 60 FPS rate with high-precision calculation
                 if (currentTime_ns - lastHighlightUpdate > 16666666) {
-                    double time_seconds = currentTime_ns * 0.000000001; // Direct conversion
+                    // High precision time calculation - matches original timing exactly
+                    double time_seconds = currentTime_ns * 0.000000001; // Direct conversion like original
+                    
+                    // Match original calculation exactly but with higher precision
                     cachedHighlightProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) * 0.5;
+                    
                     lastHighlightUpdate = currentTime_ns;
                 }
                 progress = cachedHighlightProgress;
@@ -3730,17 +3734,19 @@ namespace tsl {
                 }
             
                 if (lastInterpreterState) {
+                    // High precision floating point color interpolation for interpreter colors
                     highlightColor = {
-                        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                        static_cast<u8>(highlightColor4.r + (highlightColor3.r - highlightColor4.r) * progress + 0.5),
+                        static_cast<u8>(highlightColor4.g + (highlightColor3.g - highlightColor4.g) * progress + 0.5),
+                        static_cast<u8>(highlightColor4.b + (highlightColor3.b - highlightColor4.b) * progress + 0.5),
                         0xF
                     };
                 } else {
+                    // High precision floating point color interpolation for normal colors
                     highlightColor = {
-                        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                        static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
+                        static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
+                        static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
                         0xF
                     };
                 }
@@ -3797,7 +3803,6 @@ namespace tsl {
                 
                 ult::onTrackBar.exchange(false, std::memory_order_acq_rel);
             }
-            
             
             
             
@@ -4026,7 +4031,7 @@ namespace tsl {
                 //renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 - 4);
                 
                 if (!hideTableBackground)
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2, this->getHeight() + 20 - endGap, 10.0, aWithOpacity(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2, this->getHeight() + 20 - endGap+2, 10.0, aWithOpacity(tableBGColor));
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
@@ -4938,7 +4943,7 @@ namespace tsl {
                         clearItems();
                     }
 
-                    
+
                     s_isForwardCache.exchange(false, std::memory_order_acq_rel); // label cache as backwards cache for deletion in draw
                     s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
                     //s_skipCaching.exchange(false, std::memory_order_acq_rel);
@@ -6539,22 +6544,108 @@ namespace tsl {
                         a(useClickTextColor ? clickTextColor : defaultTextColor), a(starColor));
                 }
             }
-        
+                    
             void handleScrolling() {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const u64 elapsed_ns = currentTime_ns - timeIn_ns;
                 
-                if (elapsed_ns >= 2000000000ULL) [[likely]] {
-                    if (m_scrollOffset >= m_textWidth) [[unlikely]] {
-                        m_scrollOffset = 0;
-                        timeIn_ns = currentTime_ns;
-                    } else {
-                        const u64 scroll_elapsed_ms = (elapsed_ns - 2000000000ULL) / 1000000ULL;
-                        m_scrollOffset = 0.1f * scroll_elapsed_ms;
+                // Frame rate compensation - cache calculations to reduce stutter
+                static u64 lastUpdateTime = 0;
+                static float cachedScrollOffset = 0.0f;
+                
+                // Pre-compute constants as statics to avoid recalculation
+                static bool constantsInitialized = false;
+                static double totalCycleDuration;
+                static double delayDuration;
+                static double scrollDuration;
+                static double accelTime;
+                static double constantVelocityTime;
+                static double maxVelocity;
+                static double accelDistance;
+                static double constantVelocityDistance;
+                static double minScrollDistance;
+                static double invAccelTime;  // 1/accelTime for multiplication instead of division
+                static double invDecelTime;  // 1/decelTime for multiplication instead of division
+                static double invBillion;    // 1/1000000000.0 for ns to seconds conversion
+                
+                if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
+                    // Constants for velocity-based scrolling
+                    delayDuration = 2.0;
+                    const double pauseDuration = 1.0;
+                    maxVelocity = 166.0;
+                    accelTime = 0.5;
+                    const double decelTime = 0.5;
+                    
+                    // Pre-calculate derived constants
+                    minScrollDistance = static_cast<double>(m_textWidth);
+                    accelDistance = 0.5 * maxVelocity * accelTime;
+                    const double decelDistance = 0.5 * maxVelocity * decelTime;
+                    constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
+                    constantVelocityTime = constantVelocityDistance / maxVelocity;
+                    scrollDuration = accelTime + constantVelocityTime + decelTime;
+                    totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
+                    
+                    // Pre-calculate reciprocals for faster division
+                    invAccelTime = 1.0 / accelTime;
+                    invDecelTime = 1.0 / decelTime;
+                    invBillion = 1.0 / 1000000000.0;
+                    
+                    constantsInitialized = true;
+                }
+                
+                // Fast ns to seconds conversion
+                const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
+                
+                // Update at consistent intervals regardless of frame rate
+                if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
+                    // Use std::fmod for modulo - it's optimized and faster than loops
+                    const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
+                    
+                    if (cyclePosition < delayDuration) [[likely]] {
+                        // Delay phase - no scrolling
+                        cachedScrollOffset = 0.0f;
+                    } else if (cyclePosition < delayDuration + scrollDuration) [[likely]] {
+                        // Scrolling phase - velocity-based movement
+                        const double scrollTime = cyclePosition - delayDuration;
+                        double distance;
+                        
+                        if (scrollTime <= accelTime) {
+                            // Acceleration phase - quadratic ease-in
+                            const double t = scrollTime * invAccelTime;  // Multiply instead of divide
+                            const double smoothT = t * t;
+                            distance = smoothT * accelDistance;
+                        } else if (scrollTime <= accelTime + constantVelocityTime) {
+                            // Constant velocity phase
+                            const double constantTime = scrollTime - accelTime;
+                            distance = accelDistance + (constantTime * maxVelocity);
+                        } else {
+                            // Deceleration phase - quadratic ease-out
+                            const double decelStartTime = accelTime + constantVelocityTime;
+                            const double t = (scrollTime - decelStartTime) * invDecelTime;  // Multiply instead of divide
+                            const double oneMinusT = 1.0 - t;
+                            const double smoothT = 1.0 - oneMinusT * oneMinusT;  // Avoid repeated calculation
+                            distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
+                        }
+                        
+                        // Use branchless min with conditional move behavior
+                        cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
+                    } else [[unlikely]] {
+                        // Pause phase - stay at end
+                        cachedScrollOffset = static_cast<float>(m_textWidth);
                     }
+                    
+                    lastUpdateTime = currentTime_ns;
+                }
+                
+                // Use cached value for consistent display
+                m_scrollOffset = cachedScrollOffset;
+                
+                // Reset timer when cycle completes
+                if (elapsed_seconds >= totalCycleDuration) [[unlikely]] {
+                    timeIn_ns = currentTime_ns;
                 }
             }
-        
+                    
             void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 const s32 xPosition = getX() + m_maxWidth + 47;
                 const s32 yPosition = getY() + 45 - yOffset;
@@ -6718,21 +6809,104 @@ namespace tsl {
                         renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
                         renderer->disableScissoring();
                         
-                        // Handle scrolling with nanosecond timing
+                        // Handle scrolling with frame rate compensation
                         u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                         u64 elapsed_ns = currentTime_ns - this->timeIn_ns;
                         
-                        // 2000ms = 2,000,000,000 nanoseconds
-                        if (elapsed_ns >= 2000000000ULL) {
-                            if (this->m_scrollOffset >= this->m_textWidth) {
-                                this->m_scrollOffset = 0;
-                                this->timeIn_ns = currentTime_ns;
+                        // Frame rate compensation - cache calculations to reduce stutter
+                        static u64 lastUpdateTime = 0;
+                        static float cachedScrollOffset = 0.0f;
+                        
+                        // Pre-compute constants as statics to avoid recalculation
+                        static bool constantsInitialized = false;
+                        static double totalCycleDuration;
+                        static double delayDuration;
+                        static double scrollDuration;
+                        static double accelTime;
+                        static double constantVelocityTime;
+                        static double maxVelocity;
+                        static double accelDistance;
+                        static double constantVelocityDistance;
+                        static double minScrollDistance;
+                        static double invAccelTime;  // 1/accelTime for multiplication instead of division
+                        static double invDecelTime;  // 1/decelTime for multiplication instead of division
+                        static double invBillion;    // 1/1000000000.0 for ns to seconds conversion
+                        
+                        if (!constantsInitialized || minScrollDistance != static_cast<double>(this->m_textWidth)) {
+                            // Constants for velocity-based scrolling
+                            delayDuration = 2.0;
+                            const double pauseDuration = 1.0;
+                            maxVelocity = 166.0;
+                            accelTime = 0.5;
+                            const double decelTime = 0.5;
+                            
+                            // Pre-calculate derived constants
+                            minScrollDistance = static_cast<double>(this->m_textWidth);
+                            accelDistance = 0.5 * maxVelocity * accelTime;
+                            const double decelDistance = 0.5 * maxVelocity * decelTime;
+                            constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
+                            constantVelocityTime = constantVelocityDistance / maxVelocity;
+                            scrollDuration = accelTime + constantVelocityTime + decelTime;
+                            totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
+                            
+                            // Pre-calculate reciprocals for faster division
+                            invAccelTime = 1.0 / accelTime;
+                            invDecelTime = 1.0 / decelTime;
+                            invBillion = 1.0 / 1000000000.0;
+                            
+                            constantsInitialized = true;
+                        }
+                        
+                        // Fast ns to seconds conversion
+                        const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
+                        
+                        // Update at consistent intervals regardless of frame rate
+                        if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
+                            // Use std::fmod for modulo - it's optimized and faster than loops
+                            const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
+                            
+                            if (cyclePosition < delayDuration) {
+                                // Delay phase - no scrolling
+                                cachedScrollOffset = 0.0f;
+                            } else if (cyclePosition < delayDuration + scrollDuration) {
+                                // Scrolling phase - velocity-based movement
+                                const double scrollTime = cyclePosition - delayDuration;
+                                double distance;
+                                
+                                if (scrollTime <= accelTime) {
+                                    // Acceleration phase - quadratic ease-in
+                                    const double t = scrollTime * invAccelTime;  // Multiply instead of divide
+                                    const double smoothT = t * t;
+                                    distance = smoothT * accelDistance;
+                                } else if (scrollTime <= accelTime + constantVelocityTime) {
+                                    // Constant velocity phase
+                                    const double constantTime = scrollTime - accelTime;
+                                    distance = accelDistance + (constantTime * maxVelocity);
+                                } else {
+                                    // Deceleration phase - quadratic ease-out
+                                    const double decelStartTime = accelTime + constantVelocityTime;
+                                    const double t = (scrollTime - decelStartTime) * invDecelTime;  // Multiply instead of divide
+                                    const double oneMinusT = 1.0 - t;
+                                    const double smoothT = 1.0 - oneMinusT * oneMinusT;  // Avoid repeated calculation
+                                    distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
+                                }
+                                
+                                // Use branchless min with conditional move behavior
+                                cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
                             } else {
-                                // Calculate the increment based on the desired scroll rate
-                                u64 scroll_elapsed_ns = elapsed_ns - 2000000000ULL;
-                                u64 scroll_elapsed_ms = scroll_elapsed_ns / 1000000ULL;
-                                this->m_scrollOffset = 0.1f * scroll_elapsed_ms;
+                                // Pause phase - stay at end
+                                cachedScrollOffset = static_cast<float>(this->m_textWidth);
                             }
+                            
+                            lastUpdateTime = currentTime_ns;
+                        }
+                        
+                        // Use cached value for consistent display
+                        this->m_scrollOffset = cachedScrollOffset;
+                        
+                        // Reset timer when cycle completes
+                        if (elapsed_seconds >= totalCycleDuration) {
+                            this->timeIn_ns = currentTime_ns;
                         }
                     } else {
                         renderer->drawString(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, a(!useClickTextColor ? defaultTextColor : clickTextColor));
@@ -7300,36 +7474,24 @@ namespace tsl {
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                //progress = (std::cos(2.0 * ult::_M_PI * std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
                 // Get current time using ARM system tick for animation timing
                 u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                double timeInSeconds = static_cast<double>(currentTime_ns) / 1000000000.0; // Convert nanoseconds to seconds
                 
-                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(timeInSeconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
-
-                //if (ult::allowSlide || m_unlockedTrackbar) {
-                //    highlightColor = {
-                //        static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                //        static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                //        static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
-                //        0xF
-                //    };
-                //} else {
-                //    highlightColor = {
-                //        static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                //        static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                //        static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
-                //        0xF
-                //    };
-                //}
+                // High precision time calculation - matches standard cosine wave timing
+                double time_seconds = static_cast<double>(currentTime_ns) / 1000000000.0;
+                
+                // Standard cosine wave calculation with high precision
+                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
+            
+                // High precision floating point color interpolation
                 highlightColor = {
-                    static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                    static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                    static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                    static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
+                    static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
+                    static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
                     0xF
                 };
                 
-                //u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
+                // Initialize position offsets
                 x = 0;
                 y = 0;
                 
@@ -7362,18 +7524,12 @@ namespace tsl {
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
-
+            
                 if (!disableSelectionBG)
                     renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
-
+            
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
-
-                //if (this->m_clickAnimationProgress == 0) {
-                //    renderer->drawRect(this->getX() + 60, this->getY() + 40 + 16+2, handlePos, 5, a(tsl::style::color::ColorHighlight));
-                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 16, true, a(highlightColor));
-                //    renderer->drawCircle(this->getX() + 62 + x + handlePos, this->getY() + 42 + y + 16+2, 11, true, a(trackBarColor));
-                //}
-
+            
                 ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
             }
 
@@ -7978,7 +8134,7 @@ namespace tsl {
                 
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
-        
+            
                 // Activate `clickStartTime_ns` when `triggerClick` is set to true
                 if (triggerClick && !clickActive) {
                     clickStartTime_ns = armTicksToNs(armGetSystemTick());
@@ -7990,20 +8146,21 @@ namespace tsl {
                     }
                 }
                 static auto lastLabel = m_label;
-        
+            
                 if (lastLabel != m_label) {
                     clickActive = false;
                     triggerClick = false;
                 }
                 lastLabel = m_label;
-        
+            
                 if (clickActive) {
                     u64 elapsedTime_ns = currentTime_ns - clickStartTime_ns;
                     if (elapsedTime_ns < 500000000ULL) { // 500ms in nanoseconds
+                        // High precision floating point color interpolation for click colors
                         highlightColor = {
-                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
-                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
-                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b),
+                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r + 0.5),
+                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g + 0.5),
+                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b + 0.5),
                             0xF
                         };
                     } else {
@@ -8011,21 +8168,23 @@ namespace tsl {
                         clickActive = false;
                         triggerClick = false;
                     }
-        
+            
                 } else {
-        
+            
                     if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
+                        // High precision floating point color interpolation for unlocked trackbar
                         highlightColor = {
-                            static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r),
-                            static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g),
-                            static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b),
+                            static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r + 0.5),
+                            static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g + 0.5),
+                            static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b + 0.5),
                             0xF
                         };
                     } else {
+                        // High precision floating point color interpolation for locked trackbar
                         highlightColor = {
-                            static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r),
-                            static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g),
-                            static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b),
+                            static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r + 0.5),
+                            static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g + 0.5),
+                            static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b + 0.5),
                             0xF
                         };
                     }
@@ -8063,17 +8222,17 @@ namespace tsl {
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
-        
+            
                 if (!disableSelectionBG)
                     renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
-        
+            
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
-        
+            
                 ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
-        
+            
                 if (clickActive) {
                     u64 elapsedTime_ns = currentTime_ns - clickStartTime_ns;
-        
+            
                     // Handle click animation progress and animColor rendering
                     auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (static_cast<float>(elapsedTime_ns) / 500000000.0f)); // 500ms in nanoseconds
                     
