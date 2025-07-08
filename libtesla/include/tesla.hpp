@@ -6517,6 +6517,34 @@ namespace tsl {
                 std::string& target = isValue ? m_value : m_text;
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
+                
+                // Thread-safe translation cache access
+                #ifdef UI_OVERRIDE_PATH
+                {
+                    // Use the processed target as the key for translation lookup
+                    std::string originalKey = target;
+                    
+                    std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                    auto translatedIt = ult::translationCache.find(originalKey);
+                    if (translatedIt != ult::translationCache.end()) {
+                        target = translatedIt->second;  // Apply translation to target, not text
+                    } else {
+                        // Need to upgrade to write lock
+                        readLock.unlock();
+                        std::unique_lock<std::shared_mutex> writeLock(tsl::gfx::s_translationCacheMutex);
+                        
+                        // Double-check pattern
+                        translatedIt = ult::translationCache.find(originalKey);
+                        if (translatedIt != ult::translationCache.end()) {
+                            target = translatedIt->second;
+                        } else {
+                            // Store the original as both key and value if no translation exists
+                            ult::translationCache[originalKey] = originalKey;
+                            // target already contains the correct value, no need to modify
+                        }
+                    }
+                }
+                #endif
             }
         
             void calculateWidths(gfx::Renderer* renderer) {
