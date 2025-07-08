@@ -9703,6 +9703,7 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
             ult::launchingOverlay = false;
+            bool isMainComboMatch;
         #endif
             std::string currentTitleID;
             u64 nowTick, resetElapsedNs;
@@ -9719,7 +9720,6 @@ namespace tsl {
 
             u64 elapsedTime_ns;
 
-            bool isMainComboMatch;
             while (shData->running) {
             
                 nowTick = armGetSystemTick();
