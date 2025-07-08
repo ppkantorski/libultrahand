@@ -2337,7 +2337,7 @@ namespace tsl {
                         for (int j = 0; j < 8; ++j) {
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
                                            static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
-                            setPixelBlendSrc(px++, rowY, a(c));
+                            setPixelBlendSrc(px++, rowY, (c));
                             src += 4;
                         }
                     }
@@ -2346,7 +2346,7 @@ namespace tsl {
                     for (s32 i = 0; i < remainder; ++i) {
                         const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
                                        static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
-                        setPixelBlendSrc(px++, rowY, a(c));
+                        setPixelBlendSrc(px++, rowY, (c));
                         src += 4;
                     }
                 }
