@@ -9562,7 +9562,7 @@ namespace tsl {
                     tsl::cfg::launchCombo = decodedKeys;
             }
             
-            #if USING_WIDGET_DIRECTIVE
+            //#if USING_WIDGET_DIRECTIVE
             ult::datetimeFormat = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
             ult::removeQuotes(ult::datetimeFormat);
             if (ult::datetimeFormat.empty()) {
@@ -9601,7 +9601,7 @@ namespace tsl {
             ult::removeQuotes(extendedWidgetBackdropStr);
             ult::extendedWidgetBackdrop = extendedWidgetBackdropStr != ult::FALSE_STR;
 
-            #endif
+            //#endif
             
         }
 
