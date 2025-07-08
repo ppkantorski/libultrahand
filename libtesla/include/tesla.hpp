@@ -157,9 +157,9 @@ inline bool jumpItemExactMatch = true;
 
 
 
-#if IS_LAUNCHER_DIRECTIVE
+//#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
-#endif
+//#endif
 
 namespace tsl {
 
@@ -828,7 +828,7 @@ namespace tsl {
             return result;
         }
 
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
         // Function to load key combo mappings from overlays.ini
         static void loadOverlayKeyCombos() {
             ult::overlayKeyCombos.clear();
@@ -851,7 +851,7 @@ namespace tsl {
             auto it = ult::overlayKeyCombos.find(keys);
             return (it != ult::overlayKeyCombos.end()) ? it->second : "";
         }
-    #endif
+   // #endif
 
     }
     
@@ -4118,7 +4118,7 @@ namespace tsl {
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
-                
+                float buttonStartX;
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
                     auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
@@ -4134,7 +4134,7 @@ namespace tsl {
                     
                     // Use consistent edge padding equal to halfGap
                     float edgePadding = ult::halfGap;
-                    float buttonStartX = edgePadding;
+                    buttonStartX = edgePadding;
                     
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
@@ -4161,7 +4161,7 @@ namespace tsl {
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, xStartOffset, 693, 23, a(bottomTextColor), a(buttonColor));
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, a(bottomTextColor), a(buttonColor));
                 }
                 
                 
@@ -5904,7 +5904,7 @@ namespace tsl {
                         // CHANGED: Calculate center of the item and center it in viewport
                         itemHeight = m_items[i]->getHeight();
                         itemCenterPos = h + (itemHeight);
-                        viewportCenter = viewHeight / 2.0f;
+                        viewportCenter = viewHeight / 2.0f + 7; // add slight offset
                         idealOffset = itemCenterPos - viewportCenter;
                         
                         // Clamp to valid bounds
@@ -6297,7 +6297,7 @@ namespace tsl {
                 
                 // For middle items, use centering logic
                 float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                float viewportCenter = viewHeight / 2.0f;
+                float viewportCenter = viewHeight / 2.0f + 7; // add slight offset
                 float idealOffset = itemCenterPos - viewportCenter;
                 
                 // Clamp to valid scroll bounds
@@ -9092,7 +9092,7 @@ namespace tsl {
                     return;
                 }
             } else {
-                ult::simulatedBack.exchange(false, std::memory_order_acq_rel)
+                ult::simulatedBack.exchange(false, std::memory_order_acq_rel);
             }
         #else
             if (!overrideBackButton) {
@@ -9686,10 +9686,10 @@ namespace tsl {
             // Parse Tesla settings
             impl::parseOverlaySettings();
             
-        #if IS_LAUNCHER_DIRECTIVE
+        //#if IS_LAUNCHER_DIRECTIVE
             // Load overlay key combos
             tsl::hlp::loadOverlayKeyCombos();
-        #endif
+        //#endif
             
             // Configure input to take all controllers and up to 8
             padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
@@ -9729,10 +9729,13 @@ namespace tsl {
             s32 idx;
             Result rc;
 
-        #if IS_LAUNCHER_DIRECTIVE
+        //#if IS_LAUNCHER_DIRECTIVE
             ult::launchingOverlay = false;
             bool isMainComboMatch;
-        #endif
+            std::string overlayPath;
+            //std::string overlayFileName;
+            std::string overlayLaunchArgs;
+        //#endif
             std::string currentTitleID;
             u64 nowTick, resetElapsedNs;
             u64 elapsedNs;
@@ -9877,22 +9880,24 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
                     }
+                #endif
                     // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)
-                    else if (!shData->overlayOpen && shData->keysDown != 0) {
+                    //else if (!shData->overlayOpen && shData->keysDown != 0) {
+                    else if (shData->keysDown != 0) {
                         // Make sure this isn't a subset of the main launch combos
                         isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
                         if (!isMainComboMatch) {
-                            std::string overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
-                            if (!overlayPath.empty() && (shData->keysHeld)) {
+                            overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
+                            if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
                                 // Validate overlay file exists
                                 if (ult::isFileOrDirectory(overlayPath)) {
-                                    std::string overlayFileName = ult::getNameFromPath(overlayPath);
+                                    const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                                     
                                     // Check if hideHidden is enabled and if this overlay is hidden
                                     bool allowLaunch = true;
                                     if (hideHidden) {
-                                        std::string hideStatus = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        const std::string hideStatus = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::HIDE_STR);
                                         if (hideStatus == ult::TRUE_STR) {
                                             allowLaunch = false; // Block launch for hidden overlays when hideHidden is true
@@ -9903,9 +9908,9 @@ namespace tsl {
                                         ult::launchingOverlay = true;
                                         //svcSleepThread(500'000'000); // 50ms delay
                                         // Get overlay settings
-                                        std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        const std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::USE_LAUNCH_ARGS_STR);
-                                        std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::LAUNCH_ARGS_STR);
                                         ult::removeQuotes(overlayLaunchArgs);
                                         // Add --direct argument to launch args
@@ -9921,10 +9926,10 @@ namespace tsl {
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
                                         else
                                             tsl::setNextOverlay(overlayPath, "--direct");
-                                        tsl::elm::skipDeconstruction = true;
+                                        //tsl::elm::skipDeconstruction = true;
                                         // Properly close the overlay to trigger the launch
                                         tsl::Overlay::get()->close();
-                                        tsl::elm::skipDeconstruction = false;
+                                        //tsl::elm::skipDeconstruction = false;
                                         eventFire(&shData->comboEvent);
                                         break;
                                         // DON'T set shData->running = false here!
@@ -9934,7 +9939,7 @@ namespace tsl {
                         }
                         //bool isMainCombo2Match = false;
                     }
-                #endif
+                //#endif
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
