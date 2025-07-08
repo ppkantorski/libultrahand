@@ -4516,10 +4516,15 @@ namespace tsl {
                 auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
+            #if IS_LAUNCHER_DIRECTIVE
                 // Calculate text dimensions for buttons without gaps
                 auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
                 auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
-                
+            #else
+                // Calculate text dimensions for buttons without gaps
+                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (ult::BACK), false, 23).first;
+                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (ult::OK), false, 23).first;
+            #endif
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
                 ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
@@ -4585,13 +4590,14 @@ namespace tsl {
                 menuBottomLine.clear();
                 //menuBottomLine.reserve(60); // Reserve space to avoid reallocations
                 
+            
+            #if IS_LAUNCHER_DIRECTIVE
                 menuBottomLine += "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE) + ult::GAP_1;
 
                 if (!m_noClickableItems && !interpreterIsRunningNow) {
                     menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                 }
-            
-            #if IS_LAUNCHER_DIRECTIVE
+
                 if (interpreterIsRunningNow) {
                     menuBottomLine += "\uE0E5"+ ult::GAP_2 + ult::CANCEL + ult::GAP_1;
                 }
@@ -4614,6 +4620,12 @@ namespace tsl {
                     menuBottomLine += "\uE0ED" + ult::GAP_2 + m_pageLeftName;
                 } else if (!m_pageRightName.empty()) {
                     menuBottomLine += "\uE0EE" + ult::GAP_2 + m_pageRightName;
+                }
+            #else
+                menuBottomLine += "\uE0E1" + ult::GAP_2 + (ult::BACK) + ult::GAP_1;
+
+                if (!m_noClickableItems) {
+                    menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                 }
             #endif
                 
@@ -8706,9 +8718,9 @@ namespace tsl {
     
 
     // Swap state tracking variables
-    u64 lastNextPageTapTime = 0;
+    inline u64 lastNextPageTapTime = 0;
     static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 400'000'000; // 400ms in nanoseconds
-    bool swapComplete = true;
+    inline bool swapComplete = true;
 
     // Overlay
     
