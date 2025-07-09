@@ -151,6 +151,7 @@ inline bool jumpToTop = false;
 inline bool jumpToBottom = false;
 inline u32 offsetWidthVar = 112;
 inline std::string g_overlayFilename;;
+inline std::string lastOverlayFilename;
 inline std::string jumpItemName;
 inline std::string jumpItemValue;
 inline bool jumpItemExactMatch = true;
@@ -9022,10 +9023,10 @@ namespace tsl {
 
             auto& renderer = gfx::Renderer::get();
             
-        #if IS_LAUNCHER_DIRECTIVE
+        //#if IS_LAUNCHER_DIRECTIVE
             if (ult::launchingOverlay)
                 return;
-        #endif
+        //#endif
             renderer.startFrame();
             
             this->animationLoop();
@@ -9536,8 +9537,6 @@ namespace tsl {
         
         template<typename G, typename ...Args>
         friend std::unique_ptr<tsl::Gui>& changeTo(Args&&... args);
-        template<typename G, typename ...Args>
-        friend std::unique_ptr<tsl::Gui>& changeToWithCacheCLear(Args&&... args);
         
         friend void goBack(u32 count);
         friend void pop(u32 count);
@@ -9893,7 +9892,7 @@ namespace tsl {
                                 // Validate overlay file exists
                                 if (ult::isFileOrDirectory(overlayPath)) {
                                     const std::string overlayFileName = ult::getNameFromPath(overlayPath);
-                                    
+
                                     // Check if hideHidden is enabled and if this overlay is hidden
                                     bool allowLaunch = true;
                                     if (hideHidden) {
@@ -9903,9 +9902,21 @@ namespace tsl {
                                             allowLaunch = false; // Block launch for hidden overlays when hideHidden is true
                                         }
                                     }
+
                                     
                                     if (allowLaunch) {
                                         ult::launchingOverlay = true;
+
+
+                                        if (lastOverlayFilename == overlayFileName) {
+                                            tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl", "--direct");
+                                            tsl::Overlay::get()->close();
+                                            //tsl::elm::skipDeconstruction = false;
+                                            eventFire(&shData->comboEvent);
+                                            break;
+                                        }
+
+
                                         //svcSleepThread(500'000'000); // 50ms delay
                                         // Get overlay settings
                                         const std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
@@ -9926,6 +9937,7 @@ namespace tsl {
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
                                         else
                                             tsl::setNextOverlay(overlayPath, "--direct");
+                                        ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                         //tsl::elm::skipDeconstruction = true;
                                         // Properly close the overlay to trigger the launch
                                         tsl::Overlay::get()->close();
@@ -10139,6 +10151,7 @@ namespace tsl {
         if (argc > 0) {
             //std::string overlayPath = argv[0];
             g_overlayFilename = ult::getNameFromPath(argv[0]);
+            lastOverlayFilename = g_overlayFilename;
         }
 
         bool skipCombo = false;
