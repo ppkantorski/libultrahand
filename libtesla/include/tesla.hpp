@@ -9020,12 +9020,12 @@ namespace tsl {
          *
          */
         void loop() {
+            if (ult::launchingOverlay.load(std::memory_order_acquire))
+                return;
 
             auto& renderer = gfx::Renderer::get();
             
         //#if IS_LAUNCHER_DIRECTIVE
-            if (ult::launchingOverlay)
-                return;
         //#endif
             renderer.startFrame();
             
@@ -9658,6 +9658,8 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
+            tsl::hlp::loadOverlayKeyCombos();
+            ult::launchingOverlay.exchange(false, std::memory_order_acq_rel);
 
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
             
@@ -9687,7 +9689,7 @@ namespace tsl {
             
         //#if IS_LAUNCHER_DIRECTIVE
             // Load overlay key combos
-            tsl::hlp::loadOverlayKeyCombos();
+            
         //#endif
             
             // Configure input to take all controllers and up to 8
@@ -9729,11 +9731,11 @@ namespace tsl {
             Result rc;
 
         //#if IS_LAUNCHER_DIRECTIVE
-            ult::launchingOverlay = false;
-            bool isMainComboMatch;
-            std::string overlayPath;
+            
+            //bool isMainComboMatch;
+            //std::string overlayPath;
             //std::string overlayFileName;
-            std::string overlayLaunchArgs;
+            //std::string overlayLaunchArgs;
         //#endif
             std::string currentTitleID;
             u64 nowTick, resetElapsedNs;
@@ -9884,13 +9886,17 @@ namespace tsl {
                     //else if (!shData->overlayOpen && shData->keysDown != 0) {
                     else if (shData->keysDown != 0) {
                         // Make sure this isn't a subset of the main launch combos
-                        isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
+                        //const bool isMainComboMatch = shData->keysHeld == tsl::cfg::launchCombo;
                         //bool isMainCombo2Match = shData->keysHeld == tsl::cfg::launchCombo2;
-                        if (!isMainComboMatch) {
-                            overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
+                        if (shData->keysHeld != tsl::cfg::launchCombo) {
+                            const std::string overlayPath = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
+                        #if IS_LAUNCHER_DIRECTIVE
                             if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                        #else
+                            if (!overlayPath.empty() && (shData->keysHeld)) {
+                        #endif
                                 // Validate overlay file exists
-                                if (ult::isFileOrDirectory(overlayPath)) {
+                                if (ult::isFile(overlayPath)) {
                                     const std::string overlayFileName = ult::getNameFromPath(overlayPath);
 
                                     // Check if hideHidden is enabled and if this overlay is hidden
@@ -9902,7 +9908,6 @@ namespace tsl {
                                             allowLaunch = false; // Block launch for hidden overlays when hideHidden is true
                                         }
                                     }
-
                                     
                                     if (allowLaunch) {
                                         
@@ -9910,20 +9915,25 @@ namespace tsl {
                                     #if !IS_LAUNCHER_DIRECTIVE
                                         if (lastOverlayFilename == overlayFileName) {
                                             ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
-                                            tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl", "--direct");
+                                            
+                                            shData->overlayOpen = false;
                                             tsl::Overlay::get()->close();
-                                            ult::launchingOverlay = true;
+                                            //svcSleepThread(1'000'000'000); // 50ms delay
+                                            ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                                            tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl", "--direct");
+                                            //ult::launchingOverlay = true;
                                             //tsl::elm::skipDeconstruction = false;
+                                            //svcSleepThread(50'000'000); // 50ms delay
                                             eventFire(&shData->comboEvent);
                                             break;
                                         }
                                     #endif
 
-                                        //svcSleepThread(500'000'000); // 50ms delay
+                                        
                                         // Get overlay settings
                                         const std::string useOverlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::USE_LAUNCH_ARGS_STR);
-                                        overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
+                                        std::string overlayLaunchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, 
                                             overlayFileName, ult::LAUNCH_ARGS_STR);
                                         ult::removeQuotes(overlayLaunchArgs);
                                         // Add --direct argument to launch args
@@ -9932,18 +9942,22 @@ namespace tsl {
                                         } else {
                                             overlayLaunchArgs = "--direct";
                                         }
-                                        
-
+                                        //tsl::elm::skipDeconstruction = true;
+                                        // Properly close the overlay to trigger the launch
+                                        //ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                                        //svcSleepThread(50'000'000); // 50ms delay
+                                        shData->overlayOpen = false;
+                                        tsl::Overlay::get()->close();
+                                        //svcSleepThread(1'000'000'000); // 50ms delay
                                         // Set the next overlay directly
+                                        ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
                                         if (useOverlayLaunchArgs == ult::TRUE_STR)
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
                                         else
                                             tsl::setNextOverlay(overlayPath, "--direct");
                                         
-                                        //tsl::elm::skipDeconstruction = true;
-                                        // Properly close the overlay to trigger the launch
-                                        tsl::Overlay::get()->close();
-                                        ult::launchingOverlay = true;
+
+                                        //svcSleepThread(50'000'000); // 50ms delay
                                         //tsl::elm::skipDeconstruction = false;
                                         eventFire(&shData->comboEvent);
                                         break;
@@ -10027,29 +10041,30 @@ namespace tsl {
         Overlay::get()->pop(count);
     }
         
-    
+        
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
-        char buffer[1024];
+        char buffer[512];
         char* p = buffer;
+        char* bufferEnd = buffer + sizeof(buffer) - 1; // Leave room for null terminator
         
         // Store filename and copy it
         std::string filenameStr = ult::getNameFromPath(ovlPath);
         const char* filename = filenameStr.c_str();
-        while (*filename) *p++ = *filename++;
-        *p++ = ' ';
+        while (*filename && p < bufferEnd) *p++ = *filename++;
+        if (p < bufferEnd) *p++ = ' ';
         
         // Single-pass argument filtering
         const char* src = origArgs.c_str();
         const char* end = src + origArgs.length();
         bool hasSkipCombo = false;
         
-        while (src < end) {
+        while (src < end && p < bufferEnd) {
             // Skip whitespace
-            while (src < end && *src == ' ') {
+            while (src < end && *src == ' ' && p < bufferEnd) {
                 *p++ = *src++;
             }
             
-            if (src >= end) break;
+            if (src >= end || p >= bufferEnd) break;
             
             // Check for flags to filter/detect
             if (src[0] == '-' && src[1] == '-') {
@@ -10058,7 +10073,7 @@ namespace tsl {
                 if (strncmp(src, "--skipCombo", 11) == 0 && (src[11] == ' ' || src[11] == '\0')) {
                     hasSkipCombo = true;
                     // Copy this flag
-                    while (src < end && *src != ' ') *p++ = *src++;
+                    while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
                 }
                 else if (strncmp(src, "--foregroundFix", 15) == 0) {
                     // Skip this flag and its value
@@ -10074,31 +10089,42 @@ namespace tsl {
                 }
                 else {
                     // Copy unknown flag
-                    while (src < end && *src != ' ') *p++ = *src++;
+                    while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
                 }
             }
             else {
                 // Copy regular argument
-                while (src < end && *src != ' ') *p++ = *src++;
+                while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
             }
         }
         
-        // Add required flags
-        if (!hasSkipCombo) {
+        // Add required flags with bounds checking
+        if (!hasSkipCombo && (p + 12) < bufferEnd) {
             memcpy(p, " --skipCombo", 12);
             p += 12;
         }
         
-        // Add foreground flag
-        memcpy(p, " --foregroundFix ", 17);
-        p += 17;
-        *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+        // Add foreground flag with bounds checking
+        if ((p + 17) < bufferEnd) {
+            memcpy(p, " --foregroundFix ", 17);
+            p += 17;
+            if (p < bufferEnd) {
+                *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+            }
+        }
         
-        // Add last title ID
-        memcpy(p, " --lastTitleID ", 15);
-        p += 15;
-        const char* titleId = ult::lastTitleID.c_str();
-        while (*titleId) *p++ = *titleId++;
+        // Add last title ID with bounds checking
+        if ((p + 15 + ult::lastTitleID.length()) < bufferEnd) {
+            memcpy(p, " --lastTitleID ", 15);
+            p += 15;
+            const char* titleId = ult::lastTitleID.c_str();
+            while (*titleId && p < bufferEnd) *p++ = *titleId++;
+        }
+        
+        // Safety check - if we're at the end, we might have truncated
+        if (p >= bufferEnd) {
+            p = bufferEnd;
+        }
         
         *p = '\0';
         
@@ -10211,7 +10237,7 @@ namespace tsl {
         shData.running = true;
         
         Thread backgroundThread;
-        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x1000, 0x2c, -2);
+        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
         threadStart(&backgroundThread);
         
         eventCreate(&shData.comboEvent, false);
