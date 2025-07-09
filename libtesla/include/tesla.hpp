@@ -5021,9 +5021,9 @@ namespace tsl {
                         clearStaticCache(true);
                     else
                         clearStaticCache();
-                    s_isForwardCache.exchange(false, std::memory_order_acq_rel);
-                    s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
-                        
+                    //s_isForwardCache.exchange(false, std::memory_order_acq_rel);
+                    //s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
+                    
                     //}
                     //m_hasRenderedCache = true;
                     
