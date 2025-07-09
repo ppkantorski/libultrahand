@@ -9909,6 +9909,7 @@ namespace tsl {
 
 
                                         if (lastOverlayFilename == overlayFileName) {
+                                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                             tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl", "--direct");
                                             tsl::Overlay::get()->close();
                                             //tsl::elm::skipDeconstruction = false;
@@ -9937,7 +9938,7 @@ namespace tsl {
                                             tsl::setNextOverlay(overlayPath, overlayLaunchArgs);
                                         else
                                             tsl::setNextOverlay(overlayPath, "--direct");
-                                        ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
+                                        
                                         //tsl::elm::skipDeconstruction = true;
                                         // Properly close the overlay to trigger the launch
                                         tsl::Overlay::get()->close();
