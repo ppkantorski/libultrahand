@@ -9905,18 +9905,19 @@ namespace tsl {
 
                                     
                                     if (allowLaunch) {
-                                        ult::launchingOverlay = true;
+                                        
 
-
+                                    #if !IS_LAUNCHER_DIRECTIVE
                                         if (lastOverlayFilename == overlayFileName) {
                                             ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                             tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl", "--direct");
                                             tsl::Overlay::get()->close();
+                                            ult::launchingOverlay = true;
                                             //tsl::elm::skipDeconstruction = false;
                                             eventFire(&shData->comboEvent);
                                             break;
                                         }
-
+                                    #endif
 
                                         //svcSleepThread(500'000'000); // 50ms delay
                                         // Get overlay settings
@@ -9942,6 +9943,7 @@ namespace tsl {
                                         //tsl::elm::skipDeconstruction = true;
                                         // Properly close the overlay to trigger the launch
                                         tsl::Overlay::get()->close();
+                                        ult::launchingOverlay = true;
                                         //tsl::elm::skipDeconstruction = false;
                                         eventFire(&shData->comboEvent);
                                         break;
