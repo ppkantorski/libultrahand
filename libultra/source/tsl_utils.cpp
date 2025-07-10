@@ -36,8 +36,8 @@ namespace ult {
 
     std::unordered_map<std::string, std::string> translationCache;
     
-    std::map<u64, std::string> overlayKeyCombos;
-    bool launchingOverlay = false;
+    std::unordered_map<u64, OverlayCombo> g_overlayCombos;
+    std::atomic<bool> launchingOverlay(false);
     bool currentForeground = false;
 
 
@@ -211,6 +211,7 @@ namespace ult {
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
     bool useDynamicLogo = true;
+    bool useLaunchCombos = false;
     bool usePageSwap = false;
     bool noClickableItems = false;
     
@@ -410,6 +411,7 @@ namespace ult {
     std::string SHOW_HIDDEN = "Show Hidden";
     std::string VERSION_LABELS = "Version Labels";
     std::string KEY_COMBO = "Key Combo";
+    std::string MODE = "Mode";
     std::string LANGUAGE = "Language";
     std::string OVERLAY_INFO = "Overlay Info";
     std::string SOFTWARE_UPDATE = "Software Update";
@@ -439,6 +441,7 @@ namespace ult {
     std::string CLEAN_VERSIONS = "Clean Versions";
     std::string OVERLAY_VERSIONS = "Overlay Versions";
     std::string PACKAGE_VERSIONS = "Package Versions";
+    std::string LAUNCH_COMBOS = "Launch Combos";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
     std::string PAGE_SWAP = "Page Swap";
     std::string DYNAMIC_LOGO = "Dynamic Logo";
@@ -458,7 +461,7 @@ namespace ult {
     std::string ON_MAIN_MENU = "on Main Menu";
     std::string ON_A_COMMAND = "on a command";
     std::string ON_OVERLAY_PACKAGE = "on overlay/package";
-    std::string EFFECTS = "Effects";
+    std::string FEATURES = "Features";
     std::string SWIPE_TO_OPEN = "Swipe to Open";
     std::string RIGHT_SIDE_MODE = "Right-side Mode";
     std::string PROGRESS_ANIMATION = "Progress Animation";
@@ -589,6 +592,7 @@ namespace ult {
         SHOW_HIDDEN = "Show Hidden";
         VERSION_LABELS = "Version Labels";
         KEY_COMBO = "Key Combo";
+        MODE = "Mode";
         LANGUAGE = "Language";
         OVERLAY_INFO = "Overlay Info";
         SOFTWARE_UPDATE = "Software Update";
@@ -618,6 +622,7 @@ namespace ult {
         CLEAN_VERSIONS = "Clean Versions";
         OVERLAY_VERSIONS = "Overlay Versions";
         PACKAGE_VERSIONS = "Package Versions";
+        LAUNCH_COMBOS = "Launch Combos";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
         PAGE_SWAP = "Page Swap";
         DYNAMIC_LOGO = "Dynamic Logo";
@@ -649,7 +654,7 @@ namespace ult {
         ON_MAIN_MENU = "on Main Menu";
         ON_A_COMMAND = "on a command";
         ON_OVERLAY_PACKAGE = "on overlay/package";
-        EFFECTS = "Effects";
+        FEATURES = "Features";
         SWIPE_TO_OPEN = "Swipe to Open";
         RIGHT_SIDE_MODE = "Right-side Mode";
         PROGRESS_ANIMATION = "Progress Animation";
@@ -771,6 +776,7 @@ namespace ult {
             {"SHOW_HIDDEN", &SHOW_HIDDEN},
             {"VERSION_LABELS", &VERSION_LABELS},
             {"KEY_COMBO", &KEY_COMBO},
+            {"MODE", &MODE},
             {"LANGUAGE", &LANGUAGE},
             {"OVERLAY_INFO", &OVERLAY_INFO},
             {"SOFTWARE_UPDATE", &SOFTWARE_UPDATE},
@@ -800,6 +806,7 @@ namespace ult {
             {"CLEAN_VERSIONS", &CLEAN_VERSIONS},
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
             {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
+            {"LAUNCH_COMBOS", &LAUNCH_COMBOS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
             {"PAGE_SWAP", &PAGE_SWAP},
             {"DYNAMIC_LOGO", &DYNAMIC_LOGO},
@@ -819,7 +826,7 @@ namespace ult {
             {"ON_MAIN_MENU", &ON_MAIN_MENU},
             {"ON_A_COMMAND", &ON_A_COMMAND},
             {"ON_OVERLAY_PACKAGE", &ON_OVERLAY_PACKAGE},
-            {"EFFECTS", &EFFECTS},
+            {"FEATURES", &FEATURES},
             {"SWIPE_TO_OPEN", &SWIPE_TO_OPEN},
             {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
             {"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},

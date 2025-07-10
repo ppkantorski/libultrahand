@@ -88,6 +88,10 @@
 #define APPROXIMATE_fabs(x)      ((x) < 0 ? -(x) : (x))
 #endif
 
+struct OverlayCombo {
+    std::string path;   // full overlay path
+    std::string launchArg; // empty = use per-overlay launch_args key, otherwise a “mode” arg
+};
 
 namespace ult {
     extern bool correctFrameSize; // for detecting the correct Overlay display size
@@ -96,8 +100,9 @@ namespace ult {
     extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
 
     extern std::unordered_map<std::string, std::string> translationCache;
-    extern std::map<u64, std::string> overlayKeyCombos;
-    extern bool launchingOverlay;
+
+    extern std::unordered_map<u64, OverlayCombo> g_overlayCombos;
+    extern std::atomic<bool> launchingOverlay;
     extern bool currentForeground;
 
     //void loadOverlayKeyCombos();
@@ -125,6 +130,7 @@ namespace ult {
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool useDynamicLogo;
+    extern bool useLaunchCombos;
     extern bool usePageSwap;
     extern bool noClickableItems;
 
@@ -335,6 +341,7 @@ namespace ult {
     extern std::string SHOW_HIDDEN;
     extern std::string VERSION_LABELS;
     extern std::string KEY_COMBO;
+    extern std::string MODE;
     extern std::string LANGUAGE;
     extern std::string OVERLAY_INFO;
     extern std::string SOFTWARE_UPDATE;
@@ -364,6 +371,7 @@ namespace ult {
     extern std::string CLEAN_VERSIONS;
     extern std::string OVERLAY_VERSIONS;
     extern std::string PACKAGE_VERSIONS;
+    extern std::string LAUNCH_COMBOS;
     extern std::string OPAQUE_SCREENSHOTS;
     extern std::string PAGE_SWAP;
     extern std::string DYNAMIC_LOGO;
@@ -383,7 +391,7 @@ namespace ult {
     extern std::string ON_MAIN_MENU;
     extern std::string ON_A_COMMAND;
     extern std::string ON_OVERLAY_PACKAGE;
-    extern std::string EFFECTS;
+    extern std::string FEATURES;
     extern std::string SWIPE_TO_OPEN;
     extern std::string RIGHT_SIDE_MODE;
     extern std::string PROGRESS_ANIMATION;

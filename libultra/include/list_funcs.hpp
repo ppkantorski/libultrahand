@@ -38,6 +38,14 @@
 
 
 namespace ult {
+
+    std::vector<std::string> splitIniList(const std::string& value);
+    
+    
+    std::string joinIniList(const std::vector<std::string>& list);
+
+
+
     /**
      * @brief Removes entries from a vector of strings that match a specified entry.
      *

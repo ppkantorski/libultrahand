@@ -24,6 +24,34 @@ namespace ult {
     // Thread-safe file access mutex
     static std::mutex file_access_mutex;
     
+    std::vector<std::string> splitIniList(const std::string& value) {
+        std::vector<std::string> result;
+        std::string trimmed = value;
+        trim(trimmed);
+        if (trimmed.size() > 2 && trimmed.front() == '(' && trimmed.back() == ')') {
+            trimmed = trimmed.substr(1, trimmed.size() - 2);
+            ult::StringStream ss(trimmed);
+            std::string token;
+            while (ss.getline(token, ',')) {
+                trim(token);
+                result.push_back(token);
+            }
+        }
+        return result;
+    }
+    
+    std::string joinIniList(const std::vector<std::string>& list) {
+        std::string result = "";
+        for (size_t i = 0; i < list.size(); ++i) {
+            result += list[i];
+            if (i + 1 < list.size()) {
+                result += ", ";
+            }
+        }
+        return result;
+    }
+
+
     /**
      * @brief Removes entries from a vector of strings that match a specified entry.
      *
