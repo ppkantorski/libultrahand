@@ -137,7 +137,10 @@ namespace ult {
     
     const std::vector<std::string> THROBBER_SYMBOLS = {"", "", "", "", "", "", "", ""};
 
+    std::atomic<int> displayPercentage(0); // for interpreter percentage progress
+
     void resetPercentages() {
+        displayPercentage.store(-1, std::memory_order_release);
         downloadPercentage.store(-1, std::memory_order_release);
         unzipPercentage.store(-1, std::memory_order_release);
         copyPercentage.store(-1, std::memory_order_release);

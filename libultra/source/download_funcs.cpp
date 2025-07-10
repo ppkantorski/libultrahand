@@ -483,7 +483,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                                    nullptr, 0, nullptr, 0) == UNZ_OK) {
             const size_t nameLen = strlen(tempFilenameBuffer);
             if (nameLen > 0 && tempFilenameBuffer[nameLen - 1] != '/') {
-                totalUncompressedSize += fileInfo.uncompressed_size;
+                totalUncompressedSize += std::max(fileInfo.uncompressed_size, static_cast<ZPOS64_T>(1));
             }
         }
         result = unzGoToNextFile(zipFile);
@@ -514,11 +514,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     ZPOS64_T totalBytesProcessed = 0;
     uLong filesProcessed = 0;
     int currentProgress = 0;  // Current percentage (0-100)
-    
-    // Calculate bytes per percentage point for smooth updates - FIXED CALCULATION
-    const ZPOS64_T bytesPerPercent = (totalUncompressedSize + 99) / 100;  // Round up to avoid missing last percent
-    ZPOS64_T nextPercentBoundary = bytesPerPercent;  // First boundary at 1%
-    
     
     // Create output file manager
     OutputFileManager outputFile(bufferSize);
@@ -633,20 +628,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         fileBytesProcessed = 0;
         
         while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
-            // Time-based abort check - only every 2 seconds for optimal performance
-            //currentNanos = armTicksToNs(armGetSystemTick());
-            //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-            //    if (abortUnzip.load(std::memory_order_relaxed)) {
-            //        extractSuccess = false;
-            //        break; // RAII will handle cleanup
-            //    }
-            //    lastAbortCheck = currentNanos;
-            //}
             if (abortUnzip.load(std::memory_order_relaxed)) {
                 extractSuccess = false;
                 break; // RAII will handle cleanup
             }
-
             
             // Write data to file
             if (outputFile.write(buffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
@@ -658,12 +643,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             fileBytesProcessed += bytesRead;
             totalBytesProcessed += bytesRead;
             
-            // FIXED: Check if we've crossed the next percentage boundary
-            if (totalBytesProcessed >= nextPercentBoundary && currentProgress < 99) {
-                currentProgress++;
-                nextPercentBoundary = (static_cast<ZPOS64_T>(currentProgress + 1) * totalUncompressedSize) / 100;
-                
-                // Update the atomic progress value
+            // FIXED: Allow progress to reach 100% naturally during processing
+            int newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+            if (newProgress > currentProgress && newProgress <= 100) {
+                currentProgress = newProgress;
                 unzipPercentage.store(currentProgress, std::memory_order_release);
                 
                 #if USING_LOGGING_DIRECTIVE
@@ -672,6 +655,25 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                     logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
                               std::to_string(totalBytesProcessed) + "/" + 
                               std::to_string(totalUncompressedSize) + " bytes)");
+                }
+                #endif
+            }
+        }
+
+        // CRITICAL FIX: Handle 0-byte files that don't enter the while loop
+        if (bytesRead == 0 && fileBytesProcessed == 0 && extractSuccess) {
+            // This is a 0-byte file - update progress by 1 byte equivalent
+            totalBytesProcessed += 1;
+            
+            // Update progress for 0-byte files
+            int newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+            if (newProgress > currentProgress && newProgress <= 100) {
+                currentProgress = newProgress;
+                unzipPercentage.store(currentProgress, std::memory_order_release);
+                
+                #if USING_LOGGING_DIRECTIVE
+                if (currentProgress % 10 == 0) {
+                    logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
                 }
                 #endif
             }
@@ -730,5 +732,4 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         return false;
     }
 }
-
 }

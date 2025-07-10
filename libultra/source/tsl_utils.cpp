@@ -205,6 +205,7 @@ namespace ult {
     bool resetForegroundCheck = false; // initialize as true
 
 
+    
 
     std::atomic<bool> internalTouchReleased(true);
     u32 layerEdge = 0;
@@ -215,7 +216,8 @@ namespace ult {
     bool usePageSwap = false;
     bool noClickableItems = false;
     
-    
+
+
     // Define the duration boundaries (for smooth scrolling)
     //const std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
     //const std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold

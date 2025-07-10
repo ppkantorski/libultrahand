@@ -146,6 +146,7 @@ namespace ult {
     extern std::atomic<int> downloadPercentage;
     extern std::atomic<int> unzipPercentage;
     extern std::atomic<int> copyPercentage;
+    extern std::atomic<int> displayPercentage;
     
     void resetPercentages();
 }

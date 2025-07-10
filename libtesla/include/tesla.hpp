@@ -135,6 +135,7 @@ u8 alphabackground = 0xD;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
 bool fontCache = true;
+bool disableJumpTo = false;
 
 #endif
 
@@ -3807,14 +3808,15 @@ namespace tsl {
             
                     #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
-                    float activePercentage = 0.0f;
-                    if (ult::downloadPercentage > 0) {
-                        activePercentage = ult::downloadPercentage;
-                    } else if (ult::unzipPercentage > 0) {
-                        activePercentage = ult::unzipPercentage;
-                    } else if (ult::copyPercentage > 0) {
-                        activePercentage = ult::copyPercentage;
-                    }
+                    //float activePercentage = 0.0f;
+                    //if (ult::downloadPercentage > 0) {
+                    //    activePercentage = ult::downloadPercentage;
+                    //} else if (ult::unzipPercentage > 0) {
+                    //    activePercentage = ult::unzipPercentage;
+                    //} else if (ult::copyPercentage > 0) {
+                    //    activePercentage = ult::copyPercentage;
+                    //}
+                    float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
                         renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
                     }
@@ -9287,14 +9289,27 @@ namespace tsl {
                 }
             }
             
-            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning) {
+        #if !IS_STATUS_MONITOR_DIRECTIVE
+            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
                 jumpToTop = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
-            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning) {
+            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
                 jumpToBottom = true;
                 currentGui->requestFocus(topElement, FocusDirection::None);
             }
+        #else
+            if (!disableJumpTo) {
+                if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+                    jumpToTop = true;
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                }
+                if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+                    jumpToBottom = true;
+                    currentGui->requestFocus(topElement, FocusDirection::None);
+                }
+            }
+        #endif
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
