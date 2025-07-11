@@ -131,7 +131,7 @@ struct KeyPairEqual {
 std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
 
 u8 TeslaFPS = 60;
-u8 alphabackground = 0xD;
+//u8 alphabackground = 0xD;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
 bool fontCache = true;
@@ -952,6 +952,28 @@ namespace tsl {
                     std::memset(bounds, 0, sizeof(bounds));
                 }
             };
+
+            struct FontMetrics {
+                int ascent, descent, lineGap;
+                int lineHeight; // ascent - descent + lineGap
+                stbtt_fontinfo* font;
+                float fontSize;
+                
+                FontMetrics() : ascent(0), descent(0), lineGap(0), lineHeight(0), font(nullptr), fontSize(0.0f) {}
+                
+                FontMetrics(stbtt_fontinfo* f, float size) : font(f), fontSize(size) {
+                    if (font) {
+                        stbtt_GetFontVMetrics(font, &ascent, &descent, &lineGap);
+                        float scale = stbtt_ScaleForPixelHeight(font, fontSize);
+                        ascent = static_cast<int>(ascent * scale);
+                        descent = static_cast<int>(descent * scale);
+                        lineGap = static_cast<int>(lineGap * scale);
+                        lineHeight = ascent - descent + lineGap;
+                    } else {
+                        ascent = descent = lineGap = lineHeight = 0;
+                    }
+                }
+            };
             
         private:
             inline static std::shared_mutex s_cacheMutex;
@@ -959,6 +981,9 @@ namespace tsl {
             
             // Changed from unique_ptr to shared_ptr
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
+            
+            // Font metrics cache
+            inline static std::unordered_map<u64, FontMetrics> s_fontMetricsCache;
             
             inline static u64 s_lastClearTimeNs = 0;
             inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
@@ -983,6 +1008,13 @@ namespace tsl {
                     key |= (1ULL << 63); // Use the highest bit for monospace
                 }
                 return key;
+            }
+
+            // Generate cache key for font metrics
+            static u64 generateFontMetricsCacheKey(stbtt_fontinfo* font, u32 fontSize) {
+                // Use pointer address as font identifier and fontSize
+                u64 fontKey = reinterpret_cast<uintptr_t>(font);
+                return (fontKey << 32) | static_cast<u64>(fontSize);
             }
             
             // Cleanup old entries when cache gets too large
@@ -1022,6 +1054,43 @@ namespace tsl {
                     return s_localFont;
                 }
                 return s_stdFont;
+            }
+
+            // Get font metrics with caching
+            static FontMetrics getFontMetrics(stbtt_fontinfo* font, u32 fontSize) {
+                if (!font) return FontMetrics();
+
+                const u64 key = generateFontMetricsCacheKey(font, fontSize);
+                
+                // First, try to find existing metrics with shared lock
+                {
+                    std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
+                    auto it = s_fontMetricsCache.find(key);
+                    if (it != s_fontMetricsCache.end()) {
+                        return it->second;
+                    }
+                }
+                
+                // Metrics not found, need to create them with exclusive lock
+                std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
+                
+                // Double-check pattern
+                auto it = s_fontMetricsCache.find(key);
+                if (it != s_fontMetricsCache.end()) {
+                    return it->second;
+                }
+                
+                // Create new font metrics
+                FontMetrics metrics(font, static_cast<float>(fontSize));
+                s_fontMetricsCache[key] = metrics;
+                
+                return metrics;
+            }
+
+            // Convenience method to get font metrics for a character (selects appropriate font)
+            static FontMetrics getFontMetricsForCharacter(u32 character, u32 fontSize) {
+                stbtt_fontinfo* font = selectFontForCharacter(character);
+                return getFontMetrics(font, fontSize);
             }
             
             // Now returns shared_ptr instead of raw pointer
@@ -1087,6 +1156,7 @@ namespace tsl {
                 // will keep the Glyph alive even after the cache is cleared
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
+                s_fontMetricsCache.clear(); // Also clear font metrics cache
             }
             
             static void cleanup() {
@@ -1094,6 +1164,7 @@ namespace tsl {
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 
                 s_sharedGlyphCache.clear();
+                s_fontMetricsCache.clear();
                 s_initialized = false;
                 s_stdFont = nullptr;
                 s_localFont = nullptr;
@@ -1104,6 +1175,11 @@ namespace tsl {
             static size_t getCacheSize() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_sharedGlyphCache.size();
+            }
+
+            static size_t getFontMetricsCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_fontMetricsCache.size();
             }
             
             static bool isInitialized() {
@@ -2450,6 +2526,11 @@ namespace tsl {
                 // Check if highlighting is enabled (both highlight color and delimiters must be provided)
                 const bool highlightingEnabled = highlightColor && highlightStartChar != 0 && highlightEndChar != 0;
                 
+                // Get font metrics for consistent line height using a standard character
+                // This ensures consistent line spacing regardless of which specific characters are used
+                auto fontMetrics = FontManager::getFontMetricsForCharacter('A', fontSize);
+                const s32 lineHeight = static_cast<s32>(fontMetrics.lineHeight);
+                
                 // Fast ASCII check with early exit
                 bool isAsciiOnly = true;
                 const char* textPtr = text.data();
@@ -2462,7 +2543,7 @@ namespace tsl {
                 }
                 
                 s32 maxX = x, currX = x, currY = y;  // Changed to s32 for consistency
-                s32 maxY = y;                        // Track maximum Y position reached
+                s32 maxY = y + lineHeight;           // Initialize with at least one line height
                 bool inHighlight = false;
                 const Color* currentColor = &defaultColor;
                 
@@ -2497,7 +2578,8 @@ namespace tsl {
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += static_cast<s32>(fontSize);  // Cast to s32
+                            currY += lineHeight;  // Use consistent line height
+                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
                             continue;
                         }
                         
@@ -2505,8 +2587,8 @@ namespace tsl {
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
-                        // Track maximum Y position reached (y position + glyph height)
-                        maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                        // Track maximum Y position reached using consistent line height
+                        maxY = std::max(maxY, currY + lineHeight);
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) { // Space is 32
@@ -2538,12 +2620,13 @@ namespace tsl {
                                         if (symChar == '\n') {
                                             maxX = std::max(currX, maxX);
                                             currX = x;
-                                            currY += static_cast<s32>(fontSize);
+                                            currY += lineHeight;  // Use consistent line height
+                                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
                                         } else {
                                             glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
                                             if (glyph) {
-                                                // Track maximum Y position reached
-                                                maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                                                // Track maximum Y position reached using consistent line height
+                                                maxY = std::max(maxY, currY + lineHeight);
                                                 
                                                 if (draw && glyph->glyphBmp && symChar > 32) {
                                                     renderGlyph(glyph, currX, currY, *highlightColor);
@@ -2588,7 +2671,8 @@ namespace tsl {
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += static_cast<s32>(fontSize);
+                            currY += lineHeight;  // Use consistent line height
+                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
                             continue;
                         }
                         
@@ -2596,8 +2680,8 @@ namespace tsl {
                         glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
-                        // Track maximum Y position reached
-                        maxY = std::max(maxY, currY + static_cast<s32>(glyph->height));
+                        // Track maximum Y position reached using consistent line height
+                        maxY = std::max(maxY, currY + lineHeight);
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
@@ -2609,7 +2693,7 @@ namespace tsl {
                 }
                 
                 maxX = std::max(currX, maxX);
-                // Use same pattern as width: maxY - y (maximum Y position reached - starting Y)
+                // Return consistent height based on proper font metrics
                 return {maxX - x, maxY - y};
             }
             
@@ -4131,7 +4215,7 @@ namespace tsl {
                     renderer->fillScreen(a(defaultBackgroundColor));
                     renderer->drawWallpaper();
                 } else {
-                    renderer->fillScreen({ 0x0, 0x0, 0x0, alphabackground});
+                    renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
                 }
                 
                 y = 50;
