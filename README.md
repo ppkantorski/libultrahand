@@ -160,14 +160,14 @@ CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
 
 ---
 
-### Forcing use of `<stdio.h>` instead of `<fstream>`
+### Forcing use of `<fstream>` instead of `<stdio.h>`
 
-To compile without utilizing `fstream`, add the following directive to your `Makefile`:
+To compile utilizing `fstream`, add the following directive to your `Makefile`:
 
 ```
-# Disable fstream
-NO_FSTREAM_DIRECTIVE := 1 
-CFLAGS += -DNO_FSTREAM_DIRECTIVE=$(NO_FSTREAM_DIRECTIVE)
+# Enable fstream
+USING_FSTREAM_DIRECTIVE := 1 
+CFLAGS += -DUSING_FSTREAM_DIRECTIVE=$(USING_FSTREAM_DIRECTIVE)
 ```
 
 ---
