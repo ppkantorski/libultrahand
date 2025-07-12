@@ -160,7 +160,7 @@ CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
 
 ---
 
-### Forcing use of `<fstream>` instead of `<stdio.h>`
+### Forcing use of `<fstream>` instead of `<stdio.h>` (unnecessary)
 
 To compile utilizing `fstream`, add the following directive to your `Makefile`:
 
