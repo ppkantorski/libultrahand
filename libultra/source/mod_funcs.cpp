@@ -36,7 +36,7 @@ namespace ult {
      * @return True if the cheat exists, otherwise false.
      */
     bool cheatExists(const std::string& cheatFilePath, const std::string& newCheat) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* cheatFile = fopen(cheatFilePath.c_str(), "r");  // Open the cheat file in read mode
         if (!cheatFile) {
             return false;  // Return false if the file cannot be opened
@@ -80,7 +80,7 @@ namespace ult {
      * @param newCheat The new cheat to append.
      */
     void appendCheatToFile(const std::string& cheatFilePath, const std::string& newCheat) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* cheatFile = fopen(cheatFilePath.c_str(), "a");  // Open the cheat file in append mode
         if (!cheatFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -173,7 +173,7 @@ namespace ult {
         logMessage("Starting pchtxt2cheat with pchtxtPath: " + pchtxtPath);
         #endif
     
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -230,7 +230,7 @@ namespace ult {
             cheatFilePath = outCheatPath;
         }
     
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* existingCheatFile = fopen(cheatFilePath.c_str(), "r");
         bool cheatNameExists = false;
         if (existingCheatFile) {
@@ -259,7 +259,7 @@ namespace ult {
     #endif
     
         // Open output cheat file
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* outCheatFile = fopen(cheatFilePath.c_str(), "a");
         if (!outCheatFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -278,7 +278,7 @@ namespace ult {
     #endif
     
         if (!cheatNameExists) {
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
             fprintf(outCheatFile, "[%s]\n", cheatName.c_str());
     #else
             outCheatFile << "[" << cheatName << "]\n";
@@ -353,7 +353,7 @@ namespace ult {
             snprintf(offsetBuffer, sizeof(offsetBuffer), "%08X", codeOffset);
             cheatLine = CHEAT_TYPE + " " + addrStr + " " + hexToReversedHex(offsetBuffer);
             
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
             // Check if cheat already exists
             FILE* checkFile = fopen(cheatFilePath.c_str(), "r");
             bool exists = false;
@@ -378,7 +378,7 @@ namespace ult {
     #endif
         }
     
-    #ifdef NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         fclose(outCheatFile);
     #else
         outCheatFile.close();
@@ -432,7 +432,7 @@ namespace ult {
      * @return True if the conversion was successful, false otherwise.
      */
     bool pchtxt2ips(const std::string& pchtxtPath, const std::string& outputFolder) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Use FILE* for reading
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
@@ -591,7 +591,7 @@ namespace ult {
         std::string ipsFileName = nsobid + ".ips";
         std::string ipsFilePath = outputFolder + ipsFileName;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Use FILE* for writing
         FILE* ipsFile = fopen(ipsFilePath.c_str(), "wb");
         if (!ipsFile) {

@@ -25,7 +25,7 @@ namespace ult {
         strftime(timestamp, sizeof(timestamp), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
         
         // Depending on the directive, use either std::ofstream or stdio functions
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
         // Use stdio functions to open, write, and close the file
         {
             std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for thread-safe access
@@ -40,7 +40,7 @@ namespace ult {
             }
         }
         #else
-        // Use std::ofstream if NO_FSTREAM_DIRECTIVE is not defined
+        // Use std::ofstream if !USING_FSTREAM_DIRECTIVE is not defined
         {
             std::lock_guard<std::mutex> lock(logMutex); // Locks the mutex for the duration of this block
             

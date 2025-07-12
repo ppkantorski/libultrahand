@@ -33,7 +33,7 @@ namespace ult {
         PackageHeader packageHeader;
         std::string newLine;
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return packageHeader; // Return default-constructed PackageHeader if file opening fails
@@ -89,7 +89,7 @@ namespace ult {
             }
         }
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         fclose(file);
     #endif
     
@@ -196,7 +196,7 @@ namespace ult {
     std::map<std::string, std::map<std::string, std::string>> getParsedDataFromIniFile(const std::string& configIniPath) {
         std::map<std::string, std::map<std::string, std::string>> parsedData;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
             // logMessage("Failed to open the file: " + configIniPath);
@@ -323,7 +323,7 @@ namespace ult {
     std::map<std::string, std::string> getKeyValuePairsFromSection(const std::string& configIniPath, const std::string& sectionName) {
         std::map<std::string, std::string> sectionData;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
             // logMessage("Failed to open the file: " + configIniPath);
@@ -457,7 +457,7 @@ namespace ult {
     std::vector<std::string> parseSectionsFromIni(const std::string& filePath) {
         std::vector<std::string> sections;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return sections;
@@ -535,7 +535,7 @@ namespace ult {
         std::string value;
         //value.reserve(256);
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return value;
@@ -665,7 +665,7 @@ namespace ult {
     void cleanIniFormatting(const std::string& filePath) {
         const std::string tempPath = filePath + ".tmp";
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -813,7 +813,7 @@ namespace ult {
             createDirectory(getParentDirFromPath(fileToEdit));
         }
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(fileToEdit.c_str(), "r");
         if (!configFile) {
             configFile = fopen(fileToEdit.c_str(), "w"); // Create a new file if it doesn't exist
@@ -1039,7 +1039,7 @@ namespace ult {
      * @param sectionName The name of the section to add.
      */
     void addIniSection(const std::string& filePath, const std::string& sectionName) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             // Create new file with just the section if file doesn't exist
@@ -1201,7 +1201,7 @@ namespace ult {
      * @param newSectionName The new name for the section.
      */
     void renameIniSection(const std::string& filePath, const std::string& currentSectionName, const std::string& newSectionName) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1300,7 +1300,7 @@ namespace ult {
      * @param sectionName The name of the section to remove.
      */
     void removeIniSection(const std::string& filePath, const std::string& sectionName) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1414,7 +1414,7 @@ namespace ult {
      * @brief Removes a key-value pair from an INI file.
      */
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1644,7 +1644,7 @@ namespace ult {
      * @return A vector containing pairs of section names and their associated key-value pairs.
      */
     std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> loadOptionsFromIni(const std::string& packageIniPath) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         if (!packageFile) return {}; // Return empty vector if file can't be opened
         
@@ -1746,7 +1746,7 @@ namespace ult {
      * @return A vector of commands within the specified section.
      */
     std::vector<std::vector<std::string>> loadSpecificSectionFromIni(const std::string& packageIniPath, const std::string& sectionName) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         
         if (!packageFile) return {}; // Return empty vector if file can't be opened

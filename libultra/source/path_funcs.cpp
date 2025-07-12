@@ -135,7 +135,7 @@ namespace ult {
         }
     }
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
     void writeLog(FILE* logFile, const std::string& line) {
         if (logFile) {
             std::lock_guard<std::mutex> lock(logMutex2);
@@ -173,7 +173,7 @@ namespace ult {
         // Create parent directory first
         createDirectory(getParentDirFromPath(filePath));
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FileGuard file(fopen(filePath.c_str(), "w"));
         if (file.get()) {
             fputs(content.c_str(), file.get());
@@ -207,7 +207,7 @@ namespace ult {
         //logMessage("pathToDelete: " + pathToDelete);
     
         bool pathIsFile = pathToDelete.back() != '/';
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* logSourceFile = nullptr;
         std::unique_ptr<FileGuard> logGuard;
     
@@ -239,7 +239,7 @@ namespace ult {
         if (pathIsFile) {
             if (isFile(pathToDelete)) {
                 if (remove(pathToDelete.c_str()) == 0) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
                     if (logSourceFile) writeLog(logSourceFile, pathToDelete);
     #else
                     if (logSourceFile.is_open()) {
@@ -276,7 +276,7 @@ namespace ult {
                 stack.pop_back(); // Remove from stack before deletion
                 if (remove(currentPath.c_str()) == 0) {
                     //logMessage("File deleted: " + currentPath);
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
                     if (logSourceFile) writeLog(logSourceFile, currentPath);
     #else
                     if (logSourceFile.is_open()) {
@@ -365,7 +365,7 @@ namespace ult {
             return;
         }
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* logSourceFile = nullptr;
         FILE* logDestinationFile = nullptr;
         std::unique_ptr<FileGuard> logSourceGuard, logDestGuard;
@@ -466,7 +466,7 @@ namespace ult {
                         logMessage("Failed to move: " + fullPathSrc);
                         #endif
                     } else {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
                         if (logSourceFile) writeLog(logSourceFile, fullPathSrc);
                         if (logDestinationFile) writeLog(logDestinationFile, fullPathDst);
     #else
@@ -505,7 +505,7 @@ namespace ult {
             return false;
         }
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* logSourceFile = nullptr;
         FILE* logDestinationFile = nullptr;
         std::unique_ptr<FileGuard> logSourceGuard, logDestGuard;
@@ -569,7 +569,7 @@ namespace ult {
         #endif
                 return false;
             } else {
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
                 if (logSourceFile) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile) writeLog(logDestinationFile, destFile);
         #else
@@ -589,7 +589,7 @@ namespace ult {
         #endif
                 return false;
             } else {
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
                 if (logSourceFile) writeLog(logSourceFile, sourcePath);
                 if (logDestinationFile) writeLog(logDestinationFile, destinationPath);
         #else
@@ -686,7 +686,7 @@ namespace ult {
         // Pre-allocate buffer outside any loops
         std::unique_ptr<char[]> buffer(new char[COPY_BUFFER_SIZE]);
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* srcFile = nullptr;
         FILE* destFile = nullptr;
         
@@ -1098,7 +1098,7 @@ namespace ult {
     /**
      * @brief For each match of the wildcard pattern, creates an empty text file
      *        named basename.txt inside the output directory.
-     *        Uses FILE* if NO_FSTREAM_DIRECTIVE is defined, otherwise uses std::ofstream.
+     *        Uses FILE* if !USING_FSTREAM_DIRECTIVE is defined, otherwise uses std::ofstream.
      *
      * @param wildcardPattern A path with a wildcard, such as /some/path/[*].
      *                        Each match results in a file named after the basename.
@@ -1129,7 +1129,7 @@ namespace ult {
     
             outFile = outputPrefix + baseName;
     
-        #if defined(NO_FSTREAM_DIRECTIVE)
+        #if !USING_FSTREAM_DIRECTIVE
             FileGuard fp(std::fopen(outFile.c_str(), "wb"));
             // File automatically closed by FileGuard destructor
         #else

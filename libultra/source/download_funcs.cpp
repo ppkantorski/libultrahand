@@ -57,7 +57,7 @@ void CurlDeleter::operator()(CURL* curl) const {
 }
 
 // Callback function to write received data to a file.
-#if NO_FSTREAM_DIRECTIVE
+#if !USING_FSTREAM_DIRECTIVE
 // Using stdio.h functions (FILE*, fwrite)
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     if (!ptr || !stream) return 0;
@@ -156,8 +156,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
 
-#ifndef NO_FSTREAM_DIRECTIVE
-    // Use ofstream if NO_FSTREAM_DIRECTIVE is not defined
+#if USING_FSTREAM_DIRECTIVE
+    // Use ofstream if !USING_FSTREAM_DIRECTIVE is not defined
     std::ofstream file(tempFilePath, std::ios::binary);
     if (!file.is_open()) {
         #if USING_LOGGING_DIRECTIVE
@@ -192,7 +192,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         #if USING_LOGGING_DIRECTIVE
         logMessage("Error initializing curl.");
         #endif
-#ifndef NO_FSTREAM_DIRECTIVE
+#if USING_FSTREAM_DIRECTIVE
         file.close();
 #else
         file.reset();
@@ -204,7 +204,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
-#ifndef NO_FSTREAM_DIRECTIVE
+#if USING_FSTREAM_DIRECTIVE
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
 #else
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
@@ -228,7 +228,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
 
     CURLcode result = curl_easy_perform(curl.get());
 
-#ifndef NO_FSTREAM_DIRECTIVE
+#if USING_FSTREAM_DIRECTIVE
     file.close();
 #else
     file.reset();
@@ -249,7 +249,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-#ifndef NO_FSTREAM_DIRECTIVE
+#if USING_FSTREAM_DIRECTIVE
     std::ifstream checkFile(tempFilePath);
     if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
         #if USING_LOGGING_DIRECTIVE
@@ -358,7 +358,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // RAII wrapper for output file
     struct OutputFileManager {
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
         FILE* file = nullptr;
         std::unique_ptr<char[]> buffer;
         size_t bufferSize;

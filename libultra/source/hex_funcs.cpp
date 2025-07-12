@@ -204,7 +204,7 @@ namespace ult {
     std::vector<std::string> findHexDataOffsets(const std::string& filePath, const std::string& hexData) {
         std::vector<std::string> offsets;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Open the file for reading in binary mode
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
@@ -307,7 +307,7 @@ namespace ult {
     void hexEditByOffset(const std::string& filePath, const std::string& offsetStr, const std::string& hexData) {
         std::streampos offset = std::stoll(offsetStr);
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Open the file for both reading and writing in binary mode
         FILE* file = fopen(filePath.c_str(), "rb+");
         if (!file) {
@@ -537,7 +537,7 @@ namespace ult {
         std::vector<char> hexBuffer(length);
         std::vector<char> hexStream(length * 2);
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Open the file for reading in binary mode
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
@@ -686,7 +686,7 @@ namespace ult {
      * @return The version string if found; otherwise, an empty string.
      */
     std::string extractVersionFromBinary(const std::string &filePath) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         // Step 1: Open the binary file
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {

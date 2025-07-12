@@ -68,7 +68,7 @@ namespace ult {
     };
     
     // Thread-safe callback functions
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
     size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
     #else
     size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);

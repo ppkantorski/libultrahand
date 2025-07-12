@@ -27,7 +27,7 @@ namespace ult {
      * @return A `json_t` object representing the parsed JSON data. Returns `nullptr` on error.
      */
     json_t* readJsonFromFile(const std::string& filePath) {
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "rb");  // Open the file in binary mode
         if (!file) {
             // Optionally log: Failed to open file
@@ -227,7 +227,7 @@ namespace ult {
         }
 
         bool success = false;
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "wb");
         if (file) {
             size_t jsonLength = std::char_traits<char>::length(jsonString);
@@ -285,7 +285,7 @@ namespace ult {
         }
     
         bool success = false;
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "wb");
         if (file) {
             size_t jsonLength = std::char_traits<char>::length(jsonString);

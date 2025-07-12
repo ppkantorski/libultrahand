@@ -43,7 +43,7 @@ namespace ult {
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
             FILE* file = fopen(filePath.c_str(), "r");
             if (!file) {
                 #if USING_LOGGING_DIRECTIVE
@@ -1157,7 +1157,7 @@ namespace ult {
             return;
         }
     
-        #if NO_FSTREAM_DIRECTIVE
+        #if !USING_FSTREAM_DIRECTIVE
             FILE* file = fopen(filePath.c_str(), "rb");
             if (!file) {
                 wallpaperData.clear();

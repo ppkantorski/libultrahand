@@ -2786,7 +2786,9 @@ namespace tsl {
                 // Move variable declarations outside the loop
                 u32 currCharacter;
                 ssize_t codepointWidth;
-                
+                s32 charWidth;
+                size_t bytePos;
+
                 while (itStr != itStrEnd) {
                     // Decode UTF-8 codepoint
                     if (isAsciiOnly) {
@@ -2805,11 +2807,11 @@ namespace tsl {
                     }
                     
                     // Fixed: Use consistent s32 calculation
-                    s32 charWidth = static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+                    charWidth = static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                     
                     if (currX + charWidth > maxWidthWithoutEllipsis) {
                         // Calculate the byte position for substring
-                        size_t bytePos = std::distance(text.cbegin(), lastValidPos);
+                        bytePos = std::distance(text.cbegin(), lastValidPos);
                         return text.substr(0, bytePos) + "…";
                     }
                     

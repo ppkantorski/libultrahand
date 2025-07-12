@@ -30,7 +30,7 @@ namespace ult {
      * @return The content of the file as a string with line endings normalized to '\n'.
      */
     //std::string getFileContents(const std::string& filePath) {
-    //    #if NO_FSTREAM_DIRECTIVE
+    //    #if !USING_FSTREAM_DIRECTIVE
     //    FILE* file = fopen(filePath.c_str(), "rb");
     //    if (!file) {
     //        #if USING_LOGGING_DIRECTIVE

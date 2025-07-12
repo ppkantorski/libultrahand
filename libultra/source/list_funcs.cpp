@@ -88,7 +88,7 @@ namespace ult {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::vector<std::string> lines;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -144,7 +144,7 @@ namespace ult {
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(listPath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -257,7 +257,7 @@ namespace ult {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::unordered_set<std::string> lines;
     
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -304,7 +304,7 @@ namespace ult {
     void writeSetToFile(const std::unordered_set<std::string>& fileSet, const std::string& filePath) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -358,7 +358,7 @@ namespace ult {
     void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if NO_FSTREAM_DIRECTIVE
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
