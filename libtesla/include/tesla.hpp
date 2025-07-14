@@ -3187,9 +3187,9 @@ namespace tsl {
                 auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
                 //int horizontalUnderscanPixels = 0;
 
-            #if !IS_STATUS_MONITOR_DIRECTIVE
+                
                 ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
-            #endif
+
                 //cfg::LayerPosX = 1280-32;
                 cfg::LayerPosX = 0;
                 cfg::LayerPosY = 0;
