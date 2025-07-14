@@ -100,11 +100,11 @@ using namespace std::literals::string_literals;
 using namespace std::literals::chrono_literals; // potentially unused, restored for softare compatibility
 
 #if IS_STATUS_MONITOR_DIRECTIVE
-struct GlyphInfo {
-    u8* pointer;
-    int width;
-    int height;
-};
+//struct GlyphInfo {
+//    u8* pointer;
+//    int width;
+//    int height;
+//};
 
 struct KeyPairHash {
     std::size_t operator()(const std::pair<int, float>& key) const {
@@ -128,13 +128,14 @@ struct KeyPairEqual {
     }
 };
 
-std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
+//std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
 
 u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
+volatile bool isRendering = false;
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
-bool fontCache = true;
+//bool fontCache = true;
 bool disableJumpTo = false;
 
 #endif
@@ -1439,73 +1440,6 @@ namespace tsl {
                 );
             }
             
-            // Alternative batch version for processing multiple pixels at once
-            //inline void setPixelBlendSrcBatch(const u32 baseX, const u32 baseY, 
-            //                                  const u8 red[16], const u8 green[16], 
-            //                                  const u8 blue[16], const u8 alpha[16], 
-            //                                  const s32 count) {
-            //    // All variables moved outside the loop
-            //    const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-            //    u32 offset;
-            //    u8 currentAlpha;
-            //    Color src = {0}, end = {0};
-            //    u32 currentX;
-            //    
-            //    for (s32 i = 0; i < count; ++i) {
-            //        // Early exit for transparent pixels
-            //        currentAlpha = alpha[i];
-            //        if (currentAlpha == 0)
-            //            continue;
-            //        
-            //        currentX = baseX + i;
-            //        offset = this->getPixelOffset(currentX, baseY);
-            //        if (offset == UINT32_MAX) [[unlikely]]
-            //            continue;
-            //        
-            //        // Direct framebuffer access and color construction
-            //        src = framebuffer[offset];
-            //        
-            //        // Direct member assignment instead of constructor
-            //        end.r = blendColor(src.r, red[i], currentAlpha);
-            //        end.g = blendColor(src.g, green[i], currentAlpha);
-            //        end.b = blendColor(src.b, blue[i], currentAlpha);
-            //        end.a = src.a;
-            //        
-            //        this->setPixel(currentX, baseY, end, offset);
-            //    }
-            //}
-
-            
-            /**
-             * @brief Draws a single destination blended pixel onto the screen
-             *
-             * @param x X pos
-             * @param y Y pos
-             * @param color Color
-             */
-            //inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
-            //    const u32 offset = this->getPixelOffset(x, y);
-            //    if (offset == UINT32_MAX) [[unlikely]]
-            //        return;
-            //    
-            //    // Early exit for fully transparent pixels
-            //    //if (color.a == 0)
-            //    //    return;
-            //    
-            //    const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-            //    const Color src(framebuffer[offset]);
-            //    
-            //    // Optimized alpha blending calculation
-            //    const u8 invColorAlpha = 0xF - color.a;
-            //    const Color end = {
-            //        blendColor(src.r, color.r, color.a),
-            //        blendColor(src.g, color.g, color.a),
-            //        blendColor(src.b, color.b, color.a),
-            //        static_cast<u8>(color.a + (src.a * invColorAlpha >> 4))  // Optimized alpha blend
-            //    };
-            //
-            //    this->setPixel(x, y, end, offset);
-            //}
 
             // Compromise version - keep framebuffer lookup but inline the rest
             inline void setPixelBlendDst(const u32 x, const u32 y, const Color& color) {
@@ -3253,7 +3187,9 @@ namespace tsl {
                 auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
                 //int horizontalUnderscanPixels = 0;
 
+            #if !IS_STATUS_MONITOR_DIRECTIVE
                 ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
+            #endif
                 //cfg::LayerPosX = 1280-32;
                 cfg::LayerPosX = 0;
                 cfg::LayerPosY = 0;
@@ -3403,6 +3339,47 @@ namespace tsl {
                 return 0;
             }
             
+
+            inline void fastFramebufferCopy(void* dst, const void* src, size_t size) {
+                const uint8_t* srcPtr = static_cast<const uint8_t*>(src);
+                uint8_t* dstPtr = static_cast<uint8_t*>(dst);
+                size_t remaining = size;
+                
+                // Copy 64 bytes at a time using NEON (if 64-byte aligned)
+                if (((uintptr_t)srcPtr & 63) == 0 && ((uintptr_t)dstPtr & 63) == 0) {
+                    while (remaining >= 64) {
+                        uint8x16x4_t data = vld1q_u8_x4(srcPtr);
+                        vst1q_u8_x4(dstPtr, data);
+                        srcPtr += 64;
+                        dstPtr += 64;
+                        remaining -= 64;
+                    }
+                }
+                
+                // Copy 32 bytes at a time using NEON
+                while (remaining >= 32) {
+                    uint8x16x2_t data = vld1q_u8_x2(srcPtr);
+                    vst1q_u8_x2(dstPtr, data);
+                    srcPtr += 32;
+                    dstPtr += 32;
+                    remaining -= 32;
+                }
+                
+                // Copy 16 bytes at a time
+                while (remaining >= 16) {
+                    uint8x16_t data = vld1q_u8(srcPtr);
+                    vst1q_u8(dstPtr, data);
+                    srcPtr += 16;
+                    dstPtr += 16;
+                    remaining -= 16;
+                }
+                
+                // Copy remaining bytes
+                if (remaining > 0) {
+                    memcpy(dstPtr, srcPtr, remaining);
+                }
+            }
+
             /**
              * @brief Start a new frame
              * @warning Don't call this more than once before calling \ref endFrame
@@ -3414,78 +3391,94 @@ namespace tsl {
             /**
              * @brief End the current frame
              * @warning Don't call this before calling \ref startFrame once
-             */
+                         */
             inline void endFrame() {
-
                 #if IS_STATUS_MONITOR_DIRECTIVE
-                if (!FullMode || deactivateOriginalFooter) {
+                if (isRendering) {
                     memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
-                    svcSleepThread(1000*1000*1000 / TeslaFPS);
+                    
+                    static constexpr u64 checkIntervalNs = 1000*1000;
+                    static u32 lastFPS = 0;
+                    static u64 cachedTargetTicks = 0;
+                    
+                    if (__builtin_expect(TeslaFPS != lastFPS, 0)) { // Hint: FPS changes are rare
+                        cachedTargetTicks = armNsToTicks(1000*1000*1000 / TeslaFPS);
+                        lastFPS = TeslaFPS;
+                    }
+                    
+                    const u64 startTick = armGetSystemTick();
+                    const u64 endTick = startTick + cachedTargetTicks;
+                    u32 counter = 0;
+                    
+                    do {
+                        if (__builtin_expect((++counter & 15) == 0, 0)) { // Hint: break is rare
+                            if (!isRendering) break;
+                        }
+                        
+                        svcSleepThread(checkIntervalNs);
+                    } while (__builtin_expect(armGetSystemTick() < endTick, 1)); // Hint: continue is common
                 }
                 #endif
-
                 this->waitForVSync();
                 framebufferEnd(&this->m_framebuffer);
-                
                 this->m_currentFramebuffer = nullptr;
-
             }
 
-        #if IS_STATUS_MONITOR_DIRECTIVE
-            /**
-             * @brief Draws a single font glyph
-             * 
-             * @param codepoint Unicode codepoint to draw
-             * @param x X pos
-             * @param y Y pos
-             * @param color Color
-             * @param font STB Font to use
-             * @param fontSize Font size
-             */
-
-            inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
-                int width = 10, height = 10;
-                u8* glyphBmp = nullptr;
-                if (fontCache) {
-                    auto pair = std::make_pair(codepoint, fontSize);
-                    auto found = cache.find(pair);
-                    if (found != cache.end()) {
-                        glyphBmp = found->second.pointer;
-                        width = found->second.width;
-                        height = found->second.height;
-                    }
-                    else {
-                        glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
-                        if (glyphBmp) cache[pair] = GlyphInfo{glyphBmp, width, height};
-                    }
-                }
-                else {
-                    glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
-                }
-                
-                if (glyphBmp == nullptr)
-                    return;
-                
-                // Pre-calculate constants outside loops
-                const float colorAFloat = float(color.a) / 15.0f;  // Divide by 15, not 0xF
-                const u8* bmpPtr = glyphBmp;  // Cache pointer for faster access
-                
-                Color tmpColor = {0};
-                // Single loop with pointer arithmetic
-                for (s32 bmpY = 0; bmpY < height; bmpY++) {
-                    const s32 pixelY = y + bmpY;
-                    for (s32 bmpX = 0; bmpX < width; bmpX++) {
-                        const u8 alpha = *bmpPtr++;  // Direct pointer increment
-                        if (alpha) {  // Skip transparent pixels
-                            tmpColor = color;
-                            tmpColor.a = (alpha >> 4) * colorAFloat;
-                            this->setPixelBlendSrc(x + bmpX, pixelY, tmpColor);
-                        }
-                    }
-                }
-                if (!fontCache) std::free(glyphBmp);
-            }
-        #endif
+        //#if IS_STATUS_MONITOR_DIRECTIVE
+        //    /**
+        //     * @brief Draws a single font glyph
+        //     * 
+        //     * @param codepoint Unicode codepoint to draw
+        //     * @param x X pos
+        //     * @param y Y pos
+        //     * @param color Color
+        //     * @param font STB Font to use
+        //     * @param fontSize Font size
+        //     */
+        //    
+        //    inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
+        //        int width = 10, height = 10;
+        //        u8* glyphBmp = nullptr;
+        //        if (fontCache) {
+        //            auto pair = std::make_pair(codepoint, fontSize);
+        //            auto found = cache.find(pair);
+        //            if (found != cache.end()) {
+        //                glyphBmp = found->second.pointer;
+        //                width = found->second.width;
+        //                height = found->second.height;
+        //            }
+        //            else {
+        //                glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+        //                if (glyphBmp) cache[pair] = GlyphInfo{glyphBmp, width, height};
+        //            }
+        //        }
+        //        else {
+        //            glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
+        //        }
+        //        
+        //        if (glyphBmp == nullptr)
+        //            return;
+        //        
+        //        // Pre-calculate constants outside loops
+        //        const float colorAFloat = float(color.a) / 15.0f;  // Divide by 15, not 0xF
+        //        const u8* bmpPtr = glyphBmp;  // Cache pointer for faster access
+        //        
+        //        Color tmpColor = {0};
+        //        // Single loop with pointer arithmetic
+        //        for (s32 bmpY = 0; bmpY < height; bmpY++) {
+        //            const s32 pixelY = y + bmpY;
+        //            for (s32 bmpX = 0; bmpX < width; bmpX++) {
+        //                const u8 alpha = *bmpPtr++;  // Direct pointer increment
+        //                if (alpha) {  // Skip transparent pixels
+        //                    tmpColor = color;
+        //                    tmpColor.a = (alpha >> 4) * colorAFloat;
+        //                    this->setPixelBlendSrc(x + bmpX, pixelY, tmpColor);
+        //                }
+        //            }
+        //        }
+        //        if (!fontCache) std::free(glyphBmp);
+        //    }
+        //#endif
         };
 
         static std::pair<int, int> getUnderscanPixels() {
@@ -4063,33 +4056,33 @@ namespace tsl {
         //static float m_lastFrameOffset = 0.0f;
         // Static cache with instance validation
         
-    #if IS_STATUS_MONITOR_DIRECTIVE
-        /**
-         * @brief A Element that exposes the renderer directly to draw custom views easily
-         */
-        class CustomDrawer : public Element {
-            public:
-                /**
-                 * @brief Constructor
-                 * @note This element should only be used to draw static things the user cannot interact with e.g info text, images, etc.
-                 * 
-                 * @param renderFunc Callback that will be called once every frame to draw this view
-                 */
-                CustomDrawer(std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
-                virtual ~CustomDrawer() {
-                    m_isTable = true;
-                }
-
-                virtual void draw(gfx::Renderer* renderer) override {
-                    this->m_renderFunc(renderer, this->getX(), this->getY(), this->getWidth(), this->getHeight());
-                }
-
-                virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {}
-
-            private:
-                std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> m_renderFunc;
-        };
-    #else
+    //#if IS_STATUS_MONITOR_DIRECTIVE
+    //    /**
+    //     * @brief A Element that exposes the renderer directly to draw custom views easily
+    //     */
+    //    class CustomDrawer : public Element {
+    //        public:
+    //            /**
+    //             * @brief Constructor
+    //             * @note This element should only be used to draw static things the user cannot interact with e.g info text, images, etc.
+    //             * 
+    //             * @param renderFunc Callback that will be called once every frame to draw this view
+    //             */
+    //            CustomDrawer(std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> renderFunc) : Element(), m_renderFunc(renderFunc) {}
+    //            virtual ~CustomDrawer() {
+    //                m_isTable = true;
+    //            }
+    //            
+    //            virtual void draw(gfx::Renderer* renderer) override {
+    //                this->m_renderFunc(renderer, this->getX(), this->getY(), this->getWidth(), this->getHeight());
+    //            }
+    //            
+    //            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {}
+    //            
+    //        private:
+    //            std::function<void(gfx::Renderer*, u16 x, u16 y, u16 w, u16 h)> m_renderFunc;
+    //    };
+    //#else
         /**
          * @brief A Element that exposes the renderer directly to draw custom views easily
          */
@@ -4121,7 +4114,7 @@ namespace tsl {
         private:
             std::function<void(gfx::Renderer*, s32 x, s32 y, s32 w, s32 h)> m_renderFunc;
         };
-    #endif
+    //#endif
 
         /**
          * @brief A Element that exposes the renderer directly to draw custom views easily
@@ -9990,6 +9983,10 @@ namespace tsl {
                         }
                     #endif
                         
+                        #if IS_STATUS_MONITOR_DIRECTIVE
+                        isRendering = false;
+                        #endif
+
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
@@ -10031,6 +10028,10 @@ namespace tsl {
                                         break;
                                     }
                                 }
+
+                                #if IS_STATUS_MONITOR_DIRECTIVE
+                                isRendering = false;
+                                #endif
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
@@ -10052,7 +10053,7 @@ namespace tsl {
                                     break;
                                 }
                     #endif
-                    
+                                
                                 // Compose launch args
                                 std::string finalArgs;
                                 if (!modeArg.empty()) {
