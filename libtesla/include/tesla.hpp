@@ -2981,7 +2981,7 @@ namespace tsl {
                 s32 bmpX;
                 uint8_t alpha;
                 s32 pixelX;
-                Color tmpColor = {0};
+                //Color tmpColor = {0};
                 
                 // Render with optimized inner loop
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
@@ -2997,9 +2997,7 @@ namespace tsl {
                             if (alpha == 0xF) {
                                 this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
                             } else {
-                                tmpColor = color;
-                                tmpColor.a = alpha;
-                                this->setPixelBlendDst(pixelX, pixelY, tmpColor);
+                                this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                             }
                         }
                     }
@@ -3012,9 +3010,7 @@ namespace tsl {
                             if (alpha == 0xF) {
                                 this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
                             } else {
-                                tmpColor = color;
-                                tmpColor.a = alpha;
-                                this->setPixelBlendDst(pixelX, pixelY, tmpColor);
+                                this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                             }
                         }
                     }
@@ -3339,46 +3335,6 @@ namespace tsl {
                 return 0;
             }
             
-
-            inline void fastFramebufferCopy(void* dst, const void* src, size_t size) {
-                const uint8_t* srcPtr = static_cast<const uint8_t*>(src);
-                uint8_t* dstPtr = static_cast<uint8_t*>(dst);
-                size_t remaining = size;
-                
-                // Copy 64 bytes at a time using NEON (if 64-byte aligned)
-                if (((uintptr_t)srcPtr & 63) == 0 && ((uintptr_t)dstPtr & 63) == 0) {
-                    while (remaining >= 64) {
-                        uint8x16x4_t data = vld1q_u8_x4(srcPtr);
-                        vst1q_u8_x4(dstPtr, data);
-                        srcPtr += 64;
-                        dstPtr += 64;
-                        remaining -= 64;
-                    }
-                }
-                
-                // Copy 32 bytes at a time using NEON
-                while (remaining >= 32) {
-                    uint8x16x2_t data = vld1q_u8_x2(srcPtr);
-                    vst1q_u8_x2(dstPtr, data);
-                    srcPtr += 32;
-                    dstPtr += 32;
-                    remaining -= 32;
-                }
-                
-                // Copy 16 bytes at a time
-                while (remaining >= 16) {
-                    uint8x16_t data = vld1q_u8(srcPtr);
-                    vst1q_u8(dstPtr, data);
-                    srcPtr += 16;
-                    dstPtr += 16;
-                    remaining -= 16;
-                }
-                
-                // Copy remaining bytes
-                if (remaining > 0) {
-                    memcpy(dstPtr, srcPtr, remaining);
-                }
-            }
 
             /**
              * @brief Start a new frame
@@ -4186,8 +4142,9 @@ namespace tsl {
         OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
                 ult::activeHeaderHeight = 97;
-                ult::loadWallpaperFileWhenSafe();
-
+                if (FullMode == true) {
+                    ult::loadWallpaperFileWhenSafe();
+                }
                 m_isItem = false;
             }
 
