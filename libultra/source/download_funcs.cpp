@@ -128,7 +128,7 @@ void cleanupCurl() {
  * @param toDestination The destination path where the file should be saved.
  * @return True if the download was successful, false otherwise.
  */
-bool downloadFile(const std::string& url, const std::string& toDestination) {
+bool downloadFile(const std::string& url, const std::string& toDestination, bool noPercentagePolling) {
     abortDownload.store(false, std::memory_order_release);
 
     if (url.find_first_of("{}") != std::string::npos) {
@@ -200,7 +200,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         return false;
     }
 
-    downloadPercentage.store(0, std::memory_order_release);
+    // Only initialize downloadPercentage if we're tracking progress
+    if (!noPercentagePolling) {
+        downloadPercentage.store(0, std::memory_order_release);
+    }
 
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
@@ -210,10 +213,17 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
 #endif
 
-    // Small buffer for responsive abort
-    curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
+    // Conditionally set up progress callback based on noPercentagePolling
+    if (noPercentagePolling) {
+        // Disable progress function entirely
+        curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 1L);
+    } else {
+        // Enable progress callback for percentage updates
+        curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
+        curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
+    }
+
     curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
@@ -245,7 +255,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         }
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        // Only update percentage if we're tracking it
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
         return false;
     }
 
@@ -256,7 +269,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        // Only update percentage if we're tracking it
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
         checkFile.close();
         return false;
     }
@@ -269,12 +285,28 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        // Only update percentage if we're tracking it
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
         return false;
     }
 #endif
 
-    downloadPercentage.store(100, std::memory_order_release);
+    // Only update percentage if we're tracking it
+    if (!noPercentagePolling) {
+        downloadPercentage.store(100, std::memory_order_release);
+    }
+
+    // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+    if (PROTECTED_FILES.find(destination) != PROTECTED_FILES.end()) {
+        destination += ".ultra";
+        
+        #if USING_LOGGING_DIRECTIVE
+        logMessage("Protected file detected, renaming download to: " + destination);
+        #endif
+    }
+
     moveFile(tempFilePath, destination);
     return true;
 }
@@ -595,6 +627,15 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
                 return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
             }), extractedFilePath.end());
+        }
+
+        // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+        if (PROTECTED_FILES.find(extractedFilePath) != PROTECTED_FILES.end()) {
+            extractedFilePath += ".ultra";
+            
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Protected file detected, renaming to: " + extractedFilePath);
+            #endif
         }
 
         // Open the current file in the ZIP

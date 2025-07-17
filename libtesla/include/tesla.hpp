@@ -4142,9 +4142,12 @@ namespace tsl {
         OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
                 ult::activeHeaderHeight = 97;
-                if (FullMode == true) {
+
+                if (FullMode)
                     ult::loadWallpaperFileWhenSafe();
-                }
+                else
+                    svcSleepThread(150'000);
+
                 m_isItem = false;
             }
 
@@ -10452,8 +10455,10 @@ namespace tsl {
 
 }
 
-
-
+//#define ULTRAHAND_OVERLAY_MARKER 0x554C5452
+//
+//extern "C" __attribute__((used, naked, section(".text.startup"))) 
+//const uint32_t __ultrahand_signature = 0x554C5452;
 
 #ifdef TESLA_INIT_IMPL
 

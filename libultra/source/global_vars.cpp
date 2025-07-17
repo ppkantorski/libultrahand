@@ -32,6 +32,7 @@ namespace ult {
     const std::string THEMES_PATH = SETTINGS_PATH + "themes/";
     const std::string WALLPAPERS_PATH = SETTINGS_PATH + "wallpapers/";
     const std::string FLAGS_PATH = SETTINGS_PATH+"flags/";
+    const std::string PAYLOADS_PATH = SETTINGS_PATH+"payloads/";
     const std::string HB_APPSTORE_JSON = "/switch/appstore/.get/packages/UltrahandOverlay/info.json";
     
     std::string THEME_CONFIG_INI_PATH = SETTINGS_PATH + "theme.ini";
@@ -52,6 +53,8 @@ namespace ult {
     const std::string OVERLAY_PATH = ROOT_PATH + "switch/.overlays/";
     const std::string OVERLAYS_INI_FILEPATH = SETTINGS_PATH + "overlays.ini";
     const std::string PACKAGES_INI_FILEPATH = SETTINGS_PATH + "packages.ini";
+
+    const std::set<std::string> PROTECTED_FILES = {ROOT_PATH+"atmosphere/package3", ROOT_PATH+"atmosphere/stratosphere.romfs"};
     
     const std::string ULTRAHAND_REPO_URL = "https://github.com/ppkantorski/Ultrahand-Overlay/";
     const std::string INCLUDED_THEME_FOLDER_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/themes/";
@@ -60,6 +63,7 @@ namespace ult {
     const std::string NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/latest/download/nx-ovlloader+.zip";
     const std::string OLD_NX_OVLLOADER_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL = "https://github.com/ppkantorski/nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
+    const std::string UPDATER_PAYLOAD_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/payloads/ultrahand_updater.bin";
     
     const std::string LAUNCH_ARGS_STR = "launch_args";
     const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";

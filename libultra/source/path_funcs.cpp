@@ -203,6 +203,14 @@ namespace ult {
      * @param path The path of the file or directory to be deleted.
      */
     void deleteFileOrDirectory(const std::string& pathToDelete, const std::string& logSource) {
+        // CHECK FOR PROTECTED FILES AND SKIP DELETION
+        if (PROTECTED_FILES.find(pathToDelete) != PROTECTED_FILES.end()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Skipping deletion of protected file: " + pathToDelete);
+            #endif
+            return; // Skip deletion entirely
+        }
+        
         std::vector<std::string> stack;
         //logMessage("pathToDelete: " + pathToDelete);
     
@@ -265,6 +273,15 @@ namespace ult {
     
         while (!stack.empty()) {
             currentPath = stack.back();
+    
+            // CHECK FOR PROTECTED FILES IN THE STACK TOO
+            if (PROTECTED_FILES.find(currentPath) != PROTECTED_FILES.end()) {
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Skipping deletion of protected file: " + currentPath);
+                #endif
+                stack.pop_back();
+                continue;
+            }
     
             if (stat(currentPath.c_str(), &pathStat) != 0) {
                 //logMessage("Error accessing path: " + currentPath);
@@ -346,7 +363,8 @@ namespace ult {
             deleteFileOrDirectory(path, logSource);
         }
     }
-        
+
+
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
                        const std::string& logSource, const std::string& logDestination) {
         
@@ -460,18 +478,28 @@ namespace ult {
                     stack.push_back({fullPathSrc, fullPathDst});
                     directoriesToRemove.push_back(fullPathSrc);
                 } else {
-                    remove(fullPathDst.c_str());
-                    if (rename(fullPathSrc.c_str(), fullPathDst.c_str()) != 0) {
+                    // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+                    std::string finalDestination = fullPathDst;
+                    if (PROTECTED_FILES.find(fullPathDst) != PROTECTED_FILES.end()) {
+                        finalDestination += ".ultra";
+                        
+                        #if USING_LOGGING_DIRECTIVE
+                        logMessage("Protected file detected in move, renaming to: " + finalDestination);
+                        #endif
+                    }
+                    
+                    remove(finalDestination.c_str());
+                    if (rename(fullPathSrc.c_str(), finalDestination.c_str()) != 0) {
                         #if USING_LOGGING_DIRECTIVE
                         logMessage("Failed to move: " + fullPathSrc);
                         #endif
                     } else {
     #if !USING_FSTREAM_DIRECTIVE
                         if (logSourceFile) writeLog(logSourceFile, fullPathSrc);
-                        if (logDestinationFile) writeLog(logDestinationFile, fullPathDst);
+                        if (logDestinationFile) writeLog(logDestinationFile, finalDestination);
     #else
                         if (logSourceFile.is_open()) writeLog(logSourceFile, fullPathSrc);
-                        if (logDestinationFile.is_open()) writeLog(logDestinationFile, fullPathDst);
+                        if (logDestinationFile.is_open()) writeLog(logDestinationFile, finalDestination);
     #endif
                     }
                 }
@@ -562,6 +590,16 @@ namespace ult {
                 createDirectory(destinationPath);
             // Destination is a directory, construct full destination path
             std::string destFile = destinationPath + getFileName(sourcePath);
+            
+            // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+            if (PROTECTED_FILES.find(destFile) != PROTECTED_FILES.end()) {
+                destFile += ".ultra";
+                
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Protected file detected, renaming to: " + destFile);
+                #endif
+            }
+            
             remove(destFile.c_str());
             if (rename(sourcePath.c_str(), destFile.c_str()) != 0) {
         #if USING_LOGGING_DIRECTIVE
@@ -580,21 +618,32 @@ namespace ult {
             }
         } else {
             // Destination is a file path, directly rename the file
-            remove(destinationPath.c_str());
-            createDirectory(getParentDirFromPath(destinationPath));
-            if (rename(sourcePath.c_str(), destinationPath.c_str()) != 0) {
+            std::string finalDestinationPath = destinationPath;
+            
+            // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+            if (PROTECTED_FILES.find(finalDestinationPath) != PROTECTED_FILES.end()) {
+                finalDestinationPath += ".ultra";
+                
+                #if USING_LOGGING_DIRECTIVE
+                logMessage("Protected file detected, renaming to: " + finalDestinationPath);
+                #endif
+            }
+            
+            remove(finalDestinationPath.c_str());
+            createDirectory(getParentDirFromPath(finalDestinationPath));
+            if (rename(sourcePath.c_str(), finalDestinationPath.c_str()) != 0) {
         #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to move file: " + sourcePath + " -> " + destinationPath);
+                logMessage("Failed to move file: " + sourcePath + " -> " + finalDestinationPath);
                 logMessage("Error: " + std::string(strerror(errno)));
         #endif
                 return false;
             } else {
         #if !USING_FSTREAM_DIRECTIVE
                 if (logSourceFile) writeLog(logSourceFile, sourcePath);
-                if (logDestinationFile) writeLog(logDestinationFile, destinationPath);
+                if (logDestinationFile) writeLog(logDestinationFile, finalDestinationPath);
         #else
                 if (logSourceFile.is_open()) writeLog(logSourceFile, sourcePath);
-                if (logDestinationFile.is_open()) writeLog(logDestinationFile, destinationPath);
+                if (logDestinationFile.is_open()) writeLog(logDestinationFile, finalDestinationPath);
         #endif
                 return true;
             }
@@ -679,8 +728,19 @@ namespace ult {
         constexpr size_t maxRetries = 10;
         size_t retryCount = 0;
         
+        // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+        std::string actualToFile = toFile;
+        if (PROTECTED_FILES.find(actualToFile) != PROTECTED_FILES.end()) {
+            actualToFile += ".ultra";
+            
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Protected file detected, copying to: " + actualToFile);
+            #endif
+        }
+
+
         // Pre-calculate parent directory to avoid repeated calls
-        const std::string toFileParentDir = getParentDirFromPath(toFile);
+        const std::string toFileParentDir = getParentDirFromPath(actualToFile);
         createDirectory(toFileParentDir);
         
         // Pre-allocate buffer outside any loops
@@ -693,7 +753,7 @@ namespace ult {
         // Retry loop for opening files
         while (true) {
             srcFile = fopen(fromFile.c_str(), "rb");
-            destFile = fopen(toFile.c_str(), "wb");
+            destFile = fopen(actualToFile.c_str(), "wb");
             
             if (!srcFile || !destFile) {
                 #if USING_LOGGING_DIRECTIVE
@@ -791,7 +851,7 @@ namespace ult {
         }
     
         if (logSourceFile) writeLog(logSourceFile, fromFile);
-        if (logDestinationFile) writeLog(logDestinationFile, toFile);
+        if (logDestinationFile) writeLog(logDestinationFile, actualToFile);
         
     #else
         std::ifstream srcFile;
@@ -800,7 +860,7 @@ namespace ult {
         // Retry loop for opening files
         while (true) {
             srcFile.open(fromFile, std::ios::binary);
-            destFile.open(toFile, std::ios::binary);
+            destFile.open(actualToFile, std::ios::binary);
         
             if (srcFile.is_open() && destFile.is_open()) {
                 break;
@@ -851,7 +911,7 @@ namespace ult {
             if (abortFileOp.load(std::memory_order_acquire)) {
                 destFile.close();
                 srcFile.close();
-                remove(toFile.c_str());
+                remove(actualToFile.c_str());
                 copyPercentage.store(-1, std::memory_order_release);
                 return;
             }
@@ -865,7 +925,7 @@ namespace ult {
                 #endif
                 destFile.close();
                 srcFile.close();
-                remove(toFile.c_str());
+                remove(actualToFile.c_str());
                 copyPercentage.store(-1, std::memory_order_release);
                 return;
             }
@@ -880,7 +940,7 @@ namespace ult {
         destFile.close();
         
         if (logSourceFile.is_open()) writeLog(logSourceFile, fromFile);
-        if (logDestinationFile.is_open()) writeLog(logDestinationFile, toFile);
+        if (logDestinationFile.is_open()) writeLog(logDestinationFile, actualToFile);
     #endif
     }
     

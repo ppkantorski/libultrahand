@@ -82,7 +82,7 @@ namespace ult {
     void cleanupCurl();
     
     // Main API functions - thread-safe and optimized
-    bool downloadFile(const std::string& url, const std::string& toDestination);
+    bool downloadFile(const std::string& url, const std::string& toDestination, bool noPercentagePolling=false);
     bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
 }
 
