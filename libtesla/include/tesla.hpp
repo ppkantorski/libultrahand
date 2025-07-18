@@ -7426,8 +7426,16 @@ namespace tsl {
              * @brief Constructor
              *
              * @param icon Icon shown next to the track bar
+             * @param usingStepTrackbar Whether this is a step trackbar
+             * @param usingNamedStepTrackbar Whether this is a named step trackbar
+             * @param useV2Style Whether to use V2 visual style (label + value instead of icon)
+             * @param label Label text for V2 style
+             * @param units Units text for V2 style
              */
-            TrackBar(const char icon[3], bool usingStepTrackbar=false, bool usingNamedStepTrackbar = false) : m_icon(icon), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar) {
+            TrackBar(const char icon[3], bool usingStepTrackbar=false, bool usingNamedStepTrackbar = false, 
+                    bool useV2Style = false, const std::string& label = "", const std::string& units = "") 
+                : m_icon(icon), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar),
+                  m_useV2Style(useV2Style), m_label(label), m_units(units) {
                 m_isItem = true;
             }
 
@@ -7523,9 +7531,9 @@ namespace tsl {
                     yPos -= 11;
                 }
 
-                s32 iconOffset;
+                s32 iconOffset = 0;
 
-                if (m_icon[0] != '\0') {
+                if (!m_useV2Style && m_icon[0] != '\0') {
                     s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
@@ -7548,11 +7556,34 @@ namespace tsl {
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
 
+                // Draw icon (original style) or label + value (V2 style)
+                if (m_useV2Style) {
+                    // V2 Style: Draw label and value
+                    std::string labelPart = this->m_label;
+                    ult::removeTag(labelPart);
+                
+                    std::string valuePart;
+                    if (!m_usingNamedStepTrackbar) {
+                        valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? 
+                                   ult::to_string(this->m_value) + this->m_units : 
+                                   ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                    } else {
+                        valuePart = this->m_selection;
+                    }
+                
+                    auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
+                
+                    renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
+                                       (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
+                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+                } else {
+                    // Original Style: Draw icon
+                    if (m_icon[0] != '\0')
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
+                }
 
                 //renderer->drawRect(this->getX(), this->getY(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
                 //renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, a(tsl::style::color::ColorFrame));
-                if (m_icon[0] != '\0')
-                    renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
 
                 //u16 handlePos = (this->getWidth() - 95) * static_cast<float>(this->m_value) / 100;
                 //renderer->drawCircle(this->getX() + 60, this->getY() + 42, 2, true, a(tsl::style::color::ColorHighlight));
@@ -7677,6 +7708,12 @@ namespace tsl {
             bool m_usingNamedStepTrackbar = false;
             bool m_unlockedTrackbar = true;
             bool touchInSliderBounds = false;
+            
+            // V2 Style properties
+            bool m_useV2Style = false;
+            std::string m_label;
+            std::string m_units;
+            std::string m_selection; // Used for named step trackbars
         };
 
 
@@ -7691,9 +7728,14 @@ namespace tsl {
              *
              * @param icon Icon shown next to the track bar
              * @param numSteps Number of steps the track bar has
+             * @param usingNamedStepTrackbar Whether this is a named step trackbar
+             * @param useV2Style Whether to use V2 visual style (label + value instead of icon)
+             * @param label Label text for V2 style
+             * @param units Units text for V2 style
              */
-            StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false)
-                : TrackBar(icon, true, usingNamedStepTrackbar), m_numSteps(numSteps) { }
+            StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false,
+                        bool useV2Style = false, const std::string& label = "", const std::string& units = "")
+                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units), m_numSteps(numSteps) { }
 
             virtual ~StepTrackBar() {}
 
@@ -7785,13 +7827,67 @@ namespace tsl {
              *
              * @param icon Icon shown next to the track bar
              * @param stepDescriptions Step names displayed above the track bar
+             * @param useV2Style Whether to use V2 visual style (label + value instead of icon)
+             * @param label Label text for V2 style
              */
-            NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions)
-                : StepTrackBar(icon, stepDescriptions.size(), true), m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
-                    this->m_usingNamedStepTrackbar = true;
+            NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions,
+                             bool useV2Style = false, const std::string& label = "")
+                : StepTrackBar(icon, stepDescriptions.size(), true, useV2Style, label, ""), 
+                  m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
+                this->m_usingNamedStepTrackbar = true;
+                // Initialize selection with first step
+                if (!m_stepDescriptions.empty()) {
+                    this->m_selection = m_stepDescriptions[0];
                 }
+            }
 
             virtual ~NamedStepTrackBar() {}
+
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                // Store previous value to update selection
+                u8 prevProgress = this->getProgress();
+                
+                // Call parent input handling
+                bool result = StepTrackBar::handleInput(keysDown, keysHeld, touchPos, leftJoyStick, rightJoyStick);
+                
+                // Update selection if progress changed
+                if (result && this->getProgress() != prevProgress) {
+                    u8 currentIndex = this->getProgress();
+                    if (currentIndex < m_stepDescriptions.size()) {
+                        this->m_selection = m_stepDescriptions[currentIndex];
+                    }
+                }
+                
+                return result;
+            }
+
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                // Store previous value to update selection
+                u8 prevProgress = this->getProgress();
+                
+                // Call parent touch handling
+                bool result = StepTrackBar::onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
+                
+                // Update selection if progress changed
+                if (result && this->getProgress() != prevProgress) {
+                    u8 currentIndex = this->getProgress();
+                    if (currentIndex < m_stepDescriptions.size()) {
+                        this->m_selection = m_stepDescriptions[currentIndex];
+                    }
+                }
+                
+                return result;
+            }
+
+            virtual void setProgress(u8 value) override {
+                StepTrackBar::setProgress(value);
+                
+                // Update selection when progress is set programmatically
+                u8 currentIndex = this->getProgress();
+                if (currentIndex < m_stepDescriptions.size()) {
+                    this->m_selection = m_stepDescriptions[currentIndex];
+                }
+            }
 
             virtual void draw(gfx::Renderer *renderer) override {
                 // TrackBar width excluding the handle areas
@@ -7801,14 +7897,15 @@ namespace tsl {
                 u16 baseX = this->getX() + 59;
                 u16 baseY = this->getY() + 44; // 50 - 3
                 
-                s32 iconOffset;
+                s32 iconOffset = 0;
                 
-                if (m_icon[0] != '\0') {
+                if (!m_useV2Style && m_icon[0] != '\0') {
                     s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
                     iconOffset = 14 + iconWidth;
                     baseX += iconOffset;
                     trackBarWidth -= iconOffset;
                 }
+                
                 // Calculate the spacing between each step
                 float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
                 
@@ -7832,8 +7929,17 @@ namespace tsl {
                 }
                 
                 u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
-                auto descWidth = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15).first;
-                renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                
+                // Update selection for current index
+                if (currentDescIndex < m_stepDescriptions.size()) {
+                    this->m_selection = m_stepDescriptions[currentDescIndex];
+                }
+                
+                // Only draw the step description above the bar if not using V2 style (V2 style shows it on the right)
+                if (!m_useV2Style) {
+                    auto descWidth = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15).first;
+                    renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                }
                 
                 // Draw the parent trackbar
                 StepTrackBar::draw(renderer);
