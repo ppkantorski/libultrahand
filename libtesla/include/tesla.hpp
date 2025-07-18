@@ -296,6 +296,10 @@ namespace tsl {
     static size_t widgetBackdropAlpha = 15;
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
+    static Color overlayEntryTextColor = RGB888(ult::whiteColor);
+    static Color tslOverlayEntryTextColor = RGB888(ult::whiteColor);
+    static Color packageEntryTextColor = RGB888(ult::whiteColor);
+
     static Color bannerVersionTextColor = RGB888("AAAAAA");
     static Color overlayVersionTextColor = RGB888("00FFDD");
     static Color tslOverlayVersionTextColor = RGB888("AAAAAA");
@@ -405,6 +409,10 @@ namespace tsl {
             widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
             widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
+            tslOverlayEntryTextColor = getColor("tsl_ovl_entry_text_color");
+            overlayEntryTextColor = getColor("ovl_entry_text_color");
+            packageEntryTextColor = getColor("pkg_entry_text_color");
+
             bannerVersionTextColor = getColor("banner_version_text_color");
             tslOverlayVersionTextColor = getColor("tsl_ovl_version_text_color");
             overlayVersionTextColor = getColor("ovl_version_text_color");
@@ -4182,8 +4190,8 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
-                renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(bannerVersionTextColor));
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, (defaultOverlayColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
@@ -4575,8 +4583,8 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
                 }
-                renderer->drawString(m_title, false, 20, 52, 32, a(defaultOverlayColor));
-                renderer->drawString(m_subtitle, false, 20, y+23, 15, a(bannerVersionTextColor));
+                renderer->drawString(m_title, false, 20, 52, 32, (defaultOverlayColor));
+                renderer->drawString(m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
