@@ -296,7 +296,10 @@ namespace tsl {
     static size_t widgetBackdropAlpha = 15;
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
-    static Color versionTextColor = RGB888("AAAAAA");
+    static Color bannerVersionTextColor = RGB888("AAAAAA");
+    static Color overlayVersionTextColor = RGB888("00FFDD");
+    static Color tslOverlayVersionTextColor = RGB888("AAAAAA");
+    static Color packageVersionTextColor = RGB888("AAAAAA");
     static Color onTextColor = RGB888("00FFDD");
     static Color offTextColor = RGB888("AAAAAA");
     
@@ -402,7 +405,10 @@ namespace tsl {
             widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
             widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
-            versionTextColor = getColor("version_text_color");
+            bannerVersionTextColor = getColor("banner_version_text_color");
+            tslOverlayVersionTextColor = getColor("tsl_ovl_version_text_color");
+            overlayVersionTextColor = getColor("ovl_version_text_color");
+            packageVersionTextColor = getColor("pkg_version_text_color");
             onTextColor = getColor("on_text_color");
             offTextColor = getColor("off_text_color");
             
@@ -4177,7 +4183,7 @@ namespace tsl {
                 offset = 0;
                 
                 renderer->drawString(this->m_title, false, 20, 50+2, 32, a(defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, a(bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
@@ -4460,7 +4466,7 @@ namespace tsl {
                         }
                     }
                                                                                                     
-                    renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, a(logoColor2));
+                    renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, (logoColor2));
                     
                 } else {
                     x = 20;
@@ -4468,7 +4474,7 @@ namespace tsl {
                     fontSize = 32;
             
                     if (m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(m_title, false, x, y, fontSize, a(defaultScriptColor));
+                        renderer->drawString(m_title, false, x, y, fontSize, (defaultScriptColor));
                     } else {
                         titleColor = defaultPackageColor; // Default to green
                         
@@ -4529,7 +4535,7 @@ namespace tsl {
                                             };
                                             
                                             const std::string letterStr(1, letter);
-                                            renderer->drawString(letterStr.c_str(), false, x, y, fontSize, a(highlightColor));
+                                            renderer->drawString(letterStr.c_str(), false, x, y, fontSize, (highlightColor));
                                             auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
                                             x += letterWidth;
                                             counter -= 0.00004F;
@@ -4545,20 +4551,20 @@ namespace tsl {
                             }
                         }
                         
-                        renderer->drawString(m_title, false, x, y, fontSize, a(titleColor));
+                        renderer->drawString(m_title, false, x, y, fontSize, (titleColor));
                         skip_normal_draw:;
                     }
                 }
                 
                 if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawString(ult::versionLabel, false, 20, y+25, 15, a(versionTextColor));
+                    renderer->drawString(ult::versionLabel, false, 20, y+25, 15, (bannerVersionTextColor));
                 } else {
                     std::string subtitle = m_subtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
-                    renderer->drawString(subtitle, false, 20, y+23, 15, a(versionTextColor));
+                    renderer->drawString(subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
                 }
             
             #else
@@ -4570,7 +4576,7 @@ namespace tsl {
                 #endif
                 }
                 renderer->drawString(m_title, false, 20, 52, 32, a(defaultOverlayColor));
-                renderer->drawString(m_subtitle, false, 20, y+23, 15, a(versionTextColor));
+                renderer->drawString(m_subtitle, false, 20, y+23, 15, a(bannerVersionTextColor));
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
