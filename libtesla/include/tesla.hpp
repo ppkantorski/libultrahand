@@ -4611,7 +4611,7 @@ namespace tsl {
                 }
 
                 // Calculate next page button dimensions and position
-                if (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty()) {
+                if (!interpreterIsRunningNow && (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty())) {
                     std::string pageText;
                     std::string pageIcon;
                     
@@ -4665,17 +4665,19 @@ namespace tsl {
                     menuBottomLine += "\uE0E5"+ ult::GAP_2 + ult::CANCEL + ult::GAP_1;
                 }
 
-                if (!ult::usePageSwap) {
-                    if (m_menuMode == "packages") {
-                        menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR;
-                    } else if (m_menuMode == "overlays") {
-                        menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::PACKAGES;
-                    }
-                } else {
-                    if (m_menuMode == "packages") {
-                        menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR;
-                    } else if (m_menuMode == "overlays") {
-                        menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::PACKAGES;
+                if (!interpreterIsRunningNow) {
+                    if (!ult::usePageSwap) {
+                        if (m_menuMode == "packages") {
+                            menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR;
+                        } else if (m_menuMode == "overlays") {
+                            menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::PACKAGES;
+                        }
+                    } else {
+                        if (m_menuMode == "packages") {
+                            menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR;
+                        } else if (m_menuMode == "overlays") {
+                            menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::PACKAGES;
+                        }
                     }
                 }
                 
