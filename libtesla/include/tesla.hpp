@@ -6373,7 +6373,7 @@ namespace tsl {
         };
 
 
-        // Forward declare external method to be used in changeTo
+        
 
         /**
          * @brief A item that goes into a list
@@ -6437,9 +6437,11 @@ namespace tsl {
             #endif
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
+                    Color textColor = m_hasCustomTextColor ? m_customTextColor : 
+                        a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor));
+                    
                     renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
-                        a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor)),
-                        a(m_focused ? starColor : selectionStarColor));
+                        textColor, a(m_focused ? starColor : selectionStarColor));
                 } else {
                     drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
                 }
@@ -6511,15 +6513,34 @@ namespace tsl {
                 }
             }
         
-            inline void setValue(const std::string& value, bool faint = false, bool useVersionColor = false) {
+            inline void setValue(const std::string& value, bool faint = false) {
                 if (m_value != value || m_faint != faint) [[likely]] {
                     m_value = value;
                     m_faint = faint;
-                    m_useVersionColor = useVersionColor;
+                    //m_useVersionColor = useVersionColor;
                     m_maxWidth = 0;
                     if (!value.empty()) applyInitialTranslations(true);
                 }
             }
+            
+            inline void setTextColor(Color color) {
+                m_customTextColor = color;
+                m_hasCustomTextColor = true;
+            }
+            
+            inline void setValueColor(Color color) {
+                m_customValueColor = color;
+                m_hasCustomValueColor = true;
+            }
+            
+            inline void clearTextColor() {
+                m_hasCustomTextColor = false;
+            }
+            
+            inline void clearValueColor() {
+                m_hasCustomValueColor = false;
+            }
+
         
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -6568,8 +6589,13 @@ namespace tsl {
             bool m_scroll = false;
             bool m_truncated = false;
             bool m_faint = false;
-            bool m_useVersionColor = false;
+            //bool m_useVersionColor = false;
             bool m_touched = false;
+        
+            bool m_hasCustomTextColor = false;
+            bool m_hasCustomValueColor = false;
+            Color m_customTextColor = {0};
+            Color m_customValueColor = {0};
         
             float m_scrollOffset = 0.0f;
             u32 m_maxWidth = 0;
@@ -6637,16 +6663,23 @@ namespace tsl {
             void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
-                    //renderer->drawString(m_scrollText, false, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23, a(selectedTextColor));
+                    
+                    Color textColor = m_hasCustomTextColor ? m_customTextColor : 
+                        a(useClickTextColor ? clickTextColor : selectedTextColor);
+                    
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        a(useClickTextColor ? clickTextColor : selectedTextColor), a(starColor));
+                        textColor, a(starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
+                    Color textColor = m_hasCustomTextColor ? m_customTextColor : 
+                        a(useClickTextColor ? clickTextColor : defaultTextColor);
+                    
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        a(useClickTextColor ? clickTextColor : defaultTextColor), a(starColor));
+                        textColor, a(starColor));
                 }
             }
+
                     
             void handleScrolling() {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -6766,9 +6799,14 @@ namespace tsl {
             }
         
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
+                // Check for custom value color first
+                if (m_hasCustomValueColor) [[unlikely]] {
+                    return m_customValueColor;
+                }
+                
                 // Fast path for most common cases
                 if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) [[unlikely]] {
-                    return a(m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedTextColor)) :
+                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedTextColor)) :
                         (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
                 }
                 
@@ -6776,18 +6814,18 @@ namespace tsl {
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::COPY_SYMBOL) != std::string::npos)) [[unlikely]] {
-                    return m_faint ? offTextColor : a(inprogressTextColor);
+                    return m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
                 if (m_value == ult::INPROGRESS_SYMBOL) [[unlikely]] {
-                    return m_faint ? offTextColor : a(inprogressTextColor);
+                    return m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
                 if (m_value == ult::CROSSMARK_SYMBOL) [[unlikely]] {
-                    return m_faint ? offTextColor : a(invalidTextColor);
+                    return m_faint ? offTextColor : (invalidTextColor);
                 }
                 
-                return m_useVersionColor ? versionTextColor : (m_faint ? offTextColor : a(onTextColor));
+                return (m_faint ? offTextColor : (onTextColor));
             }
         
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
