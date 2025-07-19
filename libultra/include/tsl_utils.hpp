@@ -101,7 +101,7 @@ namespace ult {
 
     extern std::unordered_map<std::string, std::string> translationCache;
 
-    extern std::unordered_map<u64, OverlayCombo> g_overlayCombos;
+    extern std::unordered_map<u64, OverlayCombo> g_entryCombos;
     extern std::atomic<bool> launchingOverlay;
     extern bool currentForeground;
 

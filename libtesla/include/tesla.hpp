@@ -336,6 +336,8 @@ namespace tsl {
     static size_t separatorAlpha = 15;
     static Color separatorColor = RGB888("404040", separatorAlpha);
 
+    static Color textSeparatorColor = RGB888("404040");
+
     static Color selectedTextColor = RGB888(ult::whiteColor);
     static Color inprogressTextColor = RGB888(ult::whiteColor);
     static Color invalidTextColor = RGB888("FF0000");
@@ -446,6 +448,8 @@ namespace tsl {
             
             separatorAlpha = getAlpha("separator_alpha");
             separatorColor = getColor("separator_color", separatorAlpha);
+
+            textSeparatorColor = getColor("text_separator_color");
             
             selectedTextColor = getColor("selection_text_color");
             inprogressTextColor = getColor("inprogress_text_color");
@@ -847,18 +851,19 @@ namespace tsl {
             return result;
         }
 
-        // Function to load key combo mappings from overlays.ini
-        static void loadOverlayKeyCombos() {
-            ult::g_overlayCombos.clear();
+        // Function to load key combo mappings from both overlays.ini and packages.ini
+        static void loadEntryKeyCombos() {
+            ult::g_entryCombos.clear();
         
-            auto data = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
-            for (auto& [fileName, settings] : data) {
+            // Load overlay combos from overlays.ini
+            auto overlayData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+            for (auto& [fileName, settings] : overlayData) {
                 std::string fullPath = ult::OVERLAY_PATH + fileName;
         
                 // 1) main key_combo
                 if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
                     u64 keys = hlp::comboStringToKeys(it->second);
-                    if (keys) ult::g_overlayCombos[keys] = { fullPath, "" };
+                    if (keys) ult::g_entryCombos[keys] = { fullPath, "" };
                 }
         
                 // 2) per-mode combos
@@ -878,15 +883,27 @@ namespace tsl {
                         u64 keys = hlp::comboStringToKeys(comboStr);
                         if (!keys) continue;
                         // launchArg is the *mode* (i.e. modeList[i])
-                        ult::g_overlayCombos[keys] = { fullPath, modeList[i] };
+                        ult::g_entryCombos[keys] = { fullPath, modeList[i] };
                     }
+                }
+            }
+        
+            // Load package combos from packages.ini
+            auto packageData = ult::getParsedDataFromIniFile(ult::PACKAGES_INI_FILEPATH);
+            for (auto& [packageName, settings] : packageData) {
+                // Only handle main key_combo for packages (no modes for packages)
+                if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
+                    u64 keys = hlp::comboStringToKeys(it->second);
+                    //std::string tmpPackageName = packageName;
+                    //ult::removeQuotes(packageName);
+                    if (keys) ult::g_entryCombos[keys] = { ult::OVERLAY_PATH + "ovlmenu.ovl", "--package " + packageName};
                 }
             }
         }
         
         // Function to check if a key combination matches any overlay key combo
-        static OverlayCombo getOverlayForKeyCombo(u64 keys) {
-            if (auto it = ult::g_overlayCombos.find(keys); it != ult::g_overlayCombos.end())
+        static OverlayCombo getEntryForKeyCombo(u64 keys) {
+            if (auto it = ult::g_entryCombos.find(keys); it != ult::g_entryCombos.end())
                 return it->second;
             return { "", "" };
         }
@@ -2823,7 +2840,7 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15+2-2, 1, 64+2, a(separatorColor));
+                    drawRect(239, 15+2-2, 1, 64+2, (separatorColor));
                     if (!ult::hideWidgetBackdrop) {
                         drawUniformRoundedRect(247, 15+2-2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+2, (widgetBackdropColor));
                     }
@@ -4238,7 +4255,7 @@ namespace tsl {
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, a(bottomTextColor), a(buttonColor));
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 }
                 
                 
@@ -4351,7 +4368,7 @@ namespace tsl {
             int offset, y_offset;
             int fontSize;
             
-            std::string bKeyLabel = ult::BACK;
+            //std::string bKeyLabel = ult::BACK;
             std::string menuBottomLine;
             
         #if IS_LAUNCHER_DIRECTIVE
@@ -4565,14 +4582,14 @@ namespace tsl {
                 }
                 
                 if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, {""}, 20, y+25, 15, (bannerVersionTextColor), separatorColor);
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, {""}, 20, y+25, 15, (bannerVersionTextColor), textSeparatorColor);
                 } else {
                     std::string subtitle = m_subtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
-                    renderer->drawStringWithColoredSections(subtitle, false, {""}, 20, y+23, 15, (bannerVersionTextColor), separatorColor);
+                    renderer->drawStringWithColoredSections(subtitle, false, {""}, 20, y+23, 15, (bannerVersionTextColor), textSeparatorColor);
                 }
             
             #else
@@ -4712,7 +4729,7 @@ namespace tsl {
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
                                                         edgePadding + ult::halfGap, 693, 23, 
-                                                        a(bottomTextColor), a(buttonColor));
+                                                        (bottomTextColor), (buttonColor));
             
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
@@ -4729,7 +4746,7 @@ namespace tsl {
                     lastFps = currentFps;
                 }
                 
-                renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, a(tsl::Color(0xFF, 0xFF, 0xFF, 0xFF)));
+                renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, (tsl::Color(0xFF, 0xFF, 0xFF, 0xFF)));
             #endif
             
                 if (m_contentElement != nullptr)
@@ -4859,7 +4876,7 @@ namespace tsl {
                 }
                 
                 std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
-                renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, buttonStartX, 693, 23, a(bottomTextColor), a(buttonColor));
+                renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 
                 if (this->m_header != nullptr)
                     this->m_header->frame(renderer);
@@ -6684,7 +6701,7 @@ namespace tsl {
                         a(useClickTextColor ? clickTextColor : selectedTextColor);
                     
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        textColor, a(starColor));
+                        textColor, (starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
@@ -6692,7 +6709,7 @@ namespace tsl {
                         a(useClickTextColor ? clickTextColor : defaultTextColor);
                     
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        textColor, a(starColor));
+                        textColor, (starColor));
                 }
             }
 
@@ -7076,8 +7093,8 @@ namespace tsl {
                     static const std::vector<std::string> specialChars = {};
                 #endif
                     renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
-                        a(this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
-                        a(this->m_focused ? starColor : selectionStarColor)
+                        (this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
+                        (this->m_focused ? starColor : selectionStarColor)
                     );
                 }
                 
@@ -7422,10 +7439,10 @@ namespace tsl {
                 if (this->m_hasSeparator) {
                     renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, (headerSeparatorColor));
                     //renderer->drawString(this->m_text, false, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor));
-                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor), separatorColor);
+                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor), textSeparatorColor);
                 } else {
                     //renderer->drawString(this->m_text, false, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor));
-                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor), separatorColor);
+                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor), textSeparatorColor);
                 }
                 //if (this->m_hasSeparator)
                 //    renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, tsl::style::color::ColorFrame); // CUSTOM MODIFICATION
@@ -9896,7 +9913,7 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
-            tsl::hlp::loadOverlayKeyCombos();
+            tsl::hlp::loadEntryKeyCombos();
             ult::launchingOverlay.exchange(false, std::memory_order_acq_rel);
 
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
@@ -10129,7 +10146,7 @@ namespace tsl {
                     else if (shData->keysDown != 0 && ult::useLaunchCombos) {
                         if (shData->keysHeld != tsl::cfg::launchCombo) {
                             // Lookup both path and optional mode launch args
-                            auto comboInfo = tsl::hlp::getOverlayForKeyCombo(shData->keysHeld);
+                            auto comboInfo = tsl::hlp::getEntryForKeyCombo(shData->keysHeld);
                             const std::string& overlayPath = comboInfo.path;
                             const std::string& modeArg = comboInfo.launchArg;
                     
@@ -10155,6 +10172,9 @@ namespace tsl {
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
+                    #else
+                                if (lastOverlayFilename == overlayFileName  && lastOverlayMode == modeArg && lastOverlayMode.find("--package") != std::string::npos) {
+                    #endif
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
                                         ult::ULTRAHAND_PROJECT_NAME,
@@ -10172,31 +10192,42 @@ namespace tsl {
                                     eventFire(&shData->comboEvent);
                                     break;
                                 }
-                    #endif
                                 
                                 // Compose launch args
                                 std::string finalArgs;
                                 if (!modeArg.empty()) {
                                     finalArgs = modeArg;
                                 } else {
-                                    const auto useArgs = ult::parseValueFromIniSection(
-                                        ult::OVERLAYS_INI_FILEPATH,
-                                        overlayFileName,
-                                        ult::USE_LAUNCH_ARGS_STR
-                                    );
-                                    if (useArgs == ult::TRUE_STR) {
-                                        finalArgs = ult::parseValueFromIniSection(
+                                    // Only check overlay-specific launch args for non-ovlmenu entries
+                                    if (overlayFileName != "ovlmenu.ovl") {
+                                        const auto useArgs = ult::parseValueFromIniSection(
                                             ult::OVERLAYS_INI_FILEPATH,
                                             overlayFileName,
-                                            ult::LAUNCH_ARGS_STR
+                                            ult::USE_LAUNCH_ARGS_STR
                                         );
-                                        ult::removeQuotes(finalArgs);
+                                        if (useArgs == ult::TRUE_STR) {
+                                            finalArgs = ult::parseValueFromIniSection(
+                                                ult::OVERLAYS_INI_FILEPATH,
+                                                overlayFileName,
+                                                ult::LAUNCH_ARGS_STR
+                                            );
+                                            ult::removeQuotes(finalArgs);
+                                        }
                                     }
                                 }
                                 if (finalArgs.empty()) {
                                     finalArgs = "--direct";
                                 } else {
                                     finalArgs += " --direct";
+                                }
+
+                                if (overlayFileName == "ovlmenu.ovl") {
+                                    ult::setIniFileValue(
+                                        ult::ULTRAHAND_CONFIG_INI_PATH,
+                                        ult::ULTRAHAND_PROJECT_NAME,
+                                        ult::IN_OVERLAY_STR,
+                                        ult::TRUE_STR
+                                    );
                                 }
                     
                                 shData->overlayOpen = false;
@@ -10418,18 +10449,14 @@ namespace tsl {
     //#endif
 
         if (argc > 0) {
-            //std::string overlayPath = argv[0];
             g_overlayFilename = ult::getNameFromPath(argv[0]);
             lastOverlayFilename = g_overlayFilename;
-
+            
             // Extract mode - find first argument that isn't a flag or flag value
             lastOverlayMode.clear();
             for (u8 arg = 1; arg < argc; arg++) {
                 const char* s = argv[arg];
                 bool skip = false;
-                
-                // Check if this is the path (should already be skipped by starting at 1)
-                if (arg == 0) continue;
                 
                 // Check if this arg is a flag value for --lastTitleID or --foregroundFix
                 if (arg > 1) {
@@ -10441,7 +10468,7 @@ namespace tsl {
                     }
                 }
                 
-                // Check if this is a known flag
+                // Check if this is a known flag (NOTE: --package is NOT in this list)
                 if (!skip && s[0] == '-' && s[1] == '-') {
                     if (strcmp(s, "--direct") == 0 || 
                         strcmp(s, "--skipCombo") == 0 || 
@@ -10452,7 +10479,27 @@ namespace tsl {
                 }
                 
                 if (!skip) {
-                    lastOverlayMode = s;
+                    // Special handling for --package: reconstruct the full package command
+                    if (strcmp(s, "--package") == 0) {
+                        lastOverlayMode = "--package"; // Start with the flag
+                        arg++; // Move to the first package name argument
+                        
+                        if (arg < argc) {
+                            lastOverlayMode += " ";
+                            lastOverlayMode += argv[arg]; // Add first part
+                            arg++;
+                            
+                            // Collect remaining parts until we hit another flag or end
+                            while (arg < argc && argv[arg][0] != '-') {
+                                lastOverlayMode += " ";
+                                lastOverlayMode += argv[arg];
+                                arg++;
+                            }
+                        }
+                    } else {
+                        // Regular mode (not a package)
+                        lastOverlayMode = s;
+                    }
                     break;
                 }
             }

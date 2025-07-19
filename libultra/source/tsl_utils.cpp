@@ -36,7 +36,7 @@ namespace ult {
 
     std::unordered_map<std::string, std::string> translationCache;
     
-    std::unordered_map<u64, OverlayCombo> g_overlayCombos;
+    std::unordered_map<u64, OverlayCombo> g_entryCombos;
     std::atomic<bool> launchingOverlay(false);
     bool currentForeground = false;
 
@@ -1050,6 +1050,7 @@ namespace ult {
         {"bg_color", blackColor},
         {"separator_alpha", "15"},
         {"separator_color", "404040"},
+        {"text_separator_color", "404040"},
         {"text_color", whiteColor},
         {"header_text_color", whiteColor},
         {"header_separator_color", whiteColor},
