@@ -1059,6 +1059,7 @@ namespace ult {
         {"bottom_button_color", whiteColor},
         {"bottom_text_color", whiteColor},
         {"bottom_separator_color", whiteColor},
+        {"top_separator_color", "404040"},
         {"table_bg_color", "2C2C2C"},
         {"table_bg_alpha", "14"},
         {"table_section_text_color", whiteColor},
@@ -1074,12 +1075,14 @@ namespace ult {
         {"trackbar_full_color", "00FFDD"},
         {"trackbar_empty_color", "404040"},
         {"ovl_entry_text_color", whiteColor},
-        {"tsl_ovl_entry_text_color", whiteColor},
+        {"ovl_entry_highlight_text_color", whiteColor},
         {"pkg_entry_text_color", whiteColor},
+        {"pkg_entry_highlight_text_color", whiteColor},
         {"banner_version_text_color", "AAAAAA"},
-        {"ovl_version_text_color", "00FFDD"},
-        {"tsl_ovl_version_text_color", "AAAAAA"},
-        {"pkg_version_text_color", "00FFDD"},
+        {"ovl_version_text_color", "AAAAAA"},
+        {"ovl_version_highlight_text_color", "00FFDD"},
+        {"pkg_version_text_color", "AAAAAA"},
+        {"pkg_version_highlight_text_color", "00FFDD"},
         {"on_text_color", "00FFDD"},
         {"off_text_color", "AAAAAA"},
         {"invalid_text_color", "FF0000"},
@@ -1514,7 +1517,7 @@ namespace ult {
     }
     #endif
     
-    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles;
+    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
     
     std::string loaderInfo = envGetLoaderInfo();
     std::string loaderTitle = extractTitle(loaderInfo);
@@ -1529,6 +1532,7 @@ namespace ult {
         hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
         highlightVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_versions") != FALSE_STR);
         highlightTitles = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_titles") != FALSE_STR);
+        highlightPackages = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_packages") != FALSE_STR);
         //#ifdef APP_VERSION
         //versionLabel = cleanVersionLabel(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";
         //#endif

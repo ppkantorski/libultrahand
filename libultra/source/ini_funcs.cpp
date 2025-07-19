@@ -31,60 +31,82 @@ namespace ult {
      */
     PackageHeader getPackageHeaderFromIni(const std::string& filePath) {
         PackageHeader packageHeader;
-        std::string newLine;
         
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
-            return packageHeader; // Return default-constructed PackageHeader if file opening fails
+            return packageHeader;
         }
         
         char buffer[1024];
         std::string line;
-        
-        std::map<std::string, std::string*> fieldMap;
-        while (fgets(buffer, sizeof(buffer), file)) {
-            line = std::string(buffer);
     #else
         std::ifstream file(filePath);
         if (!file) {
-            return packageHeader; // Return default-constructed PackageHeader if file opening fails
+            return packageHeader;
         }
         
         std::string line;
-        
-
-        std::map<std::string, std::string*> fieldMap;
-        while (getline(file, line)) {
     #endif
     
-            // Map to store references to the fields of the structure
-            fieldMap = {
-                {";title=", &packageHeader.title},
-                {";version=", &packageHeader.version},
-                {";creator=", &packageHeader.creator},
-                {";about=", &packageHeader.about},
-                {";credits=", &packageHeader.credits},
-                {";color=", &packageHeader.color},
-                {";show_version=", &packageHeader.show_version}
-            };
-    
-            size_t startPos, endPos;
+        // Create field map once outside the loop
+        const std::map<std::string_view, std::string*> fieldMap = {
+            {";title=", &packageHeader.title},
+            {";version=", &packageHeader.version},
+            {";creator=", &packageHeader.creator},
+            {";about=", &packageHeader.about},
+            {";credits=", &packageHeader.credits},
+            {";color=", &packageHeader.color},
+            {";show_version=", &packageHeader.show_version},
+            {";show_widget=", &packageHeader.show_widget}
+        };
+        
+        int fieldsFound = 0;
+        const int totalFields = fieldMap.size();
+        
+    #if !USING_FSTREAM_DIRECTIVE
+        while (fgets(buffer, sizeof(buffer), file) && fieldsFound < totalFields) {
+            line = std::string(buffer);
+    #else
+        while (getline(file, line) && fieldsFound < totalFields) {
+    #endif
+            
+            // Skip empty lines and non-comment lines
+            if (line.empty() || line[0] != ';') {
+                continue;
+            }
             
             // Process each prefix in the map
             for (const auto& [prefix, field] : fieldMap) {
-                startPos = line.find(prefix);
-                if (startPos != std::string::npos) {
-                    startPos += prefix.length();
-                    endPos = line.find_first_of(";\r\n", startPos); // Assume ';' or newlines mark the end
+                if (line.compare(0, prefix.length(), prefix) == 0) {
+                    size_t startPos = prefix.length();
+                    size_t endPos = line.find_first_of(";\r\n", startPos);
                     if (endPos == std::string::npos) {
                         endPos = line.length();
                     }
-                    newLine = line.substr(startPos, endPos - startPos);
-                    trim(newLine);
-                    removeQuotes(newLine);
-                    *field = newLine;
-                    break; // Break after processing the first match in a line
+                    
+                    // Extract value directly without intermediate string
+                    std::string value = line.substr(startPos, endPos - startPos);
+                    
+                    // Trim whitespace efficiently
+                    size_t first = value.find_first_not_of(" \t");
+                    if (first == std::string::npos) {
+                        value.clear();
+                    } else {
+                        size_t last = value.find_last_not_of(" \t");
+                        value = value.substr(first, last - first + 1);
+                    }
+                    
+                    // Remove quotes efficiently
+                    if (value.length() >= 2 && 
+                        ((value.front() == '"' && value.back() == '"') ||
+                         (value.front() == '\'' && value.back() == '\''))) {
+                        value = value.substr(1, value.length() - 2);
+                    }
+                    
+                    *field = std::move(value);
+                    fieldsFound++;
+                    break;
                 }
             }
         }

@@ -626,7 +626,7 @@ namespace ult {
     void reinitializeWidgetVars();
     #endif
     
-    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles;
+    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
     
     extern std::string loaderInfo;
     extern std::string loaderTitle;

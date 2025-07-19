@@ -246,7 +246,7 @@ namespace tsl {
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
         constexpr u32 MiniListItemDefaultHeight     = 40;       ///< Mini list item height
-        constexpr u32 TrackBarDefaultHeight         = 84;       ///< Standard track bar height
+        constexpr u32 TrackBarDefaultHeight         = 83;       ///< Standard track bar height
         constexpr u8  ListItemHighlightSaturation   = 7;        ///< Maximum saturation of Listitem highlights
         constexpr u8  ListItemHighlightLength       = 22;       ///< Maximum length of Listitem highlights
         
@@ -283,7 +283,8 @@ namespace tsl {
     static Color selectionStarColor = RGB888(ult::whiteColor);
     static Color buttonColor = RGB888(ult::whiteColor);
     static Color bottomTextColor = RGB888(ult::whiteColor);
-    static Color botttomSeparatorColor = RGB888(ult::whiteColor);
+    static Color bottomSeparatorColor = RGB888(ult::whiteColor);
+    static Color topSeparatorColor = RGB888("404040");
 
     static Color defaultOverlayColor = RGB888(ult::whiteColor);
     static Color defaultPackageColor = RGB888(ult::whiteColor);//RGB888("#00FF00");
@@ -297,13 +298,15 @@ namespace tsl {
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
     static Color overlayEntryTextColor = RGB888(ult::whiteColor);
-    static Color tslOverlayEntryTextColor = RGB888(ult::whiteColor);
+    static Color overlayEntryHighlightTextColor = RGB888(ult::whiteColor);
     static Color packageEntryTextColor = RGB888(ult::whiteColor);
+    static Color packageEntryHighlightTextColor = RGB888(ult::whiteColor);
 
     static Color bannerVersionTextColor = RGB888("AAAAAA");
-    static Color overlayVersionTextColor = RGB888("00FFDD");
-    static Color tslOverlayVersionTextColor = RGB888("AAAAAA");
-    static Color packageVersionTextColor = RGB888("00FFDD");
+    static Color overlayVersionTextColor = RGB888("AAAAAA");
+    static Color overlayVersionHighlightTextColor = RGB888("00FFDD");
+    static Color packageVersionTextColor = RGB888("AAAAAA");
+    static Color packageVersionHighlightTextColor = RGB888("00FFDD");
     static Color onTextColor = RGB888("00FFDD");
     static Color offTextColor = RGB888("AAAAAA");
     
@@ -398,7 +401,8 @@ namespace tsl {
             selectionStarColor = getColor("selection_star_color");
             buttonColor = getColor("bottom_button_color");
             bottomTextColor = getColor("bottom_text_color");
-            botttomSeparatorColor = getColor("bottom_separator_color");
+            bottomSeparatorColor = getColor("bottom_separator_color");
+            topSeparatorColor = getColor("top_separator_color");
             defaultOverlayColor = getColor("default_overlay_color");
             defaultPackageColor = getColor("default_package_color");
             defaultScriptColor = getColor("default_script_color");
@@ -411,14 +415,16 @@ namespace tsl {
             widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
             widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
-            tslOverlayEntryTextColor = getColor("tsl_ovl_entry_text_color");
             overlayEntryTextColor = getColor("ovl_entry_text_color");
+            overlayEntryHighlightTextColor = getColor("ovl_entry_highlight_text_color");
             packageEntryTextColor = getColor("pkg_entry_text_color");
+            packageEntryHighlightTextColor = getColor("pkg_entry_highlight_text_color");
 
             bannerVersionTextColor = getColor("banner_version_text_color");
-            tslOverlayVersionTextColor = getColor("tsl_ovl_version_text_color");
             overlayVersionTextColor = getColor("ovl_version_text_color");
-            packageVersionTextColor = getColor("pkg_version_text_color");
+            overlayVersionHighlightTextColor = getColor("ovl_version_highlight_text_color");
+            packageVersionTextColor =getColor("pkg_version_text_color");
+            packageVersionHighlightTextColor = getColor("pkg_version_highlight_text_color");
             onTextColor = getColor("on_text_color");
             offTextColor = getColor("off_text_color");
             
@@ -2840,7 +2846,7 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15+2-2, 1, 64+2, (separatorColor));
+                    drawRect(239, 15+2-2, 1, 64+2, (topSeparatorColor));
                     if (!ult::hideWidgetBackdrop) {
                         drawUniformRoundedRect(247, 15+2-2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+2, (widgetBackdropColor));
                     }
@@ -4211,7 +4217,7 @@ namespace tsl {
                 renderer->drawString(this->m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
-                    renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+                    renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
                 float buttonStartX;
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
@@ -4355,6 +4361,7 @@ namespace tsl {
             std::string m_colorSelection; // CUSTOM MODIFICATION
             std::string m_pageLeftName; // CUSTOM MODIFICATION
             std::string m_pageRightName; // CUSTOM MODIFICATION
+            bool m_showWidget = false;
         
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
             static constexpr double cycleDuration = 1.6;
@@ -4494,6 +4501,9 @@ namespace tsl {
                     renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, (logoColor2));
                     
                 } else {
+                    if (m_showWidget)
+                        renderer->drawWidget();
+
                     x = 20;
                     y = 52;
                     fontSize = 32;
@@ -4580,16 +4590,16 @@ namespace tsl {
                         skip_normal_draw:;
                     }
                 }
-                
+                static const std::vector<std::string> specialChars2 = {""};
                 if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, {""}, 20, y+25, 15, (bannerVersionTextColor), textSeparatorColor);
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 20, y+25, 15, (bannerVersionTextColor), textSeparatorColor);
                 } else {
                     std::string subtitle = m_subtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
-                    renderer->drawStringWithColoredSections(subtitle, false, {""}, 20, y+23, 15, (bannerVersionTextColor), textSeparatorColor);
+                    renderer->drawStringWithColoredSections(subtitle, false, specialChars2, 20, y+23, 15, (bannerVersionTextColor), textSeparatorColor);
                 }
             
             #else
@@ -4604,7 +4614,7 @@ namespace tsl {
                 renderer->drawString(m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
             #endif
             
-                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
                 auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
@@ -4845,7 +4855,7 @@ namespace tsl {
                 //renderer->fillScreen(tsl::style::color::ColorFrameBackground);
                 renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
                 
-                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(botttomSeparatorColor));
+                renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
                 auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
@@ -5383,7 +5393,7 @@ namespace tsl {
             //static constexpr float dampingFactor = 0.3f;
             static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
             static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
-            static constexpr float BOTTOM_PADDING = 9.0f;
+            static constexpr float BOTTOM_PADDING = 7.0f;
 
             float m_scrollVelocity = 0.0f;
             
@@ -6419,10 +6429,8 @@ namespace tsl {
         
         #if IS_LAUNCHER_DIRECTIVE
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = false)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight)
-        #if IS_LAUNCHER_DIRECTIVE
-                , m_useScriptKey(useScriptKey)
-        #endif
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey)
+            
             {
                 m_isItem = true;
                 applyInitialTranslations();

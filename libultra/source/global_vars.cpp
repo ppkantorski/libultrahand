@@ -67,6 +67,7 @@ namespace ult {
     
     const std::string LAUNCH_ARGS_STR = "launch_args";
     const std::string USE_LAUNCH_ARGS_STR = "use_launch_args";
+    const std::string USE_QUICK_LAUNCH_STR = "use_quick_launch";
     const std::string USE_BOOT_PACKAGE_STR = "use_boot_package";
     const std::string USE_EXIT_PACKAGE_STR = "use_exit_package";
     const std::string USE_LOGGING_STR = "use_logging";

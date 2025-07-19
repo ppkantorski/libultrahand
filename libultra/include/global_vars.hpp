@@ -74,6 +74,7 @@ namespace ult {
     
     extern const std::string LAUNCH_ARGS_STR;
     extern const std::string USE_LAUNCH_ARGS_STR;
+    extern const std::string USE_QUICK_LAUNCH_STR;
     extern const std::string USE_BOOT_PACKAGE_STR;
     extern const std::string USE_EXIT_PACKAGE_STR;
     extern const std::string USE_LOGGING_STR;
