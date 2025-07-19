@@ -1078,7 +1078,7 @@ namespace ult {
         {"banner_version_text_color", "AAAAAA"},
         {"ovl_version_text_color", "00FFDD"},
         {"tsl_ovl_version_text_color", "AAAAAA"},
-        {"pkg_version_text_color", "AAAAAA"},
+        {"pkg_version_text_color", "00FFDD"},
         {"on_text_color", "00FFDD"},
         {"off_text_color", "AAAAAA"},
         {"invalid_text_color", "FF0000"},
@@ -1513,7 +1513,7 @@ namespace ult {
     }
     #endif
     
-    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
+    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles;
     
     std::string loaderInfo = envGetLoaderInfo();
     std::string loaderTitle = extractTitle(loaderInfo);
@@ -1526,9 +1526,11 @@ namespace ult {
         cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
         hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
         hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
-        #ifdef APP_VERSION
-        versionLabel = std::string(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";
-        #endif
+        highlightVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_versions") != FALSE_STR);
+        highlightTitles = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_titles") != FALSE_STR);
+        //#ifdef APP_VERSION
+        //versionLabel = cleanVersionLabel(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";
+        //#endif
         //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
     }
     #endif

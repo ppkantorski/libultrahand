@@ -303,7 +303,7 @@ namespace tsl {
     static Color bannerVersionTextColor = RGB888("AAAAAA");
     static Color overlayVersionTextColor = RGB888("00FFDD");
     static Color tslOverlayVersionTextColor = RGB888("AAAAAA");
-    static Color packageVersionTextColor = RGB888("AAAAAA");
+    static Color packageVersionTextColor = RGB888("00FFDD");
     static Color onTextColor = RGB888("00FFDD");
     static Color offTextColor = RGB888("AAAAAA");
     
@@ -4565,14 +4565,14 @@ namespace tsl {
                 }
                 
                 if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawString(ult::versionLabel, false, 20, y+25, 15, (bannerVersionTextColor));
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, {""}, 20, y+25, 15, (bannerVersionTextColor), separatorColor);
                 } else {
                     std::string subtitle = m_subtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
-                    renderer->drawString(subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
+                    renderer->drawStringWithColoredSections(subtitle, false, {""}, 20, y+23, 15, (bannerVersionTextColor), separatorColor);
                 }
             
             #else
