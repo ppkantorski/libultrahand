@@ -28,60 +28,79 @@ namespace ult {
      */
     json_t* readJsonFromFile(const std::string& filePath) {
     #if !USING_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "rb");  // Open the file in binary mode
+        FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
-            // Optionally log: Failed to open file
             return nullptr;
         }
     
-        // Move to the end of the file to determine its size
+        // Get file size
         fseek(file, 0, SEEK_END);
-        size_t fileSize = ftell(file);
-        fseek(file, 0, SEEK_SET);  // Move back to the start of the file
-    
-        std::string content;
-        content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
-    
-        // Read the file into the string's buffer
-        size_t bytesRead = fread(&content[0], 1, fileSize, file);
-        if (bytesRead != fileSize) {
-            // Optionally log: Failed to read file
-            fclose(file);  // Close the file before returning
+        long fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        
+        // Check for reasonable file size
+        if (fileSize <= 0 || fileSize > 100 * 1024 * 1024) { // 100MB limit
+            fclose(file);
             return nullptr;
         }
     
-        fclose(file);  // Close the file after reading
+        // Allocate buffer with null terminator space
+        std::string content;
+        content.resize(static_cast<size_t>(fileSize));
+    
+        // Read the file
+        size_t bytesRead = fread(&content[0], 1, static_cast<size_t>(fileSize), file);
+        fclose(file);
+        
+        if (bytesRead != static_cast<size_t>(fileSize)) {
+            return nullptr;
+        }
+        
+        // Ensure null termination for cJSON
+        content.resize(bytesRead);
     #else
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open()) {
-            // Optionally log: Failed to open file
             return nullptr;
         }
         
         file.seekg(0, std::ios::end);
-        size_t fileSize = file.tellg();
+        std::streampos fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
         
-        std::string content;
-        content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
-        
-        file.read(&content[0], fileSize);  // Read directly into the string's buffer
-        if (file.fail() && !file.eof()) {
-            // Optionally log: Failed to read file
+        // Check for reasonable file size
+        if (fileSize <= 0 || fileSize > 100 * 1024 * 1024) {
             return nullptr;
         }
         
-        file.close();  // Close the file after reading
+        std::string content;
+        content.resize(static_cast<size_t>(fileSize));
+        
+        file.read(&content[0], static_cast<std::streamsize>(fileSize));
+        
+        // Check how much was actually read
+        std::streamsize actualRead = file.gcount();
+        if (actualRead != fileSize) {
+            return nullptr;
+        }
+        
+        // Resize to actual content size
+        content.resize(static_cast<size_t>(actualRead));
+        file.close();
     #endif
         
         // Parse the JSON content
         cJSON* root = cJSON_Parse(content.c_str());
         if (!root) {
-            // Optionally log: JSON parsing error
+            #if USING_LOGGING_DIRECTIVE
+            const char* error_ptr = cJSON_GetErrorPtr();
+            if (error_ptr) {
+                logMessage("JSON parsing error: " + std::string(error_ptr));
+            }
+            #endif
             return nullptr;
         }
         
-        // Optionally log: JSON file successfully parsed
         return reinterpret_cast<json_t*>(root);
     }
     
@@ -192,58 +211,84 @@ namespace ult {
         } else {
             croot = reinterpret_cast<cJSON*>(root.get());
         }
-
-        // Determine value type and create appropriate JSON value
+    
+        // FIXED: Better value type detection
         cJSON* jsonValue = nullptr;
-        if (value == "true") {
+        
+        // Trim whitespace first
+        std::string trimmedValue = value;
+        // Remove leading whitespace
+        trimmedValue.erase(0, trimmedValue.find_first_not_of(" \t\n\r"));
+        // Remove trailing whitespace  
+        trimmedValue.erase(trimmedValue.find_last_not_of(" \t\n\r") + 1);
+        
+        if (trimmedValue.empty()) {
+            jsonValue = cJSON_CreateString("");
+        } else if (trimmedValue == "true") {
             jsonValue = cJSON_CreateBool(1);
-        } else if (value == "false") {
+        } else if (trimmedValue == "false") {
             jsonValue = cJSON_CreateBool(0);
+        } else if (trimmedValue == "null") {
+            jsonValue = cJSON_CreateNull();
         } else {
-            // Try parsing as integer
-            std::size_t pos = 0;
-            int intValue = ult::stoi(value, &pos, 10);
-            if (pos == value.length() && !value.empty()) {
-                jsonValue = cJSON_CreateNumber(intValue);
+            // Try parsing as number (integer or float)
+            char* endPtr = nullptr;
+            errno = 0;
+            
+            // Try as integer first
+            long longValue = std::strtol(trimmedValue.c_str(), &endPtr, 10);
+            if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
+                // Successfully parsed as integer
+                jsonValue = cJSON_CreateNumber(static_cast<double>(longValue));
             } else {
-                jsonValue = cJSON_CreateString(value.c_str());
+                // Try as float
+                endPtr = nullptr;
+                errno = 0;
+                double doubleValue = std::strtod(trimmedValue.c_str(), &endPtr);
+                if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
+                    // Successfully parsed as float
+                    jsonValue = cJSON_CreateNumber(doubleValue);
+                } else {
+                    // Treat as string
+                    jsonValue = cJSON_CreateString(trimmedValue.c_str());
+                }
             }
         }
-
+    
         if (!jsonValue) {
             return false;
         }
-
+    
         // Delete existing item if it exists
         cJSON_DeleteItemFromObject(croot, key.c_str());
         
         // Add the new value
         cJSON_AddItemToObject(croot, key.c_str(), jsonValue);
-
-        // Save to file
-        char* jsonString = cJSON_PrintUnformatted(croot);
+    
+        // Save to file with formatted output for better readability
+        char* jsonString = cJSON_Print(croot); // Use formatted output instead of PrintUnformatted
         if (!jsonString) {
             return false;
         }
-
+    
         bool success = false;
     #if !USING_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "wb");
+        FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
         if (file) {
-            size_t jsonLength = std::char_traits<char>::length(jsonString);
+            size_t jsonLength = std::strlen(jsonString);
             size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
         }
     #else
-        std::ofstream file(filePath, std::ios::binary);
+        std::ofstream file(filePath); // Use text mode for JSON
         if (file.is_open()) {
             file << jsonString;
             success = !file.fail();
             file.close();
         }
     #endif
-
+    
         cJSON_free(jsonString);
         return success;
     }
@@ -261,7 +306,7 @@ namespace ult {
         std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
         
         if (!root) {
-            return false; // File doesn't exist or couldn't be loaded
+            return false;
         }
         
         cJSON* croot = reinterpret_cast<cJSON*>(root.get());
@@ -269,32 +314,32 @@ namespace ult {
         // Check if old key exists
         cJSON* value = cJSON_GetObjectItemCaseSensitive(croot, oldKey.c_str());
         if (!value) {
-            return false; // Old key doesn't exist
+            return false;
         }
     
-        // Detach the value from the object (this doesn't delete it)
+        // Detach the value from the object
         cJSON_DetachItemFromObject(croot, oldKey.c_str());
         
         // Add it back with the new key
         cJSON_AddItemToObject(croot, newKey.c_str(), value);
     
         // Save to file
-        char* jsonString = cJSON_PrintUnformatted(croot);
+        char* jsonString = cJSON_Print(croot); // Use formatted output
         if (!jsonString) {
             return false;
         }
     
         bool success = false;
     #if !USING_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "wb");
+        FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
         if (file) {
-            size_t jsonLength = std::char_traits<char>::length(jsonString);
+            size_t jsonLength = std::strlen(jsonString);
             size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
         }
     #else
-        std::ofstream file(filePath, std::ios::binary);
+        std::ofstream file(filePath); // Use text mode
         if (file.is_open()) {
             file << jsonString;
             success = !file.fail();

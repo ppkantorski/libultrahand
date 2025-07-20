@@ -39,6 +39,10 @@
 #include "path_funcs.hpp"
 
 namespace ult {
+
+    extern size_t INI_BUFFER_SIZE;
+    extern size_t INI_BUFFER_LARGE;
+
     /**
      * @brief Represents a package header structure.
      *

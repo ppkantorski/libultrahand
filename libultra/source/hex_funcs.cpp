@@ -21,7 +21,7 @@
 #include "hex_funcs.hpp"
 
 namespace ult {
-    size_t HEX_BUFFER_SIZE = 65536;
+    size_t HEX_BUFFER_SIZE = 65536/4;
     
     
     // For improving the speed of hexing consecutively with the same file and asciiPattern.

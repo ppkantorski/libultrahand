@@ -96,6 +96,7 @@ namespace ult {
     const std::string OVERLAYS_STR = "overlays";
     const std::string IN_OVERLAY_STR = "in_overlay";
     const std::string IN_HIDDEN_OVERLAY_STR = "in_hidden_overlay";
+    const std::string IN_HIDDEN_PACKAGE_STR = "in_hidden_package";
     const std::string FILE_STR = "file";
     const std::string SYSTEM_STR = "system";
     const std::string MODE_STR = "mode";

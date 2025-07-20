@@ -104,6 +104,7 @@ namespace ult {
     extern const std::string OVERLAYS_STR;
     extern const std::string IN_OVERLAY_STR;
     extern const std::string IN_HIDDEN_OVERLAY_STR;
+    extern const std::string IN_HIDDEN_PACKAGE_STR;
     extern const std::string FILE_STR;
     extern const std::string SYSTEM_STR;
     extern const std::string MODE_STR;

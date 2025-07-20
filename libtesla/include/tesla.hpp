@@ -160,7 +160,6 @@ inline std::string jumpItemValue;
 inline bool jumpItemExactMatch = true;
 
 
-
 //#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
 //#endif
@@ -3415,6 +3414,9 @@ namespace tsl {
                 this->waitForVSync();
                 framebufferEnd(&this->m_framebuffer);
                 this->m_currentFramebuffer = nullptr;
+                if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                    tsl::gfx::FontManager::clearCache();       // exclusive clear
+                }
             }
 
         //#if IS_STATUS_MONITOR_DIRECTIVE
@@ -6502,7 +6504,8 @@ namespace tsl {
                 }
                 
                 if (keys & KEY_A) [[likely]] {
-                    triggerClickAnimation();
+                    if (m_useClickAnimation)
+                        triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
                 }
@@ -6582,6 +6585,10 @@ namespace tsl {
                 m_hasCustomValueColor = false;
             }
 
+            inline void disableClickAnimation() {
+                m_useClickAnimation = false;
+            }
+
         
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -6637,6 +6644,7 @@ namespace tsl {
             bool m_hasCustomValueColor = false;
             Color m_customTextColor = {0};
             Color m_customValueColor = {0};
+            bool m_useClickAnimation = true;
         
             float m_scrollOffset = 0.0f;
             u32 m_maxWidth = 0;
@@ -9284,9 +9292,6 @@ namespace tsl {
             this->getCurrentGui()->draw(&renderer);
             
             renderer.endFrame();
-            if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
-                tsl::gfx::FontManager::clearCache();       // exclusive clear
-            }
         }
         
         // Calculate transition using ease-in-out curve instead of linear
