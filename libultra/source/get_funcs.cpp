@@ -175,7 +175,6 @@ namespace ult {
     }
     
     
-    
     /**
      * @brief Extracts the name of the parent directory from a given file path at a specified level.
      *
@@ -193,6 +192,7 @@ namespace ult {
         size_t pos = path.rfind('/', endPos);
         if (pos == std::string::npos || pos == 0) return ""; // No parent directory or single slash
     
+        // Navigate up the specified number of levels
         while (level-- > 0 && pos != std::string::npos) {
             endPos = pos - 1;
             pos = path.rfind('/', endPos);
@@ -203,15 +203,26 @@ namespace ult {
         if (start == std::string::npos) start = 0;
         else start += 1; // Move past the slash
     
-        std::string parentDir = path.substr(start, pos - start);
-    
-        // Check for spaces or special characters
-        if (parentDir.find_first_of(" \t\n\r\f\v") != std::string::npos) {
-            // If it does, return the directory name within quotes
-            return "\"" + parentDir + "\"";
+        // Extract directory name and check for whitespace in one pass
+        bool hasWhitespace = false;
+        for (size_t i = start; i < pos; ++i) {
+            char c = path[i];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') {
+                hasWhitespace = true;
+                break;
+            }
         }
     
-        return parentDir;
+        if (hasWhitespace) {
+            // More efficient string building for quoted result
+            std::string result;
+            result = '"';
+            result.append(path, start, pos - start);
+            result += '"';
+            return result;
+        } else {
+            return path.substr(start, pos - start);
+        }
     }
     
     
@@ -280,47 +291,61 @@ namespace ult {
     
     
     /**
-     * @brief Recursively retrieves a list of files from a directory.
+     * @brief Iteratively retrieves a list of files from a directory.
      *
      * @param directoryPath The path of the directory to search.
      * @return A vector of strings containing the paths of the files.
      */
     std::vector<std::string> getFilesListFromDirectory(const std::string& directoryPath) {
         std::vector<std::string> fileList;
-        std::unique_ptr<DIR, DirCloser> dir(opendir(directoryPath.c_str()));
-
-        if (!dir) return fileList;
-
-        struct dirent* entry;
-        while ((entry = readdir(dir.get())) != nullptr) {
-            const std::string entryName = entry->d_name;
+        std::vector<std::string> dirsToProcess;
+        
+        // Initialize with the starting directory
+        dirsToProcess.emplace_back(directoryPath);
+        
+        // Pre-allocate string buffer to avoid repeated allocations
+        std::string fullPath;
+        std::string currentDir;
+        
+        size_t dirIndex = 0;
+        while (dirIndex < dirsToProcess.size()) {
+            currentDir = std::move(dirsToProcess[dirIndex++]);
             
-            if (entryName == "." || entryName == "..") continue;
+            std::unique_ptr<DIR, DirCloser> dir(opendir(currentDir.c_str()));
+            if (!dir) continue;
             
-            const std::string fullPath = directoryPath + "/" + entryName;
+            // Cache directory path info
+            const bool needsSlash = currentDir.back() != '/';
             
-            if (entry->d_type == DT_REG) {
-                // Definitely a regular file
-                fileList.emplace_back(fullPath);
-            } else if (isDirectory(entry, fullPath)) {
-                // Recursively get files from subdirectories
-                auto subDirFiles = getFilesListFromDirectory(fullPath);
-                //fileList.reserve(fileList.size() + subDirFiles.size());
-                fileList.insert(fileList.end(), 
-                              std::make_move_iterator(subDirFiles.begin()),
-                              std::make_move_iterator(subDirFiles.end()));
+            struct dirent* entry;
+            while ((entry = readdir(dir.get())) != nullptr) {
+                const char* entryName = entry->d_name;
+                
+                // Direct comparison without string creation
+                if (entryName[0] == '.' && 
+                    (entryName[1] == '\0' || (entryName[1] == '.' && entryName[2] == '\0'))) {
+                    continue;
+                }
+                
+                // More efficient path building
+                fullPath.clear();
+                fullPath.assign(currentDir);
+                if (needsSlash) fullPath += '/';
+                fullPath += entryName;
+                
+                if (entry->d_type == DT_REG) {
+                    // Definitely a regular file
+                    fileList.emplace_back(fullPath);
+                } else if (isDirectory(entry, fullPath)) {
+                    // Add directory to processing queue
+                    dirsToProcess.emplace_back(fullPath);
+                }
             }
         }
-
+        
         return fileList;
     }
-    
-    // Helper function to check if a path is a directory
-    //bool isDirectoryCached(const struct dirent* entry, const std::string& fullPath) {
-    //    struct stat st;
-    //    if (stat(fullPath.c_str(), &st) != 0) return false;
-    //    return S_ISDIR(st.st_mode);
-    //}
+
     
     // Iterative function to handle wildcard directories and file patterns
     void handleDirectory(const std::string& basePath, 
@@ -333,16 +358,21 @@ namespace ult {
         std::vector<std::pair<std::string, size_t>> stack;
         stack.emplace_back(basePath, partIndex);
         
+        // Pre-declare strings to avoid repeated allocations
         std::string fullPath;
         std::string result;
+        std::string currentPath;
         struct stat st;
         
         bool isDir;
         while (!stack.empty()) {
             if (maxLines > 0 && results.size() >= maxLines) return;
             
-            auto [currentPath, currentPartIndex] = stack.back();
+            auto [pathRef, currentPartIndex] = stack.back();
             stack.pop_back();
+            
+            // Copy once to avoid repeated access
+            currentPath = pathRef;
             
             if (currentPartIndex >= parts.size()) continue;
     
@@ -353,6 +383,9 @@ namespace ult {
             const std::string& pattern = parts[currentPartIndex];
             const bool isLastPart = (currentPartIndex == parts.size() - 1);
             const bool needsSlash = currentPath.back() != '/';
+            
+            // Pre-calculate base path for efficiency
+            //const size_t basePathLen = currentPath.length();
     
             struct dirent* entry;
             while ((entry = readdir(dir.get())) != nullptr) {
@@ -363,23 +396,35 @@ namespace ult {
                 
                 if (fnmatch(pattern.c_str(), name, FNM_NOESCAPE) != 0) continue;
                 
-                
                 if (entry->d_type != DT_UNKNOWN) {
                     isDir = (entry->d_type == DT_DIR);
                 } else {
-                    fullPath = currentPath + (needsSlash ? "/" : "") + name;
+                    // More efficient path building for stat check
+                    fullPath.clear();
+                    fullPath.assign(currentPath);
+                    if (needsSlash) fullPath += '/';
+                    fullPath += name;
                     isDir = (stat(fullPath.c_str(), &st) == 0) && S_ISDIR(st.st_mode);
                 }
                 
                 if (isLastPart) {
                     if (!directoryOnly || isDir) {
-                        result = currentPath + (needsSlash ? "/" : "") + name;
+                        // More efficient result building
+                        result.clear();
+                        result.assign(currentPath);
+                        if (needsSlash) result += '/';
+                        result += name;
                         if (isDir) result += '/';
                         results.emplace_back(std::move(result));
                         if (maxLines > 0 && results.size() >= maxLines) return;
                     }
                 } else if (isDir) {
-                    stack.emplace_back(currentPath + (needsSlash ? "/" : "") + name, currentPartIndex + 1);
+                    // More efficient path building for stack
+                    fullPath.clear();
+                    fullPath.assign(currentPath);
+                    if (needsSlash) fullPath += '/';
+                    fullPath += name;
+                    stack.emplace_back(std::move(fullPath), currentPartIndex + 1);
                 }
             }
         }
@@ -404,20 +449,29 @@ namespace ult {
         
         if (prefixEnd == std::string::npos) return results;
         
+        // More efficient basePath extraction
         const std::string basePath = pathPattern.substr(0, prefixEnd + 2);
         std::vector<std::string> parts;
         
+        // Optimize string parsing to reduce temporary string creation
         size_t start = prefixEnd + 2;
-        size_t pos;
-        while ((pos = pathPattern.find('/', start)) != std::string::npos) {
-            if (pos > start) {
-                parts.emplace_back(pathPattern.substr(start, pos - start));
+        size_t pos = start;
+        const size_t pathLen = pathPattern.length();
+        
+        // Single pass parsing with minimal string creation
+        while (pos <= pathLen) {
+            if (pos == pathLen || pathPattern[pos] == '/') {
+                if (pos > start) {
+                    parts.emplace_back(pathPattern.data() + start, pos - start);
+                }
+                start = pos + 1;
             }
-            start = pos + 1;
+            ++pos;
         }
         
-        if (start < pathPattern.length() && !directoryOnly) {
-            parts.emplace_back(pathPattern.substr(start));
+        // Handle final part for non-directory patterns
+        if (start < pathLen && !directoryOnly) {
+            parts.emplace_back(pathPattern.data() + start, pathLen - start);
         }
         
         if (!parts.empty()) {

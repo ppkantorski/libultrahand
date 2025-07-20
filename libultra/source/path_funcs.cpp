@@ -971,15 +971,15 @@ namespace ult {
         createDirectory(toPath);
     
         std::vector<std::pair<std::string, std::string>> directories;
-        directories.push_back({fromPath, toPath}); // Add initial paths to the vector
+        directories.emplace_back(fromPath, toPath); // Use emplace_back for efficiency
     
         size_t currentDirectoryIndex = 0;
-        std::string filename, toFilePath, toDirPath, currentFromPath, currentToPath;
         
+        // Pre-declare strings to avoid repeated allocations
+        std::string filename, toFilePath, toDirPath, currentFromPath, currentToPath;
+        std::string subFromPath, subToPath;
     
         struct stat fromStat;
-    
-        std::string subFromPath, subToPath;
     
         while (currentDirectoryIndex < directories.size()) {
             if (abortFileOp.load(std::memory_order_acquire)) {
@@ -987,7 +987,10 @@ namespace ult {
                 return;
             }
             
-            std::tie(currentFromPath, currentToPath) = directories[currentDirectoryIndex++]; // Get paths from the vector
+            // Use structured binding more efficiently
+            const auto& [currentFrom, currentTo] = directories[currentDirectoryIndex++];
+            currentFromPath = currentFrom;
+            currentToPath = currentTo;
     
             if (stat(currentFromPath.c_str(), &fromStat) != 0) {
                 #if USING_LOGGING_DIRECTIVE
@@ -999,7 +1002,12 @@ namespace ult {
             if (S_ISREG(fromStat.st_mode)) {
                 // If it's a regular file, copy it to the toPath directory
                 filename = getNameFromPath(currentFromPath);
-                toFilePath = getParentDirFromPath(currentToPath) + "/" + filename;
+                
+                // More efficient path building
+                toFilePath.assign(getParentDirFromPath(currentToPath));
+                toFilePath += '/';
+                toFilePath += filename;
+                
                 createDirectory(getParentDirFromPath(toFilePath)); // Ensure the parent directory exists
                 copySingleFile(currentFromPath, toFilePath, *totalBytesCopied, totalSize, logSource, logDestination);
     
@@ -1016,12 +1024,23 @@ namespace ult {
                     continue;
                 }
     
+                // Cache current path lengths for efficient string building
                 dirent* entry;
                 while ((entry = readdir(dir)) != nullptr) {
                     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-                    subFromPath = currentFromPath + "/" + entry->d_name;
-                    subToPath = currentToPath + "/" + entry->d_name;
-                    directories.push_back({subFromPath, subToPath}); // Add subdirectory to the vector for processing
+                    
+                    // More efficient path building
+                    subFromPath.clear();
+                    subFromPath.assign(currentFromPath);
+                    subFromPath += '/';
+                    subFromPath += entry->d_name;
+                    
+                    subToPath.clear();
+                    subToPath.assign(currentToPath);
+                    subToPath += '/';
+                    subToPath += entry->d_name;
+                    
+                    directories.emplace_back(std::move(subFromPath), std::move(subToPath)); // Use move semantics
                 }
                 closedir(dir);
             }
@@ -1031,6 +1050,8 @@ namespace ult {
             copyPercentage.store(100, std::memory_order_release); // Set progress to 100% on completion of top-level call
         }
     }
+
+
     
     /**
      * @brief Copies files or directories matching a specified pattern to a destination directory.
@@ -1055,6 +1076,8 @@ namespace ult {
         }
         //copyPercentage.store(-1, std::memory_order_release);  // Reset after operation
     }
+
+
     
     /**
      * @brief Mirrors the deletion of files from a source directory to a target directory.

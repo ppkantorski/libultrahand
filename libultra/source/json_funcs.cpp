@@ -44,12 +44,12 @@ namespace ult {
             return nullptr;
         }
     
-        // Allocate buffer with null terminator space
-        std::string content;
-        content.resize(static_cast<size_t>(fileSize));
+        // Use vector<char> for better performance and explicit null termination
+        std::vector<char> buffer;
+        buffer.resize(static_cast<size_t>(fileSize) + 1); // +1 for null terminator
     
-        // Read the file
-        size_t bytesRead = fread(&content[0], 1, static_cast<size_t>(fileSize), file);
+        // Read the file in one operation
+        size_t bytesRead = fread(buffer.data(), 1, static_cast<size_t>(fileSize), file);
         fclose(file);
         
         if (bytesRead != static_cast<size_t>(fileSize)) {
@@ -57,14 +57,15 @@ namespace ult {
         }
         
         // Ensure null termination for cJSON
-        content.resize(bytesRead);
+        buffer[bytesRead] = '\0';
+        
     #else
-        std::ifstream file(filePath, std::ios::binary);
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
             return nullptr;
         }
         
-        file.seekg(0, std::ios::end);
+        // Get file size from current position (end)
         std::streampos fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
         
@@ -73,10 +74,11 @@ namespace ult {
             return nullptr;
         }
         
-        std::string content;
-        content.resize(static_cast<size_t>(fileSize));
+        // Use vector<char> for better performance and explicit null termination
+        std::vector<char> buffer;
+        buffer.resize(static_cast<size_t>(fileSize) + 1); // +1 for null terminator
         
-        file.read(&content[0], static_cast<std::streamsize>(fileSize));
+        file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
         
         // Check how much was actually read
         std::streamsize actualRead = file.gcount();
@@ -84,13 +86,13 @@ namespace ult {
             return nullptr;
         }
         
-        // Resize to actual content size
-        content.resize(static_cast<size_t>(actualRead));
+        // Ensure null termination for cJSON
+        buffer[actualRead] = '\0';
         file.close();
     #endif
         
-        // Parse the JSON content
-        cJSON* root = cJSON_Parse(content.c_str());
+        // Parse the JSON content - pass buffer directly to avoid string copy
+        cJSON* root = cJSON_Parse(buffer.data());
         if (!root) {
             #if USING_LOGGING_DIRECTIVE
             const char* error_ptr = cJSON_GetErrorPtr();

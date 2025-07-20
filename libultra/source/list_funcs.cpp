@@ -82,7 +82,7 @@ namespace ult {
         }
     }
     
-    
+        
     // Function to read file into a vector of strings with optional cap
     std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
@@ -100,17 +100,24 @@ namespace ult {
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         size_t len;
+        
         while (fgets(buffer, BUFFER_SIZE, file)) {
-            // Check cap before adding
+            // Check cap before processing
             if (maxLines > 0 && lines.size() >= maxLines) {
                 break;
             }
             
-            // Remove newline character from the buffer if present
+            // More efficient newline removal
             len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
+                --len;
+                // Also remove carriage return if present
+                if (len > 0 && buffer[len - 1] == '\r') {
+                    buffer[len - 1] = '\0';
+                }
             }
+            
             lines.emplace_back(buffer);
         }
     
@@ -130,7 +137,13 @@ namespace ult {
             if (maxLines > 0 && lines.size() >= maxLines) {
                 break;
             }
-            lines.push_back(std::move(line));
+            
+            // Remove carriage return if present (getline removes \n but not \r)
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            
+            lines.emplace_back(std::move(line));
         }
     
         file.close();
@@ -139,7 +152,7 @@ namespace ult {
         return lines;
     }
     
-    
+        
     // Function to get an entry from the list based on the index
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
@@ -155,28 +168,34 @@ namespace ult {
     
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
-        std::string line;
-
-        size_t len;
-
-        // Read lines until reaching the desired index
-        for (size_t i = 0; i <= listIndex; ++i) {
+    
+        // Skip lines until reaching the desired index
+        for (size_t i = 0; i < listIndex; ++i) {
             if (!fgets(buffer, BUFFER_SIZE, file)) {
                 fclose(file);
                 return ""; // Index out of bounds
             }
-            if (i == listIndex) {
-                line = buffer;
-                // Remove newline character if present
-                len = line.length();
-                if (len > 0 && line[len - 1] == '\n') {
-                    line.pop_back();
-                }
-                break;
+        }
+        
+        // Read the target line
+        if (!fgets(buffer, BUFFER_SIZE, file)) {
+            fclose(file);
+            return ""; // Index out of bounds
+        }
+        
+        fclose(file);
+        
+        // Efficiently remove newline character
+        size_t len = strlen(buffer);
+        if (len > 0 && buffer[len - 1] == '\n') {
+            buffer[len - 1] = '\0';
+            if (len > 1 && buffer[len - 2] == '\r') {
+                buffer[len - 2] = '\0';
             }
         }
+        
+        return std::string(buffer);
     
-        fclose(file);
     #else
         std::ifstream file(listPath);
         if (!file.is_open()) {
@@ -187,19 +206,25 @@ namespace ult {
         }
     
         std::string line;
-        for (size_t i = 0; i <= listIndex; ++i) {
+        
+        // Skip lines until reaching the desired index
+        for (size_t i = 0; i < listIndex; ++i) {
             if (!std::getline(file, line)) {
                 return ""; // Index out of bounds
             }
         }
+        
+        // Read the target line
+        if (!std::getline(file, line)) {
+            return ""; // Index out of bounds
+        }
     
         file.close();
-    #endif
-    
         return line;
+    #endif
     }
-
-
+    
+    
     /**
      * @brief Splits a string into a vector of strings using a delimiter.
      *
@@ -217,16 +242,18 @@ namespace ult {
         
         // Check if the input string starts and ends with '(' and ')' or '[' and ']'
         if ((str.front() == '(' && str.back() == ')') || (str.front() == '[' && str.back() == ']')) {
-            // Remove the parentheses or brackets
-            std::string values = str.substr(1, str.size() - 2);
+            // Work directly with the original string using indices instead of creating substring
+            size_t start = 1; // Skip opening bracket/paren
+            size_t end = 1;
+            const size_t values_end = str.size() - 1; // Skip closing bracket/paren
             
-            size_t start = 0;
-            size_t end = 0;
-            
+            // Pre-declare item string to avoid repeated allocations
             std::string item;
+            
             // Iterate through the string manually to split by commas
-            while ((end = values.find(',', start)) != std::string::npos) {
-                item = values.substr(start, end - start);
+            while ((end = str.find(',', start)) != std::string::npos && end < values_end) {
+                // Extract item directly from original string without creating substring
+                item.assign(str, start, end - start);
                 
                 // Trim leading and trailing spaces
                 trim(item);
@@ -239,8 +266,8 @@ namespace ult {
             }
             
             // Handle the last item after the last comma
-            if (start < values.size()) {
-                item = values.substr(start);
+            if (start < values_end) {
+                item.assign(str, start, values_end - start);
                 trim(item);
                 removeQuotes(item);
                 result.push_back(std::move(item));
