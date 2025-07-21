@@ -223,8 +223,8 @@ namespace ult {
         return line;
     #endif
     }
-    
-    
+
+
     /**
      * @brief Splits a string into a vector of strings using a delimiter.
      *
@@ -394,20 +394,25 @@ namespace ult {
             return;
         }
     
+        // OPTIMIZATION 1: Larger buffer for better I/O performance
         constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
-        size_t len;
+        
         while (fgets(buffer, BUFFER_SIZE, file)) {
-            // Remove newline character, if present
-            len = strlen(buffer);
-            if (len > 0 && buffer[len - 1] == '\n') {
-                buffer[len - 1] = '\0';
+            // OPTIMIZATION 2: Find newline directly instead of strlen()
+            char* newlinePos = strchr(buffer, '\n');
+            if (newlinePos) {
+                *newlinePos = '\0';  // Remove newline in-place
             }
-            callback(buffer);
+            
+            // OPTIMIZATION 3: Pass buffer directly - no string construction overhead
+            callback(std::string(buffer));
         }
     
         fclose(file);
+        
     #else
+        // OPTIMIZATION 4: Use faster I/O for fstream version
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
@@ -415,8 +420,11 @@ namespace ult {
             #endif
             return;
         }
-    
+        
+        // OPTIMIZATION 5: Reserve string capacity to avoid reallocations
         std::string line;
+        line.reserve(256);  // Reasonable default for most lines
+        
         while (std::getline(file, line)) {
             callback(line);
         }
@@ -429,36 +437,27 @@ namespace ult {
         const std::string& txtFilePath,
         const std::string& outputTxtFilePath
     ) {
-        // 1) Find *all* files matching the wildcard (e.g. both ".../Graphics Pack/location_on.txt"
-        //    and ".../Graphics Pack 2/location_on.txt")
+        // STEP 1: Read target file into fast lookup set (only once)
+        std::unordered_set<std::string> targetLines = readSetFromFile(txtFilePath);
+        std::unordered_set<std::string> duplicates;
+        
+        // STEP 2: Get wildcard files
         std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
-    
-        // 2) Read every matching file's *contents* into one big set of strings,
-        //    but first skip any entry that is exactly the same as txtFilePath.
-        std::unordered_set<std::string> allWildcardLines;
-        std::unordered_set<std::string> thisFileLines;
-
-        for (const auto& singlePath : wildcardFiles) {
-            // Skip the case where the wildcard match is literally the same path we're comparing to:
-            if (singlePath == txtFilePath) {
-                continue;
-            }
-    
-            // readSetFromFile loads every line of 'singlePath' into a set
-            thisFileLines = readSetFromFile(singlePath);
-            allWildcardLines.insert(thisFileLines.begin(), thisFileLines.end());
+        
+        // STEP 3: Process each wildcard file line-by-line (minimum memory)
+        for (const auto& filePath : wildcardFiles) {
+            if (filePath == txtFilePath) continue;
+            
+            // Process line-by-line without loading entire file into memory
+            processFileLines(filePath, [&](const std::string& line) {
+                // O(1) lookup + O(1) insert if duplicate found
+                if (targetLines.count(line)) {
+                    duplicates.insert(line);
+                }
+            });
         }
-    
-        // 3) Read the second file (txtFilePath) line by line, checking if each line also
-        //    exists in allWildcardLines.
-        std::unordered_set<std::string> duplicateLines;
-        processFileLines(txtFilePath, [&](const std::string& entry) {
-            if (allWildcardLines.find(entry) != allWildcardLines.end()) {
-                duplicateLines.insert(entry);
-            }
-        });
-    
-        // 4) Write any "duplicate" lines to outputTxtFilePath
-        writeSetToFile(duplicateLines, outputTxtFilePath);
+        
+        // STEP 4: Write results
+        writeSetToFile(duplicates, outputTxtFilePath);
     }
 }

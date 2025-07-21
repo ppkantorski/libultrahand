@@ -150,6 +150,12 @@ namespace ult {
     // Function to interpolate between two durations
     //std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t);
     
+#if IS_LAUNCHER_DIRECTIVE
+    extern std::atomic<bool> overlayLaunchRequested;
+    extern std::string requestedOverlayPath;
+    extern std::string requestedOverlayArgs;
+    extern std::mutex overlayLaunchMutex;
+#endif
     
     
     //#include <filesystem> // Comment out filesystem

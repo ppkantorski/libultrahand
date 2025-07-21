@@ -205,84 +205,202 @@ namespace ult {
         std::vector<std::string> offsets;
     
     #if !USING_FSTREAM_DIRECTIVE
-        // Open the file for reading in binary mode
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
-            return offsets; // Return empty vector if file cannot be opened
+            return offsets;
         }
     
-        // Get the file size
         fseek(file, 0, SEEK_END);
         size_t fileSize = ftell(file);
         fseek(file, 0, SEEK_SET);
     
-        // Convert the hex data string to binary data
         std::vector<unsigned char> binaryData;
         if (hexData.length() % 2 != 0) {
             fclose(file);
-            return offsets; // Ensure hexData has an even length
+            return offsets;
         }
-
-        std::string byteString;
-        for (size_t i = 0; i < hexData.length(); i += 2) {
-            byteString = hexData.substr(i, 2);
-            binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
+        
+        // ULTRA-FAST hex conversion with lookup table
+        static const unsigned char hexTable[256] = {
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,
+            0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+        };
+        
+        size_t hexLen = hexData.length();
+        binaryData.resize(hexLen / 2);
+        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
+        
+        // Unrolled hex conversion loop
+        size_t i = 0;
+        for (; i + 4 <= hexLen; i += 4) {
+            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
+            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
+        }
+        // Handle remaining bytes
+        for (; i < hexLen; i += 2) {
+            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
         }
     
-        // Read the file in chunks to find the offsets where the hex data is located
+        // Optimized search variables
+        const unsigned char* patternPtr = binaryData.data();
+        const size_t patternLen = binaryData.size();
+        const unsigned char firstByte = patternPtr[0];
+        
         std::vector<unsigned char> buffer(HEX_BUFFER_SIZE);
         size_t bytesRead = 0;
         size_t offset = 0;
-    
+        
+
         while ((bytesRead = fread(buffer.data(), 1, HEX_BUFFER_SIZE, file)) > 0) {
-            for (size_t i = 0; i < bytesRead; ++i) {
-                if (offset + i + binaryData.size() <= fileSize && 
-                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
-                    offsets.push_back(ult::to_string(offset + i));
+            const unsigned char* bufPtr = buffer.data();
+            
+            // Optimized search with first-byte filtering and loop unrolling
+            i = 0;
+            const size_t searchEnd = bytesRead;
+            
+            // Process 4 bytes at a time for better cache usage
+            for (; i + 4 <= searchEnd; i += 4) {
+                // Check 4 positions at once
+                if (bufPtr[i] == firstByte) {
+                    if (offset + i + patternLen <= fileSize && 
+                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i));
+                    }
+                }
+                if (bufPtr[i + 1] == firstByte) {
+                    if (offset + i + 1 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 1, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 1));
+                    }
+                }
+                if (bufPtr[i + 2] == firstByte) {
+                    if (offset + i + 2 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 2, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 2));
+                    }
+                }
+                if (bufPtr[i + 3] == firstByte) {
+                    if (offset + i + 3 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 3, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 3));
+                    }
                 }
             }
+            
+            // Handle remaining bytes
+            for (; i < searchEnd; ++i) {
+                if (bufPtr[i] == firstByte) {
+                    if (offset + i + patternLen <= fileSize && 
+                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i));
+                    }
+                }
+            }
+            
             offset += bytesRead;
         }
     
         fclose(file);
+        
     #else
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open()) {
-            return offsets; // Return empty vector if file cannot be opened
+            return offsets;
         }
     
-        // Get the file size
         file.seekg(0, std::ios::end);
         size_t fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
     
-        // Convert the hex data string to binary data
         std::vector<unsigned char> binaryData;
         if (hexData.length() % 2 != 0) {
             file.close();
-            return offsets; // Ensure hexData has an even length
+            return offsets;
         }
         
-        std::string byteString;
-
-        for (size_t i = 0; i < hexData.length(); i += 2) {
-            byteString = hexData.substr(i, 2);
-            binaryData.push_back(static_cast<unsigned char>(ult::stoi(byteString, nullptr, 16)));
+        // Same ultra-fast hex conversion
+        static const unsigned char hexTable[256] = {
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,
+            0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+        };
+        
+        size_t hexLen = hexData.length();
+        binaryData.resize(hexLen / 2);
+        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
+        
+        size_t i = 0;
+        for (; i + 4 <= hexLen; i += 4) {
+            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
+            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
+        }
+        for (; i < hexLen; i += 2) {
+            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
         }
     
-        // Read the file in chunks to find the offsets where the hex data is located
+        const unsigned char* patternPtr = binaryData.data();
+        const size_t patternLen = binaryData.size();
+        const unsigned char firstByte = patternPtr[0];
+        
         std::vector<unsigned char> buffer(HEX_BUFFER_SIZE);
         size_t bytesRead = 0;
         size_t offset = 0;
     
-        while (file.read(reinterpret_cast<char*>(buffer.data()), HEX_BUFFER_SIZE)) {
+        while (file.read(reinterpret_cast<char*>(buffer.data()), HEX_BUFFER_SIZE) || file.gcount() > 0) {
             bytesRead = file.gcount();
-            for (size_t i = 0; i < bytesRead; ++i) {
-                if (offset + i + binaryData.size() <= fileSize && 
-                    std::memcmp(buffer.data() + i, binaryData.data(), binaryData.size()) == 0) {
-                    offsets.push_back(ult::to_string(offset + i));
+            const unsigned char* bufPtr = buffer.data();
+            
+            // Same optimized search as FILE* version
+            i = 0;
+            const size_t searchEnd = bytesRead;
+            
+            for (; i + 4 <= searchEnd; i += 4) {
+                if (bufPtr[i] == firstByte) {
+                    if (offset + i + patternLen <= fileSize && 
+                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i));
+                    }
+                }
+                if (bufPtr[i + 1] == firstByte) {
+                    if (offset + i + 1 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 1, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 1));
+                    }
+                }
+                if (bufPtr[i + 2] == firstByte) {
+                    if (offset + i + 2 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 2, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 2));
+                    }
+                }
+                if (bufPtr[i + 3] == firstByte) {
+                    if (offset + i + 3 + patternLen <= fileSize && 
+                        memcmp(bufPtr + i + 3, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i + 3));
+                    }
                 }
             }
+            
+            for (; i < searchEnd; ++i) {
+                if (bufPtr[i] == firstByte) {
+                    if (offset + i + patternLen <= fileSize && 
+                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                        offsets.emplace_back(ult::to_string(offset + i));
+                    }
+                }
+            }
+            
             offset += bytesRead;
         }
     
@@ -519,8 +637,8 @@ namespace ult {
         if (cachedResult != hexSumCache.end()) {
             hexSum = ult::stoi(cachedResult->second);
         } else {
-            std::string customHexPattern = asciiToHex(customAsciiPattern); // Function should cache its results if expensive
-            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern); // Consider optimizing this search
+            std::string customHexPattern = asciiToHex(customAsciiPattern);
+            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
     
             if (!offsets.empty() && offsets.size() > occurrence) {
                 hexSum = ult::stoi(offsets[occurrence]);
@@ -538,7 +656,6 @@ namespace ult {
         std::vector<char> hexStream(length * 2);
     
     #if !USING_FSTREAM_DIRECTIVE
-        // Open the file for reading in binary mode
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -547,7 +664,6 @@ namespace ult {
             return "";
         }
     
-        // Move to the total offset
         if (fseek(file, totalOffset, SEEK_SET) != 0) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error seeking to offset.");
@@ -556,10 +672,10 @@ namespace ult {
             return "";
         }
     
-        // Read the data into hexBuffer
         size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
         if (bytesRead == length) {
-            const char hexDigits[] = "0123456789ABCDEF";
+            // ONLY OPTIMIZATION: Use static array instead of creating new array each time
+            static const char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
@@ -574,7 +690,6 @@ namespace ult {
     
         fclose(file);
     #else
-        // Open the file for reading in binary mode
         std::ifstream file(filePath, std::ios::binary);
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -583,7 +698,6 @@ namespace ult {
             return "";
         }
     
-        // Move to the total offset
         file.seekg(totalOffset);
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -592,10 +706,10 @@ namespace ult {
             return "";
         }
     
-        // Read the data into hexBuffer
         file.read(hexBuffer.data(), length);
         if (file.gcount() == static_cast<std::streamsize>(length)) {
-            const char hexDigits[] = "0123456789ABCDEF";
+            // ONLY OPTIMIZATION: Use static array instead of creating new array each time
+            static const char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
@@ -611,7 +725,6 @@ namespace ult {
     #endif
     
         std::string result(hexStream.begin(), hexStream.end());
-        //std::transform(result.begin(), result.end(), result.begin(), ::toupper);
         result = stringToUppercase(result);
     
         return result;

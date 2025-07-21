@@ -1980,7 +1980,7 @@ namespace tsl {
                 
                 // Launch threads
                 std::vector<std::thread> threads;
-                threads.reserve(ult::numThreads);
+                //threads.reserve(ult::numThreads);
                 
                 for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
                     threads.emplace_back(threadTask);
@@ -10152,6 +10152,49 @@ namespace tsl {
                         ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
+                    }
+                    else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                        std::string requestedPath, requestedArgs;
+                        
+                        // Get the request data safely
+                        {
+                            std::lock_guard<std::mutex> lock(ult::overlayLaunchMutex);
+                            requestedPath = ult::requestedOverlayPath;
+                            requestedArgs = ult::requestedOverlayArgs;
+                            ult::overlayLaunchRequested.store(false, std::memory_order_release);
+                        }
+                        
+                        if (!requestedPath.empty()) {
+                            const std::string overlayFileName = ult::getNameFromPath(requestedPath);
+                            
+                            // Set overlay state for ovlmenu.ovl
+                            //if (overlayFileName == "ovlmenu.ovl") {
+                            //    ult::setIniFileValue(
+                            //        ult::ULTRAHAND_CONFIG_INI_PATH,
+                            //        ult::ULTRAHAND_PROJECT_NAME,
+                            //        ult::IN_OVERLAY_STR,
+                            //        ult::TRUE_STR
+                            //    );
+                            //}
+                            ult::setIniFileValue(
+                                ult::ULTRAHAND_CONFIG_INI_PATH,
+                                ult::ULTRAHAND_PROJECT_NAME,
+                                ult::IN_OVERLAY_STR,
+                                ult::TRUE_STR
+                            );
+                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::TRUE_STR);
+                            // Reset navigation state variables (these control slide navigation)
+                            ult::allowSlide.exchange(false, std::memory_order_acq_rel);
+                            ult::unlockedSlide.exchange(false, std::memory_order_acq_rel);
+                            
+                            // Launch the overlay using the same mechanism as key combos
+                            shData->overlayOpen = false;
+                            ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                            tsl::setNextOverlay(requestedPath, requestedArgs);
+                            tsl::Overlay::get()->close();
+                            eventFire(&shData->comboEvent);
+                            break;
+                        }
                     }
                 #endif
                     // Check overlay key combos (only when overlay is not open, keys are pressed, and not conflicting with main combos)

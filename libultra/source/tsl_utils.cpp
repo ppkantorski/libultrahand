@@ -216,7 +216,12 @@ namespace ult {
     bool usePageSwap = false;
     bool noClickableItems = false;
     
-
+    #if IS_LAUNCHER_DIRECTIVE
+    std::atomic<bool> overlayLaunchRequested{false};
+    std::string requestedOverlayPath;
+    std::string requestedOverlayArgs;
+    std::mutex overlayLaunchMutex;
+    #endif
 
     // Define the duration boundaries (for smooth scrolling)
     //const std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval

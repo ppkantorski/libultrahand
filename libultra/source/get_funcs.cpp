@@ -102,13 +102,16 @@ namespace ult {
      * @param fileName The name of the file.
      * @return The destination path as a string.
      */
-    std::string getDestinationPath(const std::string& destinationDir,
-                                   const std::string& fileName)
-    {
-        // e.g. "foo/bar" + "/" + "baz.txt"  → "foo/bar/baz.txt", but if destinationDir ended in '/',
-        // you’d get "foo/bar//baz.txt" → collapse again:
-        std::string combined = destinationDir + "/" + fileName;
-        preprocessPath(combined);
+    std::string getDestinationPath(const std::string& destinationDir, const std::string& fileName) {
+        // OPTIMIZATION: Pre-allocate and build efficiently
+        std::string combined;
+        combined.reserve(destinationDir.length() + fileName.length() + 1);
+        
+        combined = destinationDir;
+        combined += '/';
+        combined += fileName;
+        
+        preprocessPath(combined, ""); // Empty packagePath
         return combined;
     }
     
@@ -119,18 +122,33 @@ namespace ult {
      * @return The extracted value as a string. If no value is found, an empty string is returned.
      */
     std::string getValueFromLine(const std::string& line) {
-        // Find the position of '=' character from the end of the string
         size_t equalsPos = line.rfind('=');
-        if (equalsPos != std::string::npos && equalsPos + 1 < line.size()) {
-            // Directly return the trimmed substring after '='
-            std::string newLine = line.substr(equalsPos + 1);
-            trim(newLine);
-            return newLine;
+        if (equalsPos == std::string::npos || equalsPos + 1 >= line.size()) {
+            return "";
         }
-        return ""; // Return an empty string if '=' is not found or no content after '='
+        
+        // OPTIMIZATION: Find trim boundaries directly - no temporary string
+        size_t start = equalsPos + 1;
+        size_t end = line.size() - 1;
+        
+        // Skip leading whitespace
+        while (start <= end && (line[start] == ' ' || line[start] == '\t' || 
+               line[start] == '\n' || line[start] == '\r' || 
+               line[start] == '\f' || line[start] == '\v')) {
+            ++start;
+        }
+        
+        // Skip trailing whitespace
+        while (end >= start && (line[end] == ' ' || line[end] == '\t' || 
+               line[end] == '\n' || line[end] == '\r' || 
+               line[end] == '\f' || line[end] == '\v')) {
+            --end;
+        }
+        
+        // Return trimmed substring directly
+        return (start <= end) ? line.substr(start, end - start + 1) : "";
     }
-    
-    
+        
     
     /**
      * @brief Extracts the name from a file path, including handling directories.
@@ -165,13 +183,8 @@ namespace ult {
      * @return The file name extracted from the full path.
      */
     std::string getFileName(const std::string& path) {
-        // Find the last slash in the path
-        size_t pos = path.find_last_of("/");
-        if (pos != std::string::npos) {
-            // Return the substring after the last slash
-            return path.substr(pos + 1);
-        }
-        return "";
+        size_t pos = path.find_last_of('/');
+        return (pos != std::string::npos) ? path.substr(pos + 1) : "";
     }
     
     
@@ -187,37 +200,33 @@ namespace ult {
     
         // Start from the end of the string and move backwards to find the slashes
         size_t endPos = path.find_last_not_of('/');
-        if (endPos == std::string::npos) return ""; // All slashes or empty path
+        if (endPos == std::string::npos) return "";
     
         size_t pos = path.rfind('/', endPos);
-        if (pos == std::string::npos || pos == 0) return ""; // No parent directory or single slash
+        if (pos == std::string::npos || pos == 0) return "";
     
         // Navigate up the specified number of levels
         while (level-- > 0 && pos != std::string::npos) {
             endPos = pos - 1;
             pos = path.rfind('/', endPos);
-            if (pos == std::string::npos || pos == 0) return ""; // No more directories to go up
+            if (pos == std::string::npos || pos == 0) return "";
         }
     
         size_t start = path.rfind('/', pos - 1);
         if (start == std::string::npos) start = 0;
-        else start += 1; // Move past the slash
+        else start += 1;
     
-        // Extract directory name and check for whitespace in one pass
-        bool hasWhitespace = false;
-        for (size_t i = start; i < pos; ++i) {
-            char c = path[i];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') {
-                hasWhitespace = true;
-                break;
-            }
-        }
+        // OPTIMIZATION 1: Use find_first_of instead of manual loop - much faster
+        bool hasWhitespace = (path.find_first_of(" \t\n\r\f\v", start, pos - start) != std::string::npos);
     
         if (hasWhitespace) {
-            // More efficient string building for quoted result
+            // OPTIMIZATION 2: Pre-allocate exact size and build efficiently
+            size_t dirNameLen = pos - start;
             std::string result;
+            result.reserve(dirNameLen + 2);  // +2 for quotes
+            
             result = '"';
-            result.append(path, start, pos - start);
+            result.append(path, start, dirNameLen);
             result += '"';
             return result;
         } else {
@@ -362,6 +371,10 @@ namespace ult {
         std::string fullPath;
         std::string result;
         std::string currentPath;
+        fullPath.reserve(512);
+        result.reserve(512);  
+        currentPath.reserve(512);
+
         struct stat st;
         
         bool isDir;
