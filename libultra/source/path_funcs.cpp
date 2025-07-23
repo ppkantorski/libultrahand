@@ -122,7 +122,8 @@ namespace ult {
         // Iterate through the path and create each directory level if it doesn't exist
         while ((nextPos = path.find('/', pos)) != std::string::npos) {
             if (nextPos != pos) {
-                parentPath += path.substr(pos, nextPos - pos) + "/";
+                parentPath.append(path, pos, nextPos - pos);
+                parentPath += '/';
                 createSingleDirectory(parentPath); // Create the parent directory
             }
             pos = nextPos + 1;

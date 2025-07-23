@@ -862,12 +862,15 @@ namespace tsl {
         
             // Load overlay combos from overlays.ini
             auto overlayData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+            std::string fullPath;
+            u64 keys;
+
             for (auto& [fileName, settings] : overlayData) {
-                std::string fullPath = ult::OVERLAY_PATH + fileName;
+                fullPath = ult::OVERLAY_PATH + fileName;
         
                 // 1) main key_combo
                 if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
-                    u64 keys = hlp::comboStringToKeys(it->second);
+                    keys = hlp::comboStringToKeys(it->second);
                     if (keys) ult::g_entryCombos[keys] = { fullPath, "" };
                 }
         
@@ -885,7 +888,7 @@ namespace tsl {
                     for (size_t i = 0; i < modeList.size(); ++i) {
                         const std::string& comboStr = comboList[i];
                         if (comboStr.empty()) continue;
-                        u64 keys = hlp::comboStringToKeys(comboStr);
+                        keys = hlp::comboStringToKeys(comboStr);
                         if (!keys) continue;
                         // launchArg is the *mode* (i.e. modeList[i])
                         ult::g_entryCombos[keys] = { fullPath, modeList[i] };
@@ -898,7 +901,7 @@ namespace tsl {
             for (auto& [packageName, settings] : packageData) {
                 // Only handle main key_combo for packages (no modes for packages)
                 if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
-                    u64 keys = hlp::comboStringToKeys(it->second);
+                    keys = hlp::comboStringToKeys(it->second);
                     //std::string tmpPackageName = packageName;
                     //ult::removeQuotes(packageName);
                     if (keys) ult::g_entryCombos[keys] = { ult::OVERLAY_PATH + "ovlmenu.ovl", "--package " + packageName};
@@ -1018,16 +1021,17 @@ namespace tsl {
             
             // Changed from unique_ptr to shared_ptr
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
+            inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_persistentGlyphCache;
             
             // Font metrics cache
             inline static std::unordered_map<u64, FontMetrics> s_fontMetricsCache;
             
-            inline static u64 s_lastClearTimeNs = 0;
-            inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
+            //inline static u64 s_lastClearTimeNs = 0;
+            //inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
         
             // Add cache size limits
-            static constexpr size_t MAX_CACHE_SIZE = 10000;
-            static constexpr size_t CLEANUP_THRESHOLD = 8000;
+            static constexpr size_t MAX_CACHE_SIZE = 600;
+            static constexpr size_t CLEANUP_THRESHOLD = 500;
             
             // font handles & state
             inline static stbtt_fontinfo* s_stdFont     = nullptr;
@@ -1066,8 +1070,56 @@ namespace tsl {
                     it = s_sharedGlyphCache.erase(it);
                 }
             }
+
+
             
         public:
+            // NEW: Preload and persist specific characters
+            static void preloadPersistentGlyphs(const std::string& characters, u32 fontSize, bool monospace = false) {
+                std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
+            
+                if (!s_initialized) return;
+            
+                // Convert UTF-8 string to UTF-32 codepoints
+                #pragma GCC diagnostic push
+                #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+                
+                std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
+                std::u32string codepoints = converter.from_bytes(characters);
+                
+                #pragma GCC diagnostic pop
+                
+                s32 yAdvance;
+                for (char32_t character : codepoints) {
+                    const u64 key = generateCacheKey(character, monospace, fontSize);
+            
+                    if (s_persistentGlyphCache.find(key) != s_persistentGlyphCache.end()) {
+                        continue;
+                    }
+            
+                    auto glyph = std::make_shared<Glyph>();
+                    glyph->currFont = selectFontForCharacterUnsafe(character);
+                    if (!glyph->currFont) continue;
+            
+                    glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
+            
+                    stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character,
+                                                        glyph->currFontSize, glyph->currFontSize, 0, 0,
+                                                        &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
+            
+                    yAdvance = 0;
+                    stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character,
+                                              &glyph->xAdvance, &yAdvance);
+            
+                    glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont,
+                                                               glyph->currFontSize, glyph->currFontSize, character,
+                                                               &glyph->width, &glyph->height, nullptr, nullptr);
+            
+                    s_persistentGlyphCache[key] = glyph;
+                }
+            }
+        
+
             static void initializeFonts(stbtt_fontinfo* stdFont, stbtt_fontinfo* localFont, 
                                       stbtt_fontinfo* extFont, bool hasLocalFont) {
                 std::lock_guard<std::mutex> initLock(s_initMutex);
@@ -1134,15 +1186,22 @@ namespace tsl {
             static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 const u64 key = generateCacheKey(character, monospace, fontSize);
                 
-                // First, try to find existing glyph with shared lock
+                // First, try to find in both caches with shared lock
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
                     
                     if (!s_initialized) return nullptr;
                     
+                    // Check persistent cache first
+                    auto persistentIt = s_persistentGlyphCache.find(key);
+                    if (persistentIt != s_persistentGlyphCache.end()) {
+                        return persistentIt->second;
+                    }
+                    
+                    // Check regular cache
                     auto it = s_sharedGlyphCache.find(key);
                     if (it != s_sharedGlyphCache.end()) {
-                        return it->second;  // Return shared_ptr directly
+                        return it->second;
                     }
                 }
                 
@@ -1151,10 +1210,15 @@ namespace tsl {
                 
                 if (!s_initialized) return nullptr;
                 
-                // Double-check pattern
+                // Double-check pattern for both caches
+                auto persistentIt = s_persistentGlyphCache.find(key);
+                if (persistentIt != s_persistentGlyphCache.end()) {
+                    return persistentIt->second;
+                }
+                
                 auto it = s_sharedGlyphCache.find(key);
                 if (it != s_sharedGlyphCache.end()) {
-                    return it->second;  // Return shared_ptr directly
+                    return it->second;
                 }
                 
                 // Check cache size and cleanup if needed
@@ -1162,7 +1226,7 @@ namespace tsl {
                     cleanupOldEntries();
                 }
                 
-                // Create new glyph using make_shared
+                // Create new glyph
                 auto glyph = std::make_shared<Glyph>();
                 glyph->currFont = selectFontForCharacterUnsafe(character);
                 if (!glyph->currFont) {
@@ -1183,9 +1247,10 @@ namespace tsl {
                     glyph->currFontSize, glyph->currFontSize, character, 
                     &glyph->width, &glyph->height, nullptr, nullptr);
                 
+                // Store in regular cache (not persistent)
                 s_sharedGlyphCache[key] = glyph;
                 
-                return glyph;  // Return shared_ptr
+                return glyph;
             }
             
             static void clearCache() {
@@ -1195,12 +1260,20 @@ namespace tsl {
                 s_sharedGlyphCache.clear();
                 s_fontMetricsCache.clear(); // Also clear font metrics cache
             }
+
+            static void clearAllCaches() {
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                s_sharedGlyphCache.clear();
+                s_persistentGlyphCache.clear();
+                s_fontMetricsCache.clear();
+            }
             
             static void cleanup() {
                 std::lock_guard<std::mutex> initLock(s_initMutex);
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 
                 s_sharedGlyphCache.clear();
+                s_persistentGlyphCache.clear();
                 s_fontMetricsCache.clear();
                 s_initialized = false;
                 s_stdFont = nullptr;
@@ -1223,17 +1296,33 @@ namespace tsl {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_initialized;
             }
+
+            static size_t getPersistentCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_persistentGlyphCache.size();
+            }
             
             // Add memory usage monitoring
             static size_t getMemoryUsage() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 size_t totalMemory = 0;
+                
+                // Regular cache
                 for (const auto& pair : s_sharedGlyphCache) {
                     const auto& glyph = pair.second;
                     if (glyph && glyph->glyphBmp) {
-                        totalMemory += glyph->width * glyph->height; // Approximate bitmap size
+                        totalMemory += glyph->width * glyph->height;
                     }
                 }
+                
+                // Persistent cache
+                for (const auto& pair : s_persistentGlyphCache) {
+                    const auto& glyph = pair.second;
+                    if (glyph && glyph->glyphBmp) {
+                        totalMemory += glyph->width * glyph->height;
+                    }
+                }
+                
                 return totalMemory;
             }
             
@@ -1251,14 +1340,14 @@ namespace tsl {
         };
         
         // Static member definitions
-       //std::shared_mutex FontManager::s_cacheMutex;
-       //std::mutex FontManager::s_initMutex;
-       //std::unordered_map<u64, std::unique_ptr<FontManager::Glyph>> FontManager::s_sharedGlyphCache;
-       //stbtt_fontinfo* FontManager::s_stdFont = nullptr;
-       //stbtt_fontinfo* FontManager::s_localFont = nullptr;
-       //stbtt_fontinfo* FontManager::s_extFont = nullptr;
-       //bool FontManager::s_hasLocalFont = false;
-       //bool FontManager::s_initialized = false;
+        //std::shared_mutex FontManager::s_cacheMutex;
+        //std::mutex FontManager::s_initMutex;
+        //std::unordered_map<u64, std::unique_ptr<FontManager::Glyph>> FontManager::s_sharedGlyphCache;
+        //stbtt_fontinfo* FontManager::s_stdFont = nullptr;
+        //stbtt_fontinfo* FontManager::s_localFont = nullptr;
+        //stbtt_fontinfo* FontManager::s_extFont = nullptr;
+        //bool FontManager::s_hasLocalFont = false;
+        //bool FontManager::s_initialized = false;
         
         // Updated thread-safe calculateStringWidth function
         static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace = false) {
@@ -3419,61 +3508,6 @@ namespace tsl {
                 }
             }
 
-        //#if IS_STATUS_MONITOR_DIRECTIVE
-        //    /**
-        //     * @brief Draws a single font glyph
-        //     * 
-        //     * @param codepoint Unicode codepoint to draw
-        //     * @param x X pos
-        //     * @param y Y pos
-        //     * @param color Color
-        //     * @param font STB Font to use
-        //     * @param fontSize Font size
-        //     */
-        //    
-        //    inline void drawGlyph(s32 codepoint, s32 x, s32 y, Color color, stbtt_fontinfo *font, float fontSize) {
-        //        int width = 10, height = 10;
-        //        u8* glyphBmp = nullptr;
-        //        if (fontCache) {
-        //            auto pair = std::make_pair(codepoint, fontSize);
-        //            auto found = cache.find(pair);
-        //            if (found != cache.end()) {
-        //                glyphBmp = found->second.pointer;
-        //                width = found->second.width;
-        //                height = found->second.height;
-        //            }
-        //            else {
-        //                glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
-        //                if (glyphBmp) cache[pair] = GlyphInfo{glyphBmp, width, height};
-        //            }
-        //        }
-        //        else {
-        //            glyphBmp = stbtt_GetCodepointBitmap(font, fontSize, fontSize, codepoint, &width, &height, nullptr, nullptr);
-        //        }
-        //        
-        //        if (glyphBmp == nullptr)
-        //            return;
-        //        
-        //        // Pre-calculate constants outside loops
-        //        const float colorAFloat = float(color.a) / 15.0f;  // Divide by 15, not 0xF
-        //        const u8* bmpPtr = glyphBmp;  // Cache pointer for faster access
-        //        
-        //        Color tmpColor = {0};
-        //        // Single loop with pointer arithmetic
-        //        for (s32 bmpY = 0; bmpY < height; bmpY++) {
-        //            const s32 pixelY = y + bmpY;
-        //            for (s32 bmpX = 0; bmpX < width; bmpX++) {
-        //                const u8 alpha = *bmpPtr++;  // Direct pointer increment
-        //                if (alpha) {  // Skip transparent pixels
-        //                    tmpColor = color;
-        //                    tmpColor.a = (alpha >> 4) * colorAFloat;
-        //                    this->setPixelBlendSrc(x + bmpX, pixelY, tmpColor);
-        //                }
-        //            }
-        //        }
-        //        if (!fontCache) std::free(glyphBmp);
-        //    }
-        //#endif
         };
 
         static std::pair<int, int> getUnderscanPixels() {
@@ -5069,7 +5103,7 @@ namespace tsl {
                     //s_skipCaching.exchange(false, std::memory_order_acq_rel);
                 }
 
-                if (skipOnce && skipDeconstruction) {
+                if (m_cachingDisabled || (skipOnce && skipDeconstruction)) {
                     purgePendingItems();
                     clearItems();
                 } else if (skipDeconstruction) {
@@ -5174,7 +5208,7 @@ namespace tsl {
                     s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
                 }
                 
-                if (s_cacheForwardFrameOnce.load(std::memory_order_acquire) && !s_hasValidFrame.load(std::memory_order_acquire)) {
+                if (!m_cachingDisabled && s_cacheForwardFrameOnce.load(std::memory_order_acquire) && !s_hasValidFrame.load(std::memory_order_acquire)) {
                     cacheCurrentFrame(true);
                     s_cacheForwardFrameOnce.exchange(false, std::memory_order_acq_rel);
                     s_isForwardCache.exchange(true, std::memory_order_acq_rel);
@@ -5185,8 +5219,8 @@ namespace tsl {
                 //if (s_hasValidFrame.load(std::memory_order_acquire)) {
                 
                 //}
-
-                cacheCurrentScrollbar();
+                if (!m_cachingDisabled)
+                    cacheCurrentScrollbar();
                 s_safeToSwap.exchange(true, std::memory_order_acq_rel);
                 //svcSleepThread(300'000'000); // for testing
             }
@@ -5349,6 +5383,10 @@ namespace tsl {
                 m_stoppedAtBoundary = false;
                 m_lastNavigationTime = 0;
             }
+
+            inline void disableCaching() {
+                m_cachingDisabled = true;
+            }
         
         protected:
 
@@ -5381,6 +5419,7 @@ namespace tsl {
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
             bool m_hasForwardCached = false;
+            bool m_cachingDisabled = false;  // New flag to disable caching
             //bool m_hasRenderedCache = false;
 
             // Stack variables for hot path - reused to avoid allocations
@@ -5440,7 +5479,7 @@ namespace tsl {
                 }
                 
                 s_lastFrameItems.clear();
-                s_lastFrameItems.shrink_to_fit();
+                //s_lastFrameItems.shrink_to_fit();
 
                 // CRITICAL: Always reset these, even for forward cache!
                 s_hasValidFrame.exchange(false, std::memory_order_acq_rel);  // This MUST be false after clearing
@@ -5462,7 +5501,7 @@ namespace tsl {
                     for (Element* el : s_lastFrameItems) delete el;
                 }
                 s_lastFrameItems.clear();
-                s_lastFrameItems.shrink_to_fit();
+                //s_lastFrameItems.shrink_to_fit();
                 s_lastFrameItems = m_items;
             
                 s_cachedTopBound    = getTopBound();
@@ -5523,7 +5562,7 @@ namespace tsl {
 
                 for (Element* item : m_items) delete item;
                 m_items.clear();
-                m_items.shrink_to_fit();
+                //m_items.shrink_to_fit();
                 m_offset = 0;
                 m_focusedIndex = 0;
                 invalidate();
@@ -5541,7 +5580,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToAdd.clear();
-                m_itemsToAdd.shrink_to_fit();
+                //m_itemsToAdd.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5560,7 +5599,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToRemove.clear();
-                m_itemsToRemove.shrink_to_fit();
+                //m_itemsToRemove.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5571,7 +5610,7 @@ namespace tsl {
                     if (element) { element->invalidate(); delete element; }
                 }
                 m_itemsToAdd.clear();
-                m_itemsToAdd.shrink_to_fit();
+                //m_itemsToAdd.shrink_to_fit();
             
                 for (Element* element : m_itemsToRemove) {
                     auto it = std::find(m_items.begin(), m_items.end(), element);
@@ -5589,7 +5628,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToRemove.clear();
-                m_itemsToRemove.shrink_to_fit();
+                //m_itemsToRemove.shrink_to_fit();
             
                 invalidate();
                 updateScrollOffset();
@@ -10494,7 +10533,7 @@ namespace tsl {
                 delete el;
             }
             tsl::elm::s_lastFrameItems.clear();
-            tsl::elm::s_lastFrameItems.shrink_to_fit();
+            //tsl::elm::s_lastFrameItems.shrink_to_fit();
         }
 
 

@@ -102,16 +102,13 @@ namespace ult {
      * @param fileName The name of the file.
      * @return The destination path as a string.
      */
-    std::string getDestinationPath(const std::string& destinationDir, const std::string& fileName) {
-        // OPTIMIZATION: Pre-allocate and build efficiently
-        std::string combined;
-        combined.reserve(destinationDir.length() + fileName.length() + 1);
-        
-        combined = destinationDir;
-        combined += '/';
-        combined += fileName;
-        
-        preprocessPath(combined, ""); // Empty packagePath
+    std::string getDestinationPath(const std::string& destinationDir,
+                                   const std::string& fileName)
+    {
+        // e.g. "foo/bar" + "/" + "baz.txt"  → "foo/bar/baz.txt", but if destinationDir ended in '/',
+        // you’d get "foo/bar//baz.txt" → collapse again:
+        std::string combined = destinationDir + "/" + fileName;
+        preprocessPath(combined);
         return combined;
     }
     
@@ -371,9 +368,9 @@ namespace ult {
         std::string fullPath;
         std::string result;
         std::string currentPath;
-        fullPath.reserve(512);
-        result.reserve(512);  
-        currentPath.reserve(512);
+        //fullPath.reserve(512);
+        //result.reserve(512);  
+        //currentPath.reserve(512);
 
         struct stat st;
         

@@ -574,6 +574,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         destination += '/';
     }
     
+    int newProgress;;
+
     // Extract files
     result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK && success) {
@@ -615,7 +617,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         
         // Build extraction path - reuse allocated strings
         fileName.assign(filename, nameLen);
-        extractedFilePath.clear();
+        //extractedFilePath.clear();
         extractedFilePath = destination;
         extractedFilePath += fileName;
         
@@ -668,6 +670,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         extractSuccess = true;
         fileBytesProcessed = 0;
         
+        
         while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
             if (abortUnzip.load(std::memory_order_relaxed)) {
                 extractSuccess = false;
@@ -685,19 +688,21 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             totalBytesProcessed += bytesRead;
             
             // FIXED: Allow progress to reach 100% naturally during processing
-            int newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
-            if (newProgress > currentProgress && newProgress <= 100) {
-                currentProgress = newProgress;
-                unzipPercentage.store(currentProgress, std::memory_order_release);
-                
-                #if USING_LOGGING_DIRECTIVE
-                // Only log at 10% intervals to avoid spam
-                if (currentProgress % 10 == 0) {
-                    logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
-                              std::to_string(totalBytesProcessed) + "/" + 
-                              std::to_string(totalUncompressedSize) + " bytes)");
+            if (totalUncompressedSize > 0) {
+                newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+                if (newProgress > currentProgress && newProgress <= 100) {
+                    currentProgress = newProgress;
+                    unzipPercentage.store(currentProgress, std::memory_order_release);
+                    
+                    #if USING_LOGGING_DIRECTIVE
+                    // Only log at 10% intervals to avoid spam
+                    if (currentProgress % 10 == 0) {
+                        logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
+                                  std::to_string(totalBytesProcessed) + "/" + 
+                                  std::to_string(totalUncompressedSize) + " bytes)");
+                    }
+                    #endif
                 }
-                #endif
             }
         }
 
@@ -707,16 +712,18 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             totalBytesProcessed += 1;
             
             // Update progress for 0-byte files
-            int newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
-            if (newProgress > currentProgress && newProgress <= 100) {
-                currentProgress = newProgress;
-                unzipPercentage.store(currentProgress, std::memory_order_release);
-                
-                #if USING_LOGGING_DIRECTIVE
-                if (currentProgress % 10 == 0) {
-                    logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
+            if (totalUncompressedSize > 0) {
+                newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+                if (newProgress > currentProgress && newProgress <= 100) {
+                    currentProgress = newProgress;
+                    unzipPercentage.store(currentProgress, std::memory_order_release);
+                    
+                    #if USING_LOGGING_DIRECTIVE
+                    if (currentProgress % 10 == 0) {
+                        logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
+                    }
+                    #endif
                 }
-                #endif
             }
         }
 
