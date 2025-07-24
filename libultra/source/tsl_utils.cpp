@@ -1548,8 +1548,8 @@ namespace ult {
     
     // Number of renderer threads to use
     const unsigned numThreads = expandedMemory ? 4 : 0;
-    std::vector<std::thread> threads(numThreads);
-    s32 bmpChunkSize = (numThreads > 0) ? ((720 + numThreads - 1) / numThreads) : 0;
+    std::vector<std::thread> renderThreads(numThreads);
+    const s32 bmpChunkSize = (numThreads > 0) ? ((720 + numThreads - 1) / numThreads) : 0;
     std::atomic<s32> currentRow;
     
     //std::atomic<unsigned int> barrierCounter{0};

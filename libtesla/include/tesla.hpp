@@ -2069,15 +2069,13 @@ namespace tsl {
                     }
                 };
                 
-                // Launch threads
-                std::vector<std::thread> threads;
-                //threads.reserve(ult::numThreads);
-                
+                // Launch threads using ult::renderThreads array (same pattern as drawBitmapRGBA4444)
                 for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
-                    threads.emplace_back(threadTask);
+                    ult::renderThreads[i] = std::thread(threadTask);
                 }
                 
-                for (auto& t : threads) {
+                // Join all ult::renderThreads
+                for (auto& t : ult::renderThreads) {
                     t.join();
                 }
             }
@@ -2366,18 +2364,18 @@ namespace tsl {
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
                 s32 startRow;
 
-                // Divide rows among ult::threads
+                // Divide rows among ult::renderThreads
                 //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
                     startRow = i * ult::bmpChunkSize;
                     //s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
                     
                     // Bind the member function and create the thread
-                    ult::threads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
+                    ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
                 }
             
-                // Join all ult::threads
-                for (auto& t : ult::threads) {
+                // Join all ult::renderThreads
+                for (auto& t : ult::renderThreads) {
                     t.join();
                 }
             }
@@ -9887,7 +9885,7 @@ namespace tsl {
         static const char* ULTRAHAND_CONFIG_FILE = "/config/ultrahand/config.ini"; // CUSTOM MODIFICATION
         
         /**
-         * @brief Data shared between the different ult::threads
+         * @brief Data shared between the different ult::renderThreads
          *
          */
         struct SharedThreadData {

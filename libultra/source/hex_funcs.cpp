@@ -826,7 +826,7 @@ namespace ult {
             return ""; // Return empty string if file cannot be opened
         }
     
-        std::streamsize size = file.tellg();
+        const std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
     
         std::vector<uint8_t> buffer(size);

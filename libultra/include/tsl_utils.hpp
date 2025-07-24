@@ -647,8 +647,8 @@ namespace ult {
     
     // Number of renderer threads to use
     extern const unsigned numThreads;
-    extern std::vector<std::thread> threads;
-    extern s32 bmpChunkSize;
+    extern std::vector<std::thread> renderThreads;
+    extern const s32 bmpChunkSize;
     extern std::atomic<s32> currentRow;
     
     

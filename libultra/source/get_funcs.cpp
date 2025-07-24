@@ -198,7 +198,7 @@ namespace ult {
         // Start from the end of the string and move backwards to find the slashes
         size_t endPos = path.find_last_not_of('/');
         if (endPos == std::string::npos) return "";
-    
+        
         size_t pos = path.rfind('/', endPos);
         if (pos == std::string::npos || pos == 0) return "";
     
@@ -218,7 +218,7 @@ namespace ult {
     
         if (hasWhitespace) {
             // OPTIMIZATION 2: Pre-allocate exact size and build efficiently
-            size_t dirNameLen = pos - start;
+            const size_t dirNameLen = pos - start;
             std::string result;
             result.reserve(dirNameLen + 2);  // +2 for quotes
             
@@ -240,7 +240,7 @@ namespace ult {
      * @return The parent directory path.
      */
     std::string getParentDirFromPath(const std::string& path) {
-        size_t lastSlash = path.find_last_of('/');
+        const size_t lastSlash = path.find_last_of('/');
         if (lastSlash != std::string::npos) {
             return  path.substr(0, lastSlash + 1);
         }
