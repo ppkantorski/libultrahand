@@ -1656,6 +1656,76 @@ namespace tsl {
             }
 
             /**
+             * @brief Worker function for multithreaded rectangle drawing
+             * @param x_start Start X coordinate
+             * @param x_end End X coordinate  
+             * @param y_start Start Y coordinate for this thread
+             * @param y_end End Y coordinate for this thread
+             * @param color Color to draw
+             */
+            inline void processRectChunk(const s32 x_start, const s32 x_end, const s32 y_start, const s32 y_end, const Color& color) {
+                for (s32 yi = y_start; yi < y_end; ++yi) {
+                    for (s32 xi = x_start; xi < x_end; ++xi) {
+                        this->setPixelBlendDst(xi, yi, color);
+                    }
+                }
+            }
+        
+
+            /**
+             * @brief Draws a rectangle of given sizes (Multi-threaded)
+             *
+             * @param x X pos
+             * @param y Y pos
+             * @param w Width
+             * @param h Height
+             * @param color Color
+             */
+            inline void drawRectMultiThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
+                // Early exit for invalid dimensions
+                if (w <= 0 || h <= 0) return;
+                
+                // Calculate clipped bounds
+                const s32 x_start = x < 0 ? 0 : x;
+                const s32 y_start = y < 0 ? 0 : y;
+                const s32 x_end = (x + w > cfg::FramebufferWidth) ? cfg::FramebufferWidth : x + w;
+                const s32 y_end = (y + h > cfg::FramebufferHeight) ? cfg::FramebufferHeight : y + h;
+                
+                // Early exit if completely outside bounds
+                if (x_start >= x_end || y_start >= y_end) return;
+                
+                // Calculate visible dimensions
+                const s32 visibleHeight = y_end - y_start;
+                
+                // Calculate chunk size - divide rows among threads
+                const s32 chunkSize = std::max(1, visibleHeight / static_cast<s32>(ult::numThreads));
+                
+                // Launch threads using ult::renderThreads array
+                for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
+                    const s32 startRow = y_start + (i * chunkSize);
+                    const s32 endRow = (i == static_cast<unsigned>(ult::numThreads) - 1) ? 
+                                      y_end : 
+                                      std::min(startRow + chunkSize, y_end);
+                    
+                    // Skip threads that have no work
+                    if (startRow >= endRow) {
+                        ult::renderThreads[i] = std::thread([](){}); // Empty thread (still needed for joining)
+                        continue;
+                    }
+                    
+                    // Use member function instead of lambda - much faster
+                    ult::renderThreads[i] = std::thread(&Renderer::processRectChunk, this, 
+                                                       x_start, x_end, startRow, endRow, color);
+                }
+                
+                // Join all ult::renderThreads
+                for (auto& t : ult::renderThreads) {
+                    t.join();
+                }
+            }
+
+
+            /**
              * @brief Draws a rectangle of given sizes with empty filling
              * 
              * @param x X pos 
@@ -2044,14 +2114,14 @@ namespace tsl {
                 if (clampedX >= clampedXEnd || clampedY >= clampedYEnd) return;
                 
                 // Calculate visible dimensions
-                const s32 visibleWidth = clampedXEnd - clampedX;
+                //const s32 visibleWidth = clampedXEnd - clampedX;
                 const s32 visibleHeight = clampedYEnd - clampedY;
                 
                 // For small rectangles, use single-threaded version
-                if (visibleWidth * visibleHeight < 1000) {
-                    drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
-                    return;
-                }
+                //if (visibleWidth * visibleHeight < 1000) {
+                //    drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
+                //    return;
+                //}
                 
                 // Pre-calculate values for processRoundedRectChunk
                 const s32 r2 = radius * radius;
@@ -3733,8 +3803,12 @@ namespace tsl {
             virtual void drawClickAnimation(gfx::Renderer *renderer) {
                 if (!m_isItem)
                     return;
-                if (!disableSelectionBG)
-                    renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                if (!disableSelectionBG) {
+                    if (ult::expandedMemory)
+                        renderer->drawRectMultiThreaded(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                    else
+                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor));
+                }
             
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
             
@@ -3745,7 +3819,10 @@ namespace tsl {
                 } else {
                     animColor = {saturation, saturation, saturation, saturation};
                 }
-                renderer->drawRect(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
+                if (ult::expandedMemory)
+                    renderer->drawRectMultiThreaded(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
+                else
+                    renderer->drawRect(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
             
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
@@ -3911,8 +3988,12 @@ namespace tsl {
                 }
                 
                 if (this->m_clickAnimationProgress == 0) {
-                    if (!disableSelectionBG)
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                    if (!disableSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                        else
+                            renderer->drawRect(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor));
+                    }
             
                     #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
@@ -3926,7 +4007,10 @@ namespace tsl {
                     //}
                     const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
-                        renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                        else
+                            renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
                     }
                     #endif
             
@@ -6513,7 +6597,10 @@ namespace tsl {
                 const bool useClickTextColor = m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
                 if (useClickTextColor) [[unlikely]] {
-                    renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
+                    if (ult::expandedMemory)
+                        renderer->drawRectMultiThreaded(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
+                    else
+                        renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
                 }
         
                 const s32 yOffset = (tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1; // Bit shift for division by 2
@@ -10070,8 +10157,9 @@ namespace tsl {
             //std::string overlayLaunchArgs;
         //#endif
             std::string currentTitleID;
-            u64 nowTick, resetElapsedNs;
-            u64 elapsedNs;
+            //u64 resetElapsedNs;
+            //u64 nowTick;
+            //u64 elapsedNs;
 
             static u64 lastPollTick = 0;
             static u64 resetStartTick = armGetSystemTick();
@@ -10082,12 +10170,12 @@ namespace tsl {
                 runOnce = false;
             }
 
-            u64 elapsedTime_ns;
+            //u64 elapsedTime_ns;
 
             while (shData->running) {
             
-                nowTick = armGetSystemTick();
-                elapsedNs = armTicksToNs(nowTick - lastPollTick);
+                const u64 nowTick = armGetSystemTick();
+                const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
 
                 // Poll Title ID every 1 seconds
                 if (!ult::resetForegroundCheck && elapsedNs >= 1'000'000'000ULL) {
@@ -10110,7 +10198,7 @@ namespace tsl {
             
                 // If a reset is scheduled, trigger after 3.5s delay
                 if (ult::resetForegroundCheck) {
-                    resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
+                    const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
                     if (resetElapsedNs >= 3'500'000'000ULL) {
                         if (shData->overlayOpen && ult::currentForeground) {
                             hlp::requestForeground(true, false);
@@ -10143,7 +10231,7 @@ namespace tsl {
                             ult::internalTouchReleased.exchange(false, std::memory_order_acq_rel);
                         }
                         
-                        elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
+                        const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
                         
                         // Check if the touch is within bounds for left-to-right swipe within the time window
                         if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {

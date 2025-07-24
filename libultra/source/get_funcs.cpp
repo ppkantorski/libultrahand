@@ -220,7 +220,7 @@ namespace ult {
             // OPTIMIZATION 2: Pre-allocate exact size and build efficiently
             const size_t dirNameLen = pos - start;
             std::string result;
-            result.reserve(dirNameLen + 2);  // +2 for quotes
+            //result.reserve(dirNameLen + 2);  // +2 for quotes
             
             result = '"';
             result.append(path, start, dirNameLen);
