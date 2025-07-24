@@ -39,7 +39,7 @@ namespace ult {
         fseek(file, 0, SEEK_SET);
         
         // Check for reasonable file size
-        if (fileSize <= 0 || fileSize > 100 * 1024 * 1024) { // 100MB limit
+        if (fileSize <= 0 || fileSize > 6 * 1024 * 1024) { // 6MB limit
             fclose(file);
             return nullptr;
         }
@@ -70,7 +70,7 @@ namespace ult {
         file.seekg(0, std::ios::beg);
         
         // Check for reasonable file size
-        if (fileSize <= 0 || fileSize > 100 * 1024 * 1024) {
+        if (fileSize <= 0 || fileSize > 6 * 1024 * 1024) {
             return nullptr;
         }
         
@@ -238,7 +238,7 @@ namespace ult {
             errno = 0;
             
             // Try as integer first
-            long longValue = std::strtol(trimmedValue.c_str(), &endPtr, 10);
+            const long longValue = std::strtol(trimmedValue.c_str(), &endPtr, 10);
             if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
                 // Successfully parsed as integer
                 jsonValue = cJSON_CreateNumber(static_cast<double>(longValue));
@@ -246,7 +246,7 @@ namespace ult {
                 // Try as float
                 endPtr = nullptr;
                 errno = 0;
-                double doubleValue = std::strtod(trimmedValue.c_str(), &endPtr);
+                const double doubleValue = std::strtod(trimmedValue.c_str(), &endPtr);
                 if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
                     // Successfully parsed as float
                     jsonValue = cJSON_CreateNumber(doubleValue);
@@ -277,8 +277,8 @@ namespace ult {
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
         if (file) {
-            size_t jsonLength = std::strlen(jsonString);
-            size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+            const size_t jsonLength = std::strlen(jsonString);
+            const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
         }
@@ -335,8 +335,8 @@ namespace ult {
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
         if (file) {
-            size_t jsonLength = std::strlen(jsonString);
-            size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+            const size_t jsonLength = std::strlen(jsonString);
+            const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
             success = (bytesWritten == jsonLength);
             fclose(file);
         }

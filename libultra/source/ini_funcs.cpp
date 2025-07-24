@@ -1267,7 +1267,7 @@ namespace ult {
             return;
         }
     
-        std::string tempPath = filePath + ".tmp";
+        const std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1360,7 +1360,7 @@ namespace ult {
             return;
         }
     
-        std::string tempPath = filePath + ".tmp";
+        const std::string tempPath = filePath + ".tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1457,7 +1457,7 @@ namespace ult {
             return;
         }
     
-        std::string tempPath = filePath + ".tmp";
+        const std::string tempPath = filePath + ".tmp";
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE

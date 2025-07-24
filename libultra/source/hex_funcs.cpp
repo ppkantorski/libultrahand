@@ -315,7 +315,7 @@ namespace ult {
         }
     
         file.seekg(0, std::ios::end);
-        size_t fileSize = file.tellg();
+        const size_t fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
     
         std::vector<unsigned char> binaryData;
@@ -637,8 +637,8 @@ namespace ult {
         if (cachedResult != hexSumCache.end()) {
             hexSum = ult::stoi(cachedResult->second);
         } else {
-            std::string customHexPattern = asciiToHex(customAsciiPattern);
-            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
+            const std::string customHexPattern = asciiToHex(customAsciiPattern);
+            const std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
     
             if (!offsets.empty() && offsets.size() > occurrence) {
                 hexSum = ult::stoi(offsets[occurrence]);
@@ -808,7 +808,7 @@ namespace ult {
     
         // Get the file size
         fseek(file, 0, SEEK_END);
-        std::streamsize size = ftell(file);
+        const std::streamsize size = ftell(file);
         fseek(file, 0, SEEK_SET);
     
         // Read the entire file into a buffer
