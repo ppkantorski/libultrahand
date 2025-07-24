@@ -61,7 +61,7 @@ namespace ult {
      * @return Hex string of exactly 'byteGroupSize' digits, or empty string if value doesn't fit.
      */
     std::string decimalToHex(const std::string& decimalStr, int byteGroupSize) {
-        int decimalValue = ult::stoi(decimalStr);
+        const int decimalValue = ult::stoi(decimalStr);
         if (decimalValue < 0 || byteGroupSize <= 0 || (byteGroupSize % 2) != 0) {
             // Invalid input: negative number, or byteGroupSize <= 0, or odd byteGroupSize
             return "";
@@ -90,7 +90,7 @@ namespace ult {
         }
     
         // Minimum size needed to fit hex string
-        size_t hexLen = hex.length();
+        const size_t hexLen = hex.length();
     
         // Adjust minimum byteGroupSize to be at least hexLen
         size_t minByteGroupSize = std::max(static_cast<size_t>(byteGroupSize), hexLen);
@@ -125,7 +125,7 @@ namespace ult {
     std::string hexToDecimal(const std::string& hexStr) {
         // Convert hexadecimal string to integer
         int decimalValue = 0;
-        size_t len = hexStr.length();
+        const size_t len = hexStr.length();
         
         char hexChar;
         int value;
@@ -211,7 +211,7 @@ namespace ult {
         }
     
         fseek(file, 0, SEEK_END);
-        size_t fileSize = ftell(file);
+        const size_t fileSize = ftell(file);
         fseek(file, 0, SEEK_SET);
     
         std::vector<unsigned char> binaryData;
@@ -232,7 +232,7 @@ namespace ult {
             0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
         };
         
-        size_t hexLen = hexData.length();
+        const size_t hexLen = hexData.length();
         binaryData.resize(hexLen / 2);
         const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
         
@@ -336,7 +336,7 @@ namespace ult {
             0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
         };
         
-        size_t hexLen = hexData.length();
+        const size_t hexLen = hexData.length();
         binaryData.resize(hexLen / 2);
         const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
         
@@ -423,7 +423,7 @@ namespace ult {
      * @param hexData The hexadecimal data to replace at the offset.
      */
     void hexEditByOffset(const std::string& filePath, const std::string& offsetStr, const std::string& hexData) {
-        std::streampos offset = std::stoll(offsetStr);
+        const std::streampos offset = std::stoll(offsetStr);
     
     #if !USING_FSTREAM_DIRECTIVE
         // Open the file for both reading and writing in binary mode
@@ -437,7 +437,7 @@ namespace ult {
     
         // Retrieve the file size
         fseek(file, 0, SEEK_END);
-        std::streampos fileSize = ftell(file);
+        const std::streampos fileSize = ftell(file);
         fseek(file, 0, SEEK_SET);
     
         if (offset >= fileSize) {
@@ -458,7 +458,7 @@ namespace ult {
     
         // Move to the specified offset and write the binary data directly to the file
         fseek(file, offset, SEEK_SET);
-        size_t bytesWritten = fwrite(binaryData.data(), sizeof(unsigned char), binaryData.size(), file);
+        const size_t bytesWritten = fwrite(binaryData.data(), sizeof(unsigned char), binaryData.size(), file);
         if (bytesWritten != binaryData.size()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to write data to the file.");
@@ -480,7 +480,7 @@ namespace ult {
     
         // Retrieve the file size
         file.seekg(0, std::ios::end);
-        std::streampos fileSize = file.tellg();
+        const std::streampos fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
     
         if (offset >= fileSize) {
@@ -529,12 +529,12 @@ namespace ult {
     void hexEditByCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, const std::string& hexDataReplacement, size_t occurrence) {
         
         // Create a cache key based on filePath and customAsciiPattern
-        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
+        const std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
         
         int hexSum = -1;
         
         // Check if the result is already cached
-        auto cachedResult = hexSumCache.find(cacheKey);
+        const auto cachedResult = hexSumCache.find(cacheKey);
         if (cachedResult != hexSumCache.end()) {
             hexSum = ult::stoi(cachedResult->second); // load sum from cache
         }
@@ -551,7 +551,7 @@ namespace ult {
             
             
             // Find hex data offsets in the file
-            std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
+            const std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
             
             if (!offsets.empty()) {
                 hexSum = ult::stoi(offsets[occurrence]);
@@ -590,7 +590,7 @@ namespace ult {
      * @param occurrence The occurrence/index of the data to replace (default is "0" to replace all occurrences).
      */
     void hexEditFindReplace(const std::string& filePath, const std::string& hexDataToReplace, const std::string& hexDataReplacement, size_t occurrence) {
-        std::vector<std::string> offsetStrs = findHexDataOffsets(filePath, hexDataToReplace);
+        const std::vector<std::string> offsetStrs = findHexDataOffsets(filePath, hexDataToReplace);
         if (!offsetStrs.empty()) {
             if (occurrence == 0) {
                 // Replace all occurrences
@@ -630,10 +630,10 @@ namespace ult {
      * @param occurrence The occurrence/index of the data to replace (default is "0" to replace all occurrences).
      */
     std::string parseHexDataAtCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, size_t length, size_t occurrence) {
-        std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
+        const std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
         int hexSum = -1;
     
-        auto cachedResult = hexSumCache.find(cacheKey);
+        const auto cachedResult = hexSumCache.find(cacheKey);
         if (cachedResult != hexSumCache.end()) {
             hexSum = ult::stoi(cachedResult->second);
         } else {
@@ -651,7 +651,7 @@ namespace ult {
             }
         }
     
-        std::streampos totalOffset = hexSum + std::stoll(offsetStr);
+        const std::streampos totalOffset = hexSum + std::stoll(offsetStr);
         std::vector<char> hexBuffer(length);
         std::vector<char> hexStream(length * 2);
     
@@ -672,7 +672,7 @@ namespace ult {
             return "";
         }
     
-        size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
+        const size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
         if (bytesRead == length) {
             // ONLY OPTIMIZATION: Use static array instead of creating new array each time
             static const char hexDigits[] = "0123456789ABCDEF";
@@ -746,13 +746,13 @@ namespace ult {
     
     std::string replaceHexPlaceholder(const std::string& arg, const std::string& hexPath) {
         std::string replacement = arg;
-        std::string searchString = "{hex_file(";
+        const std::string searchString = "{hex_file(";
         
-        size_t startPos = replacement.find(searchString);
-        size_t endPos = replacement.find(")}");
+        const size_t startPos = replacement.find(searchString);
+        const size_t endPos = replacement.find(")}");
         
         if (startPos != std::string::npos && endPos != std::string::npos && endPos > startPos) {
-            std::string placeholderContent = replacement.substr(startPos + searchString.length(), endPos - startPos - searchString.length());
+            const std::string placeholderContent = replacement.substr(startPos + searchString.length(), endPos - startPos - searchString.length());
             
             // Split the placeholder content into its components (customAsciiPattern, offsetStr, length)
             std::vector<std::string> components;
@@ -768,12 +768,12 @@ namespace ult {
             
             if (components.size() == 3) {
                 // Extract individual components
-                std::string customAsciiPattern = components[0];
-                std::string offsetStr = components[1];
-                size_t length = std::stoul(components[2]);
+                const std::string customAsciiPattern = components[0];
+                const std::string offsetStr = components[1];
+                const size_t length = std::stoul(components[2]);
                 
                 // Call the parsing function and replace the placeholder
-                std::string parsedResult = parseHexDataAtCustomOffset(hexPath, customAsciiPattern, offsetStr, length);
+                const std::string parsedResult = parseHexDataAtCustomOffset(hexPath, customAsciiPattern, offsetStr, length);
                 
                 // Only replace if parsedResult returns a non-empty string
                 if (!parsedResult.empty()) {
@@ -813,7 +813,7 @@ namespace ult {
     
         // Read the entire file into a buffer
         std::vector<uint8_t> buffer(size);
-        size_t bytesRead = fread(buffer.data(), sizeof(uint8_t), size, file);
+        const size_t bytesRead = fread(buffer.data(), sizeof(uint8_t), size, file);
         fclose(file); // Close the file after reading
     
         if (bytesRead != static_cast<size_t>(size)) {

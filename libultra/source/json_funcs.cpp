@@ -35,7 +35,7 @@ namespace ult {
     
         // Get file size
         fseek(file, 0, SEEK_END);
-        long fileSize = ftell(file);
+        const long fileSize = ftell(file);
         fseek(file, 0, SEEK_SET);
         
         // Check for reasonable file size
@@ -49,7 +49,7 @@ namespace ult {
         buffer.resize(static_cast<size_t>(fileSize) + 1); // +1 for null terminator
     
         // Read the file in one operation
-        size_t bytesRead = fread(buffer.data(), 1, static_cast<size_t>(fileSize), file);
+        const size_t bytesRead = fread(buffer.data(), 1, static_cast<size_t>(fileSize), file);
         fclose(file);
         
         if (bytesRead != static_cast<size_t>(fileSize)) {
@@ -66,7 +66,7 @@ namespace ult {
         }
         
         // Get file size from current position (end)
-        std::streampos fileSize = file.tellg();
+        const std::streampos fileSize = file.tellg();
         file.seekg(0, std::ios::beg);
         
         // Check for reasonable file size

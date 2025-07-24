@@ -42,11 +42,11 @@ namespace ult {
             return false;  // Return false if the file cannot be opened
         }
     
-        size_t len;
+        //size_t len;
         char buffer[1024];  // Buffer to store each line
         while (fgets(buffer, sizeof(buffer), cheatFile)) {
             // Remove newline character, if present
-            len = strlen(buffer);
+            const size_t len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -111,23 +111,23 @@ namespace ult {
      * @return The extracted cheat name.
      */
     std::string extractCheatName(const std::string &filePath) {
-        size_t lastSlash = filePath.find_last_of("/\\");
+        const size_t lastSlash = filePath.find_last_of("/\\");
         if (lastSlash == std::string::npos) {
             return "";
         }
-        size_t secondLastSlash = filePath.find_last_of("/\\", lastSlash - 1);
+        const size_t secondLastSlash = filePath.find_last_of("/\\", lastSlash - 1);
         if (secondLastSlash == std::string::npos) {
             return "";
         }
-        std::string lastDir = filePath.substr(secondLastSlash + 1, lastSlash - secondLastSlash - 1);
+        const std::string lastDir = filePath.substr(secondLastSlash + 1, lastSlash - secondLastSlash - 1);
         std::string fileName = filePath.substr(lastSlash + 1);
-        size_t dotPos = fileName.find_last_of('.');
+        const size_t dotPos = fileName.find_last_of('.');
         if (dotPos != std::string::npos) {
             fileName = fileName.substr(0, dotPos);
         }
     
         // If lastDir contains " - ", extract the part after " - "
-        size_t dashPos = lastDir.find(" - ");
+        const size_t dashPos = lastDir.find(" - ");
         std::string cheatName = lastDir;
         if (dashPos != std::string::npos) {
             cheatName = lastDir.substr(dashPos + 3);
@@ -147,8 +147,8 @@ namespace ult {
     
     // Function to find the title ID in the text, avoiding the @nsobid- line
     std::string findTitleID(const std::string &text) {
-        size_t nsobidPos = text.find("@nsobid-");
-        size_t startPos = (nsobidPos != std::string::npos) ? nsobidPos + 40 + 8 : 0; // Skip past @nsobid- and its value
+        const size_t nsobidPos = text.find("@nsobid-");
+        const size_t startPos = (nsobidPos != std::string::npos) ? nsobidPos + 40 + 8 : 0; // Skip past @nsobid- and its value
         
         std::string potentialID;
         for (size_t i = startPos; i <= text.length() - 16; ++i) {
@@ -201,7 +201,7 @@ namespace ult {
         std::string pchtxt((std::istreambuf_iterator<char>(pchtxtFile)), std::istreambuf_iterator<char>());
     #endif
     
-        size_t nsobidPos = pchtxt.find("@nsobid-");
+        const size_t nsobidPos = pchtxt.find("@nsobid-");
         if (nsobidPos == std::string::npos) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Could not find bid in pchtxt file, the file is likely invalid.");
@@ -209,10 +209,10 @@ namespace ult {
             return false;
         }
     
-        std::string bid = pchtxt.substr(nsobidPos + 8, 40);
-        std::string bidShort = bid.substr(0, 16);
+        const std::string bid = pchtxt.substr(nsobidPos + 8, 40);
+        const std::string bidShort = bid.substr(0, 16);
     
-        std::string tid = findTitleID(pchtxt);
+        const std::string tid = findTitleID(pchtxt);
         if (tid.empty()) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Could not find TID in pchtxt file, the file is likely invalid.");
@@ -223,7 +223,7 @@ namespace ult {
         std::string cheatFilePath;
     
         if (outCheatPath.empty()) {
-            std::string folderPath = "sdmc:/atmosphere/contents/" + tid + "/cheats/";
+            const std::string folderPath = "sdmc:/atmosphere/contents/" + tid + "/cheats/";
             createDirectory(folderPath);
             cheatFilePath = folderPath + bidShort + CHEAT_EXT;
         } else {
@@ -296,16 +296,17 @@ namespace ult {
         std::string cheatLine;
         char offsetBuffer[9];
 
+
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
 
             // strip inline C++-style comments
-            auto slashPos = line.find("//");
+            const auto slashPos = line.find("//");
             if (slashPos != std::string::npos)
                 line = line.substr(0, slashPos);
             
             // strip inline hash comments (but leave full-line # for headers)
-            auto hashPos = line.find('#');
+            const auto hashPos = line.find('#');
             if (hashPos != std::string::npos && hashPos > 0)
                 line = line.substr(0, hashPos);
             
@@ -314,7 +315,7 @@ namespace ult {
 
 
             if (line.find("@flag offset_shift ") == 0) {
-                std::string offsetStr = line.substr(19);
+                const std::string offsetStr = line.substr(19);
                 offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10)) - 0x100;
                 continue;
             }
@@ -588,8 +589,8 @@ namespace ult {
         trim(nsobid);
         trimNewline(nsobid);
     
-        std::string ipsFileName = nsobid + ".ips";
-        std::string ipsFilePath = outputFolder + ipsFileName;
+        const std::string ipsFileName = nsobid + ".ips";
+        const std::string ipsFilePath = outputFolder + ipsFileName;
     
     #if !USING_FSTREAM_DIRECTIVE
         // Use FILE* for writing
@@ -636,9 +637,9 @@ namespace ult {
         fclose(_pchtxtFile);
     
     
-        std::string tid = findTitleID(pchtxt);
+        const std::string tid = findTitleID(pchtxt);
         if (!tid.empty()) {
-            std::string tidFilePath = outputFolder + tid;
+            const std::string tidFilePath = outputFolder + tid;
             FILE* tidFile = fopen(tidFilePath.c_str(), "w");
             if (tidFile) {
                 fclose(tidFile);  // Creates an empty file
@@ -685,9 +686,9 @@ namespace ult {
     
         std::string pchtxt((std::istreambuf_iterator<char>(_pchtxtFile)), std::istreambuf_iterator<char>());
     
-        std::string tid = findTitleID(pchtxt);
+        const std::string tid = findTitleID(pchtxt);
         if (!tid.empty()) {
-            std::string tidFilePath = outputFolder + tid;
+            const std::string tidFilePath = outputFolder + tid;
             std::ofstream tidFile(tidFilePath);
             tidFile.close();  // Creates an empty file
         } else {

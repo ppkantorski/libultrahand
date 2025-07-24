@@ -32,7 +32,7 @@ namespace ult {
     
     int stoi(const std::string& str, std::size_t* pos, int base) {
         char* end;
-        long result = std::strtol(str.c_str(), &end, base);
+        const long result = std::strtol(str.c_str(), &end, base);
     
         if (pos) {
             *pos = end - str.c_str();  // Set the position to the last character processed
@@ -145,13 +145,13 @@ namespace ult {
      * @return The trimmed string.
      */
     void trim(std::string& str) {
-        size_t first = str.find_first_not_of(" \t\n\r\f\v");
+        const size_t first = str.find_first_not_of(" \t\n\r\f\v");
         if (first == std::string::npos) {
             str.clear(); // Fix: clear all-whitespace strings
             return;
         }
     
-        size_t last = str.find_last_not_of(" \t\n\r\f\v");
+        const size_t last = str.find_last_not_of(" \t\n\r\f\v");
         
         // True in-place modification - no temporary string creation
         if (last + 1 < str.length()) {
@@ -165,7 +165,7 @@ namespace ult {
     
     // Function to trim newline characters from the end of a string
     void trimNewline(std::string& str) {
-        size_t end = str.find_last_not_of("\n");
+        const size_t end = str.find_last_not_of("\n");
         if (end == std::string::npos) {
             str.clear();  // If the string consists entirely of newlines, clear it
         } else {
@@ -206,8 +206,8 @@ namespace ult {
      */
     void removeQuotes(std::string& str) {
         if (str.size() >= 2) {
-            char front = str[0];
-            char back = str[str.size() - 1];
+            const char front = str[0];
+            const char back = str[str.size() - 1];
             if ((front == '\'' && back == '\'') || (front == '"' && back == '"')) {
                 str.erase(0, 1);
                 str.pop_back();
@@ -312,7 +312,7 @@ namespace ult {
      * @param filename The input filename from which to drop the extension, passed by reference and modified in-place.
      */
     void dropExtension(std::string& filename) {
-        size_t lastDotPos = filename.find_last_of('.');  // Single char instead of string
+        const size_t lastDotPos = filename.find_last_of('.');  // Single char instead of string
         if (lastDotPos != std::string::npos) {
             filename.resize(lastDotPos);
         }
@@ -424,7 +424,7 @@ namespace ult {
      * @return A formatted priority string.
      */
     std::string formatPriorityString(const std::string& priority, int desiredWidth) {
-        int priorityLength = priority.length();
+        const int priorityLength = priority.length();
         
         if (priorityLength > desiredWidth) {
             // FASTEST: Single allocation with direct fill
@@ -448,7 +448,7 @@ namespace ult {
      * @param input The input string from which to remove the tag, passed by reference and modified in-place.
      */
     void removeTag(std::string &input) {
-        size_t pos = input.find('?');
+        const size_t pos = input.find('?');
         if (pos != std::string::npos) {
             input.resize(pos); // Modify the string in-place to remove everything after the '?'
         }
@@ -488,10 +488,10 @@ namespace ult {
             return ""; // No digits found
         }
         
-        char c ;
+        
         // Extract version number with dots and plus signs
         for (size_t i = start; i < input.size(); ++i) {
-            c = input[i];
+            const char c = input[i];
             if (std::isdigit(c) || c == '.' || c == '+') {
                 result += c;
             } else {
@@ -504,7 +504,7 @@ namespace ult {
     
     
     std::string extractTitle(const std::string& input) {
-        size_t spacePos = input.find(' '); // Find the position of the first space
+        const size_t spacePos = input.find(' '); // Find the position of the first space
         
         if (spacePos != std::string::npos) {
             // Extract the substring before the first space
@@ -541,7 +541,7 @@ namespace ult {
     
     // Function to split a string by a delimiter and return a specific index
     std::string splitStringAtIndex(const std::string& str, const std::string& delimiter, size_t index) {
-        std::vector<std::string> tokens = splitString(str, delimiter);
+        const std::vector<std::string> tokens = splitString(str, delimiter);
     
         if (index < tokens.size()) {
             return tokens[index];
@@ -552,8 +552,8 @@ namespace ult {
     
     
     std::string customAlign(int number) {
-        std::string numStr = ult::to_string(number);
-        int paddingSpaces = (4 - numStr.length()) * 2;
+        const std::string numStr = ult::to_string(number);
+        const int paddingSpaces = (4 - numStr.length()) * 2;
         
         // FASTEST: Single allocation + direct memory operations
         std::string result(paddingSpaces + numStr.length(), ' ');

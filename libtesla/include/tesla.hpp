@@ -865,6 +865,7 @@ namespace tsl {
             std::string fullPath;
             u64 keys;
 
+            std::vector<std::string> modeList, comboList;
             for (auto& [fileName, settings] : overlayData) {
                 fullPath = ult::OVERLAY_PATH + fileName;
         
@@ -878,8 +879,8 @@ namespace tsl {
                 auto modesIt = settings.find("mode_args");
                 auto argsIt  = settings.find("mode_combos");
                 if (modesIt != settings.end()) {
-                    auto modeList  = ult::splitIniList(modesIt->second);
-                    auto comboList = (argsIt != settings.end())
+                    modeList  = ult::splitIniList(modesIt->second);
+                    comboList = (argsIt != settings.end())
                                    ? ult::splitIniList(argsIt->second)
                                    : std::vector<std::string>();
                     if (comboList.size() < modeList.size())
@@ -1054,7 +1055,7 @@ namespace tsl {
             // Generate cache key for font metrics
             static u64 generateFontMetricsCacheKey(stbtt_fontinfo* font, u32 fontSize) {
                 // Use pointer address as font identifier and fontSize
-                u64 fontKey = reinterpret_cast<uintptr_t>(font);
+                const u64 fontKey = reinterpret_cast<uintptr_t>(font);
                 return (fontKey << 32) | static_cast<u64>(fontSize);
             }
             
@@ -1064,7 +1065,7 @@ namespace tsl {
                 
                 // Simple cleanup: remove oldest entries
                 // In a real implementation, you might want LRU or other strategies
-                size_t toRemove = s_sharedGlyphCache.size() - CLEANUP_THRESHOLD;
+                const size_t toRemove = s_sharedGlyphCache.size() - CLEANUP_THRESHOLD;
                 auto it = s_sharedGlyphCache.begin();
                 for (size_t i = 0; i < toRemove && it != s_sharedGlyphCache.end(); ++i) {
                     it = s_sharedGlyphCache.erase(it);
@@ -1085,7 +1086,7 @@ namespace tsl {
                 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
                 
                 std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-                std::u32string codepoints = converter.from_bytes(characters);
+                const std::u32string codepoints = converter.from_bytes(characters);
                 
                 #pragma GCC diagnostic pop
                 
@@ -1740,14 +1741,14 @@ namespace tsl {
                 }
                 
                 // Calculate deltas
-                s32 dx = x1 - x0;
-                s32 dy = y1 - y0;
+                const s32 dx = x1 - x0;
+                const s32 dy = y1 - y0;
                 
                 // Calculate absolute deltas and steps
-                s32 abs_dx = dx < 0 ? -dx : dx;
-                s32 abs_dy = dy < 0 ? -dy : dy;
-                s32 step_x = dx < 0 ? -1 : 1;
-                s32 step_y = dy < 0 ? -1 : 1;
+                const s32 abs_dx = dx < 0 ? -dx : dx;
+                const s32 abs_dy = dy < 0 ? -dy : dy;
+                const s32 step_x = dx < 0 ? -1 : 1;
+                const s32 step_y = dy < 0 ? -1 : 1;
                 
                 // Bresenham's algorithm
                 s32 x = x0, y = y0;
@@ -1798,11 +1799,12 @@ namespace tsl {
                 if (x_min < 0 || y_min < 0 || x_min >= cfg::FramebufferWidth || y_min >= cfg::FramebufferHeight)
                     return;
 
-                s32 dx = x_max - x_min;
-                s32 dy = y_max - y_min;
-                s32 d = 2 * dy - dx;
-                s32 incrE = 2*dy;
-                s32 incrNE = 2*(dy - dx);
+               const s32 dx = x_max - x_min;
+               const s32 dy = y_max - y_min;
+               s32 d = 2 * dy - dx;
+
+               const s32 incrE = 2*dy;
+               const s32 incrNE = 2*(dy - dx);
 
                 this->setPixelBlendDst(x_min, y_min, color);
 
@@ -3524,25 +3526,25 @@ namespace tsl {
             }
             
             // The underscan value might not be a percentage, we need to interpret it correctly
-            u32 underscanValue = tvSettings.underscan;
+            //u32 underscanValue = tvSettings.underscan;
             
             // Convert the underscan value to a fraction. Assuming 0 means no underscan and larger values represent
             // greater underscan. Adjust this formula based on actual observed behavior or documentation.
-            float underscanPercentage = 1.0f - (underscanValue / 100.0f);
+            const float underscanPercentage = 1.0f - (tvSettings.underscan / 100.0f);
             
             // Original dimensions of the full 720p image (1280x720)
-            float originalWidth = cfg::ScreenWidth;
-            float originalHeight = cfg::ScreenHeight;
+            //float originalWidth = cfg::ScreenWidth;
+            //float originalHeight = cfg::ScreenHeight;
             
             // Adjust the width and height based on the underscan percentage
-            float adjustedWidth = (originalWidth * underscanPercentage);
-            float adjustedHeight = (originalHeight * underscanPercentage);
+            //float adjustedWidth = (originalWidth * underscanPercentage);
+            //float adjustedHeight = (originalHeight * underscanPercentage);
             
             // Calculate the underscan in pixels (left/right and top/bottom)
-            int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
-            int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
+            //int horizontalUnderscanPixels = ((originalWidth - (originalWidth * underscanPercentage)) / 2.);
+            //int verticalUnderscanPixels = ((originalHeight - (originalHeight * underscanPercentage)) / 2.);
             
-            return {horizontalUnderscanPixels, verticalUnderscanPixels};
+            return {((cfg::ScreenWidth - (cfg::ScreenWidth * underscanPercentage)) / 2.), ((cfg::ScreenWidth - (cfg::ScreenHeight * underscanPercentage)) / 2.)};
         }
 
     }
@@ -3740,7 +3742,7 @@ namespace tsl {
             
                 Color animColor = {0xF,0xF,0xF,0xF};
                 if (invertBGClickColor) {
-                    u8 inverted = 15-saturation;
+                    const u8 inverted = 15-saturation;
                     animColor = {inverted, inverted, inverted, inverted};
                 } else {
                     animColor = {saturation, saturation, saturation, saturation};
@@ -3750,12 +3752,12 @@ namespace tsl {
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
                 static double cachedProgress = 0.0;
-                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 
                 // Only recalculate progress if enough time has passed (reduce computation frequency)
                 if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
-                    double time_seconds = currentTime_ns / 1000000000.0;
-                    cachedProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) / 2.0;
+                    //double time_seconds = currentTime_ns / 1000000000.0;
+                    cachedProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
                     lastTimeUpdate = currentTime_ns;
                 }
                 progress = cachedProgress;
@@ -3789,7 +3791,7 @@ namespace tsl {
                             cachedAmplitude = std::rand() % 5 + 5;
                         amplitude = cachedAmplitude;
                         
-                        int shakeOffset = shakeAnimation(t_ns, amplitude);
+                        const int shakeOffset = shakeAnimation(t_ns, amplitude);
                         switch (this->m_highlightShakingDirection) {
                             case FocusDirection::Up:    y = -shakeOffset; break;
                             case FocusDirection::Down:  y = shakeOffset; break;
@@ -3842,15 +3844,15 @@ namespace tsl {
                 // Use cached time calculation from drawClickAnimation if possible
                 static u64 lastHighlightUpdate = 0;
                 static double cachedHighlightProgress = 0.0;
-                u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 
                 // Update progress at 60 FPS rate with high-precision calculation
                 if (currentTime_ns - lastHighlightUpdate > 16666666) {
                     // High precision time calculation - matches original timing exactly
-                    double time_seconds = currentTime_ns * 0.000000001; // Direct conversion like original
+                    //double time_seconds = currentTime_ns * 0.000000001; // Direct conversion like original
                     
                     // Match original calculation exactly but with higher precision
-                    cachedHighlightProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds - 0.25, 1.0)) + 1.0) * 0.5;
+                    cachedHighlightProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
                     
                     lastHighlightUpdate = currentTime_ns;
                 }
@@ -3896,7 +3898,7 @@ namespace tsl {
                             cachedAmplitude = std::rand() % 5 + 5;
                         amplitude = cachedAmplitude;
                         
-                        int shakeOffset = shakeAnimation(t_ns, amplitude);
+                        const int shakeOffset = shakeAnimation(t_ns, amplitude);
                         switch (this->m_highlightShakingDirection) {
                             case FocusDirection::Up:    y = -shakeOffset; break;
                             case FocusDirection::Down:  y = shakeOffset; break;
@@ -3924,7 +3926,7 @@ namespace tsl {
                     //} else if (ult::copyPercentage > 0) {
                     //    activePercentage = ult::copyPercentage;
                     //}
-                    float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
+                    const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
                         renderer->drawRect(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
                     }
@@ -4062,13 +4064,13 @@ namespace tsl {
              * @return Damped sine wave output
              */
             inline int shakeAnimation(u64 t_ns, float a) {
-                float w = 0.2F;
-                float tau = 0.05F;
+                //float w = 0.2F;
+                //float tau = 0.05F;
                 
                 // Convert nanoseconds to microseconds for the calculation
-                int t_us = t_ns / 1000;
+                const int t_us = t_ns / 1000;
                 
-                return roundf(a * exp(-(tau * t_us) * sin(w * t_us)));
+                return roundf(a * exp(-(0.05F * t_us) * sin(0.2F * t_us)));
             }
             
         private:
@@ -4219,7 +4221,7 @@ namespace tsl {
                 if (FullMode)
                     ult::loadWallpaperFileWhenSafe();
                 else
-                    svcSleepThread(150'000);
+                    svcSleepThread(150'000); // sleep thread for initial values to auto-load
 
                 m_isItem = false;
             }
@@ -4257,19 +4259,19 @@ namespace tsl {
                 float buttonStartX;
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
-                    auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                    const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                     ult::halfGap = gapWidth / 2.0f;
                     
                     // Calculate text dimensions for buttons without gaps
-                    auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                    const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                     
                     // Update widths to include the half-gap padding on each side
                     ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
                     ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
                     
                     // Use consistent edge padding equal to halfGap
-                    float edgePadding = ult::halfGap;
+                    const float edgePadding = ult::halfGap;
                     buttonStartX = edgePadding;
                     
                     // Draw back button rectangle
@@ -4285,17 +4287,17 @@ namespace tsl {
                     }
                 }
                 
-                // Pre-build menu bottom line efficiently
-                menuBottomLine.clear();
-                //menuBottomLine.reserve(128); // Reserve space to avoid reallocations
-                
-                menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
-                if (!m_noClickableItems) {
-                    menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
-                }
-
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
+                    // Pre-build menu bottom line efficiently
+                    menuBottomLine.clear();
+                    menuBottomLine.reserve(30); // Reserve space to avoid reallocations
+                    
+                    menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
+                    if (!m_noClickableItems) {
+                        menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                    }
+
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                     renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 }
@@ -4653,25 +4655,25 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
-                auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Calculate text dimensions for buttons without gaps
-                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
-                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
+                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
+                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
             #else
                 // Calculate text dimensions for buttons without gaps
-                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (ult::BACK), false, 23).first;
-                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (ult::OK), false, 23).first;
+                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (ult::BACK), false, 23).first;
+                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (ult::OK), false, 23).first;
             #endif
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
                 ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
                 
                 // Use consistent edge padding equal to halfGap
-                float edgePadding = ult::halfGap;
-                float buttonStartX = edgePadding;
+                const float edgePadding = ult::halfGap;
+                const float buttonStartX = ult::halfGap;
                 
                 // Draw back button rectangle
                 if (ult::touchingBack) {
@@ -4689,32 +4691,48 @@ namespace tsl {
 
                 // Calculate next page button dimensions and position
                 if (!interpreterIsRunningNow && (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty())) {
-                    std::string pageText;
-                    std::string pageIcon;
+                    //std::string pageText;
+                    //std::string pageIcon;
+                    //
+                    //if (!m_pageLeftName.empty()) {
+                    //    pageText = ult::GAP_2 + m_pageLeftName;
+                    //    pageIcon = "\uE0ED";
+                    //} else if (!m_pageRightName.empty()) {
+                    //    pageText = ult::GAP_2 + m_pageRightName;
+                    //    pageIcon = "\uE0EE";
+                    //} else if (ult::inMainMenu) {
+                    //    pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR);
+                    //    pageIcon = (m_menuMode == "packages") ? 
+                    //               (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
+                    //               (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
+                    //}
+                    //
+                    ////const auto pageTextWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first;
+                    //ult::nextPageWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first + gapWidth;  // halfGap on left + halfGap on right
                     
-                    if (!m_pageLeftName.empty()) {
-                        pageText = ult::GAP_2 + m_pageLeftName;
-                        pageIcon = "\uE0ED";
-                    } else if (!m_pageRightName.empty()) {
-                        pageText = ult::GAP_2 + m_pageRightName;
-                        pageIcon = "\uE0EE";
-                    } else if (ult::inMainMenu) {
-                        pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR);
-                        pageIcon = (m_menuMode == "packages") ? 
-                                   (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
-                                   (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
-                    }
-                    
-                    auto pageTextWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first;
-                    ult::nextPageWidth = pageTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                    
+                    // Construct page text directly in getTextDimensions call to avoid intermediate strings
+                    ult::nextPageWidth = renderer->getTextDimensions(
+                        (!m_pageLeftName.empty()) ? 
+                            ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
+                        (!m_pageRightName.empty()) ?
+                            ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
+                        (ult::inMainMenu) ?
+                            (((m_menuMode == "packages") ? 
+                                (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
+                                (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) + 
+                             ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR)) :
+                        "",  // fallback case
+                        false, 23).first + gapWidth;
+
+
                     // Position next page button
-                    float nextPageX = m_noClickableItems ? 
-                                      (buttonStartX + ult::backWidth) :
-                                      (buttonStartX + ult::backWidth + ult::selectWidth);
+                    //float nextPageX = m_noClickableItems ? 
+                    //                  (buttonStartX + ult::backWidth) :
+                    //                  (buttonStartX + ult::backWidth + ult::selectWidth);
                     
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(nextPageX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
+                        renderer->drawRoundedRect(m_noClickableItems ? (buttonStartX + ult::backWidth) : (buttonStartX + ult::backWidth + ult::selectWidth),
+                                                  static_cast<float>(cfg::FramebufferHeight - 73+1), 
                                                   ult::nextPageWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
@@ -4728,48 +4746,49 @@ namespace tsl {
 
                 // Pre-build menu bottom line efficiently
                 menuBottomLine.clear();
-                //menuBottomLine.reserve(60); // Reserve space to avoid reallocations
+                menuBottomLine.reserve(30); // Reserve space to avoid reallocations
                 
-            
-            #if IS_LAUNCHER_DIRECTIVE
-                menuBottomLine += "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE) + ult::GAP_1;
-
+                #if IS_LAUNCHER_DIRECTIVE
+                // Use .append() chaining to avoid temporary string creation
+                menuBottomLine.append("\uE0E1").append(ult::GAP_2);
+                menuBottomLine.append(!interpreterIsRunningNow ? ult::BACK : ult::HIDE);
+                menuBottomLine.append(ult::GAP_1);
+                
                 if (!m_noClickableItems && !interpreterIsRunningNow) {
-                    menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                    menuBottomLine.append("\uE0E0").append(ult::GAP_2).append(ult::OK).append(ult::GAP_1);
                 }
-
+                
                 if (interpreterIsRunningNow) {
-                    menuBottomLine += "\uE0E5"+ ult::GAP_2 + ult::CANCEL + ult::GAP_1;
+                    menuBottomLine.append("\uE0E5").append(ult::GAP_2).append(ult::CANCEL).append(ult::GAP_1);
                 }
-
+                
                 if (!interpreterIsRunningNow) {
                     if (!ult::usePageSwap) {
                         if (m_menuMode == "packages") {
-                            menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR;
+                            menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(ult::OVERLAYS_ABBR);
                         } else if (m_menuMode == "overlays") {
-                            menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::PACKAGES;
+                            menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(ult::PACKAGES);
                         }
                     } else {
                         if (m_menuMode == "packages") {
-                            menuBottomLine += "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR;
+                            menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(ult::OVERLAYS_ABBR);
                         } else if (m_menuMode == "overlays") {
-                            menuBottomLine += "\uE0ED" + ult::GAP_2 + ult::PACKAGES;
+                            menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(ult::PACKAGES);
                         }
                     }
                 }
                 
                 if (!m_pageLeftName.empty()) {
-                    menuBottomLine += "\uE0ED" + ult::GAP_2 + m_pageLeftName;
+                    menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(m_pageLeftName);
                 } else if (!m_pageRightName.empty()) {
-                    menuBottomLine += "\uE0EE" + ult::GAP_2 + m_pageRightName;
+                    menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(m_pageRightName);
                 }
-            #else
-                menuBottomLine += "\uE0E1" + ult::GAP_2 + (ult::BACK) + ult::GAP_1;
-
+                #else
+                menuBottomLine.append("\uE0E1").append(ult::GAP_2).append(ult::BACK).append(ult::GAP_1);
                 if (!m_noClickableItems) {
-                    menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                    menuBottomLine.append("\uE0E0").append(ult::GAP_2).append(ult::OK).append(ult::GAP_1);
                 }
-            #endif
+                #endif
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
@@ -4894,20 +4913,20 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
 
                 // Get the exact gap width from ult::GAP_1
-                auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text dimensions for buttons without gaps
-                auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 
                 // Update widths to include the half-gap padding on each side
                 ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
                 ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
                 
                 // Use consistent edge padding equal to halfGap
-                float edgePadding = ult::halfGap;
-                float buttonStartX = edgePadding;
+                //float edgePadding = ult::halfGap;
+                const float buttonStartX = ult::halfGap;
                 
                 // Draw back button rectangle
                 if (ult::touchingBack.load(std::memory_order_acquire)) {
@@ -5586,11 +5605,11 @@ namespace tsl {
             }
             
             void removePendingItems() {
-                size_t index;
+                //size_t index;
                 for (Element* element : m_itemsToRemove) {
                     auto it = std::find(m_items.begin(), m_items.end(), element);
                     if (it != m_items.end()) {
-                        index = static_cast<size_t>(it - m_items.begin());
+                        const size_t index = static_cast<size_t>(it - m_items.begin());
                         m_items.erase(it);
                         if (m_focusedIndex >= index && m_focusedIndex > 0) {
                             --m_focusedIndex;
@@ -5611,19 +5630,21 @@ namespace tsl {
                 }
                 m_itemsToAdd.clear();
                 //m_itemsToAdd.shrink_to_fit();
-            
+                
+                //size_t index;
                 for (Element* element : m_itemsToRemove) {
                     auto it = std::find(m_items.begin(), m_items.end(), element);
                     if (it != m_items.end()) {
-                        std::size_t idx = static_cast<std::size_t>(it - m_items.begin());
+                        //index = static_cast<std::size_t>(it - m_items.begin());
+                        const u16 index16 = static_cast<u16>(static_cast<std::size_t>(it - m_items.begin()));
                         element->invalidate();
                         delete element;
                         m_items.erase(it);
             
                         constexpr u16 noFocus = static_cast<u16>(0xFFFF);
-                        u16 idx16 = static_cast<u16>(idx);
-                        if (m_focusedIndex == idx16)       m_focusedIndex = noFocus;
-                        else if (m_focusedIndex != noFocus && m_focusedIndex > idx16)
+                        if (m_focusedIndex == index16)
+                            m_focusedIndex = noFocus;
+                        else if (m_focusedIndex != noFocus && m_focusedIndex > index16)
                             --m_focusedIndex;
                     }
                 }
@@ -5663,8 +5684,8 @@ namespace tsl {
                     m_touchScrollActive = false;
                     
                     // Calculate distance to target
-                    float diff = m_nextOffset - m_offset;
-                    float distance = std::abs(diff);
+                    const float diff = m_nextOffset - m_offset;
+                    const float distance = std::abs(diff);
                     
                     // ENHANCED BOUNDARY SNAPPING: More aggressive snapping for boundaries
                     if (distance < 1.0f) {  // Increased threshold from 0.5f
@@ -5679,7 +5700,7 @@ namespace tsl {
                     }
                     
                     // SPECIAL CASE: If target is exactly 0 or max, be more aggressive
-                    float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                    const float maxOffset = static_cast<float>(m_listHeight - getHeight());
                     if (m_nextOffset == 0.0f || m_nextOffset == maxOffset) {
                         if (distance < 3.0f) {  // Larger snap zone for boundaries
                             m_offset = m_nextOffset;
@@ -5699,15 +5720,15 @@ namespace tsl {
                         for (size_t i = 0; i < m_focusedIndex; ++i) {
                             itemTop += m_items[i]->getHeight();
                         }
-                        float itemBottom = itemTop + m_items[m_focusedIndex]->getHeight();
+                        const float itemBottom = itemTop + m_items[m_focusedIndex]->getHeight();
                         
-                        float viewTop = m_offset;
-                        float viewBottom = m_offset + getHeight();
+                        //float viewTop = m_offset;
+                        const float viewBottom = m_offset + getHeight();
                         
-                        if (itemTop < viewTop || itemBottom > viewBottom) {
+                        if (itemTop < m_offset || itemBottom > viewBottom) {
                             float emergencySpeed = 0.6f;
                             
-                            if (itemBottom < viewTop || itemTop > viewBottom) {
+                            if (itemBottom < m_offset || itemTop > viewBottom) {
                                 emergencySpeed = 0.9f;
                             }
                             
@@ -5766,7 +5787,7 @@ namespace tsl {
                     m_scrollVelocity = 0.0f;
                     
                     if (m_touchScrollActive) {
-                        float viewCenter = m_offset + (getHeight() / 2.0f);
+                        const float viewCenter = m_offset + (getHeight() / 2.0f);
                         float accumHeight = 0.0f;
                         
                         float itemHeight, itemCenter;
@@ -5976,8 +5997,8 @@ namespace tsl {
                 if (m_items.empty()) return true;
                 
                 // First check: are we at the maximum scroll offset?
-                float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                bool atMaxOffset = (m_offset >= maxOffset);
+                //float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                const bool atMaxOffset = (m_offset >= static_cast<float>(m_listHeight - getHeight()));
                 
                 // If list is shorter than viewport, we're always at bottom
                 if (m_listHeight <= getHeight()) return true;
@@ -5989,13 +6010,13 @@ namespace tsl {
                 // This prevents wrap-around when there's still content below viewport
                 if (!m_items.empty()) {
                     Element* lastItem = m_items.back();
-                    s32 lastItemBottom = lastItem->getBottomBound();
-                    s32 viewportBottom = getBottomBound();
+                    //s32 lastItemBottom = lastItem->getBottomBound();
+                    //s32 viewportBottom = getBottomBound();
                     
                     // We're truly at bottom only if:
                     // 1. We're at max scroll offset AND
                     // 2. The last item's bottom is at or above the viewport bottom
-                    return lastItemBottom <= viewportBottom;
+                    return lastItem->getBottomBound() <= getBottomBound();
                 }
                 
                 return atMaxOffset;
@@ -6012,7 +6033,7 @@ namespace tsl {
 
             
             inline void updateHoldState() {
-                u64 currentTime = armTicksToNs(armGetSystemTick());
+                const u64 currentTime = armTicksToNs(armGetSystemTick());
                 if ((m_lastNavigationTime != 0 && (currentTime - m_lastNavigationTime) < HOLD_THRESHOLD_NS)) {
                     m_isHolding = true;
                 } else {
@@ -6217,10 +6238,10 @@ namespace tsl {
                 //    m_hasWrappedInCurrentSequence = false;
                 //}
             
-                float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
-                float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                //float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                //float maxOffset = static_cast<float>(m_listHeight - getHeight());
                 
-                m_nextOffset = std::min(m_nextOffset + scrollStep, maxOffset);
+                m_nextOffset = std::min(m_nextOffset + ((m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK), (static_cast<float>(m_listHeight - getHeight())));
                 
                 // BOUNDARY SNAP: If we're very close to the bottom boundary, snap both positions exactly
                 //if (m_nextOffset >= maxOffset - 2.0f) {
@@ -6231,9 +6252,9 @@ namespace tsl {
             }
             
             inline void scrollUp() {
-                float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                //float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
                 
-                m_nextOffset = std::max(m_nextOffset - scrollStep, 0.0f);
+                m_nextOffset = std::max(m_nextOffset - ((m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK), 0.0f);
                 
                 // ENHANCED BOUNDARY SNAP: More aggressive snapping to zero
                //if (m_nextOffset <= 5.0f) {  // Increased threshold
@@ -6421,10 +6442,10 @@ namespace tsl {
                 }
                 
                 // Get the focused item's height
-                float itemHeight = (m_focusedIndex < m_items.size()) ? m_items[m_focusedIndex]->getHeight() : 0.0f;
+                const float itemHeight = (m_focusedIndex < m_items.size()) ? m_items[m_focusedIndex]->getHeight() : 0.0f;
                 
                 // Calculate viewport height
-                float viewHeight = static_cast<float>(getHeight());
+                const float viewHeight = static_cast<float>(getHeight());
             
                 // FIXED: Special handling for the first focusable item
                 if (m_focusedIndex == 0 || itemPos <= viewHeight * 0.3f) {
@@ -6434,8 +6455,8 @@ namespace tsl {
                 }
                 
                 // FIXED: Special handling for items near the bottom
-                float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                float itemBottom = itemPos + itemHeight;
+                const float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                const float itemBottom = itemPos + itemHeight;
                 if (itemBottom >= m_listHeight - (viewHeight * 0.3f)) {
                     // For items near the bottom, snap to max offset
                     m_nextOffset = maxOffset;
@@ -6443,15 +6464,17 @@ namespace tsl {
                 }
                 
                 // For middle items, use centering logic
-                float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                float viewportCenter = viewHeight / 2.0f + 7; // add slight offset
-                float idealOffset = itemCenterPos - viewportCenter;
-                
-                // Clamp to valid scroll bounds
-                idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                //float itemCenterPos = itemPos + (itemHeight / 2.0f);
+                //float viewportCenter = viewHeight / 2.0f + 7; // add slight offset
+                //float idealOffset = itemCenterPos - viewportCenter;
+                //
+                //// Clamp to valid scroll bounds
+                //idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
                 
                 // Set target for smooth animation
-                m_nextOffset = idealOffset;
+                //m_nextOffset = idealOffset;
+
+                m_nextOffset = std::max(0.0f, std::min(itemPos + itemHeight * 0.5f - (viewHeight * 0.5f + 7.0f), maxOffset));
             }
             
         };
@@ -6520,10 +6543,10 @@ namespace tsl {
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
                     Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                        a(m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor));
+                        (m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor));
                     
                     renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
-                        textColor, a(m_focused ? starColor : selectionStarColor));
+                        textColor, (m_focused ? starColor : selectionStarColor));
                 } else {
                     drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
                 }
@@ -6699,7 +6722,7 @@ namespace tsl {
                 #ifdef UI_OVERRIDE_PATH
                 {
                     // Use the processed target as the key for translation lookup
-                    std::string originalKey = target;
+                    const std::string originalKey = target;
                     
                     std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalKey);
@@ -6728,20 +6751,25 @@ namespace tsl {
                 if (m_value.empty()) {
                     m_maxWidth = getWidth() - 62;
                 } else {
-                    auto valueWidth = renderer->getTextDimensions(m_value, false, 20).first;
-                    m_maxWidth = getWidth() - valueWidth - 66;
+                    //auto valueWidth = renderer->getTextDimensions(m_value, false, 20).first;
+                    m_maxWidth = getWidth() - renderer->getTextDimensions(m_value, false, 20).first - 66;
                 }
             
-                auto textWidth = renderer->getTextDimensions(m_text, false, 23).first;
-                const u32 width = textWidth;
+                //auto textWidth = renderer->getTextDimensions(m_text, false, 23).first;
+                const u32 width = renderer->getTextDimensions(m_text, false, 23).first;
                 m_truncated = width > m_maxWidth + 20;
             
                 if (m_truncated) [[unlikely]] {
-                    //m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate
-                    m_scrollText = m_text + "        ";
-                    auto scrollWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
-                    m_textWidth = scrollWidth;
-                    m_scrollText += m_text;
+                    // Optimized string building for scroll text
+                    m_scrollText.clear();
+                    m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate for text + spaces + text
+                    
+                    // Build scroll text efficiently: "text        text"
+                    m_scrollText.append(m_text).append("        ");
+                    //auto scrollWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
+                    m_textWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
+                    m_scrollText.append(m_text);
+                    
                     m_ellipsisText = renderer->limitStringLength(m_text, false, 23, m_maxWidth);
                 } else {
                     m_textWidth = width;
@@ -6752,19 +6780,19 @@ namespace tsl {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
                     
-                    Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                        a(useClickTextColor ? clickTextColor : selectedTextColor);
+                    //Color textColor = m_hasCustomTextColor ? m_customTextColor : 
+                    //    (useClickTextColor ? clickTextColor : selectedTextColor);
                     
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        textColor, (starColor));
+                        m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
-                    Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                        a(useClickTextColor ? clickTextColor : defaultTextColor);
+                    //Color textColor = m_hasCustomTextColor ? m_customTextColor : 
+                    //    (useClickTextColor ? clickTextColor : defaultTextColor);
                     
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        textColor, (starColor));
+                        m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (starColor));
                 }
             }
 
@@ -6991,28 +7019,28 @@ namespace tsl {
                 }
             
                 // Calculate vertical offset to center the text
-                s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
+                const s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
             
                 if (this->m_maxWidth == 0) {
                     if (this->m_value.length() > 0) {
                         //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
-                        auto valueWidth = renderer->getTextDimensions(this->m_value, false, 20).first;
-                        width = valueWidth;
+                        //auto valueWidth = renderer->getTextDimensions(this->m_value, false, 20).first;
+                        width = renderer->getTextDimensions(this->m_value, false, 20).first;
                         this->m_maxWidth = this->getWidth() - width - 70 +4;
                     } else {
                         this->m_maxWidth = this->getWidth() - 40 -10 -12;
                     }
                     
                     //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                    auto textWidth = renderer->getTextDimensions(this->m_text, false, 23).first;
-                    width = textWidth;
+                    //auto textWidth = renderer->getTextDimensions(this->m_text, false, 23).first;
+                    width = renderer->getTextDimensions(this->m_text, false, 23).first;
                     this->m_trunctuated = width > this->m_maxWidth+20;
                     
                     if (this->m_trunctuated) {
                         this->m_scrollText = this->m_text + "        ";
                         //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                        auto scrollWidth = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
-                        width = scrollWidth;
+                        //auto scrollWidth = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
+                        width = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
                         this->m_scrollText += this->m_text;
                         this->m_textWidth = width;
                         
@@ -7039,8 +7067,8 @@ namespace tsl {
                         renderer->disableScissoring();
                         
                         // Handle scrolling with frame rate compensation
-                        u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                        u64 elapsed_ns = currentTime_ns - this->timeIn_ns;
+                        const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                        const u64 elapsed_ns = currentTime_ns - this->timeIn_ns;
                         
                         // Frame rate compensation - cache calculations to reduce stutter
                         static u64 lastUpdateTime = 0;
@@ -7156,8 +7184,8 @@ namespace tsl {
                 
                 // CUSTOM SECTION START (modification for submenu footer color)
                 //const std::string& value = this->m_value;
-                s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
-                s32 yPosition = this->getY() + 45 - yOffset;
+                const s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
+                const s32 yPosition = this->getY() + 45 - yOffset;
                 const s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
@@ -7166,29 +7194,28 @@ namespace tsl {
                 //static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
             
                 // Determine text color
-                auto textColor = this->m_faint ? a(m_faintColor) : a(m_valueColor);
+                const auto textColor = this->m_faint ? a(m_faintColor) : a(m_valueColor);
                 
-            
                 if (this->m_value != ult::INPROGRESS_SYMBOL) {
                     // Draw the string with the determined text color
                     renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
-                    // CUSTOM SECTION END 
                 } else {
-                    // Static counter for the throbber symbols
                     static size_t throbberCounter = 0;
-                    // Avoid copying the original string
-                    const std::string* stringPtr = &this->m_value;
-            
-                    //size_t index = (throbberCounter / 10) % ult::THROBBER_SYMBOLS.size();  // Change index every 10 counts
-                    stringPtr = &ult::THROBBER_SYMBOLS[(throbberCounter / 10) % ult::THROBBER_SYMBOLS.size()];  // Point to the new string without copying
+
                     
-                    throbberCounter++;
-            
-                    // Reset counter to prevent overflow after many cycles (ensures it never grows indefinitely)
+                    // Reset counter to prevent overflow (every full cycle)
                     if (throbberCounter >= 10 * ult::THROBBER_SYMBOLS.size()) {
                         throbberCounter = 0;
                     }
-                    renderer->drawString(*stringPtr, false, xPosition, yPosition, fontSize, textColor);
+                    
+                    // Get current throbber symbol (changes every 10 frames)
+                    const size_t symbolIndex = (throbberCounter / 10) % ult::THROBBER_SYMBOLS.size();
+                    const std::string& currentSymbol = ult::THROBBER_SYMBOLS[symbolIndex];
+                    
+                    // Instance-specific counter for independent throbber animation
+                    ++throbberCounter;
+                    
+                    renderer->drawString(currentSymbol, false, xPosition, yPosition, fontSize, textColor);
                 }
                 //lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
             }

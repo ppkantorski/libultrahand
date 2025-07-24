@@ -71,8 +71,8 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
     if (!ptr || !stream) return 0;
     auto& file = *static_cast<std::ofstream*>(stream);
-    size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), totalBytes);
+    //size_t totalBytes = size * nmemb;
+    file.write(static_cast<const char*>(ptr), size * nmemb);
     return totalBytes;
 }
 #endif
@@ -84,8 +84,8 @@ extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_
     auto percentage = static_cast<std::atomic<int>*>(ptr);
 
     if (totalToDownload > 0) {
-        int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
-        percentage->store(newProgress, std::memory_order_release);
+        //int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
+        percentage->store(static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0), std::memory_order_release);
     }
 
     if (abortDownload.load(std::memory_order_acquire)) {
@@ -100,7 +100,7 @@ extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_
 void initializeCurl() {
     std::lock_guard<std::mutex> lock(curlInitMutex);
     if (!curlInitialized.load(std::memory_order_acquire)) {
-        CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+        const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
         if (res != CURLE_OK) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
@@ -141,7 +141,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
-        size_t lastSlash = url.find_last_of('/');
+        const size_t lastSlash = url.find_last_of('/');
         if (lastSlash != std::string::npos) {
             destination += url.substr(lastSlash + 1);
         } else {
@@ -154,7 +154,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         createDirectory(destination.substr(0, destination.find_last_of('/')));
     }
 
-    std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
+    const std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
 
 #if USING_FSTREAM_DIRECTIVE
     // Use ofstream if !USING_FSTREAM_DIRECTIVE is not defined
@@ -330,8 +330,8 @@ static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* file
         file = fopen((const char*)filename, mode_fopen);
         if (file && ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)) {
             // Set 64KB buffer for reading the ZIP file - reduces syscalls
-            static const size_t zipReadBufferSize = UNZIP_READ_BUFFER;
-            setvbuf(file, nullptr, _IOFBF, zipReadBufferSize);
+            //static const size_t zipReadBufferSize = UNZIP_READ_BUFFER;
+            setvbuf(file, nullptr, _IOFBF, UNZIP_READ_BUFFER);
         }
     }
     return file;

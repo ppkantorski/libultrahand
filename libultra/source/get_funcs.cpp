@@ -119,7 +119,7 @@ namespace ult {
      * @return The extracted value as a string. If no value is found, an empty string is returned.
      */
     std::string getValueFromLine(const std::string& line) {
-        size_t equalsPos = line.rfind('=');
+        const size_t equalsPos = line.rfind('=');
         if (equalsPos == std::string::npos || equalsPos + 1 >= line.size()) {
             return "";
         }
@@ -155,12 +155,12 @@ namespace ult {
      * If the path is empty or no name is found, an empty string is returned.
      */
     std::string getNameFromPath(const std::string& path) {
-        size_t lastNonSlash = path.find_last_not_of('/');
+        const size_t lastNonSlash = path.find_last_not_of('/');
         if (lastNonSlash == std::string::npos) {
             return "";  // All slashes, or empty string effectively
         }
     
-        size_t lastSlash = path.find_last_of('/', lastNonSlash);
+        const size_t lastSlash = path.find_last_of('/', lastNonSlash);
         if (lastSlash == std::string::npos) {
             return path.substr(0, lastNonSlash + 1);  // No slashes, the entire path is a filename
         }
@@ -180,7 +180,7 @@ namespace ult {
      * @return The file name extracted from the full path.
      */
     std::string getFileName(const std::string& path) {
-        size_t pos = path.find_last_of('/');
+        const size_t pos = path.find_last_of('/');
         return (pos != std::string::npos) ? path.substr(pos + 1) : "";
     }
     
@@ -375,10 +375,13 @@ namespace ult {
         struct stat st;
         
         bool isDir;
+        std::string pathRef;
+        size_t currentPartIndex;
+
         while (!stack.empty()) {
             if (maxLines > 0 && results.size() >= maxLines) return;
             
-            auto [pathRef, currentPartIndex] = stack.back();
+            std::tie(pathRef, currentPartIndex) = stack.back();
             stack.pop_back();
             
             // Copy once to avoid repeated access

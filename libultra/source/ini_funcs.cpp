@@ -64,6 +64,9 @@ namespace ult {
         int fieldsFound = 0;
         const int totalFields = fieldMap.size();
         
+        size_t startPos, endPos, first, last;
+        std::string value;
+
     #if !USING_FSTREAM_DIRECTIVE
         while (fgets(buffer, sizeof(buffer), file) && fieldsFound < totalFields) {
             line = std::string(buffer);
@@ -79,21 +82,21 @@ namespace ult {
             // Process each prefix in the map
             for (const auto& [prefix, field] : fieldMap) {
                 if (line.compare(0, prefix.length(), prefix) == 0) {
-                    size_t startPos = prefix.length();
-                    size_t endPos = line.find_first_of(";\r\n", startPos);
+                    startPos = prefix.length();
+                    endPos = line.find_first_of(";\r\n", startPos);
                     if (endPos == std::string::npos) {
                         endPos = line.length();
                     }
                     
                     // Extract value directly without intermediate string
-                    std::string value = line.substr(startPos, endPos - startPos);
+                    value = line.substr(startPos, endPos - startPos);
                     
                     // Trim whitespace efficiently
-                    size_t first = value.find_first_not_of(" \t");
+                    first = value.find_first_not_of(" \t");
                     if (first == std::string::npos) {
                         value.clear();
                     } else {
-                        size_t last = value.find_last_not_of(" \t");
+                        last = value.find_last_not_of(" \t");
                         value = value.substr(first, last - first + 1);
                     }
                     
@@ -318,6 +321,8 @@ namespace ult {
         size_t delimiterPos;
         std::string key, value;
         
+        size_t start, end, key_end, val_start;
+
         // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
     
@@ -331,8 +336,8 @@ namespace ult {
             if (line.empty()) continue;
             
             // Manual trim for better performance
-            size_t start = 0;
-            size_t end = line.length() - 1;
+            start = 0;
+            end = line.length() - 1;
             
             // Find start of non-whitespace
             while (start < line.length() && (line[start] == ' ' || line[start] == '\t')) {
@@ -359,7 +364,7 @@ namespace ult {
                 delimiterPos = line.find('=', start);
                 if (delimiterPos != std::string::npos && delimiterPos <= end) {
                     // Extract and trim key
-                    size_t key_end = delimiterPos - 1;
+                    key_end = delimiterPos - 1;
                     while (key_end > start && (line[key_end] == ' ' || line[key_end] == '\t')) {
                         --key_end;
                     }
@@ -368,7 +373,7 @@ namespace ult {
                         key.assign(line, start, key_end - start + 1);
                         
                         // Extract and trim value
-                        size_t val_start = delimiterPos + 1;
+                        val_start = delimiterPos + 1;
                         while (val_start <= end && (line[val_start] == ' ' || line[val_start] == '\t')) {
                             ++val_start;
                         }

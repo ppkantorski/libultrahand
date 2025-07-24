@@ -272,7 +272,7 @@ namespace ult {
     void atomicToggle(std::atomic<bool>& b) {
         bool expected = b.load(std::memory_order_relaxed);
         for (;;) {
-            bool desired = !expected;
+            const bool desired = !expected;
             if (b.compare_exchange_weak(expected, desired,
                                         std::memory_order_acq_rel,
                                         std::memory_order_relaxed)) {
@@ -326,7 +326,7 @@ namespace ult {
         std::string unicodeCombo;
         bool modified = false;
         size_t start = 0;
-        size_t length = combo.length();
+        const size_t length = combo.length();
         size_t end = 0;  // Moved outside the loop
         std::string token;  // Moved outside the loop
         auto it = buttonCharMap.end();  // Initialize iterator once outside the loop
@@ -1040,7 +1040,7 @@ namespace ult {
     
     
     // Prepare a map of default settings
-    std::map<std::string, std::string> defaultThemeSettingsMap = {
+    std::map<const std::string, std::string> defaultThemeSettingsMap = {
         {"default_overlay_color", whiteColor},
         {"default_package_color", "00FF00"},
         {"default_script_color", "FF33FF"},
@@ -1136,10 +1136,10 @@ namespace ult {
     
     
     float calculateAmplitude(float x, float peakDurationFactor) {
-        const float phasePeriod = 360.0f * peakDurationFactor;  // One full phase period
+        //const float phasePeriod = 360.0f * peakDurationFactor;  // One full phase period
     
         // Convert x from radians to degrees and calculate phase within the period
-        int phase = static_cast<int>(x * RAD_TO_DEG) % static_cast<int>(phasePeriod);
+        const int phase = static_cast<int>(x * RAD_TO_DEG) % static_cast<int>(360.0f * peakDurationFactor);
     
         // Check if the phase is odd using bitwise operation
         if (phase & 1) {
@@ -1162,8 +1162,8 @@ namespace ult {
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
-        size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
+        const size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
+        const size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
         
         wallpaperData.resize(compressedDataSize);
     
@@ -1180,7 +1180,7 @@ namespace ult {
             }
     
             std::vector<uint8_t> buffer(originalDataSize);
-            size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
+            const size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
             fclose(file);
     
             if (bytesRead != originalDataSize) {
@@ -1323,13 +1323,13 @@ namespace ult {
         }
         
         // Get the current time in nanoseconds
-        uint64_t now_ns = armTicksToNs(armGetSystemTick());
+        const uint64_t now_ns = armTicksToNs(armGetSystemTick());
         
         // 3 seconds in nanoseconds
         constexpr uint64_t min_delay_ns = 3000000000ULL;
         
         // Check if enough time has elapsed or if cache is not initialized
-        bool useCache = (now_ns - last_call_ns <= min_delay_ns) && powerCacheInitialized;
+        const bool useCache = (now_ns - last_call_ns <= min_delay_ns) && powerCacheInitialized;
         if (!useCache) {
             PsmChargerType charger = PsmChargerType_Unconnected;
             Result rc = psmGetBatteryChargePercentage(batteryCharge);

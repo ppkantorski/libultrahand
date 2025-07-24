@@ -186,7 +186,7 @@ namespace ult {
         fclose(file);
         
         // Efficiently remove newline character
-        size_t len = strlen(buffer);
+        const size_t len = strlen(buffer);
         if (len > 0 && buffer[len - 1] == '\n') {
             buffer[len - 1] = '\0';
             if (len > 1 && buffer[len - 2] == '\r') {
@@ -438,11 +438,11 @@ namespace ult {
         const std::string& outputTxtFilePath
     ) {
         // STEP 1: Read target file into fast lookup set (only once)
-        std::unordered_set<std::string> targetLines = readSetFromFile(txtFilePath);
+        const std::unordered_set<std::string> targetLines = readSetFromFile(txtFilePath);
         std::unordered_set<std::string> duplicates;
         
         // STEP 2: Get wildcard files
-        std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
+        const std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
         
         // STEP 3: Process each wildcard file line-by-line (minimum memory)
         for (const auto& filePath : wildcardFiles) {

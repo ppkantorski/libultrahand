@@ -511,7 +511,7 @@ namespace ult {
     
     
     // Prepare a map of default settings
-    extern std::map<std::string, std::string> defaultThemeSettingsMap;
+    extern std::map<const std::string, std::string> defaultThemeSettingsMap;
     
     bool isNumericCharacter(char c);
     

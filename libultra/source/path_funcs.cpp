@@ -108,7 +108,7 @@ namespace ult {
      * @param directoryPath The path of the directory to be created.
      */
     void createDirectory(const std::string& directoryPath) {
-        std::string volume = ROOT_PATH;
+        const std::string volume = ROOT_PATH;
         std::string path = directoryPath;
     
         // Remove leading "sdmc:/" if present
@@ -209,9 +209,9 @@ namespace ult {
         
         // Batch logging optimization - collect successful deletions instead of logging immediately
         std::vector<std::string> successfulDeletions;
-        bool needsLogging = !logSource.empty();
+        const bool needsLogging = !logSource.empty();
     
-        bool pathIsFile = pathToDelete.back() != '/';
+        const bool pathIsFile = pathToDelete.back() != '/';
     
         if (pathIsFile) {
             if (isFile(pathToDelete)) {
@@ -369,7 +369,7 @@ namespace ult {
      */
     void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource) {
         //logMessage("pathPattern: "+pathPattern);
-        std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
+        const std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
         
         for (const auto& path : fileList) {
             //logMessage("path: "+path);
@@ -408,9 +408,10 @@ namespace ult {
         std::string name, fullPathSrc, fullPathDst;
         dirent* entry;
         DIR* dir;
-    
+        
+        std::string currentSource, currentDestination;
         while (!stack.empty()) {
-            auto [currentSource, currentDestination] = stack.back();
+            std::tie(currentSource, currentDestination) = stack.back();
             stack.pop_back();
     
             dir = opendir(currentSource.c_str());
@@ -1088,7 +1089,7 @@ namespace ult {
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
         const std::string& logSource, const std::string& logDestination) {
-        std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
+        const std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
         long long totalSize = 0;
         for (const std::string& path : fileList) {
             totalSize += getTotalSize(path);
@@ -1114,7 +1115,7 @@ namespace ult {
      *                   Default is "sdmc:/". You can specify a different target path if needed.
      */
     void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode) {
-        std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
+        const std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
         std::string updatedPath;
         long long totalSize = 0;
         long long totalBytesCopied = 0;
@@ -1156,7 +1157,7 @@ namespace ult {
                          const std::string& outputDir)
     {
         // 1) Gather all matches from the wildcard pattern
-        std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
+        const std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
         if (allMatches.empty()) {
             return; // No matches, nothing to do
         }
