@@ -146,6 +146,7 @@ namespace ult {
     std::string replaceMultipleSlashes(const std::string& input);
     
     
+    void resolveDirectoryTraversal(std::string& path);
     
     /**
      * @brief Preprocesses a path string by replacing multiple slashes and adding "sdmc:" prefix.

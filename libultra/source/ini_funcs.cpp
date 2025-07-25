@@ -586,7 +586,8 @@ namespace ult {
     
         std::string line;
         //line.reserve(1024); // Add reservation for efficiency
-    
+        
+        std::string sectionName;
         while (std::getline(file, line)) {
             // Remove carriage return if present
             if (!line.empty() && line.back() == '\r') {
@@ -597,7 +598,7 @@ namespace ult {
             
             // Check if the line contains a section header
             if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                std::string sectionName;
+                sectionName = "";
                 sectionName.assign(line, 1, line.size() - 2);
                 sections.push_back(std::move(sectionName));
             }
@@ -2152,4 +2153,49 @@ namespace ult {
         return sectionCommands; // Return only the commands from the target section
     }
     
+
+    /**
+     * @brief Saves INI data structure to a file.
+     *
+     * This function writes a complete INI data structure to the specified file path.
+     * The data structure should be organized as sections containing key-value pairs.
+     *
+     * @param filePath The path to the INI file to write.
+     * @param data The complete INI data structure to save.
+     */
+    void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
+        #if !USING_FSTREAM_DIRECTIVE
+        FILE* file = fopen(filePath.c_str(), "w");
+        if (!file) {
+            // Handle error: could not open file
+            return;
+        }
+    
+        for (const auto& section : data) {
+            fprintf(file, "[%s]\n", section.first.c_str());
+            for (const auto& kv : section.second) {
+                fprintf(file, "%s=%s\n", kv.first.c_str(), kv.second.c_str());
+            }
+            fprintf(file, "\n"); // Separate sections with a newline
+        }
+    
+        fclose(file);
+        #else
+        std::ofstream file(filePath);
+        if (!file.is_open()) {
+            // Handle error: could not open file
+            return;
+        }
+    
+        for (const auto& section : data) {
+            file << "[" << section.first << "]\n";
+            for (const auto& kv : section.second) {
+                file << kv.first << "=" << kv.second << "\n";
+            }
+            file << "\n"; // Separate sections with a newline
+        }
+    
+        file.close();
+        #endif
+    }
 }

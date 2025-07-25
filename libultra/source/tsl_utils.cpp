@@ -1509,16 +1509,26 @@ namespace ult {
 
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
+        // Load INI data once instead of 8 separate file reads
+        auto ultrahandSection = getKeyValuePairsFromSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME);
         
-        hideClock = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_clock") != FALSE_STR);
-        hideBattery = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_battery") != FALSE_STR);
-        hideSOCTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_soc_temp") != FALSE_STR);
-        hidePCBTemp = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_pcb_temp") != FALSE_STR);
-        dynamicWidgetColors = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "dynamic_widget_colors") != FALSE_STR);
-        hideWidgetBackdrop = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_widget_backdrop") != FALSE_STR);
-        centerWidgetAlignment = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "center_widget_alignment") != FALSE_STR);
-        extendedWidgetBackdrop = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "extended_widget_backdrop") != FALSE_STR);
-
+        // Helper lambda to safely get boolean values with proper defaults
+        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
+            if (ultrahandSection.count(key) > 0) {
+                return (ultrahandSection.at(key) != FALSE_STR);
+            }
+            return defaultValue;
+        };
+        
+        // Set all values from the loaded section with correct defaults (matching initialization)
+        hideClock = getBoolValue("hide_clock", false);                           // FALSE_STR default
+        hideBattery = getBoolValue("hide_battery", true);                        // TRUE_STR default
+        hideSOCTemp = getBoolValue("hide_soc_temp", true);                       // TRUE_STR default  
+        hidePCBTemp = getBoolValue("hide_pcb_temp", true);                       // TRUE_STR default
+        dynamicWidgetColors = getBoolValue("dynamic_widget_colors", true);       // TRUE_STR default
+        hideWidgetBackdrop = getBoolValue("hide_widget_backdrop", false);        // FALSE_STR default
+        centerWidgetAlignment = getBoolValue("center_widget_alignment", true);   // TRUE_STR default
+        extendedWidgetBackdrop = getBoolValue("extended_widget_backdrop", false); // FALSE_STR default
     }
     #endif
     
@@ -1532,12 +1542,25 @@ namespace ult {
     
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeVersionLabels() {
-        cleanVersionLabels = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "clean_version_labels") != FALSE_STR);
-        hideOverlayVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_overlay_versions") != FALSE_STR);
-        hidePackageVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "hide_package_versions") != FALSE_STR);
-        highlightVersions = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_versions") != FALSE_STR);
-        highlightTitles = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_titles") != FALSE_STR);
-        highlightPackages = (parseValueFromIniSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME, "highlight_packages") != FALSE_STR);
+        // Load INI data once instead of 6 separate file reads
+        auto ultrahandSection = getKeyValuePairsFromSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME);
+        
+        // Helper lambda to safely get boolean values with proper defaults
+        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
+            if (ultrahandSection.count(key) > 0) {
+                return (ultrahandSection.at(key) != FALSE_STR);
+            }
+            return defaultValue;
+        };
+        
+        // Set all values from the loaded section with correct defaults (matching initialization)
+        cleanVersionLabels = getBoolValue("clean_version_labels", false);        // FALSE_STR default
+        hideOverlayVersions = getBoolValue("hide_overlay_versions", false);      // FALSE_STR default  
+        hidePackageVersions = getBoolValue("hide_package_versions", false);      // FALSE_STR default
+        highlightVersions = getBoolValue("highlight_versions", true);            // TRUE_STR default
+        highlightTitles = getBoolValue("highlight_titles", false);               // FALSE_STR default
+        highlightPackages = getBoolValue("highlight_packages", true);            // TRUE_STR default
+        
         //#ifdef APP_VERSION
         //versionLabel = cleanVersionLabel(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";
         //#endif

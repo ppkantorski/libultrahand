@@ -482,33 +482,52 @@ namespace tsl {
     #if IS_LAUNCHER_DIRECTIVE
     #else
     static void initializeUltrahandSettings() { // only needed for regular overlays
-
-        std::string defaultLang = ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::DEFAULT_LANG_STR);
-        defaultLang = defaultLang.empty() ? "en" : defaultLang;
-
+        // Load INI data once instead of 4 separate file reads
+        auto ultrahandSection = ult::getKeyValuePairsFromSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
+        
+        // Helper lambda to safely get string values
+        auto getStringValue = [&](const std::string& key, const std::string& defaultValue = "") -> std::string {
+            if (ultrahandSection.count(key) > 0) {
+                return ultrahandSection.at(key);
+            }
+            return defaultValue;
+        };
+        
+        // Helper lambda to safely get boolean values
+        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
+            if (ultrahandSection.count(key) > 0) {
+                return (ultrahandSection.at(key) == ult::TRUE_STR);
+            }
+            return defaultValue;
+        };
+        
+        // Get default language with fallback
+        std::string defaultLang = getStringValue(ult::DEFAULT_LANG_STR, "en");
+        if (defaultLang.empty()) {
+            defaultLang = "en";
+        }
+        
         #ifdef UI_OVERRIDE_PATH
         
         std::string UI_PATH = UI_OVERRIDE_PATH;
         ult::preprocessPath(UI_PATH);
-
         const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
         const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
                   
         const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
-
         if (ult::isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
             ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
         if (ult::isFileOrDirectory(NEW_WALLPAPER_PATH))
             ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
         if (ult::isFileOrDirectory(TRANSLATION_JSON_PATH))
             ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
-
         #endif
-        // Set Ultrahand Globals
-        ult::useSwipeToOpen = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "swipe_to_open") == ult::TRUE_STR);
-        ult::useOpaqueScreenshots = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "opaque_screenshots") == ult::TRUE_STR);
-        ult::useLaunchCombos = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "launch_combos") == ult::TRUE_STR);
-
+        
+        // Set Ultrahand Globals using loaded section (defaults match initialization function)
+        ult::useSwipeToOpen = getBoolValue("swipe_to_open", true);        // TRUE_STR default
+        ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true); // TRUE_STR default
+        ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
+        
         const std::string langFile = ult::LANG_PATH+defaultLang+".json";
         if (ult::isFileOrDirectory(langFile))
             ult::parseLanguage(langFile);

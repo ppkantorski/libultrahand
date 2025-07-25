@@ -287,6 +287,7 @@ namespace ult {
     
         int offset = 0;
         bool enabled = true;
+        int validCheatsProcessed = 0; // ADDED: Track number of valid cheats processed
         StringStream iss(pchtxt);  // Use your custom StringStream
         std::string line;
         
@@ -295,11 +296,10 @@ namespace ult {
         int codeOffset;
         std::string cheatLine;
         char offsetBuffer[9];
-
-
+    
         // Use your custom getline method instead of std::getline
         while (iss.getline(line, '\n')) {  // Custom getline with newline as the delimiter
-
+    
             // strip inline C++-style comments
             const auto slashPos = line.find("//");
             if (slashPos != std::string::npos)
@@ -312,8 +312,7 @@ namespace ult {
             
             trim(line);
             if (line.empty() || line[0] == '#') continue;
-
-
+    
             if (line.find("@flag offset_shift ") == 0) {
                 const std::string offsetStr = line.substr(19);
                 offset = (offsetStr.find("0x") == 0 ? std::strtol(offsetStr.c_str(), nullptr, 16) : std::strtol(offsetStr.c_str(), nullptr, 10)) - 0x100;
@@ -324,7 +323,7 @@ namespace ult {
                 enabled = true;
                 continue;
             }
-
+    
             if (line.find("@disabled") == 0) {
                 enabled = false;
                 continue;
@@ -333,7 +332,7 @@ namespace ult {
             if (line.find("@stop") == 0) {
                 break;
             }
-
+    
             if (!enabled) {
                 continue;
             }
@@ -371,10 +370,12 @@ namespace ult {
     
             if (!exists) {
                 fprintf(outCheatFile, "%s\n", cheatLine.c_str());
+                validCheatsProcessed++; // ADDED: Increment counter for new cheats
             }
     #else
             if (!cheatExists(cheatFilePath, cheatLine)) {
                 outCheatFile << cheatLine << "\n";
+                validCheatsProcessed++; // ADDED: Increment counter for new cheats
             }
     #endif
         }
@@ -384,6 +385,14 @@ namespace ult {
     #else
         outCheatFile.close();
     #endif
+    
+        // ADDED: Check if any valid cheats were processed
+        if (validCheatsProcessed == 0) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Warning: No valid patch data found to convert to cheats in " + pchtxtPath);
+            #endif
+            return false;
+        }
     
         return true;
     }
@@ -507,11 +516,6 @@ namespace ult {
             valueBytes.clear();
         }
         
-        if (nsobid.empty()) {
-            nsobid = pchtxtPath.substr(pchtxtPath.find_last_of("/\\") + 1);
-            nsobid = nsobid.substr(0, nsobid.find_last_of("."));
-        }
-    
         fclose(pchtxtFile);
     
     #else
@@ -577,13 +581,21 @@ namespace ult {
             valueBytes.clear();
         }
     
+        pchtxtFile.close();
+    #endif
+    
+        // CHECK: Return false if no patches were found
+        if (patches.empty()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Warning: No valid patches found in " + pchtxtPath);
+            #endif
+            return false;
+        }
+    
         if (nsobid.empty()) {
             nsobid = pchtxtPath.substr(pchtxtPath.find_last_of("/\\") + 1);
             nsobid = nsobid.substr(0, nsobid.find_last_of("."));
         }
-    
-        pchtxtFile.close();
-    #endif
     
         // Trim any newline characters from nsobid
         trim(nsobid);
@@ -626,6 +638,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
+            return false; // Changed: Return false if we can't read the file for title ID
         }
     
         // Read the entire file into a string
@@ -682,6 +695,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
+            return false; // Changed: Return false if we can't read the file for title ID
         }
     
         std::string pchtxt((std::istreambuf_iterator<char>(_pchtxtFile)), std::istreambuf_iterator<char>());

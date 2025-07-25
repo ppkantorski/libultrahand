@@ -318,6 +318,18 @@ namespace ult {
      */
     std::vector<std::vector<std::string>> loadSpecificSectionFromIni(const std::string& packageIniPath, const std::string& sectionName);
     
+
+
+    /**
+     * @brief Saves INI data structure to a file.
+     *
+     * This function writes a complete INI data structure to the specified file path.
+     * The data structure should be organized as sections containing key-value pairs.
+     *
+     * @param filePath The path to the INI file to write.
+     * @param data The complete INI data structure to save.
+     */
+    void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data);
 }
 
 #endif
