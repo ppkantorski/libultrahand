@@ -103,6 +103,7 @@ namespace ult {
 
     extern std::unordered_map<u64, OverlayCombo> g_entryCombos;
     extern std::atomic<bool> launchingOverlay;
+    extern std::atomic<bool> settingsInitialized;
     extern bool currentForeground;
 
     //void loadOverlayKeyCombos();

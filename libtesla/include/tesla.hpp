@@ -10349,7 +10349,7 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
                     }
-                    else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                    else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire)) {
                         std::string requestedPath, requestedArgs;
                         
                         // Get the request data safely
@@ -10413,7 +10413,7 @@ namespace tsl {
                             const std::string& modeArg = comboInfo.launchArg;
                     
                     #if IS_LAUNCHER_DIRECTIVE
-                            if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire)) {
+                            if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire)) {
                     #else
                             if (!overlayPath.empty() && (shData->keysHeld)) {
                     #endif

@@ -38,6 +38,7 @@ namespace ult {
     
     std::unordered_map<u64, OverlayCombo> g_entryCombos;
     std::atomic<bool> launchingOverlay(false);
+    std::atomic<bool> settingsInitialized(false);
     bool currentForeground = false;
 
 
