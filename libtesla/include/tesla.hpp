@@ -10182,13 +10182,14 @@ namespace tsl {
                 [WaiterObject_CaptureButton] = waiterForEvent(&captureButtonPressEvent),
             };
             
-            static u64 currentTouchTick = 0;
-            static auto lastTouchX = 0;
+            u64 currentTouchTick = 0;
+            auto lastTouchX = 0;
 
             // Preset touch boundaries
-            static const int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
-            static const int SWIPE_LEFT_BOUND = (1280 - 16);
-            static const u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
+            const int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
+            const int SWIPE_LEFT_BOUND = (1280 - 16);
+            const u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
+            const u64 FAST_SWAP_THRESHOLD_NS = 150'000'000ULL;
 
             s32 idx;
             Result rc;
@@ -10205,20 +10206,23 @@ namespace tsl {
             //u64 nowTick;
             //u64 elapsedNs;
 
-            static u64 lastPollTick = 0;
-            static u64 resetStartTick = armGetSystemTick();
-            static bool runOnce = true;
+            u64 lastPollTick = 0;
+            u64 resetStartTick = armGetSystemTick();
+            const u64 startNs = armTicksToNs(resetStartTick);
+            //static bool runOnce = true;
 
-            if (runOnce) {
-                ult::lastTitleID = ult::getTitleIdAsString();
-                runOnce = false;
-            }
+            //if (runOnce) {
+            //    ult::lastTitleID = ult::getTitleIdAsString();
+            //    runOnce = false;
+            //}
+            ult::lastTitleID = ult::getTitleIdAsString();
 
             //u64 elapsedTime_ns;
-
+            
             while (shData->running) {
             
                 const u64 nowTick = armGetSystemTick();
+                const u64 nowNs = armTicksToNs(nowTick);
                 const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
 
                 // Poll Title ID every 1 seconds
@@ -10317,7 +10321,6 @@ namespace tsl {
                         // Reset time tracking
                         currentTouchTick = nowTick;
                     }
-                    
 
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
@@ -10349,7 +10352,7 @@ namespace tsl {
                         eventFire(&shData->comboEvent);
                         ult::updateMenuCombos = false;
                     }
-                    else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire)) {
+                    else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire) && (nowNs - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                         std::string requestedPath, requestedArgs;
                         
                         // Get the request data safely
@@ -10413,9 +10416,9 @@ namespace tsl {
                             const std::string& modeArg = comboInfo.launchArg;
                     
                     #if IS_LAUNCHER_DIRECTIVE
-                            if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire)) {
+                            if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire) && (armTicksToNs(nowTick) - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                     #else
-                            if (!overlayPath.empty() && (shData->keysHeld)) {
+                            if (!overlayPath.empty() && (shData->keysHeld) && (nowNs - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                     #endif
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
