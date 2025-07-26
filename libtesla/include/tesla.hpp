@@ -528,6 +528,8 @@ namespace tsl {
         ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true); // TRUE_STR default
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
         
+        ultrahandSection.clear();
+
         const std::string langFile = ult::LANG_PATH+defaultLang+".json";
         if (ult::isFileOrDirectory(langFile))
             ult::parseLanguage(langFile);
@@ -10459,23 +10461,6 @@ namespace tsl {
                                     finalArgs = modeArg;
                                 } else {
                                     // Only check overlay-specific launch args for non-ovlmenu entries
-                                    //if (overlayFileName != "ovlmenu.ovl") {
-                                    //    const auto useArgs = ult::parseValueFromIniSection(
-                                    //        ult::OVERLAYS_INI_FILEPATH,
-                                    //        overlayFileName,
-                                    //        ult::USE_LAUNCH_ARGS_STR
-                                    //    );
-                                    //    if (useArgs == ult::TRUE_STR) {
-                                    //        finalArgs = ult::parseValueFromIniSection(
-                                    //            ult::OVERLAYS_INI_FILEPATH,
-                                    //            overlayFileName,
-                                    //            ult::LAUNCH_ARGS_STR
-                                    //        );
-                                    //        ult::removeQuotes(finalArgs);
-                                    //    }
-                                    //}
-
-                                    // Only check overlay-specific launch args for non-ovlmenu entries
                                     if (overlayFileName != "ovlmenu.ovl") {
                                         // OPTIMIZED: Single INI read for both values
                                         auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
@@ -10494,7 +10479,7 @@ namespace tsl {
                                                 launchArgs = argsIt->second;
                                             }
                                         }
-        
+                                        
                                         if (useArgs == ult::TRUE_STR) {
                                             finalArgs = launchArgs;
                                             ult::removeQuotes(finalArgs);
@@ -10868,26 +10853,51 @@ namespace tsl {
 
 
     #if IS_LAUNCHER_DIRECTIVE
-        //bool inOverlay = true;
-        //if (ult::inputExists(settings)
-        //    != "}nwmD9myxpsq9\x7fv~|krkxn9"
-        //) {inOverlay = true; return 0;}
-        //else {
-        if (ult::firstBoot)
-            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
-        const bool inOverlay = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR) != ult::FALSE_STR);
-        //}
+        {
+            bool inOverlay;
+            bool shouldFireEvent = false;
+            auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
+            bool needsUpdate = false;
+            
+            // Handle first boot
+            if (ult::firstBoot) {
+                configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+                needsUpdate = true;
+            }
+            
+            // Read the overlay value
+            auto projectIt = configData.find(ult::ULTRAHAND_PROJECT_NAME);
+            if (projectIt != configData.end()) {
+                auto overlayIt = projectIt->second.find(ult::IN_OVERLAY_STR);
+                inOverlay = (overlayIt == projectIt->second.end() || overlayIt->second != ult::FALSE_STR);
+            } else {
+                inOverlay = true; // Default if section doesn't exist
+            }
+            
+            // Check if we need to update overlay status and fire event
+            if (inOverlay && skipCombo) {
+                configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+                needsUpdate = true;
+                shouldFireEvent = true;
+            }
+            
+            // Save all changes at once
+            if (needsUpdate) {
+                ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
+            }
+        
+            if (shouldFireEvent) {
+                eventFire(&shData.comboEvent);
+            }
 
+        } // configData automatically destroyed here
     #else
-        const bool inOverlay = true;
-    #endif
-
-        if (inOverlay && skipCombo) {
-            #if IS_LAUNCHER_DIRECTIVE
-            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
-            #endif
+        if (skipCombo) {
             eventFire(&shData.comboEvent);
         }
+    #endif
+
+
 
         overlay->disableNextAnimation();
 
