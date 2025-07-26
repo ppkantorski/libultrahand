@@ -8244,18 +8244,41 @@ namespace tsl {
                 }
         
                 bool loadedValue = false;
+                //if (!m_packagePath.empty()) {
+                //    std::string initialIndex = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "index");
+                //    
+                //    if (!initialIndex.empty()) {
+                //        m_index = static_cast<s16>(ult::stoi(initialIndex)); // convert initializedValue to s16
+                //    }
+                //    if (!m_usingNamedStepTrackbar) {
+                //        std::string initialValue = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "value");
+                //        
+                //        if (!initialValue.empty()) {
+                //            m_value = static_cast<s16>(ult::stoi(initialValue)); // convert initializedValue to s16
+                //            loadedValue = true;
+                //        }
+                //    }
+                //}
+
                 if (!m_packagePath.empty()) {
-                    std::string initialIndex = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "index");
-        
-                    if (!initialIndex.empty()) {
-                        m_index = static_cast<s16>(ult::stoi(initialIndex)); // convert initializedValue to s16
-                    }
-                    if (!m_usingNamedStepTrackbar) {
-                        std::string initialValue = ult::parseValueFromIniSection(m_packagePath + "config.ini", m_label, "value");
+                    // Load config INI once and extract both values
+                    auto configIniData = ult::getParsedDataFromIniFile(m_packagePath + "config.ini");
+                    auto sectionIt = configIniData.find(m_label);
+                    
+                    if (sectionIt != configIniData.end()) {
+                        // Get index value
+                        auto indexIt = sectionIt->second.find("index");
+                        if (indexIt != sectionIt->second.end() && !indexIt->second.empty()) {
+                            m_index = static_cast<s16>(ult::stoi(indexIt->second)); // convert initializedValue to s16
+                        }
                         
-                        if (!initialValue.empty()) {
-                            m_value = static_cast<s16>(ult::stoi(initialValue)); // convert initializedValue to s16
-                            loadedValue = true;
+                        // Get value if not using named step trackbar
+                        if (!m_usingNamedStepTrackbar) {
+                            auto valueIt = sectionIt->second.find("value");
+                            if (valueIt != sectionIt->second.end() && !valueIt->second.empty()) {
+                                m_value = static_cast<s16>(ult::stoi(valueIt->second)); // convert initializedValue to s16
+                                loadedValue = true;
+                            }
                         }
                     }
                 }
@@ -10347,13 +10370,23 @@ namespace tsl {
                             //        ult::TRUE_STR
                             //    );
                             //}
-                            ult::setIniFileValue(
-                                ult::ULTRAHAND_CONFIG_INI_PATH,
-                                ult::ULTRAHAND_PROJECT_NAME,
-                                ult::IN_OVERLAY_STR,
-                                ult::TRUE_STR
-                            );
-                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::TRUE_STR);
+                            //ult::setIniFileValue(
+                            //    ult::ULTRAHAND_CONFIG_INI_PATH,
+                            //    ult::ULTRAHAND_PROJECT_NAME,
+                            //    ult::IN_OVERLAY_STR,
+                            //    ult::TRUE_STR
+                            //);
+                            //ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::TRUE_STR);
+
+                            // OPTIMIZED: Batch INI file writes
+                            {
+                                auto iniData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
+                                auto& section = iniData[ult::ULTRAHAND_PROJECT_NAME];
+                                section[ult::IN_OVERLAY_STR] = ult::TRUE_STR;
+                                section["to_packages"] = ult::TRUE_STR;
+                                ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, iniData);
+                            }
+
                             // Reset navigation state variables (these control slide navigation)
                             ult::allowSlide.exchange(false, std::memory_order_acq_rel);
                             ult::unlockedSlide.exchange(false, std::memory_order_acq_rel);
@@ -10426,18 +10459,44 @@ namespace tsl {
                                     finalArgs = modeArg;
                                 } else {
                                     // Only check overlay-specific launch args for non-ovlmenu entries
+                                    //if (overlayFileName != "ovlmenu.ovl") {
+                                    //    const auto useArgs = ult::parseValueFromIniSection(
+                                    //        ult::OVERLAYS_INI_FILEPATH,
+                                    //        overlayFileName,
+                                    //        ult::USE_LAUNCH_ARGS_STR
+                                    //    );
+                                    //    if (useArgs == ult::TRUE_STR) {
+                                    //        finalArgs = ult::parseValueFromIniSection(
+                                    //            ult::OVERLAYS_INI_FILEPATH,
+                                    //            overlayFileName,
+                                    //            ult::LAUNCH_ARGS_STR
+                                    //        );
+                                    //        ult::removeQuotes(finalArgs);
+                                    //    }
+                                    //}
+
+                                    // Only check overlay-specific launch args for non-ovlmenu entries
                                     if (overlayFileName != "ovlmenu.ovl") {
-                                        const auto useArgs = ult::parseValueFromIniSection(
-                                            ult::OVERLAYS_INI_FILEPATH,
-                                            overlayFileName,
-                                            ult::USE_LAUNCH_ARGS_STR
-                                        );
+                                        // OPTIMIZED: Single INI read for both values
+                                        auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+                                        std::string useArgs = "";
+                                        std::string launchArgs = "";
+        
+                                        auto sectionIt = overlaysIniData.find(overlayFileName);
+                                        if (sectionIt != overlaysIniData.end()) {
+                                            auto useArgsIt = sectionIt->second.find(ult::USE_LAUNCH_ARGS_STR);
+                                            if (useArgsIt != sectionIt->second.end()) {
+                                                useArgs = useArgsIt->second;
+                                            }
+                                            
+                                            auto argsIt = sectionIt->second.find(ult::LAUNCH_ARGS_STR);
+                                            if (argsIt != sectionIt->second.end()) {
+                                                launchArgs = argsIt->second;
+                                            }
+                                        }
+        
                                         if (useArgs == ult::TRUE_STR) {
-                                            finalArgs = ult::parseValueFromIniSection(
-                                                ult::OVERLAYS_INI_FILEPATH,
-                                                overlayFileName,
-                                                ult::LAUNCH_ARGS_STR
-                                            );
+                                            finalArgs = launchArgs;
                                             ult::removeQuotes(finalArgs);
                                         }
                                     }
