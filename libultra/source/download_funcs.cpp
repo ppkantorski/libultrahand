@@ -29,8 +29,8 @@ size_t UNZIP_WRITE_BUFFER = 32768;//131072*2;//4096*4;
 
 
 // Path to the CA certificate
-const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
-const std::string cacertURL = "https://curl.se/ca/cacert.pem";
+//const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
+//const std::string cacertURL = "https://curl.se/ca/cacert.pem";
 
 // Shared atomic flag to indicate whether to abort the download operation
 std::atomic<bool> abortDownload(false);
@@ -43,7 +43,7 @@ std::atomic<int> unzipPercentage(-1);
 static std::mutex curlInitMutex;
 static std::atomic<bool> curlInitialized(false);
 
-const std::string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+
 
 struct FileDeleter {
     void operator()(FILE* f) const { if (f) fclose(f); }
@@ -224,7 +224,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
     }
 
-    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent.c_str());
+    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent);
     curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
 

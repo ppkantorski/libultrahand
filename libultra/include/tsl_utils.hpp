@@ -290,8 +290,8 @@ namespace ult {
     
     // English string definitions
     
-    constexpr std::string whiteColor = "#FFFFFF";
-    constexpr std::string blackColor = "#000000";
+    extern const std::string whiteColor;
+    extern const std::string blackColor;
     
     constexpr double _M_PI = 3.14159265358979323846;  // For double precision
     constexpr double RAD_TO_DEG = 180.0f / _M_PI;

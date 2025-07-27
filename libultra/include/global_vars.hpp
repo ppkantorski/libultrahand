@@ -24,6 +24,13 @@
 #include <atomic>
 #include <set>
 
+// Auto-detect constexpr std::string support based on C++ version
+#if __cplusplus >= 202400L
+    #define CONSTEXPR_STRING constexpr
+#else
+    #define CONSTEXPR_STRING const
+#endif
+
 namespace ult {
     extern const std::string CONFIG_FILENAME;
 

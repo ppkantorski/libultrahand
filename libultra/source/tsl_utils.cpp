@@ -365,8 +365,8 @@ namespace ult {
     }
     
     
-    //const std::string whiteColor = "#FFFFFF";
-    //const std::string blackColor = "#000000";
+    CONSTEXPR_STRING std::string whiteColor = "#FFFFFF";
+    CONSTEXPR_STRING std::string blackColor = "#000000";
     
     #if IS_LAUNCHER_DIRECTIVE
     std::string ENGLISH = "English";
@@ -1499,7 +1499,7 @@ namespace ult {
     
     
     // Time implementation
-    const std::string DEFAULT_DT_FORMAT = "'%a %T'";
+    CONSTEXPR_STRING std::string DEFAULT_DT_FORMAT = "'%a %T'";
     std::string datetimeFormat = "%a %T";
     
     

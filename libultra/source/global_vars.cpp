@@ -18,43 +18,45 @@
 
 #include "global_vars.hpp"
 
-namespace ult {
-    const std::string CONFIG_FILENAME = "config.ini";
 
-    const std::string ULTRAHAND_PROJECT_NAME = "ultrahand";
-    const std::string CAPITAL_ULTRAHAND_PROJECT_NAME = "Ultrahand";
+
+namespace ult {
+    CONSTEXPR_STRING std::string CONFIG_FILENAME = "config.ini";
+
+    CONSTEXPR_STRING std::string ULTRAHAND_PROJECT_NAME = "ultrahand";
+    CONSTEXPR_STRING std::string CAPITAL_ULTRAHAND_PROJECT_NAME = "Ultrahand";
     
-    const std::string ROOT_PATH = "sdmc:/";
-    const std::string SETTINGS_PATH = ROOT_PATH + "config/ultrahand/";
-    const std::string ULTRAHAND_CONFIG_INI_PATH = SETTINGS_PATH + "config.ini";
-    const std::string TESLA_CONFIG_INI_PATH = ROOT_PATH + "config/tesla/config.ini";
-    const std::string LANG_PATH = SETTINGS_PATH + "lang/";
-    const std::string THEMES_PATH = SETTINGS_PATH + "themes/";
-    const std::string WALLPAPERS_PATH = SETTINGS_PATH + "wallpapers/";
-    const std::string FLAGS_PATH = SETTINGS_PATH+"flags/";
-    const std::string PAYLOADS_PATH = SETTINGS_PATH+"payloads/";
+    CONSTEXPR_STRING std::string ROOT_PATH = "sdmc:/";
+    const std::string SETTINGS_PATH = "sdmc:/config/ultrahand/";
+    const std::string ULTRAHAND_CONFIG_INI_PATH = "sdmc:/config/ultrahand/config.ini";
+    const std::string TESLA_CONFIG_INI_PATH = "sdmc:/config/tesla/config.ini";
+    const std::string LANG_PATH = "sdmc:/config/ultrahand/lang/";
+    const std::string THEMES_PATH = "sdmc:/config/ultrahand/themes/";
+    const std::string WALLPAPERS_PATH = "sdmc:/config/ultrahand/wallpapers/";
+    const std::string FLAGS_PATH = "sdmc:/config/ultrahand/flags/";
+    const std::string PAYLOADS_PATH = "sdmc:/config/ultrahand/payloads/";
     const std::string HB_APPSTORE_JSON = "/switch/appstore/.get/packages/UltrahandOverlay/info.json";
     
-    std::string THEME_CONFIG_INI_PATH = SETTINGS_PATH + "theme.ini";
-    std::string WALLPAPER_PATH = SETTINGS_PATH + "wallpaper.rgba";
+    std::string THEME_CONFIG_INI_PATH = "sdmc:/config/ultrahand/theme.ini";
+    std::string WALLPAPER_PATH = "sdmc:/config/ultrahand/wallpaper.rgba";
     
     
     //#if IS_LAUNCHER_DIRECTIVE
-    const std::string SPLIT_PROJECT_NAME_1 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(0, 5);
-    const std::string SPLIT_PROJECT_NAME_2 = CAPITAL_ULTRAHAND_PROJECT_NAME.substr(5);
+    CONSTEXPR_STRING std::string SPLIT_PROJECT_NAME_1 = "Ultra";
+    CONSTEXPR_STRING std::string SPLIT_PROJECT_NAME_2 = "hand";
     const std::string BOOT_PACKAGE_FILENAME = "boot_package.ini";
     const std::string EXIT_PACKAGE_FILENAME = "exit_package.ini";
     const std::string PACKAGE_FILENAME = "package.ini";
     
-    const std::string DOWNLOADS_PATH = SETTINGS_PATH + "downloads/";
-    const std::string EXPANSION_PATH = SETTINGS_PATH + "expansion/";
-    const std::string FUSE_DATA_INI_PATH = SETTINGS_PATH + "fuse.ini";
-    const std::string PACKAGE_PATH = ROOT_PATH + "switch/.packages/";
-    const std::string OVERLAY_PATH = ROOT_PATH + "switch/.overlays/";
-    const std::string OVERLAYS_INI_FILEPATH = SETTINGS_PATH + "overlays.ini";
-    const std::string PACKAGES_INI_FILEPATH = SETTINGS_PATH + "packages.ini";
+    const std::string DOWNLOADS_PATH = "sdmc:/config/ultrahand/downloads/";
+    const std::string EXPANSION_PATH = "sdmc:/config/ultrahand/expansion/";
+    const std::string FUSE_DATA_INI_PATH = "sdmc:/config/ultrahand/fuse.ini";
+    const std::string PACKAGE_PATH = "sdmc:/switch/.packages/";
+    const std::string OVERLAY_PATH = "sdmc:/switch/.overlays/";
+    const std::string OVERLAYS_INI_FILEPATH = "sdmc:/config/ultrahand/overlays.ini";
+    const std::string PACKAGES_INI_FILEPATH = "sdmc:/config/ultrahand/packages.ini";
 
-    const std::set<std::string> PROTECTED_FILES = {ROOT_PATH+"atmosphere/package3", ROOT_PATH+"atmosphere/stratosphere.romfs"};
+    const std::set<std::string> PROTECTED_FILES = {"sdmc:/atmosphere/package3", "sdmc:/atmosphere/stratosphere.romfs"};
     
     const std::string ULTRAHAND_REPO_URL = "https://github.com/ppkantorski/Ultrahand-Overlay/";
     const std::string INCLUDED_THEME_FOLDER_URL = "https://raw.githubusercontent.com/ppkantorski/Ultrahand-Overlay/main/themes/";
@@ -73,76 +75,77 @@ namespace ult {
     const std::string USE_LOGGING_STR = "use_logging";
     //#endif
     
-    const std::string TESLA_COMBO_STR = "L+DDOWN+RS";
-    const std::string ULTRAHAND_COMBO_STR = "ZL+ZR+DDOWN";
+    CONSTEXPR_STRING std::string TESLA_COMBO_STR = "L+DDOWN+RS";
+    CONSTEXPR_STRING std::string ULTRAHAND_COMBO_STR = "ZL+ZR+DDOWN";
     
-    const std::string FUSE_STR = "fuse";
-    const std::string TESLA_STR = "tesla";
-    const std::string ERISTA_STR = "erista";
-    const std::string MARIKO_STR = "mariko";
-    const std::string KEY_COMBO_STR = "key_combo";
-    const std::string DEFAULT_LANG_STR = "default_lang";
+    CONSTEXPR_STRING std::string FUSE_STR = "fuse";
+    CONSTEXPR_STRING std::string TESLA_STR = "tesla";
+    CONSTEXPR_STRING std::string ERISTA_STR = "erista";
+    CONSTEXPR_STRING std::string MARIKO_STR = "mariko";
+    CONSTEXPR_STRING std::string KEY_COMBO_STR = "key_combo";
+    CONSTEXPR_STRING std::string DEFAULT_LANG_STR = "default_lang";
 
 
-    const std::string LIST_STR = "list";
-    const std::string LIST_FILE_STR = "list_file";
-    const std::string JSON_STR = "json";
-    const std::string JSON_FILE_STR = "json_file";
-    const std::string INI_FILE_STR = "ini_file";
-    const std::string HEX_FILE_STR = "hex_file";
-    const std::string PACKAGE_STR = "package";
-    const std::string PACKAGES_STR = "packages";
-    const std::string OVERLAY_STR = "overlay";
-    const std::string OVERLAYS_STR = "overlays";
+    CONSTEXPR_STRING std::string LIST_STR = "list";
+    CONSTEXPR_STRING std::string LIST_FILE_STR = "list_file";
+    CONSTEXPR_STRING std::string JSON_STR = "json";
+    CONSTEXPR_STRING std::string JSON_FILE_STR = "json_file";
+    CONSTEXPR_STRING std::string INI_FILE_STR = "ini_file";
+    CONSTEXPR_STRING std::string HEX_FILE_STR = "hex_file";
+    CONSTEXPR_STRING std::string PACKAGE_STR = "package";
+    CONSTEXPR_STRING std::string PACKAGES_STR = "packages";
+    CONSTEXPR_STRING std::string OVERLAY_STR = "overlay";
+    CONSTEXPR_STRING std::string OVERLAYS_STR = "overlays";
     const std::string IN_OVERLAY_STR = "in_overlay";
     const std::string IN_HIDDEN_OVERLAY_STR = "in_hidden_overlay";
     const std::string IN_HIDDEN_PACKAGE_STR = "in_hidden_package";
-    const std::string FILE_STR = "file";
-    const std::string SYSTEM_STR = "system";
-    const std::string MODE_STR = "mode";
-    const std::string GROUPING_STR = "grouping";
-    const std::string FOOTER_STR = "footer";
-    const std::string TOGGLE_STR = "toggle";
-    const std::string LEFT_STR = "left";
-    const std::string RIGHT_STR = "right";
-    const std::string CENTER_STR = "center";
-    const std::string HIDE_STR = "hide";
-    const std::string STAR_STR = "star";
-    const std::string PRIORITY_STR = "priority";
-    const std::string ON_STR = "on";
-    const std::string OFF_STR = "off";
-    const std::string CAPITAL_ON_STR = "On";
-    const std::string CAPITAL_OFF_STR = "Off";
-    const std::string TRUE_STR = "true";
-    const std::string FALSE_STR = "false";
-    const std::string GLOBAL_STR = "global";
-    const std::string DEFAULT_STR = "default";
-    const std::string SLOT_STR = "slot";
-    const std::string OPTION_STR = "option";
-    const std::string FORWARDER_STR = "forwarder";
-    const std::string TEXT_STR = "text";
-    const std::string TABLE_STR = "table";
-    const std::string TRACKBAR_STR = "trackbar";
-    const std::string STEP_TRACKBAR_STR = "step_trackbar";
+    CONSTEXPR_STRING std::string FILE_STR = "file";
+    CONSTEXPR_STRING std::string SYSTEM_STR = "system";
+    CONSTEXPR_STRING std::string MODE_STR = "mode";
+    CONSTEXPR_STRING std::string GROUPING_STR = "grouping";
+    CONSTEXPR_STRING std::string FOOTER_STR = "footer";
+    CONSTEXPR_STRING std::string TOGGLE_STR = "toggle";
+    CONSTEXPR_STRING std::string LEFT_STR = "left";
+    CONSTEXPR_STRING std::string RIGHT_STR = "right";
+    CONSTEXPR_STRING std::string CENTER_STR = "center";
+    CONSTEXPR_STRING std::string HIDE_STR = "hide";
+    CONSTEXPR_STRING std::string STAR_STR = "star";
+    CONSTEXPR_STRING std::string PRIORITY_STR = "priority";
+    CONSTEXPR_STRING std::string ON_STR = "on";
+    CONSTEXPR_STRING std::string OFF_STR = "off";
+    CONSTEXPR_STRING std::string CAPITAL_ON_STR = "On";
+    CONSTEXPR_STRING std::string CAPITAL_OFF_STR = "Off";
+    CONSTEXPR_STRING std::string TRUE_STR = "true";
+    CONSTEXPR_STRING std::string FALSE_STR = "false";
+    CONSTEXPR_STRING std::string GLOBAL_STR = "global";
+    CONSTEXPR_STRING std::string DEFAULT_STR = "default";
+    CONSTEXPR_STRING std::string SLOT_STR = "slot";
+    CONSTEXPR_STRING std::string OPTION_STR = "option";
+    CONSTEXPR_STRING std::string FORWARDER_STR = "forwarder";
+    CONSTEXPR_STRING std::string TEXT_STR = "text";
+    CONSTEXPR_STRING std::string TABLE_STR = "table";
+    CONSTEXPR_STRING std::string TRACKBAR_STR = "trackbar";
+    CONSTEXPR_STRING std::string STEP_TRACKBAR_STR = "step_trackbar";
     const std::string NAMED_STEP_TRACKBAR_STR = "named_step_trackbar";
-    const std::string NULL_STR = "null";
-    const std::string THEME_STR = "theme";
-    const std::string NOT_AVAILABLE_STR = "Not available";
-    const std::string MEMORY_STR = "memory";
+    CONSTEXPR_STRING std::string NULL_STR = "null";
+    CONSTEXPR_STRING std::string THEME_STR = "theme";
+    CONSTEXPR_STRING std::string NOT_AVAILABLE_STR = "Not available";
+    CONSTEXPR_STRING std::string MEMORY_STR = "memory";
     
     // Pre-defined symbols
-    const std::string OPTION_SYMBOL = "\u22EF";
-    const std::string DROPDOWN_SYMBOL = "\u25B6";
-    const std::string CHECKMARK_SYMBOL = "\uE14B";
-    const std::string CROSSMARK_SYMBOL = "\uE14C";
-    const std::string DOWNLOAD_SYMBOL = "\u2193";
-    const std::string UNZIP_SYMBOL = "\u2191"; 
-    const std::string COPY_SYMBOL = "\u2192";
-    const std::string INPROGRESS_SYMBOL = "\u25CF";
-    const std::string STAR_SYMBOL = "\u2605";
+    CONSTEXPR_STRING std::string OPTION_SYMBOL = "\u22EF";
+    CONSTEXPR_STRING std::string DROPDOWN_SYMBOL = "\u25B6";
+    CONSTEXPR_STRING std::string CHECKMARK_SYMBOL = "\uE14B";
+    CONSTEXPR_STRING std::string CROSSMARK_SYMBOL = "\uE14C";
+    CONSTEXPR_STRING std::string DOWNLOAD_SYMBOL = "\u2193";
+    CONSTEXPR_STRING std::string UNZIP_SYMBOL = "\u2191"; 
+    CONSTEXPR_STRING std::string COPY_SYMBOL = "\u2192";
+    CONSTEXPR_STRING std::string INPROGRESS_SYMBOL = "\u25CF";
+    CONSTEXPR_STRING std::string STAR_SYMBOL = "\u2605";
     
     const std::vector<std::string> THROBBER_SYMBOLS = {"", "", "", "", "", "", "", ""};
 
+    // Atomic variables for progress tracking
     std::atomic<int> displayPercentage(0); // for interpreter percentage progress
 
     void resetPercentages() {

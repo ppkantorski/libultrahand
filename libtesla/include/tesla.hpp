@@ -122,9 +122,9 @@ struct KeyPairHash {
 // Custom equality comparison for int-float pairs
 struct KeyPairEqual {
     bool operator()(const std::pair<int, float>& lhs, const std::pair<int, float>& rhs) const {
-        const float epsilon = 0.00001f;
+        //static constexpr float epsilon = 0.00001f;
         return lhs.first == rhs.first && 
-            std::abs(lhs.second - rhs.second) < epsilon;
+            std::abs(lhs.second - rhs.second) < 0.00001f;
     }
 };
 
@@ -8337,8 +8337,8 @@ namespace tsl {
                 bool success = false;
             
                 // Placeholder replacement - cache lengths once
-                static const std::string valuePlaceholder = "{value}";
-                static const std::string indexPlaceholder = "{index}";
+                static CONSTEXPR_STRING std::string valuePlaceholder = "{value}";
+                static CONSTEXPR_STRING std::string indexPlaceholder = "{index}";
                 static const size_t valuePlaceholderLen = valuePlaceholder.length();
                 static const size_t indexPlaceholderLen = indexPlaceholder.length();
                 const size_t valueStrLen = valueStr.length();
@@ -8478,9 +8478,9 @@ namespace tsl {
                         const u64 holdDuration_ns = currentTime_ns - holdStartTime_ns;
         
                         // Define the duration boundaries in nanoseconds
-                        const u64 initialInterval_ns = 67000000ULL;    // 67ms in nanoseconds
-                        const u64 shortInterval_ns = 10000000ULL;      // 10ms in nanoseconds
-                        const u64 transitionPoint_ns = 2000000000ULL;  // 2000ms in nanoseconds
+                        static constexpr u64 initialInterval_ns = 67000000ULL;    // 67ms in nanoseconds
+                        static constexpr u64 shortInterval_ns = 10000000ULL;      // 10ms in nanoseconds
+                        static constexpr u64 transitionPoint_ns = 2000000000ULL;  // 2000ms in nanoseconds
                         
                         // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
                         const float t = std::min(1.0f, static_cast<float>(holdDuration_ns) / static_cast<float>(transitionPoint_ns));
@@ -8912,7 +8912,7 @@ namespace tsl {
                         }
                         
                         if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
-                            float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
+                            const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
                             if (keysHeld & HidNpadButton_AnyLeft && this->m_index > 0) {
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
@@ -9526,7 +9526,7 @@ namespace tsl {
         
             static u64 buttonPressTime_ns = 0, lastKeyEventTime_ns = 0;
             static bool singlePressHandled = false;
-            static const u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
+            static constexpr u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
 
             static bool hasScrolled = false;
@@ -9653,7 +9653,7 @@ namespace tsl {
                     const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
                     
                     if (singleArrowKeyPress) {
-                        u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                        const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                         
                         if (keysDown) {
                             buttonPressTime_ns = currentTime_ns;
@@ -9684,9 +9684,9 @@ namespace tsl {
                         
                         if (!tsl::elm::isTableScrolling) {
                             // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                            static const u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
-                            static const u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
-                            static const u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
+                            static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
+                            static constexpr u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
+                            static constexpr u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
                             
                             const float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
                                      (float)durationSincePress_ns / (float)transitionPoint_ns;
@@ -9694,9 +9694,9 @@ namespace tsl {
                             keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         } else {
                             // Table scrolling - faster timing
-                            static const u64 transitionPoint_ns = 200000000ULL; // 300ms (faster transition)
-                            static const u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
-                            static const u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
+                            static constexpr u64 transitionPoint_ns = 200000000ULL; // 300ms (faster transition)
+                            static constexpr u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
+                            static constexpr u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
                             
                             const float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
                                      (float)durationSincePress_ns / (float)transitionPoint_ns;

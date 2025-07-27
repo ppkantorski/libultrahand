@@ -50,8 +50,8 @@ namespace ult {
     extern size_t UNZIP_WRITE_BUFFER;
     
     // Path to the CA certificate
-    extern const std::string cacertPath;
-    extern const std::string cacertURL;
+    //extern const std::string cacertPath;
+    //extern const std::string cacertURL;
     
     // Thread-safe atomic flags for operation control
     extern std::atomic<bool> abortDownload;
@@ -60,7 +60,7 @@ namespace ult {
     extern std::atomic<int> unzipPercentage;
     
     // User agent string for curl requests
-    extern const std::string userAgent;
+    inline constexpr const char* userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
     
     // Custom deleters for CURL handles
     struct CurlDeleter {
