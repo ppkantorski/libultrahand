@@ -3844,9 +3844,9 @@ namespace tsl {
                 Color animColor = {0xF,0xF,0xF,0xF};
                 if (invertBGClickColor) {
                     const u8 inverted = 15-saturation;
-                    animColor = {inverted, inverted, inverted, inverted};
+                    animColor = {inverted, inverted, inverted, selectionBGColor.a};
                 } else {
-                    animColor = {saturation, saturation, saturation, saturation};
+                    animColor = {saturation, saturation, saturation, selectionBGColor.a};
                 }
                 if (ult::expandedMemory)
                     renderer->drawRectMultiThreaded(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
@@ -7902,7 +7902,7 @@ namespace tsl {
                 y = 0;
                 
                 if (this->m_highlightShaking) {
-                    u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                     t_ns = currentTime_ns - this->m_highlightShakingStartTime; // Changed
                     if (t_ns >= 100000000) // 100ms in nanoseconds
                         this->m_highlightShaking = false;
@@ -7931,8 +7931,15 @@ namespace tsl {
                     }
                 }
             
-                if (!disableSelectionBG)
-                    renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                if (!disableSelectionBG) {
+                    if (ult::expandedMemory)
+                        renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                    else
+                        renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+
+
+                    //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                }
             
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
             
@@ -8698,7 +8705,7 @@ namespace tsl {
                 y = 0;
                 
                 if (this->m_highlightShaking) {
-                    const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                     t_ns = currentTime_ns - this->m_highlightShakingStartTime;
                     if (t_ns >= 100000000ULL) // 100ms in nanoseconds
                         this->m_highlightShaking = false;
@@ -8727,8 +8734,14 @@ namespace tsl {
                     }
                 }
             
-                if (!disableSelectionBG)
-                    renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                if (!disableSelectionBG) {
+                    if (ult::expandedMemory)
+                        renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                    else
+                        renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+
+                    //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                }
             
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
             
@@ -8753,14 +8766,14 @@ namespace tsl {
                             animColor.r = 15 - saturation;
                             animColor.g = 15 - saturation;
                             animColor.b = 15 - saturation;
-                            animColor.a = 15 - saturation;
+                            animColor.a = selectionBGColor.a;
                         } else {
                             animColor.r = saturation;
                             animColor.g = saturation;
                             animColor.b = saturation;
-                            animColor.a = saturation;
+                            animColor.a = selectionBGColor.a;
                         }
-                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), a(animColor));
+                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
                     }
                 }
             }
