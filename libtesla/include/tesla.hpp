@@ -8645,10 +8645,10 @@ namespace tsl {
                 
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
-            
+                
                 // Activate `clickStartTime_ns` when `triggerClick` is set to true
                 if (triggerClick && !clickActive) {
-                    clickStartTime_ns = armTicksToNs(armGetSystemTick());
+                    clickStartTime_ns = currentTime_ns;
                     clickActive = true;
                     // Within the cycle, perform the highlight effect
                     if (progress >= 0.5) {
@@ -8766,13 +8766,12 @@ namespace tsl {
                             animColor.r = 15 - saturation;
                             animColor.g = 15 - saturation;
                             animColor.b = 15 - saturation;
-                            animColor.a = selectionBGColor.a;
                         } else {
                             animColor.r = saturation;
                             animColor.g = saturation;
                             animColor.b = saturation;
-                            animColor.a = selectionBGColor.a;
                         }
+                        animColor.a = selectionBGColor.a;
                         renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
                     }
                 }
