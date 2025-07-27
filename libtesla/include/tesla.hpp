@@ -3623,23 +3623,23 @@ namespace tsl {
             }
             
             // The underscan value might not be a percentage, we need to interpret it correctly
-            u32 underscanValue = tvSettings.underscan;
+            const u32 underscanValue = tvSettings.underscan;
             
             // Convert the underscan value to a fraction. Assuming 0 means no underscan and larger values represent
             // greater underscan. Adjust this formula based on actual observed behavior or documentation.
-            float underscanPercentage = 1.0f - (underscanValue / 100.0f);
+            const float underscanPercentage = 1.0f - (underscanValue / 100.0f);
             
             // Original dimensions of the full 720p image (1280x720)
-            float originalWidth = cfg::ScreenWidth;
-            float originalHeight = cfg::ScreenHeight;
+            const float originalWidth = cfg::ScreenWidth;
+            const float originalHeight = cfg::ScreenHeight;
             
             // Adjust the width and height based on the underscan percentage
-            float adjustedWidth = (originalWidth * underscanPercentage);
-            float adjustedHeight = (originalHeight * underscanPercentage);
+            const float adjustedWidth = (originalWidth * underscanPercentage);
+            const float adjustedHeight = (originalHeight * underscanPercentage);
             
             // Calculate the underscan in pixels (left/right and top/bottom)
-            int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
-            int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
+            const int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
+            const int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
             
             return {horizontalUnderscanPixels, verticalUnderscanPixels};
         }
