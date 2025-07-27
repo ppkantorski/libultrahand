@@ -27,8 +27,6 @@ namespace ult {
     // For improving the speed of hexing consecutively with the same file and asciiPattern.
     std::unordered_map<std::string, std::string> hexSumCache; // MOVED TO main.cpp
     
-    // Lookup table for hex characters
-    const char hexLookup[] = "0123456789ABCDEF";
     
     /**
      * @brief Converts an ASCII string to a hexadecimal string.

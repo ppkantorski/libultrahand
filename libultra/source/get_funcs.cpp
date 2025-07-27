@@ -214,7 +214,7 @@ namespace ult {
         else start += 1;
     
         // OPTIMIZATION 1: Use find_first_of instead of manual loop - much faster
-        bool hasWhitespace = (path.find_first_of(" \t\n\r\f\v", start, pos - start) != std::string::npos);
+        const bool hasWhitespace = (path.find_first_of(" \t\n\r\f\v", start, pos - start) != std::string::npos);
     
         if (hasWhitespace) {
             // OPTIMIZATION 2: Pre-allocate exact size and build efficiently

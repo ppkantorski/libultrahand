@@ -293,8 +293,8 @@ namespace ult {
     extern const std::string whiteColor;
     extern const std::string blackColor;
     
-    constexpr double _M_PI = 3.14159265358979323846;  // For double precision
-    constexpr double RAD_TO_DEG = 180.0f / _M_PI;
+    inline constexpr double _M_PI = 3.14159265358979323846;  // For double precision
+    inline constexpr double RAD_TO_DEG = 180.0f / _M_PI;
     
     #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;
@@ -501,7 +501,7 @@ namespace ult {
     
     // Predefined hexMap
     //extern const std::array<int, 256> hexMap;
-    constexpr std::array<int, 256> hexMap = [] {
+    inline constexpr std::array<int, 256> hexMap = [] {
         std::array<int, 256> map = {0};
         map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
         map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;

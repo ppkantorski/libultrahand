@@ -11,7 +11,9 @@
 namespace ult {
     #if USING_LOGGING_DIRECTIVE
     // Define static variables
-    std::string logFilePath = defaultLogFilePath.c_str(); 
+    const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
+
+    std::string logFilePath = defaultLogFilePath; 
     bool disableLogging = true;
     std::mutex logMutex;
     

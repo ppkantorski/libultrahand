@@ -47,11 +47,11 @@ namespace ult {
     extern std::unordered_map<std::string, std::string> hexSumCache; // MOVED TO main.cpp
     
     // Lookup table for hex characters
-    extern const char hexLookup[];
+    inline constexpr char hexLookup[] = "0123456789ABCDEF";
     
 
     // ULTRA-FAST hex conversion with lookup table
-    const unsigned char hexTable[256] = {
+    inline constexpr unsigned char hexTable[256] = {
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,
         0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
