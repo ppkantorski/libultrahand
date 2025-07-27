@@ -1280,14 +1280,20 @@ namespace tsl {
                 // will keep the Glyph alive even after the cache is cleared
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
+                s_sharedGlyphCache.rehash(0);
                 s_fontMetricsCache.clear(); // Also clear font metrics cache
+                s_fontMetricsCache.rehash(0);
+
             }
 
             static void clearAllCaches() {
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
+                s_sharedGlyphCache.rehash(0);
                 s_persistentGlyphCache.clear();
+                s_persistentGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
+                s_fontMetricsCache.rehash(0);
             }
             
             static void cleanup() {
@@ -1295,7 +1301,9 @@ namespace tsl {
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 
                 s_sharedGlyphCache.clear();
+                s_sharedGlyphCache.rehash(0);
                 s_persistentGlyphCache.clear();
+                s_persistentGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
                 s_initialized = false;
                 s_stdFont = nullptr;
@@ -3608,32 +3616,32 @@ namespace tsl {
             
             // Retrieve the TV settings
             SetSysTvSettings tvSettings;
-            const Result res = setsysGetTvSettings(&tvSettings);
+            Result res = setsysGetTvSettings(&tvSettings);
             if (R_FAILED(res)) {
                 // Handle error: return default underscan or log error
                 return {0, 0};
             }
             
             // The underscan value might not be a percentage, we need to interpret it correctly
-            //u32 underscanValue = tvSettings.underscan;
+            u32 underscanValue = tvSettings.underscan;
             
             // Convert the underscan value to a fraction. Assuming 0 means no underscan and larger values represent
             // greater underscan. Adjust this formula based on actual observed behavior or documentation.
-            const float underscanPercentage = 1.0f - (tvSettings.underscan / 100.0f);
+            float underscanPercentage = 1.0f - (underscanValue / 100.0f);
             
             // Original dimensions of the full 720p image (1280x720)
-            //float originalWidth = cfg::ScreenWidth;
-            //float originalHeight = cfg::ScreenHeight;
+            float originalWidth = cfg::ScreenWidth;
+            float originalHeight = cfg::ScreenHeight;
             
             // Adjust the width and height based on the underscan percentage
-            //float adjustedWidth = (originalWidth * underscanPercentage);
-            //float adjustedHeight = (originalHeight * underscanPercentage);
+            float adjustedWidth = (originalWidth * underscanPercentage);
+            float adjustedHeight = (originalHeight * underscanPercentage);
             
             // Calculate the underscan in pixels (left/right and top/bottom)
-            //int horizontalUnderscanPixels = ((originalWidth - (originalWidth * underscanPercentage)) / 2.);
-            //int verticalUnderscanPixels = ((originalHeight - (originalHeight * underscanPercentage)) / 2.);
+            int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
+            int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
             
-            return {((cfg::ScreenWidth - (cfg::ScreenWidth * underscanPercentage)) / 2.), ((cfg::ScreenWidth - (cfg::ScreenHeight * underscanPercentage)) / 2.)};
+            return {horizontalUnderscanPixels, verticalUnderscanPixels};
         }
 
     }
@@ -4394,7 +4402,7 @@ namespace tsl {
                 if (!deactivateOriginalFooter)  {
                     // Pre-build menu bottom line efficiently
                     menuBottomLine.clear();
-                    menuBottomLine.reserve(30); // Reserve space to avoid reallocations
+                    //menuBottomLine.reserve(30); // Reserve space to avoid reallocations
                     
                     menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
                     if (!m_noClickableItems) {
@@ -4849,7 +4857,7 @@ namespace tsl {
 
                 // Pre-build menu bottom line efficiently
                 menuBottomLine.clear();
-                menuBottomLine.reserve(30); // Reserve space to avoid reallocations
+                //menuBottomLine.reserve(30); // Reserve space to avoid reallocations
                 
                 #if IS_LAUNCHER_DIRECTIVE
                 // Use .append() chaining to avoid temporary string creation
@@ -5471,10 +5479,12 @@ namespace tsl {
                 //else
                 //    m_pendingJump = false;
                 //if (g_overlayFilename == "ovlmenu.ovl") return;
-                m_pendingJump = true;
-                m_jumpToText = text;
-                m_jumpToValue = value;
-                m_jumpToExactMatch = exactMatch;
+                if (!text.empty() || !value.empty()) {
+                    m_pendingJump = true;
+                    m_jumpToText = text;
+                    m_jumpToValue = value;
+                    m_jumpToExactMatch = exactMatch;
+                }
 
             }
                         
@@ -5684,7 +5694,7 @@ namespace tsl {
 
                 for (Element* item : m_items) delete item;
                 m_items.clear();
-                //m_items.shrink_to_fit();
+                m_items.shrink_to_fit();
                 m_offset = 0;
                 m_focusedIndex = 0;
                 invalidate();
@@ -5702,7 +5712,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToAdd.clear();
-                //m_itemsToAdd.shrink_to_fit();
+                m_itemsToAdd.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5721,7 +5731,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToRemove.clear();
-                //m_itemsToRemove.shrink_to_fit();
+                m_itemsToRemove.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5732,7 +5742,7 @@ namespace tsl {
                     if (element) { element->invalidate(); delete element; }
                 }
                 m_itemsToAdd.clear();
-                //m_itemsToAdd.shrink_to_fit();
+                m_itemsToAdd.shrink_to_fit();
                 
                 //size_t index;
                 for (Element* element : m_itemsToRemove) {
@@ -5752,7 +5762,7 @@ namespace tsl {
                     }
                 }
                 m_itemsToRemove.clear();
-                //m_itemsToRemove.shrink_to_fit();
+                m_itemsToRemove.shrink_to_fit();
             
                 invalidate();
                 updateScrollOffset();
