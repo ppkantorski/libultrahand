@@ -151,6 +151,8 @@ double elapsedTime;
 //static bool jumpToListItem = false;
 inline bool jumpToTop = false;
 inline bool jumpToBottom = false;
+inline bool skipToTop = false;
+inline bool skipToBottom = false;
 inline u32 offsetWidthVar = 112;
 inline std::string g_overlayFilename;;
 inline std::string lastOverlayFilename;
@@ -4322,8 +4324,6 @@ namespace tsl {
             float x, y;
             int offset, y_offset;
             int fontSize;
-
-            std::string menuBottomLine;
             
         OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
             : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
@@ -4400,14 +4400,11 @@ namespace tsl {
                 
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
-                    // Pre-build menu bottom line efficiently
-                    menuBottomLine.clear();
-                    //menuBottomLine.reserve(30); // Reserve space to avoid reallocations
-                    
-                    menuBottomLine += "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1;
-                    if (!m_noClickableItems) {
-                        menuBottomLine += "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
-                    }
+                    const std::string menuBottomLine = 
+                        "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                        (!m_noClickableItems 
+                            ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
+                            : "");
 
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                     renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
@@ -4523,10 +4520,7 @@ namespace tsl {
             float x, y;
             int offset, y_offset;
             int fontSize;
-            
-            //std::string bKeyLabel = ult::BACK;
-            std::string menuBottomLine;
-            
+
         #if IS_LAUNCHER_DIRECTIVE
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
                 : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
@@ -4854,51 +4848,41 @@ namespace tsl {
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
             #endif
-
-                // Pre-build menu bottom line efficiently
-                menuBottomLine.clear();
-                //menuBottomLine.reserve(30); // Reserve space to avoid reallocations
                 
                 #if IS_LAUNCHER_DIRECTIVE
-                // Use .append() chaining to avoid temporary string creation
-                menuBottomLine.append("\uE0E1").append(ult::GAP_2);
-                menuBottomLine.append(!interpreterIsRunningNow ? ult::BACK : ult::HIDE);
-                menuBottomLine.append(ult::GAP_1);
-                
-                if (!m_noClickableItems && !interpreterIsRunningNow) {
-                    menuBottomLine.append("\uE0E0").append(ult::GAP_2).append(ult::OK).append(ult::GAP_1);
-                }
-                
-                if (interpreterIsRunningNow) {
-                    menuBottomLine.append("\uE0E5").append(ult::GAP_2).append(ult::CANCEL).append(ult::GAP_1);
-                }
-                
-                if (!interpreterIsRunningNow) {
-                    if (!ult::usePageSwap) {
-                        if (m_menuMode == "packages") {
-                            menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(ult::OVERLAYS_ABBR);
-                        } else if (m_menuMode == "overlays") {
-                            menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(ult::PACKAGES);
-                        }
-                    } else {
-                        if (m_menuMode == "packages") {
-                            menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(ult::OVERLAYS_ABBR);
-                        } else if (m_menuMode == "overlays") {
-                            menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(ult::PACKAGES);
-                        }
-                    }
-                }
-                
-                if (!m_pageLeftName.empty()) {
-                    menuBottomLine.append("\uE0ED").append(ult::GAP_2).append(m_pageLeftName);
-                } else if (!m_pageRightName.empty()) {
-                    menuBottomLine.append("\uE0EE").append(ult::GAP_2).append(m_pageRightName);
-                }
+                const std::string menuBottomLine =
+                    "\uE0E1" + ult::GAP_2 +
+                    (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
+                    (!m_noClickableItems && !interpreterIsRunningNow
+                        ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
+                        : "") +
+                    (interpreterIsRunningNow
+                        ? "\uE0E5" + ult::GAP_2 + ult::CANCEL + ult::GAP_1
+                        : "") +
+                    (!interpreterIsRunningNow
+                        ? (!ult::usePageSwap
+                            ? (m_menuMode == "packages"
+                                ? "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR
+                                : m_menuMode == "overlays"
+                                    ? "\uE0EE" + ult::GAP_2 + ult::PACKAGES
+                                    : "")
+                            : (m_menuMode == "packages"
+                                ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
+                                : m_menuMode == "overlays"
+                                    ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES
+                                    : ""))
+                        : "") +
+                    (!m_pageLeftName.empty()
+                        ? "\uE0ED" + ult::GAP_2 + m_pageLeftName
+                        : !m_pageRightName.empty()
+                            ? "\uE0EE" + ult::GAP_2 + m_pageRightName
+                            : "");
                 #else
-                menuBottomLine.append("\uE0E1").append(ult::GAP_2).append(ult::BACK).append(ult::GAP_1);
-                if (!m_noClickableItems) {
-                    menuBottomLine.append("\uE0E0").append(ult::GAP_2).append(ult::OK).append(ult::GAP_1);
-                }
+                const std::string menuBottomLine =
+                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                    (!m_noClickableItems
+                        ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
+                        : "");
                 #endif
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
@@ -5051,7 +5035,7 @@ namespace tsl {
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
                 
-                std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
+                const std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
                 renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 
                 if (this->m_header != nullptr)
@@ -5459,6 +5443,16 @@ namespace tsl {
                     jumpToTop = false;
                     return handleJumpToTop(oldFocus);
                 }
+
+                if (skipToBottom) {
+                    skipToBottom = false;
+                    return handleSkipToBottom(oldFocus);
+                }
+                if (skipToTop) {
+                    skipToTop = false;
+                    return handleSkipToTop(oldFocus);
+                }
+
             
                 if (direction == FocusDirection::None) {
                     return handleInitialFocus(oldFocus);
@@ -6532,7 +6526,228 @@ namespace tsl {
                 m_nextOffset = targetOffset;
                 return oldFocus;
             }
+
+                                                
+            Element* handleSkipToBottom(Element* oldFocus) {
+                if (m_items.empty()) return oldFocus;
+                
+                invalidate();
+                resetNavigationState();
+                
+                const float viewHeight = static_cast<float>(getHeight());
+                const float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+                
+                // ADD THIS CHECK: If we're already at max scroll, don't skip
+                if (m_offset >= maxOffset) {
+                    return oldFocus;
+                }
+                
+                const float currentViewBottom = m_offset + viewHeight;
+                const float targetScrollPosition = m_offset + viewHeight;
+                const s32 viewBottom = getBottomBound();
+                
+                // First check if we're currently on a table that needs more scrolling
+                if (m_focusedIndex < m_items.size()) {
+                    Element* currentItem = m_items[m_focusedIndex];
+                    if (currentItem->isTable() && currentItem->getBottomBound() > viewBottom) {
+                        isTableScrolling = true;
+                        const float tableSkipAmount = viewHeight;
+                        m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
+                        return oldFocus;
+                    }
+                }
+
+                // Find the first item that would be at the target scroll position
+                float itemPos = 0.0f;
+                size_t targetIndex = m_items.size();
+                
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    const float itemHeight = m_items[i]->getHeight();
+                    const float itemTop = itemPos;
+                    
+                    // CHANGE THIS LINE: Find first item whose top is at or below target scroll position
+                    if (itemTop >= targetScrollPosition) {  // CHANGED from currentViewBottom to targetScrollPosition
+                        Element* item = m_items[i];
+                        
+                        // Check if this is a table that needs scrolling
+                        if (item->isTable()) {
+                            const s32 tableBottom = item->getBottomBound();
+                            if (tableBottom > viewBottom) {
+                                m_focusedIndex = i;
+                                isTableScrolling = true;
+                                const float tableSkipAmount = viewHeight;
+                                const float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                                m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
+                                
+                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
+                                if (newFocus && newFocus != oldFocus) {
+                                    return newFocus;
+                                }
+                                return oldFocus;
+                            }
+                        }
+                        
+                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
+                        if (test) {
+                            targetIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    itemPos += itemHeight;
+                }
+                
+                // Rest of the method stays the same...
+                if (targetIndex >= m_items.size()) {
+                    for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                        Element* item = m_items[i];
+                        
+                        if (item->isTable()) {
+                            const s32 tableBottom = item->getBottomBound();
+                            if (tableBottom > viewBottom) {
+                                m_focusedIndex = static_cast<size_t>(i);
+                                isTableScrolling = true;
+                                const float tableSkipAmount = viewHeight;
+                                const float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                                m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
+                                
+                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
+                                if (newFocus && newFocus != oldFocus) {
+                                    return newFocus;
+                                }
+                                return oldFocus;
+                            }
+                        }
+                        
+                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
+                        if (test) {
+                            targetIndex = static_cast<size_t>(i);
+                            break;
+                        }
+                    }
+                }
+                
+                if (targetIndex < m_items.size() && targetIndex != m_focusedIndex) {
+                    m_focusedIndex = targetIndex;
+                    isTableScrolling = false;
+                    updateScrollOffset();
+                    
+                    Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
+                    if (newFocus && newFocus != oldFocus) {
+                        return newFocus;
+                    }
+                }
+                
+                return oldFocus;
+            }
             
+            Element* handleSkipToTop(Element* oldFocus) {
+                if (m_items.empty()) return oldFocus;
+                
+                invalidate();
+                resetNavigationState();
+                
+                // ADD THIS CHECK: If we're already at top, don't skip
+                if (m_offset <= 0.0f) {
+                    return oldFocus;
+                }
+                
+                const float viewHeight = static_cast<float>(getHeight());
+                const float currentViewTop = m_offset;
+                const float targetScrollPosition = m_offset - viewHeight;
+                const s32 viewTop = getTopBound();
+                
+                // First check if we're currently on a table that needs more scrolling
+                if (m_focusedIndex < m_items.size()) {
+                    Element* currentItem = m_items[m_focusedIndex];
+                    if (currentItem->isTable() && currentItem->getTopBound() < viewTop) {
+                        isTableScrolling = true;
+                        const float tableSkipAmount = viewHeight;
+                        m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
+                        return oldFocus;
+                    }
+                }
+                
+                // Find the last item that would be at the target scroll position
+                float itemPos = 0.0f;
+                ssize_t targetIndex = -1;
+                
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    const float itemHeight = m_items[i]->getHeight();
+                    const float itemBottom = itemPos + itemHeight;
+                    
+                    // CHANGE THIS LINE: Find last item whose bottom is at or above target scroll position
+                    if (itemBottom <= targetScrollPosition) {  // CHANGED from currentViewTop to targetScrollPosition
+                        Element* item = m_items[i];
+                        
+                        if (item->isTable()) {
+                            const s32 tableTop = item->getTopBound();
+                            if (tableTop < viewTop) {
+                                m_focusedIndex = i;
+                                isTableScrolling = true;
+                                const float tableSkipAmount = viewHeight;
+                                m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
+                                
+                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
+                                if (newFocus && newFocus != oldFocus) {
+                                    return newFocus;
+                                }
+                                return oldFocus;
+                            }
+                        }
+                        
+                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
+                        if (test) {
+                            targetIndex = static_cast<ssize_t>(i);
+                        }
+                    }
+                    
+                    itemPos += itemHeight;
+                }
+                
+                // Rest stays the same...
+                if (targetIndex < 0) {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        Element* item = m_items[i];
+                        
+                        if (item->isTable()) {
+                            const s32 tableTop = item->getTopBound();
+                            if (tableTop < viewTop) {
+                                m_focusedIndex = i;
+                                isTableScrolling = true;
+                                const float tableSkipAmount = viewHeight;
+                                m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
+                                
+                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
+                                if (newFocus && newFocus != oldFocus) {
+                                    return newFocus;
+                                }
+                                return oldFocus;
+                            }
+                        }
+                        
+                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
+                        if (test) {
+                            targetIndex = static_cast<ssize_t>(i);
+                            break;
+                        }
+                    }
+                }
+                
+                if (targetIndex >= 0 && static_cast<size_t>(targetIndex) != m_focusedIndex) {
+                    m_focusedIndex = static_cast<size_t>(targetIndex);
+                    isTableScrolling = false;
+                    updateScrollOffset();
+                    
+                    Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
+                    if (newFocus && newFocus != oldFocus) {
+                        return newFocus;
+                    }
+                }
+                
+                return oldFocus;
+            }
+                        
                         
             inline void initializePrefixSums() {
                 prefixSums.clear();
@@ -9740,27 +9955,203 @@ namespace tsl {
                 }
             }
             
+        //#if !IS_STATUS_MONITOR_DIRECTIVE
+        //    if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+        //        //jumpToTop = true;
+        //        skipToTop = true;
+        //        currentGui->requestFocus(topElement, FocusDirection::None);
+        //    }
+        //    if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+        //        //jumpToBottom = true;
+        //        skipToBottom = true;
+        //        currentGui->requestFocus(topElement, FocusDirection::None);
+        //    }
+        //#else
+        //    if (!disableJumpTo) {
+        //        if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+        //            //jumpToTop = true;
+        //            skipToTop = true;
+        //            currentGui->requestFocus(topElement, FocusDirection::None);
+        //        }
+        //        if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
+        //            //jumpToBottom = true;
+        //            skipToBottom = true;
+        //            currentGui->requestFocus(topElement, FocusDirection::None);
+        //        }
+        //    }
+        //#endif
         #if !IS_STATUS_MONITOR_DIRECTIVE
-            if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-                jumpToTop = true;
-                currentGui->requestFocus(topElement, FocusDirection::None);
-            }
-            if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-                jumpToBottom = true;
-                currentGui->requestFocus(topElement, FocusDirection::None);
-            }
+            if (!touchDetected && !interpreterIsRunning && topElement) {
         #else
-            if (!disableJumpTo) {
-                if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-                    jumpToTop = true;
-                    currentGui->requestFocus(topElement, FocusDirection::None);
+            if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
+        #endif
+                // Static variables for L/R button timing and state
+                static u64 lButtonPressStart_ns = 0;
+                static u64 rButtonPressStart_ns = 0;
+                static u64 lLastHoldTrigger_ns = 0;
+                static u64 rLastHoldTrigger_ns = 0;
+                static u64 lLastRelease_ns = 0;
+                static u64 rLastRelease_ns = 0;
+                static bool lWasPressed = false;
+                static bool rWasPressed = false;
+                static bool lPotentialDoubleClick = false;
+                static bool rPotentialDoubleClick = false;
+                static bool lDoubleClickConfirmed = false;
+                static bool rDoubleClickConfirmed = false;
+                static bool lHoldTriggered = false;
+                static bool rHoldTriggered = false;
+                
+                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
+                static constexpr u64 DOUBLE_CLICK_WINDOW_NS = 100000000ULL;    // 200ms double-click window
+                // Acceleration timing constants
+                static constexpr u64 ACCELERATION_POINT_NS = 1500000000ULL;    // 1.5s transition point
+                static constexpr u64 INITIAL_INTERVAL_NS = 67000000ULL;       // 150ms initial interval
+                static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 50ms fast interval
+                
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
+                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                
+                // Handle L button
+                if (lPressed) {
+                    if (!lWasPressed) {
+                        // Button just pressed
+                        const u64 timeSinceLastRelease = currentTime_ns - lLastRelease_ns;
+                        
+                        // Always trigger action immediately for rapid clicking
+                        skipToTop = true;
+                        currentGui->requestFocus(topElement, FocusDirection::None);
+                        
+                        // Check if this could be a double-click
+                        lPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
+                        lDoubleClickConfirmed = false;
+                        
+                        lButtonPressStart_ns = currentTime_ns;
+                        lLastHoldTrigger_ns = currentTime_ns;
+                        lHoldTriggered = false;
+                    }
+                    
+                    // Check for hold behavior
+                    const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
+                    
+                    if (holdDuration >= HOLD_THRESHOLD_NS) {
+                        // Calculate dynamic interval based on hold duration (accelerating)
+                        const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                       (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                        const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                        
+                        // If this was a potential double-click and we're now holding, confirm it
+                        if (lPotentialDoubleClick && !lDoubleClickConfirmed) {
+                            lDoubleClickConfirmed = true;
+                            jumpToTop = true;  // Override with jump action
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            lHoldTriggered = true;
+                            lLastHoldTrigger_ns = currentTime_ns;
+                        } else {
+                            const u64 timeSinceLastHoldTrigger = currentTime_ns - lLastHoldTrigger_ns;
+                            
+                            if (!lHoldTriggered) {
+                                // First hold trigger (single-click hold)
+                                skipToTop = true;
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                lHoldTriggered = true;
+                                lLastHoldTrigger_ns = currentTime_ns;
+                            } else if (timeSinceLastHoldTrigger >= currentInterval) {
+                                // Continuous hold triggers with acceleration
+                                if (lDoubleClickConfirmed) {
+                                    jumpToTop = true;
+                                } else {
+                                    skipToTop = true;
+                                }
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                lLastHoldTrigger_ns = currentTime_ns;
+                            }
+                        }
+                    }
+                    
+                    lWasPressed = true;
+                } else {
+                    if (lWasPressed) {
+                        // Button just released
+                        lLastRelease_ns = currentTime_ns;
+                        lHoldTriggered = false;
+                        lPotentialDoubleClick = false;
+                        lDoubleClickConfirmed = false;
+                    }
+                    lWasPressed = false;
                 }
-                if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-                    jumpToBottom = true;
-                    currentGui->requestFocus(topElement, FocusDirection::None);
+                
+                // Handle R button
+                if (rPressed) {
+                    if (!rWasPressed) {
+                        // Button just pressed
+                        const u64 timeSinceLastRelease = currentTime_ns - rLastRelease_ns;
+                        
+                        // Always trigger action immediately for rapid clicking
+                        skipToBottom = true;
+                        currentGui->requestFocus(topElement, FocusDirection::None);
+                        
+                        // Check if this could be a double-click
+                        rPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
+                        rDoubleClickConfirmed = false;
+                        
+                        rButtonPressStart_ns = currentTime_ns;
+                        rLastHoldTrigger_ns = currentTime_ns;
+                        rHoldTriggered = false;
+                    }
+                    
+                    // Check for hold behavior
+                    const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
+                    
+                    if (holdDuration >= HOLD_THRESHOLD_NS) {
+                        // Calculate dynamic interval based on hold duration (accelerating)
+                        const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                       (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                        const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                        
+                        // If this was a potential double-click and we're now holding, confirm it
+                        if (rPotentialDoubleClick && !rDoubleClickConfirmed) {
+                            rDoubleClickConfirmed = true;
+                            jumpToBottom = true;  // Override with jump action
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            rHoldTriggered = true;
+                            rLastHoldTrigger_ns = currentTime_ns;
+                        } else {
+                            const u64 timeSinceLastHoldTrigger = currentTime_ns - rLastHoldTrigger_ns;
+                            
+                            if (!rHoldTriggered) {
+                                // First hold trigger (single-click hold)
+                                skipToBottom = true;
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                rHoldTriggered = true;
+                                rLastHoldTrigger_ns = currentTime_ns;
+                            } else if (timeSinceLastHoldTrigger >= currentInterval) {
+                                // Continuous hold triggers with acceleration
+                                if (rDoubleClickConfirmed) {
+                                    jumpToBottom = true;
+                                } else {
+                                    skipToBottom = true;
+                                }
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                rLastHoldTrigger_ns = currentTime_ns;
+                            }
+                        }
+                    }
+                    
+                    rWasPressed = true;
+                } else {
+                    if (rWasPressed) {
+                        // Button just released
+                        rLastRelease_ns = currentTime_ns;
+                        rHoldTriggered = false;
+                        rPotentialDoubleClick = false;
+                        rDoubleClickConfirmed = false;
+                    }
+                    rWasPressed = false;
                 }
             }
-        #endif
+            
+
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
