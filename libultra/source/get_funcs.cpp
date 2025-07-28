@@ -315,8 +315,10 @@ namespace ult {
         
         size_t dirIndex = 0;
         while (dirIndex < dirsToProcess.size()) {
-            currentDir = std::move(dirsToProcess[dirIndex++]);
-            
+            currentDir = std::move(dirsToProcess[dirIndex]);
+            dirsToProcess[dirIndex].shrink_to_fit();
+            dirIndex++;
+
             std::unique_ptr<DIR, DirCloser> dir(opendir(currentDir.c_str()));
             if (!dir) continue;
             
@@ -328,8 +330,7 @@ namespace ult {
                 const char* entryName = entry->d_name;
                 
                 // Direct comparison without string creation
-                if (entryName[0] == '.' && 
-                    (entryName[1] == '\0' || (entryName[1] == '.' && entryName[2] == '\0'))) {
+                if (entryName[0] == '.' && (entryName[1] == '\0' || (entryName[1] == '.' && entryName[2] == '\0'))) {
                     continue;
                 }
                 

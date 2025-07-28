@@ -525,8 +525,8 @@ namespace ult {
                     sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
 
                     // Clear strings after moving to reuse capacity
-                    key.clear();
-                    value.clear();
+                    //key.clear();
+                    //value.clear();
                 }
                 line.clear();
             } else {
@@ -596,8 +596,8 @@ namespace ult {
                     sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
 
                     // Clear strings after moving to reuse capacity
-                    key.clear();
-                    value.clear();
+                    //key.clear();
+                    //value.clear();
                 }
                 line.clear();
             } else {
@@ -2131,8 +2131,8 @@ namespace ult {
             if (strLine[0] == '[' && strLine.back() == ']') { // Section headers
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    sectionCommands.clear();
-                    sectionCommands.shrink_to_fit(); // Free capacity after move
+                    //sectionCommands.clear();
+                    //sectionCommands.shrink_to_fit(); // Free capacity after move
                 }
                 currentSection.assign(strLine, 1, strLine.size() - 2);
             } else if (!currentSection.empty()) { // Command lines within sections
@@ -2169,8 +2169,8 @@ namespace ult {
             if (line[0] == '[' && line.back() == ']') { // Section headers
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    sectionCommands.clear();
-                    sectionCommands.shrink_to_fit(); // Free capacity after move
+                    //sectionCommands.clear();
+                    //sectionCommands.shrink_to_fit(); // Free capacity after move
                 }
                 currentSection.assign(line, 1, line.size() - 2);
             } else if (!currentSection.empty()) { // Command lines within sections
