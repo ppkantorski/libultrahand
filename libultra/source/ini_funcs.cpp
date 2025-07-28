@@ -66,16 +66,33 @@ namespace ult {
         
         size_t startPos, endPos, first, last;
         std::string value;
-
+    
     #if !USING_FSTREAM_DIRECTIVE
+        size_t len;
         while (fgets(buffer, sizeof(buffer), file) && fieldsFound < totalFields) {
-            line = std::string(buffer);
+            // Reuse line string capacity instead of creating new string
+            line.assign(buffer);
+            
+            // Remove newlines efficiently
+            len = line.length();
+            if (len > 0 && line[len-1] == '\n') {
+                line.pop_back();
+                --len;
+                if (len > 0 && line[len-1] == '\r') {
+                    line.pop_back();
+                }
+            }
     #else
         while (getline(file, line) && fieldsFound < totalFields) {
+            // Remove carriage return if present
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
     #endif
             
             // Skip empty lines and non-comment lines
             if (line.empty() || line[0] != ';') {
+                line.clear(); // Clear to reuse capacity
                 continue;
             }
             
@@ -88,8 +105,8 @@ namespace ult {
                         endPos = line.length();
                     }
                     
-                    // Extract value directly without intermediate string
-                    value = line.substr(startPos, endPos - startPos);
+                    // Extract value directly, reusing value string capacity
+                    value.assign(line, startPos, endPos - startPos);
                     
                     // Trim whitespace efficiently
                     first = value.find_first_not_of(" \t");
@@ -97,21 +114,29 @@ namespace ult {
                         value.clear();
                     } else {
                         last = value.find_last_not_of(" \t");
-                        value = value.substr(first, last - first + 1);
+                        if (first != 0 || last != value.length() - 1) {
+                            value.assign(value, first, last - first + 1);
+                        }
                     }
                     
                     // Remove quotes efficiently
                     if (value.length() >= 2 && 
                         ((value.front() == '"' && value.back() == '"') ||
                          (value.front() == '\'' && value.back() == '\''))) {
-                        value = value.substr(1, value.length() - 2);
+                        value.assign(value, 1, value.length() - 2);
                     }
                     
                     *field = std::move(value);
                     fieldsFound++;
+                    
+                    // Clear strings to reuse capacity
+                    value.clear();
                     break;
                 }
             }
+            
+            // Clear line to reuse capacity
+            line.clear();
         }
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -178,14 +203,19 @@ namespace ult {
         for (auto& line : lines) {
             trim(line);
             
+            // Ignore empty lines and comments
             if (line.empty() || line.front() == '#') {
-                // Ignore empty lines and comments
+                // Clear line to reuse capacity
+                line.clear();
                 continue;
             }
             
             if (line.front() == '[' && line.back() == ']') {
                 lastHeader = line.substr(1, line.size() - 2);
                 iniData[lastHeader]; // Ensures the section exists even if it remains empty
+
+                // Clear strings to reuse capacity
+                line.clear();
             }
             else {
                 delimiterPos = line.find('=');
@@ -199,8 +229,14 @@ namespace ult {
                         newLine2 = line.substr(delimiterPos + 1);
                         trim(newLine2);
                         iniData[lastHeader][newLine1] = newLine2;
+
+                        // Clear strings to reuse capacity
+                        newLine1.clear();
+                        newLine2.clear();
                     }
                 }
+                // Clear line to reuse capacity
+                line.clear();
             }
         }
         
@@ -276,6 +312,8 @@ namespace ult {
                     currentSection.assign(start + 1, len - 2);
                     currentSectionMap = &parsedData[currentSection];
                 }
+                // Clear section string to reuse capacity
+                currentSection.clear();
             } else if (currentSectionMap != nullptr) {
                 // Look for '=' delimiter - scan from start for efficiency
                 delimiterPos = 0;
@@ -306,6 +344,9 @@ namespace ult {
                         (*currentSectionMap)[key] = std::move(value);
                     }
                 }
+                // Clear strings to reuse capacity
+                key.clear();
+                value.clear();
             }
         }
     
@@ -359,6 +400,9 @@ namespace ult {
                     currentSection.assign(line, start + 1, end - start - 1);
                     currentSectionMap = &parsedData[currentSection];
                 }
+                // Clear strings to reuse capacity
+                line.clear();
+                currentSection.clear();
             } else if (currentSectionMap != nullptr) {
                 // Look for '=' delimiter within the trimmed range
                 delimiterPos = line.find('=', start);
@@ -387,6 +431,10 @@ namespace ult {
                         (*currentSectionMap)[key] = std::move(value);
                     }
                 }
+                // Clear strings to reuse capacity
+                line.clear();
+                key.clear();
+                value.clear();
             }
         }
         
@@ -447,7 +495,10 @@ namespace ult {
             line.assign(buffer); // More efficient than string constructor
             trim(line);
     
-            if (line.empty()) continue; // Skip empty lines
+            if (line.empty()) {
+                line.clear(); // Clear even for empty lines
+                continue; // Skip empty lines
+            }
     
             if (line[0] == '[' && line.back() == ']') {
                 // More efficient section name extraction
@@ -457,8 +508,15 @@ namespace ult {
                 
                 // Early exit optimization: if we were in target section and hit a new section, we're done
                 if (!inTargetSection && !sectionData.empty()) {
+                    // Clear before breaking
+                    line.clear();
+                    currentSection.clear();
                     break; // Found target section and processed it, no need to continue
                 }
+
+                // Clear strings to reuse capacity
+                line.clear();
+                currentSection.clear();
             } else if (inTargetSection) {
                 // Look for key-value pairs within the target section
                 delimiterPos = line.find('=');
@@ -468,7 +526,14 @@ namespace ult {
                     value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
                     trim(value);
                     sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
+
+                    // Clear strings after moving to reuse capacity
+                    key.clear();
+                    value.clear();
                 }
+                line.clear();
+            } else {
+                line.clear(); // Clear line when not in target section
             }
         }
     
@@ -501,7 +566,10 @@ namespace ult {
             
             trim(line);
     
-            if (line.empty()) continue; // Skip empty lines
+            if (line.empty()) {
+                line.clear(); // Clear even for empty lines
+                continue; // Skip empty lines
+            }
     
             if (line[0] == '[' && line.back() == ']') {
                 // More efficient section name extraction
@@ -511,8 +579,15 @@ namespace ult {
                 
                 // Early exit optimization: if we were in target section and hit a new section, we're done
                 if (!inTargetSection && !sectionData.empty()) {
+                    // Clear before breaking
+                    line.clear();
+                    currentSection.clear();
                     break; // Found target section and processed it, no need to continue
                 }
+
+                // Clear strings to reuse capacity
+                line.clear();
+                currentSection.clear();
             } else if (inTargetSection) {
                 // Look for key-value pairs within the target section
                 delimiterPos = line.find('=');
@@ -522,7 +597,14 @@ namespace ult {
                     value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
                     trim(value);
                     sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
+
+                    // Clear strings after moving to reuse capacity
+                    key.clear();
+                    value.clear();
                 }
+                line.clear();
+            } else {
+                line.clear(); // Clear line when not in target section
             }
         }
         
@@ -575,6 +657,10 @@ namespace ult {
                 sectionName.assign(line, 1, line.size() - 2); // More efficient
                 sections.push_back(std::move(sectionName)); // Move for efficiency
             }
+
+            // Clear strings to reuse capacity
+            line.clear();
+            sectionName.clear();
         }
     
         fclose(file);
@@ -598,10 +684,12 @@ namespace ult {
             
             // Check if the line contains a section header
             if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                sectionName = "";
                 sectionName.assign(line, 1, line.size() - 2);
                 sections.push_back(std::move(sectionName));
             }
+            // Clear strings to reuse capacity
+            line.clear();
+            sectionName.clear();
         }
         
         file.close(); // Add explicit close
@@ -685,6 +773,8 @@ namespace ult {
                         wasInTargetSection = true;
                     }
                 }
+                // Clear section string to reuse capacity
+                currentSection.clear();
             } else if (inTargetSection) {
                 // Look for '=' delimiter - scan from start for efficiency
                 const char* eq_pos = start;
@@ -708,11 +798,14 @@ namespace ult {
                             if (val_start <= end) {
                                 value.assign(val_start, end - val_start + 1);
                             }
+                            currentKey.clear(); // Clear before breaking
                             // Found the key, exit
                             break;
                         }
                     }
                 }
+                // Clear key string to reuse capacity
+                currentKey.clear();
             }
         }
     
@@ -765,6 +858,9 @@ namespace ult {
                     
                     // Early exit: if we WERE in target section and now we're not, key wasn't found
                     if (wasInTargetSection && !inTargetSection) {
+                        // Clear strings to reuse capacity
+                        line.clear();
+                        currentSection.clear();
                         break; // Left target section without finding key
                     }
                     
@@ -772,6 +868,9 @@ namespace ult {
                         wasInTargetSection = true;
                     }
                 }
+                // Clear strings to reuse capacity
+                line.clear();
+                currentSection.clear();
             } else if (inTargetSection) {
                 // Look for '=' delimiter within the trimmed range
                 delimiterPos = line.find('=', start);
@@ -800,6 +899,9 @@ namespace ult {
                         }
                     }
                 }
+                // Clear strings to reuse capacity
+                line.clear();
+                currentKey.clear();
             }
         }
     
@@ -874,6 +976,8 @@ namespace ult {
                 fputs(lineStr.c_str(), outputFile);
                 fputc('\n', outputFile);
             }
+            // Clear string to reuse capacity
+            lineStr.clear();
         }
     
         fclose(inputFile);
@@ -922,6 +1026,8 @@ namespace ult {
                 
                 outputFile << line << '\n';
             }
+            // Clear string to reuse capacity
+            line.clear();
         }
         
         inputFile.close();
@@ -1035,6 +1141,10 @@ namespace ult {
                 sectionFound = (currentSection == desiredSection);
                 buffer << lineStr << '\n';
                 firstSection = false;
+
+                // Clear strings to reuse capacity
+                lineStr.clear();
+                currentSection.clear();
                 continue;
             }
     
@@ -1070,6 +1180,10 @@ namespace ult {
             }
     
             buffer << lineStr << '\n';
+
+            // Clear strings to reuse capacity
+            lineStr.clear();
+            key.clear();
         }
     
         if (!sectionFound && !keyFound) {
@@ -1151,6 +1265,10 @@ namespace ult {
                 sectionFound = (currentSection == desiredSection);
                 buffer << line << '\n';
                 firstSection = false;
+
+                // Clear strings to reuse capacity
+                line.clear();
+                currentSection.clear();
                 continue;
             }
     
@@ -1186,6 +1304,10 @@ namespace ult {
             }
     
             buffer << line << '\n';
+
+            // Clear strings to reuse capacity
+            line.clear();
+            key.clear();
         }
     
         if (!sectionFound && !keyFound) {
@@ -1400,6 +1522,7 @@ namespace ult {
                             // Copy rest of file efficiently
                             while (std::getline(inputFile, line)) {
                                 tempFile << line << '\n';
+                                line.clear(); // Clear to reuse capacity
                             }
                             break;
                         }
@@ -1408,6 +1531,7 @@ namespace ult {
             }
             
             tempFile << line << '\n';
+            line.clear(); // Clear to reuse capacity
         }
     
         // If the section does not exist, add it
@@ -2011,11 +2135,15 @@ namespace ult {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
                     sectionCommands.clear();
+                    sectionCommands.shrink_to_fit(); // Free capacity after move
                 }
                 currentSection.assign(strLine, 1, strLine.size() - 2);
             } else if (!currentSection.empty()) { // Command lines within sections
                 sectionCommands.push_back(parseCommandLine(strLine));
             }
+
+            // Clear strLine content to free string memory
+            strLine.clear();
         }
     
         if (!currentSection.empty()) {
@@ -2045,11 +2173,14 @@ namespace ult {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
                     sectionCommands.clear();
+                    sectionCommands.shrink_to_fit(); // Free capacity after move
                 }
                 currentSection.assign(line, 1, line.size() - 2);
             } else if (!currentSection.empty()) { // Command lines within sections
                 sectionCommands.push_back(parseCommandLine(line));
             }
+            // Clear line content to reuse capacity
+            line.clear();
         }
     
         if (!currentSection.empty()) {
@@ -2118,6 +2249,10 @@ namespace ult {
             } else if (inTargetSection) { // Only parse commands within the target section
                 sectionCommands.push_back(parseCommandLine(strLine));
             }
+
+            // Clear strings to reuse capacity
+            strLine.clear();
+            currentSection.clear();
         }
     
         fclose(packageFile);
@@ -2150,6 +2285,10 @@ namespace ult {
             } else if (inTargetSection) { // Only parse commands within the target section
                 sectionCommands.push_back(parseCommandLine(line));
             }
+
+            // Clear strings to reuse capacity
+            strLine.clear();
+            currentSection.clear();
         }
     
         packageFile.close();

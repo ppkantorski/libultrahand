@@ -372,7 +372,7 @@ namespace ult {
     
         // Find intersection (common elements) between the two sets
         for (const auto& entry : fileSet1) {
-            if (fileSet2.find(entry) != fileSet2.end()) {
+            if (fileSet2.count(entry)) {
                 duplicateFiles.insert(entry);
             }
         }
@@ -442,12 +442,15 @@ namespace ult {
         std::unordered_set<std::string> duplicates;
         
         // STEP 2: Get wildcard files
-        const std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
+        std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
         
         // STEP 3: Process each wildcard file line-by-line (minimum memory)
-        for (const auto& filePath : wildcardFiles) {
-            if (filePath == txtFilePath) continue;
-            
+        for (auto& filePath : wildcardFiles) {
+            if (filePath == txtFilePath) {
+                filePath = "";
+                continue;
+            }
+
             // Process line-by-line without loading entire file into memory
             processFileLines(filePath, [&](const std::string& line) {
                 // O(1) lookup + O(1) insert if duplicate found
@@ -455,6 +458,7 @@ namespace ult {
                     duplicates.insert(line);
                 }
             });
+            filePath = "";
         }
         
         // STEP 4: Write results

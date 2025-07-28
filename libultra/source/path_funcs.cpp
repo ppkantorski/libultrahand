@@ -369,11 +369,12 @@ namespace ult {
      */
     void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource) {
         //logMessage("pathPattern: "+pathPattern);
-        const std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
+        std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
         
-        for (const auto& path : fileList) {
+        for (auto& path : fileList) {
             //logMessage("path: "+path);
             deleteFileOrDirectory(path, logSource);
+            path = "";
         }
     }
     
@@ -701,7 +702,7 @@ namespace ult {
         std::string folderName, fixedDestinationPath;
         
         // Iterate through the file list
-        for (const std::string& sourceFileOrDirectory : fileList) {
+        for (std::string& sourceFileOrDirectory : fileList) {
             //logMessage("sourceFileOrDirectory: "+sourceFileOrDirectory);
             // if sourceFile is a file (Needs condition handling)
             if (!isDirectory(sourceFileOrDirectory)) {
@@ -716,7 +717,7 @@ namespace ult {
                 
                 moveFileOrDirectory(sourceFileOrDirectory.c_str(), fixedDestinationPath.c_str(), logSource, logDestination);
             }
-            
+            sourceFileOrDirectory = "";
         }
         //logMessage("post loop");
     }
@@ -1089,15 +1090,16 @@ namespace ult {
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
         const std::string& logSource, const std::string& logDestination) {
-        const std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
+        std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
         long long totalSize = 0;
         for (const std::string& path : fileList) {
             totalSize += getTotalSize(path);
         }
     
         long long totalBytesCopied = 0;
-        for (const std::string& sourcePath : fileList) {
+        for (std::string& sourcePath : fileList) {
             copyFileOrDirectory(sourcePath, toDirectory, &totalBytesCopied, totalSize, logSource, logDestination);
+            sourcePath = "";
         }
         //copyPercentage.store(-1, std::memory_order_release);  // Reset after operation
     }
@@ -1115,7 +1117,7 @@ namespace ult {
      *                   Default is "sdmc:/". You can specify a different target path if needed.
      */
     void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode) {
-        const std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
+        std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
         std::string updatedPath;
         long long totalSize = 0;
         long long totalBytesCopied = 0;
@@ -1129,7 +1131,7 @@ namespace ult {
             }
         }
         
-        for (const auto& path : fileList) {
+        for (auto& path : fileList) {
             // Generate the corresponding path in the target directory by replacing the source path
             updatedPath = targetPath + path.substr(sourcePath.size());
             //logMessage("mirror-delete: "+path+" "+updatedPath);
@@ -1139,6 +1141,7 @@ namespace ult {
                 if (path != updatedPath)
                     copyFileOrDirectory(path, updatedPath, &totalBytesCopied, totalSize);
             }
+            path = "";
         }
         //fileList.clear();
     }
@@ -1153,11 +1156,9 @@ namespace ult {
      * @param outputDir       Directory where the output files will be written.
      *                        Created if it doesn't already exist.
      */
-    void createFlagFiles(const std::string& wildcardPattern,
-                         const std::string& outputDir)
-    {
+    void createFlagFiles(const std::string& wildcardPattern, const std::string& outputDir) {
         // 1) Gather all matches from the wildcard pattern
-        const std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
+        std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
         if (allMatches.empty()) {
             return; // No matches, nothing to do
         }
@@ -1171,9 +1172,12 @@ namespace ult {
             outputPrefix.push_back('/');
         
         std::string baseName, outFile;
-        for (const auto& fullPath : allMatches) {
+        for (auto& fullPath : allMatches) {
             baseName = ult::getNameFromPath(fullPath);
-            if (baseName.empty()) continue;
+            if (baseName.empty()) {
+                fullPath = "";
+                continue;
+            }
     
             outFile = outputPrefix + baseName;
     
@@ -1184,6 +1188,7 @@ namespace ult {
             std::ofstream ofs(outFile, std::ios::binary | std::ios::trunc);
             ofs.close();
         #endif
+            fullPath = "";
         }
     }
     
