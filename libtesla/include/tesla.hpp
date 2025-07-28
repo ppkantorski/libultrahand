@@ -5567,6 +5567,7 @@ namespace tsl {
             static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
             static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
             static constexpr float BOTTOM_PADDING = 7.0f;
+            static constexpr float VIEW_CENTER_OFFSET = 7.0f;
 
             float m_scrollVelocity = 0.0f;
             
@@ -6175,7 +6176,7 @@ namespace tsl {
                 
                 float h = 0.0f;
                 
-                float itemHeight, itemCenterPos, viewportCenter, idealOffset;
+                //float itemHeight, itemCenterPos, viewportCenter, idealOffset;
 
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     m_focusedIndex = i;
@@ -6183,13 +6184,17 @@ namespace tsl {
                     Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus && m_items[i]->matchesJumpCriteria(m_jumpToText, m_jumpToValue, m_jumpToExactMatch)) {
                         // CHANGED: Calculate center of the item and center it in viewport
-                        itemHeight = m_items[i]->getHeight();
-                        itemCenterPos = h + (itemHeight);
-                        viewportCenter = viewHeight / 2.0f + 7; // add slight offset
-                        idealOffset = itemCenterPos - viewportCenter;
+                        const float itemHeight = m_items[i]->getHeight();
+                        // For middle items, use centering logic
+                        const float itemCenterPos = h + (itemHeight / 2.0f);  // FIXED: Use center, not bottom
+                        const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET; // Same offset as updateScrollOffset
+                        float idealOffset = itemCenterPos - viewportCenter;
                         
-                        // Clamp to valid bounds
-                        m_offset = m_nextOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                        // Clamp to valid bounds (same as updateScrollOffset)
+                        idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                        
+                        // Set both current and target offset
+                        m_offset = m_nextOffset = idealOffset;
                         
                         return newFocus;
                     }
@@ -6577,17 +6582,17 @@ namespace tsl {
                 }
                 
                 // For middle items, use centering logic
-                //float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                //float viewportCenter = viewHeight / 2.0f + 7; // add slight offset
-                //float idealOffset = itemCenterPos - viewportCenter;
-                //
-                //// Clamp to valid scroll bounds
-                //idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                const float itemCenterPos = itemPos + (itemHeight / 2.0f);
+                const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET; // add slight offset
+                float idealOffset = itemCenterPos - viewportCenter;
+                
+                // Clamp to valid scroll bounds
+                idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
                 
                 // Set target for smooth animation
-                //m_nextOffset = idealOffset;
+                m_nextOffset = idealOffset;
 
-                m_nextOffset = std::max(0.0f, std::min(itemPos + itemHeight * 0.5f - (viewHeight * 0.5f + 7.0f), maxOffset));
+                //m_nextOffset = std::max(0.0f, std::min(itemPos + itemHeight * 0.5f - (viewHeight * 0.5f + 7.0f), maxOffset));
             }
             
         };
@@ -8337,8 +8342,8 @@ namespace tsl {
                 bool success = false;
             
                 // Placeholder replacement - cache lengths once
-                static CONSTEXPR_STRING std::string valuePlaceholder = "{value}";
-                static CONSTEXPR_STRING std::string indexPlaceholder = "{index}";
+                static const std::string valuePlaceholder = "{value}";
+                static const std::string indexPlaceholder = "{index}";
                 static const size_t valuePlaceholderLen = valuePlaceholder.length();
                 static const size_t indexPlaceholderLen = indexPlaceholder.length();
                 const size_t valueStrLen = valueStr.length();
