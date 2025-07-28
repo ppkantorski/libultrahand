@@ -214,10 +214,7 @@ namespace ult {
                 lastHeader = line.substr(1, line.size() - 2);
                 iniData[lastHeader]; // Ensures the section exists even if it remains empty
 
-                // Clear strings to reuse capacity
-                line.clear();
-            }
-            else {
+            } else {
                 delimiterPos = line.find('=');
                 if (delimiterPos != std::string::npos) {
                     //key = trim(trimmedLine.substr(0, delimiterPos));
@@ -235,9 +232,9 @@ namespace ult {
                         newLine2.clear();
                     }
                 }
-                // Clear line to reuse capacity
-                line.clear();
             }
+            // Clear line to reuse capacity
+            line.clear();
         }
         
         return iniData;

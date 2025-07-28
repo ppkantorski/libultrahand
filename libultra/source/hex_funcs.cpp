@@ -791,7 +791,7 @@ namespace ult {
         std::vector<uint8_t> buffer(size);
         const size_t bytesRead = fread(buffer.data(), sizeof(uint8_t), size, file);
         fclose(file); // Close the file after reading
-    
+        
         if (bytesRead != static_cast<size_t>(size)) {
             return ""; // Return empty string if reading fails
         }

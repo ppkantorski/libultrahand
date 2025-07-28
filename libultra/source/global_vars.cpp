@@ -142,6 +142,7 @@ namespace ult {
     CONSTEXPR_STRING std::string COPY_SYMBOL = "\u2192";
     CONSTEXPR_STRING std::string INPROGRESS_SYMBOL = "\u25CF";
     CONSTEXPR_STRING std::string STAR_SYMBOL = "\u2605";
+    CONSTEXPR_STRING std::string DIVIDER_SYMBOL = "";
     
     const std::vector<std::string> THROBBER_SYMBOLS = {"", "", "", "", "", "", "", ""};
 

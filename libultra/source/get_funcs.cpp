@@ -375,17 +375,17 @@ namespace ult {
         struct stat st;
         
         bool isDir;
-        std::string pathRef;
+        //std::string pathRef;
         size_t currentPartIndex;
 
         while (!stack.empty()) {
             if (maxLines > 0 && results.size() >= maxLines) return;
             
-            std::tie(pathRef, currentPartIndex) = stack.back();
+            std::tie(currentPath, currentPartIndex) = stack.back();
             stack.pop_back();
             
             // Copy once to avoid repeated access
-            currentPath = pathRef;
+            //currentPath = pathRef;
             
             if (currentPartIndex >= parts.size()) continue;
     

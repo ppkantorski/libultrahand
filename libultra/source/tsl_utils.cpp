@@ -93,6 +93,8 @@ namespace ult {
     
             value = content.substr(valueStart + 1, valueEnd - valueStart - 1);
             result[key] = value;
+            key.clear();
+            value.clear();
     
             pos = valueEnd + 1; // Move to the next key-value pair
         }
@@ -104,7 +106,7 @@ namespace ult {
         if (!readFileContent(filePath, content)) {
             return false;
         }
-    
+        
         parseJsonContent(content, result);
         return true;
     }
