@@ -6584,7 +6584,7 @@ namespace tsl {
             
                     // Check if this item is focusable and closer to center
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test && distanceFromCenter < bestDistance) {
+                    if (test && test->m_isItem && distanceFromCenter < bestDistance) {
                         targetIndex = i;
                         bestDistance = distanceFromCenter;
                         foundFocusable = true;
@@ -6604,9 +6604,43 @@ namespace tsl {
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
                     return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
+                } else {
+                    isTableScrolling = true;
+                    m_nextOffset = targetViewportTop;
+
+                    // NEW: Find the last focusable item that's still visible
+                    float searchItemTop = 0.0f;
+                    size_t lastVisibleFocusable = m_focusedIndex;  // Default to current
+                    
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        const float itemHeight = m_items[i]->getHeight();
+                        const float itemBottom = searchItemTop + itemHeight;
+                        
+                        // Stop if we've gone past the new viewport
+                        if (searchItemTop >= targetViewportTop + viewHeight) break;
+                        
+                        // Check if this item is focusable and visible in the new viewport
+                        if (itemBottom > targetViewportTop) {
+                            Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                            if (test && test->m_isItem) {
+                                lastVisibleFocusable = i;
+                            }
+                        }
+                        
+                        searchItemTop += itemHeight;
+                    }
+                    
+                    // Focus on the last visible focusable item
+                    if (lastVisibleFocusable != m_focusedIndex) {
+                        m_focusedIndex = lastVisibleFocusable;
+                        Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
+                        if (newFocus && newFocus != oldFocus) {
+                            return newFocus;
+                        }
+                    }
                 }
-                
-                return handleJumpToBottom(oldFocus);
+
+                return oldFocus;
             }
             
             Element* handleSkipUp(Element* oldFocus) {
@@ -6617,7 +6651,7 @@ namespace tsl {
             
                 // Define constants for clarity and consistency
                 const float targetOffset = 0.0f;
-                const float tolerance = 5.0f;
+                const float tolerance = 0.0f;
 
                 // Find the first focusable item
                 size_t firstFocusableIndex = m_items.size();  // Default to invalid
@@ -6665,7 +6699,7 @@ namespace tsl {
             
                     // Check if this item is focusable and closer to center
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test && distanceFromCenter < bestDistance) {
+                    if (test && test->m_isItem && distanceFromCenter < bestDistance) {
                         targetIndex = i;
                         bestDistance = distanceFromCenter;
                         foundFocusable = true;
@@ -6681,16 +6715,49 @@ namespace tsl {
                         m_focusedIndex = targetIndex;
                         nearTop = false;
                     }
+                    //if (traveledFullViewport)
                     isTableScrolling = false;
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
                     return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
+                } else {
+                    isTableScrolling = true;
+                    m_nextOffset = targetViewportTop;
+                    
+                    // NEW: Find the first focusable item that's still visible
+                    float searchItemTop = 0.0f;
+                    size_t firstVisibleFocusable = m_focusedIndex;  // Default to current
+                    
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        const float itemHeight = m_items[i]->getHeight();
+                        const float itemBottom = searchItemTop + itemHeight;
+                        
+                        // Check if this item is visible in the new viewport
+                        if (itemBottom > targetViewportTop && searchItemTop < targetViewportTop + viewHeight) {
+                            Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                            if (test && test->m_isItem) {
+                                firstVisibleFocusable = i;
+                                break;  // Take the first one for skip up
+                            }
+                        }
+                        
+                        searchItemTop += itemHeight;
+                    }
+                    
+                    // Focus on the first visible focusable item
+                    if (firstVisibleFocusable != m_focusedIndex) {
+                        m_focusedIndex = firstVisibleFocusable;
+                        Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
+                        if (newFocus && newFocus != oldFocus) {
+                            return newFocus;
+                        }
+                    }
                 }
                 
-                return handleJumpToTop(oldFocus);
+                return oldFocus;
             }
-                                    
+            
                         
             inline void initializePrefixSums() {
                 prefixSums.clear();
@@ -9904,32 +9971,7 @@ namespace tsl {
                     }
                 }
             }
-            
-        //#if !IS_STATUS_MONITOR_DIRECTIVE
-        //    if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-        //        //jumpToTop = true;
-        //        skipUp = true;
-        //        currentGui->requestFocus(topElement, FocusDirection::None);
-        //    }
-        //    if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-        //        //jumpToBottom = true;
-        //        skipDown = true;
-        //        currentGui->requestFocus(topElement, FocusDirection::None);
-        //    }
-        //#else
-        //    if (!disableJumpTo) {
-        //        if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-        //            //jumpToTop = true;
-        //            skipUp = true;
-        //            currentGui->requestFocus(topElement, FocusDirection::None);
-        //        }
-        //        if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
-        //            //jumpToBottom = true;
-        //            skipDown = true;
-        //            currentGui->requestFocus(topElement, FocusDirection::None);
-        //        }
-        //    }
-        //#endif
+
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (!touchDetected && !interpreterIsRunning && topElement) {
         #else
@@ -9938,84 +9980,70 @@ namespace tsl {
                 // Static variables for L/R button timing and state
                 static u64 lButtonPressStart_ns = 0;
                 static u64 rButtonPressStart_ns = 0;
-                static u64 lLastHoldTrigger_ns = 0;
-                static u64 rLastHoldTrigger_ns = 0;
                 static u64 lLastRelease_ns = 0;
                 static u64 rLastRelease_ns = 0;
+                static u64 lLastClickTime_ns = 0;
+                static u64 rLastClickTime_ns = 0;
                 static bool lWasPressed = false;
                 static bool rWasPressed = false;
                 static bool lPotentialDoubleClick = false;
                 static bool rPotentialDoubleClick = false;
-                static bool lDoubleClickConfirmed = false;
-                static bool rDoubleClickConfirmed = false;
-                static bool lHoldTriggered = false;
-                static bool rHoldTriggered = false;
+                static bool lDoubleClickHandled = false;
+                static bool rDoubleClickHandled = false;
+                static bool lInRapidClickMode = false;
+                static bool rInRapidClickMode = false;
                 
-                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
-                static constexpr u64 DOUBLE_CLICK_WINDOW_NS = 100000000ULL;    // 200ms double-click window
-                // Acceleration timing constants
-                static constexpr u64 ACCELERATION_POINT_NS = 1500000000ULL;    // 1.5s transition point
-                static constexpr u64 INITIAL_INTERVAL_NS = 67000000ULL;       // 150ms initial interval
-                static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 50ms fast interval
+                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to trigger jump
+                static constexpr u64 DOUBLE_CLICK_WINDOW_NS = 300000000ULL;    // 300ms double-click window
+                static constexpr u64 RAPID_CLICK_WINDOW_NS = 500000000ULL;     // 500ms window for rapid clicking
+                static constexpr u64 RAPID_MODE_TIMEOUT_NS = 1000000000ULL;    // 1s timeout to exit rapid mode
                 
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
-                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool lPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
+                const bool rPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
+                
+                // Check if we should exit rapid click mode due to timeout
+                if (lInRapidClickMode && (currentTime_ns - lLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                    lInRapidClickMode = false;
+                }
+                if (rInRapidClickMode && (currentTime_ns - rLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                    rInRapidClickMode = false;
+                }
                 
                 // Handle L button
                 if (lPressed) {
                     if (!lWasPressed) {
                         // Button just pressed
                         const u64 timeSinceLastRelease = currentTime_ns - lLastRelease_ns;
+                        const u64 timeSinceLastClick = currentTime_ns - lLastClickTime_ns;
                         
-                        // Always trigger action immediately for rapid clicking
-                        skipUp = true;
-                        currentGui->requestFocus(topElement, FocusDirection::None);
+                        // Enter rapid click mode if clicking within window
+                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
+                            lInRapidClickMode = true;
+                        }
+                        
+                        // Only trigger immediately if in rapid click mode
+                        if (lInRapidClickMode) {
+                            skipUp = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            lLastClickTime_ns = currentTime_ns;
+                        }
                         
                         // Check if this could be a double-click
                         lPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
-                        lDoubleClickConfirmed = false;
+                        lDoubleClickHandled = false;
                         
                         lButtonPressStart_ns = currentTime_ns;
-                        lLastHoldTrigger_ns = currentTime_ns;
-                        lHoldTriggered = false;
                     }
                     
-                    // Check for hold behavior
-                    const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
-                    
-                    if (holdDuration >= HOLD_THRESHOLD_NS) {
-                        // Calculate dynamic interval based on hold duration (accelerating)
-                        const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                       (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                        const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                    // Check for double-click and hold (only if in rapid mode)
+                    if (lInRapidClickMode && lPotentialDoubleClick && !lDoubleClickHandled) {
+                        const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
                         
-                        // If this was a potential double-click and we're now holding, confirm it
-                        if (lPotentialDoubleClick && !lDoubleClickConfirmed) {
-                            lDoubleClickConfirmed = true;
-                            jumpToTop = true;  // Override with jump action
+                        if (holdDuration >= HOLD_THRESHOLD_NS) {
+                            jumpToTop = true;
                             currentGui->requestFocus(topElement, FocusDirection::None);
-                            lHoldTriggered = true;
-                            lLastHoldTrigger_ns = currentTime_ns;
-                        } else {
-                            const u64 timeSinceLastHoldTrigger = currentTime_ns - lLastHoldTrigger_ns;
-                            
-                            if (!lHoldTriggered) {
-                                // First hold trigger (single-click hold)
-                                skipUp = true;
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                lHoldTriggered = true;
-                                lLastHoldTrigger_ns = currentTime_ns;
-                            } else if (timeSinceLastHoldTrigger >= currentInterval) {
-                                // Continuous hold triggers with acceleration
-                                if (lDoubleClickConfirmed) {
-                                    jumpToTop = true;
-                                } else {
-                                    skipUp = true;
-                                }
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                lLastHoldTrigger_ns = currentTime_ns;
-                            }
+                            lDoubleClickHandled = true;
                         }
                     }
                     
@@ -10023,10 +10051,18 @@ namespace tsl {
                 } else {
                     if (lWasPressed) {
                         // Button just released
+                        
+                        // If not in rapid click mode, trigger on release
+                        if (!lInRapidClickMode && !lDoubleClickHandled) {
+                            skipUp = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            lLastClickTime_ns = currentTime_ns;
+                            lInRapidClickMode = true;  // Enter rapid mode after first release
+                        }
+                        
                         lLastRelease_ns = currentTime_ns;
-                        lHoldTriggered = false;
                         lPotentialDoubleClick = false;
-                        lDoubleClickConfirmed = false;
+                        lDoubleClickHandled = false;
                     }
                     lWasPressed = false;
                 }
@@ -10036,55 +10072,35 @@ namespace tsl {
                     if (!rWasPressed) {
                         // Button just pressed
                         const u64 timeSinceLastRelease = currentTime_ns - rLastRelease_ns;
+                        const u64 timeSinceLastClick = currentTime_ns - rLastClickTime_ns;
                         
-                        // Always trigger action immediately for rapid clicking
-                        skipDown = true;
-                        currentGui->requestFocus(topElement, FocusDirection::None);
+                        // Enter rapid click mode if clicking within window
+                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
+                            rInRapidClickMode = true;
+                        }
+                        
+                        // Only trigger immediately if in rapid click mode
+                        if (rInRapidClickMode) {
+                            skipDown = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            rLastClickTime_ns = currentTime_ns;
+                        }
                         
                         // Check if this could be a double-click
                         rPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
-                        rDoubleClickConfirmed = false;
+                        rDoubleClickHandled = false;
                         
                         rButtonPressStart_ns = currentTime_ns;
-                        rLastHoldTrigger_ns = currentTime_ns;
-                        rHoldTriggered = false;
                     }
                     
-                    // Check for hold behavior
-                    const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
-                    
-                    if (holdDuration >= HOLD_THRESHOLD_NS) {
-                        // Calculate dynamic interval based on hold duration (accelerating)
-                        const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                       (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                        const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                    // Check for double-click and hold (only if in rapid mode)
+                    if (rInRapidClickMode && rPotentialDoubleClick && !rDoubleClickHandled) {
+                        const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
                         
-                        // If this was a potential double-click and we're now holding, confirm it
-                        if (rPotentialDoubleClick && !rDoubleClickConfirmed) {
-                            rDoubleClickConfirmed = true;
-                            jumpToBottom = true;  // Override with jump action
+                        if (holdDuration >= HOLD_THRESHOLD_NS) {
+                            jumpToBottom = true;
                             currentGui->requestFocus(topElement, FocusDirection::None);
-                            rHoldTriggered = true;
-                            rLastHoldTrigger_ns = currentTime_ns;
-                        } else {
-                            const u64 timeSinceLastHoldTrigger = currentTime_ns - rLastHoldTrigger_ns;
-                            
-                            if (!rHoldTriggered) {
-                                // First hold trigger (single-click hold)
-                                skipDown = true;
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                rHoldTriggered = true;
-                                rLastHoldTrigger_ns = currentTime_ns;
-                            } else if (timeSinceLastHoldTrigger >= currentInterval) {
-                                // Continuous hold triggers with acceleration
-                                if (rDoubleClickConfirmed) {
-                                    jumpToBottom = true;
-                                } else {
-                                    skipDown = true;
-                                }
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                rLastHoldTrigger_ns = currentTime_ns;
-                            }
+                            rDoubleClickHandled = true;
                         }
                     }
                     
@@ -10092,10 +10108,18 @@ namespace tsl {
                 } else {
                     if (rWasPressed) {
                         // Button just released
+                        
+                        // If not in rapid click mode, trigger on release
+                        if (!rInRapidClickMode && !rDoubleClickHandled) {
+                            skipDown = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            rLastClickTime_ns = currentTime_ns;
+                            rInRapidClickMode = true;  // Enter rapid mode after first release
+                        }
+                        
                         rLastRelease_ns = currentTime_ns;
-                        rHoldTriggered = false;
                         rPotentialDoubleClick = false;
-                        rDoubleClickConfirmed = false;
+                        rDoubleClickHandled = false;
                     }
                     rWasPressed = false;
                 }
