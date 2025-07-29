@@ -6488,7 +6488,7 @@ namespace tsl {
                 
                 // Define constants for clarity and consistency
                 const float targetOffset = 0.0f;
-                const float tolerance = 5.0f;
+                const float tolerance = 0.0f;
                 
                 // Find the first focusable item
                 size_t firstFocusableIndex = m_items.size();  // Default to invalid
@@ -6536,7 +6536,7 @@ namespace tsl {
                 // Calculate target offset once (good optimization to keep)
                 const float targetOffset = (m_listHeight > getHeight()) ? 
                                            static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                const float tolerance = 5.0f;
+                const float tolerance = 0.0f;
 
                 // Find the last focusable item
                 size_t lastFocusableIndex = m_items.size();
@@ -6565,6 +6565,10 @@ namespace tsl {
             
                 // Calculate the target viewport center after skipping
                 const float targetViewportTop = std::min(m_offset + viewHeight, maxOffset);
+
+                // Check if we traveled less than a full viewport
+                const float actualTravelDistance = targetViewportTop - m_offset;
+                const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
                 const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
             
                 // Find the item closest to the center of the new viewport
@@ -6591,7 +6595,7 @@ namespace tsl {
             
                 if (foundFocusable) {
                     bool nearBottom = true;
-                    if (targetIndex > m_focusedIndex) {
+                    if (targetIndex > m_focusedIndex && traveledFullViewport) {
                         m_focusedIndex = targetIndex;
                         nearBottom = false;
                     }
@@ -6599,7 +6603,7 @@ namespace tsl {
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    return (newFocus && newFocus != oldFocus && !nearBottom) ? newFocus : handleJumpToBottom(oldFocus);
+                    return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
                 }
                 
                 return handleJumpToBottom(oldFocus);
@@ -6641,6 +6645,11 @@ namespace tsl {
                 
                 // Calculate the target viewport center after skipping
                 const float targetViewportTop = std::max(0.0f, m_offset - viewHeight);
+
+                // Check if we traveled less than a full viewport
+                const float actualTravelDistance = m_offset - targetViewportTop;
+                const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
+
                 const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
             
                 // Find the item closest to the center of the new viewport
@@ -6668,7 +6677,7 @@ namespace tsl {
                 if (foundFocusable) {
 
                     bool nearTop = true;
-                    if (targetIndex < m_focusedIndex) {
+                    if (targetIndex < m_focusedIndex && traveledFullViewport) {
                         m_focusedIndex = targetIndex;
                         nearTop = false;
                     }
@@ -6676,7 +6685,7 @@ namespace tsl {
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    return (newFocus && newFocus != oldFocus && !nearTop) ? newFocus : handleJumpToTop(oldFocus);
+                    return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
                 }
                 
                 return handleJumpToTop(oldFocus);
