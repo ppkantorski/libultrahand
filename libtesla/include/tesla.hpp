@@ -9874,11 +9874,12 @@ namespace tsl {
             
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
+            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
             if (hasScrolled) {
                 const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                 
                 if (singleArrowKeyPress) {
-                    const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                   // const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                     buttonPressTime_ns = currentTime_ns;
                     lastKeyEventTime_ns = currentTime_ns;
                     hasScrolled = false;
@@ -9890,7 +9891,7 @@ namespace tsl {
                     const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                     
                     if (singleArrowKeyPress) {
-                        const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                        //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                         
                         if (keysDown) {
                             buttonPressTime_ns = currentTime_ns;
@@ -9958,6 +9959,7 @@ namespace tsl {
                         }
         #if !IS_STATUS_MONITOR_DIRECTIVE
                     } else {
+                        buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                         // Handle the rest of the input
                         if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
                             keysDown |= KEY_B;
@@ -10003,7 +10005,7 @@ namespace tsl {
                 static constexpr u64 INITIAL_INTERVAL_NS = 67000000ULL;        // 67ms initial interval
                 static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
                 const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
                 const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
