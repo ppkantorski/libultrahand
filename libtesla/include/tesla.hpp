@@ -9546,8 +9546,8 @@ namespace tsl {
             ult::isHidden.store(false);
             this->onShow();
             
-            if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
-                currGui->restoreFocus();
+            //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
+            //    currGui->restoreFocus();
         }
         
         /**
@@ -9810,7 +9810,7 @@ namespace tsl {
                     keysDown |= KEY_B;
                     //ult::simulatedBack = false;
                 }
-                if (keysDown & KEY_B) {
+                if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
                         //ult::simulatedBackComplete = true;
@@ -9875,7 +9875,7 @@ namespace tsl {
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
             if (hasScrolled) {
-                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
+                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                 
                 if (singleArrowKeyPress) {
                     const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -9887,7 +9887,7 @@ namespace tsl {
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
-                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1;
+                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                     
                     if (singleArrowKeyPress) {
                         const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -9964,164 +9964,209 @@ namespace tsl {
                             //ult::simulatedBack = false;
                         }
         
-                        if (keysDown & KEY_B)
+                        if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK))
                             this->goBack();
                         singlePressHandled = false;
         #endif
                     }
                 }
             }
-
+        
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (!touchDetected && !interpreterIsRunning && topElement) {
         #else
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
         #endif
-                // Static variables for L/R button timing and state
-                static u64 lButtonPressStart_ns = 0;
-                static u64 rButtonPressStart_ns = 0;
-                static u64 lLastRelease_ns = 0;
-                static u64 rLastRelease_ns = 0;
-                static u64 lLastClickTime_ns = 0;
-                static u64 rLastClickTime_ns = 0;
+                // Static variables for L/R button timing (simple jump)
                 static bool lWasPressed = false;
                 static bool rWasPressed = false;
-                static bool lPotentialDoubleClick = false;
-                static bool rPotentialDoubleClick = false;
-                static bool lDoubleClickHandled = false;
-                static bool rDoubleClickHandled = false;
-                static bool lInRapidClickMode = false;
-                static bool rInRapidClickMode = false;
                 
-                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to trigger jump
-                static constexpr u64 DOUBLE_CLICK_WINDOW_NS = 300000000ULL;    // 300ms double-click window
+                // Static variables for ZL/ZR button timing and state (skip with hold)
+                static u64 zlButtonPressStart_ns = 0;
+                static u64 zrButtonPressStart_ns = 0;
+                static u64 zlLastHoldTrigger_ns = 0;
+                static u64 zrLastHoldTrigger_ns = 0;
+                static u64 zlLastClickTime_ns = 0;
+                static u64 zrLastClickTime_ns = 0;
+                static bool zlWasPressed = false;
+                static bool zrWasPressed = false;
+                static bool zlHoldTriggered = false;
+                static bool zrHoldTriggered = false;
+                static bool zlInRapidClickMode = false;
+                static bool zrInRapidClickMode = false;
+                
+                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
                 static constexpr u64 RAPID_CLICK_WINDOW_NS = 500000000ULL;     // 500ms window for rapid clicking
                 static constexpr u64 RAPID_MODE_TIMEOUT_NS = 1000000000ULL;    // 1s timeout to exit rapid mode
+                // Acceleration timing constants
+                static constexpr u64 ACCELERATION_POINT_NS = 1500000000ULL;    // 1.5s transition point
+                static constexpr u64 INITIAL_INTERVAL_NS = 67000000ULL;        // 67ms initial interval
+                static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const bool lPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
-                const bool rPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
+                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
+                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
+                const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
-                // Check if we should exit rapid click mode due to timeout
-                if (lInRapidClickMode && (currentTime_ns - lLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                    lInRapidClickMode = false;
-                }
-                if (rInRapidClickMode && (currentTime_ns - rLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                    rInRapidClickMode = false;
-                }
-                
-                // Handle L button
+                // Handle L button (simple jump to top on release)
                 if (lPressed) {
-                    if (!lWasPressed) {
-                        // Button just pressed
-                        const u64 timeSinceLastRelease = currentTime_ns - lLastRelease_ns;
-                        const u64 timeSinceLastClick = currentTime_ns - lLastClickTime_ns;
-                        
-                        // Enter rapid click mode if clicking within window
-                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                            lInRapidClickMode = true;
-                        }
-                        
-                        // Only trigger immediately if in rapid click mode
-                        if (lInRapidClickMode) {
-                            skipUp = true;
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            lLastClickTime_ns = currentTime_ns;
-                        }
-                        
-                        // Check if this could be a double-click
-                        lPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
-                        lDoubleClickHandled = false;
-                        
-                        lButtonPressStart_ns = currentTime_ns;
-                    }
-                    
-                    // Check for double-click and hold (only if in rapid mode)
-                    if (lInRapidClickMode && lPotentialDoubleClick && !lDoubleClickHandled) {
-                        const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
-                        
-                        if (holdDuration >= HOLD_THRESHOLD_NS) {
-                            jumpToTop = true;
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            lDoubleClickHandled = true;
-                        }
-                    }
-                    
                     lWasPressed = true;
                 } else {
-                    if (lWasPressed) {
-                        // Button just released
-                        
-                        // If not in rapid click mode, trigger on release
-                        if (!lInRapidClickMode && !lDoubleClickHandled) {
-                            skipUp = true;
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            lLastClickTime_ns = currentTime_ns;
-                            lInRapidClickMode = true;  // Enter rapid mode after first release
-                        }
-                        
-                        lLastRelease_ns = currentTime_ns;
-                        lPotentialDoubleClick = false;
-                        lDoubleClickHandled = false;
+                    if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
+                        // Button just released - jump to top
+                        jumpToTop = true;
+                        currentGui->requestFocus(topElement, FocusDirection::None);
                     }
                     lWasPressed = false;
                 }
                 
-                // Handle R button
+                // Handle R button (simple jump to bottom on release)
                 if (rPressed) {
-                    if (!rWasPressed) {
+                    rWasPressed = true;
+                } else {
+                    if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
+                        // Button just released - jump to bottom
+                        jumpToBottom = true;
+                        currentGui->requestFocus(topElement, FocusDirection::None);
+                    }
+                    rWasPressed = false;
+                }
+                
+                // Check if we should exit rapid click mode due to timeout
+                if (zlInRapidClickMode && (currentTime_ns - zlLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                    zlInRapidClickMode = false;
+                }
+                if (zrInRapidClickMode && (currentTime_ns - zrLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                    zrInRapidClickMode = false;
+                }
+                
+                // Handle ZL button (skip up with hold)
+                if (zlPressed) {
+                    if (!zlWasPressed) {
                         // Button just pressed
-                        const u64 timeSinceLastRelease = currentTime_ns - rLastRelease_ns;
-                        const u64 timeSinceLastClick = currentTime_ns - rLastClickTime_ns;
+                        const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
                         
                         // Enter rapid click mode if clicking within window
                         if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                            rInRapidClickMode = true;
+                            zlInRapidClickMode = true;
                         }
                         
                         // Only trigger immediately if in rapid click mode
-                        if (rInRapidClickMode) {
-                            skipDown = true;
+                        if (zlInRapidClickMode) {
+                            skipUp = true;
                             currentGui->requestFocus(topElement, FocusDirection::None);
-                            rLastClickTime_ns = currentTime_ns;
+                            zlLastClickTime_ns = currentTime_ns;
                         }
                         
-                        // Check if this could be a double-click
-                        rPotentialDoubleClick = (timeSinceLastRelease <= DOUBLE_CLICK_WINDOW_NS);
-                        rDoubleClickHandled = false;
-                        
-                        rButtonPressStart_ns = currentTime_ns;
+                        zlButtonPressStart_ns = currentTime_ns;
+                        zlLastHoldTrigger_ns = currentTime_ns;
+                        zlHoldTriggered = false;
                     }
                     
-                    // Check for double-click and hold (only if in rapid mode)
-                    if (rInRapidClickMode && rPotentialDoubleClick && !rDoubleClickHandled) {
-                        const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
+                    // Check for hold behavior - ONLY if in rapid click mode
+                    if (zlInRapidClickMode) {
+                        const u64 holdDuration = currentTime_ns - zlButtonPressStart_ns;
                         
                         if (holdDuration >= HOLD_THRESHOLD_NS) {
-                            jumpToBottom = true;
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            rDoubleClickHandled = true;
+                            // Calculate dynamic interval based on hold duration (accelerating)
+                            const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                           (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                            const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                            
+                            const u64 timeSinceLastHoldTrigger = currentTime_ns - zlLastHoldTrigger_ns;
+                            
+                            if (!zlHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
+                                // Trigger skip
+                                skipUp = true;
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                zlHoldTriggered = true;
+                                zlLastHoldTrigger_ns = currentTime_ns;
+                                zlLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                            }
                         }
                     }
                     
-                    rWasPressed = true;
+                    zlWasPressed = true;
                 } else {
-                    if (rWasPressed) {
+                    if (zlWasPressed && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
                         // Button just released
                         
-                        // If not in rapid click mode, trigger on release
-                        if (!rInRapidClickMode && !rDoubleClickHandled) {
-                            skipDown = true;
+                        // If not in rapid click mode and not a hold, trigger on release
+                        if (!zlInRapidClickMode && !zlHoldTriggered) {
+                            skipUp = true;
                             currentGui->requestFocus(topElement, FocusDirection::None);
-                            rLastClickTime_ns = currentTime_ns;
-                            rInRapidClickMode = true;  // Enter rapid mode after first release
+                            zlLastClickTime_ns = currentTime_ns;
+                            zlInRapidClickMode = true;  // Enter rapid mode after first release
                         }
                         
-                        rLastRelease_ns = currentTime_ns;
-                        rPotentialDoubleClick = false;
-                        rDoubleClickHandled = false;
+                        zlHoldTriggered = false;
                     }
-                    rWasPressed = false;
+                    zlWasPressed = false;
+                }
+                
+                // Handle ZR button (skip down with hold)
+                if (zrPressed) {
+                    if (!zrWasPressed) {
+                        // Button just pressed
+                        const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
+                        
+                        // Enter rapid click mode if clicking within window
+                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
+                            zrInRapidClickMode = true;
+                        }
+                        
+                        // Only trigger immediately if in rapid click mode
+                        if (zrInRapidClickMode) {
+                            skipDown = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            zrLastClickTime_ns = currentTime_ns;
+                        }
+                        
+                        zrButtonPressStart_ns = currentTime_ns;
+                        zrLastHoldTrigger_ns = currentTime_ns;
+                        zrHoldTriggered = false;
+                    }
+                    
+                    // Check for hold behavior - ONLY if in rapid click mode
+                    if (zrInRapidClickMode) {
+                        const u64 holdDuration = currentTime_ns - zrButtonPressStart_ns;
+                        
+                        if (holdDuration >= HOLD_THRESHOLD_NS) {
+                            // Calculate dynamic interval based on hold duration (accelerating)
+                            const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                           (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                            const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                            
+                            const u64 timeSinceLastHoldTrigger = currentTime_ns - zrLastHoldTrigger_ns;
+                            
+                            if (!zrHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
+                                // Trigger skip
+                                skipDown = true;
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                zrHoldTriggered = true;
+                                zrLastHoldTrigger_ns = currentTime_ns;
+                                zrLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                            }
+                        }
+                    }
+                    
+                    zrWasPressed = true;
+                } else {
+                    if (zrWasPressed && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
+                        // Button just released
+                        
+                        // If not in rapid click mode and not a hold, trigger on release
+                        if (!zrInRapidClickMode && !zrHoldTriggered) {
+                            skipDown = true;
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            zrLastClickTime_ns = currentTime_ns;
+                            zrInRapidClickMode = true;  // Enter rapid mode after first release
+                        }
+                        
+                        zrHoldTriggered = false;
+                    }
+                    zrWasPressed = false;
                 }
             }
             
@@ -10759,21 +10804,6 @@ namespace tsl {
                             const std::string overlayFileName = ult::getNameFromPath(requestedPath);
                             
                             // Set overlay state for ovlmenu.ovl
-                            //if (overlayFileName == "ovlmenu.ovl") {
-                            //    ult::setIniFileValue(
-                            //        ult::ULTRAHAND_CONFIG_INI_PATH,
-                            //        ult::ULTRAHAND_PROJECT_NAME,
-                            //        ult::IN_OVERLAY_STR,
-                            //        ult::TRUE_STR
-                            //    );
-                            //}
-                            //ult::setIniFileValue(
-                            //    ult::ULTRAHAND_CONFIG_INI_PATH,
-                            //    ult::ULTRAHAND_PROJECT_NAME,
-                            //    ult::IN_OVERLAY_STR,
-                            //    ult::TRUE_STR
-                            //);
-                            //ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::TRUE_STR);
 
                             // OPTIMIZED: Batch INI file writes
                             {
@@ -10789,7 +10819,7 @@ namespace tsl {
                             ult::unlockedSlide.exchange(false, std::memory_order_acq_rel);
                             
                             // Launch the overlay using the same mechanism as key combos
-                            shData->overlayOpen = false;
+                            //shData->overlayOpen = false;
                             ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
                             tsl::setNextOverlay(requestedPath, requestedArgs);
                             tsl::Overlay::get()->close();
@@ -10805,13 +10835,14 @@ namespace tsl {
                             // Lookup both path and optional mode launch args
                             const auto comboInfo = tsl::hlp::getEntryForKeyCombo(shData->keysHeld);
                             const std::string& overlayPath = comboInfo.path;
-                            const std::string& modeArg = comboInfo.launchArg;
+                            
                     
                     #if IS_LAUNCHER_DIRECTIVE
                             if (!overlayPath.empty() && (shData->keysHeld) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire) && (armTicksToNs(nowTick) - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                     #else
                             if (!overlayPath.empty() && (shData->keysHeld) && (nowNs - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                     #endif
+                                const std::string& modeArg = comboInfo.launchArg;
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
                                 // hideHidden check
@@ -10819,7 +10850,8 @@ namespace tsl {
                                     const auto hideStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::HIDE_STR);
                                     if (hideStatus == ult::TRUE_STR) {
-                                        break;
+                                        shData->keysDownPending |= shData->keysDown;
+                                        continue;
                                     }
                                 }
 
@@ -10839,7 +10871,7 @@ namespace tsl {
                                         ult::TRUE_STR
                                     );
                                 
-                                    shData->overlayOpen = false;
+                                    //shData->overlayOpen = false;
                                     ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
                                     tsl::setNextOverlay(
                                         ult::OVERLAY_PATH + "ovlmenu.ovl",
@@ -10896,7 +10928,7 @@ namespace tsl {
                                     );
                                 }
                     
-                                shData->overlayOpen = false;
+                                //shData->overlayOpen = false;
                                 ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 tsl::Overlay::get()->close();
