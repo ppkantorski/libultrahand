@@ -20,6 +20,33 @@
 #include <ini_funcs.hpp>
 
 namespace ult {
+    // Thread safety infrastructure
+    namespace {
+        std::unordered_map<std::string, std::shared_ptr<std::shared_mutex>> fileMutexMap;
+        std::mutex mapMutex;
+        
+        std::shared_ptr<std::shared_mutex> getFileMutex(const std::string& filePath) {
+            std::lock_guard<std::mutex> lock(mapMutex);
+            auto it = fileMutexMap.find(filePath);
+            if (it == fileMutexMap.end()) {
+                auto mutex = std::make_shared<std::shared_mutex>();
+                fileMutexMap[filePath] = mutex;
+                return mutex;
+            }
+            return it->second;
+        }
+    }
+
+    /**
+     * @brief Clears unused file mutexes from memory.
+     * WARNING: Only call this when you're certain NO threads are accessing INI files!
+     * Best used during application shutdown or maintenance periods.
+     */
+    void clearIniMutexCache() {
+        std::lock_guard<std::mutex> lock(mapMutex);
+        fileMutexMap.clear();
+    }
+
 
     /**
      * @brief Retrieves the package header information from an INI file.
@@ -30,6 +57,9 @@ namespace ult {
      * @return The package header structure.
      */
     PackageHeader getPackageHeaderFromIni(const std::string& filePath) {
+        auto fileMutex = getFileMutex(filePath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
         PackageHeader packageHeader;
         
     #if !USING_FSTREAM_DIRECTIVE
@@ -252,6 +282,9 @@ namespace ult {
      * @return A map representing the parsed INI data.
      */
     std::map<std::string, std::map<std::string, std::string>> getParsedDataFromIniFile(const std::string& configIniPath) {
+        auto fileMutex = getFileMutex(configIniPath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
         std::map<std::string, std::map<std::string, std::string>> parsedData;
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -454,6 +487,9 @@ namespace ult {
      * @return A map representing the key-value pairs in the specified section.
      */
     std::map<std::string, std::string> getKeyValuePairsFromSection(const std::string& configIniPath, const std::string& sectionName) {
+        auto fileMutex = getFileMutex(configIniPath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
         std::map<std::string, std::string> sectionData;
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -622,6 +658,9 @@ namespace ult {
      * @return A vector of section names.
      */
     std::vector<std::string> parseSectionsFromIni(const std::string& filePath) {
+        auto fileMutex = getFileMutex(filePath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
         std::vector<std::string> sections;
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -706,6 +745,9 @@ namespace ult {
      * @return The value as a string, or an empty string if the key or section isn't found.
      */
     std::string parseValueFromIniSection(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
+        auto fileMutex = getFileMutex(filePath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
         std::string value;
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -918,6 +960,9 @@ namespace ult {
      * @param filePath The path to the INI file to be cleaned.
      */
     void cleanIniFormatting(const std::string& filePath) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
         const std::string tempPath = filePath + ".tmp";
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -1065,6 +1110,9 @@ namespace ult {
      * @param comment         An optional comment to be added (not currently implemented).
      */
     void setIniFile(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredValue, const std::string& desiredNewKey, const std::string& comment) {
+        auto fileMutex = getFileMutex(fileToEdit);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
         std::ios::sync_with_stdio(false);  // Disable synchronization between C++ and C I/O.
     
         if (!isFile(fileToEdit)) {
@@ -1370,6 +1418,9 @@ namespace ult {
      * @param sectionName The name of the section to add.
      */
     void addIniSection(const std::string& filePath, const std::string& sectionName) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
@@ -1570,6 +1621,9 @@ namespace ult {
      * @param newSectionName The new name for the section.
      */
     void renameIniSection(const std::string& filePath, const std::string& currentSectionName, const std::string& newSectionName) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -1668,6 +1722,9 @@ namespace ult {
      * @param sectionName The name of the section to remove.
      */
     void removeIniSection(const std::string& filePath, const std::string& sectionName) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -1857,6 +1914,9 @@ namespace ult {
      * @brief Removes a key-value pair from an INI file.
      */
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -2092,6 +2152,9 @@ namespace ult {
      * @return A vector containing pairs of section names and their associated key-value pairs.
      */
     std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> loadOptionsFromIni(const std::string& packageIniPath) {
+        auto fileMutex = getFileMutex(packageIniPath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         if (!packageFile) return {}; // Return empty vector if file can't be opened
@@ -2200,6 +2263,9 @@ namespace ult {
      * @return A vector of commands within the specified section.
      */
     std::vector<std::vector<std::string>> loadSpecificSectionFromIni(const std::string& packageIniPath, const std::string& sectionName) {
+        auto fileMutex = getFileMutex(packageIniPath);
+        std::shared_lock<std::shared_mutex> lock(*fileMutex);
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         
@@ -2305,6 +2371,9 @@ namespace ult {
      * @param data The complete INI data structure to save.
      */
     void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+
         #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {

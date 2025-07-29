@@ -151,8 +151,8 @@ double elapsedTime;
 //static bool jumpToListItem = false;
 inline bool jumpToTop = false;
 inline bool jumpToBottom = false;
-inline bool skipToTop = false;
-inline bool skipToBottom = false;
+inline bool skipUp = false;
+inline bool skipDown = false;
 inline u32 offsetWidthVar = 112;
 inline std::string g_overlayFilename;;
 inline std::string lastOverlayFilename;
@@ -5444,13 +5444,13 @@ namespace tsl {
                     return handleJumpToTop(oldFocus);
                 }
 
-                if (skipToBottom) {
-                    skipToBottom = false;
-                    return handleSkipToBottom(oldFocus);
+                if (skipDown) {
+                    skipDown = false;
+                    return handleSkipDown(oldFocus);
                 }
-                if (skipToTop) {
-                    skipToTop = false;
-                    return handleSkipToTop(oldFocus);
+                if (skipUp) {
+                    skipUp = false;
+                    return handleSkipUp(oldFocus);
                 }
 
             
@@ -6526,228 +6526,162 @@ namespace tsl {
                 m_nextOffset = targetOffset;
                 return oldFocus;
             }
-
-                                                
-            Element* handleSkipToBottom(Element* oldFocus) {
+            
+            Element* handleSkipDown(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
-                
+            
                 invalidate();
                 resetNavigationState();
+            
+                // Calculate target offset once (good optimization to keep)
+                const float targetOffset = (m_listHeight > getHeight()) ? 
+                                           static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+                const float tolerance = 5.0f;
+
+                // Find the last focusable item
+                size_t lastFocusableIndex = m_items.size();
+                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (test) {
+                        lastFocusableIndex = static_cast<size_t>(i);
+                        break;
+                    }
+                }
+
+                // Check if we're already at the bottom with proper tolerance
+                bool alreadyAtBottom = false;
+                if (lastFocusableIndex < m_items.size()) {
+                    alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) && 
+                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                }
                 
+                if (alreadyAtBottom) {
+                    return oldFocus;  // Already at bottom, do nothing
+                }
+
+
                 const float viewHeight = static_cast<float>(getHeight());
                 const float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                
-                // ADD THIS CHECK: If we're already at max scroll, don't skip
-                if (m_offset >= maxOffset) {
-                    return oldFocus;
-                }
-                
-                const float currentViewBottom = m_offset + viewHeight;
-                const float targetScrollPosition = m_offset + viewHeight;
-                const s32 viewBottom = getBottomBound();
-                
-                // First check if we're currently on a table that needs more scrolling
-                if (m_focusedIndex < m_items.size()) {
-                    Element* currentItem = m_items[m_focusedIndex];
-                    if (currentItem->isTable() && currentItem->getBottomBound() > viewBottom) {
-                        isTableScrolling = true;
-                        const float tableSkipAmount = viewHeight;
-                        m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
-                        return oldFocus;
-                    }
-                }
-
-                // Find the first item that would be at the target scroll position
-                float itemPos = 0.0f;
-                size_t targetIndex = m_items.size();
-                
+            
+                // Calculate the target viewport center after skipping
+                const float targetViewportTop = std::min(m_offset + viewHeight, maxOffset);
+                const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
+            
+                // Find the item closest to the center of the new viewport
+                float itemTop = 0.0f;
+                size_t targetIndex = 0;
+                bool foundFocusable = false;
+                float bestDistance = std::numeric_limits<float>::max();
+            
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     const float itemHeight = m_items[i]->getHeight();
-                    const float itemTop = itemPos;
-                    
-                    // CHANGE THIS LINE: Find first item whose top is at or below target scroll position
-                    if (itemTop >= targetScrollPosition) {  // CHANGED from currentViewBottom to targetScrollPosition
-                        Element* item = m_items[i];
-                        
-                        // Check if this is a table that needs scrolling
-                        if (item->isTable()) {
-                            const s32 tableBottom = item->getBottomBound();
-                            if (tableBottom > viewBottom) {
-                                m_focusedIndex = i;
-                                isTableScrolling = true;
-                                const float tableSkipAmount = viewHeight;
-                                const float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                                m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
-                                
-                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
-                                if (newFocus && newFocus != oldFocus) {
-                                    return newFocus;
-                                }
-                                return oldFocus;
-                            }
-                        }
-                        
-                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
-                        if (test) {
-                            targetIndex = i;
-                            break;
-                        }
+                    const float itemCenter = itemTop + (itemHeight / 2.0f);
+                    const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
+            
+                    // Check if this item is focusable and closer to center
+                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (test && distanceFromCenter < bestDistance) {
+                        targetIndex = i;
+                        bestDistance = distanceFromCenter;
+                        foundFocusable = true;
                     }
-                    
-                    itemPos += itemHeight;
+            
+                    itemTop += itemHeight;
                 }
-                
-                // Rest of the method stays the same...
-                if (targetIndex >= m_items.size()) {
-                    for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                        Element* item = m_items[i];
-                        
-                        if (item->isTable()) {
-                            const s32 tableBottom = item->getBottomBound();
-                            if (tableBottom > viewBottom) {
-                                m_focusedIndex = static_cast<size_t>(i);
-                                isTableScrolling = true;
-                                const float tableSkipAmount = viewHeight;
-                                const float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                                m_nextOffset = std::min(m_nextOffset + tableSkipAmount, maxOffset);
-                                
-                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
-                                if (newFocus && newFocus != oldFocus) {
-                                    return newFocus;
-                                }
-                                return oldFocus;
-                            }
-                        }
-                        
-                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
-                        if (test) {
-                            targetIndex = static_cast<size_t>(i);
-                            break;
-                        }
+            
+                if (foundFocusable) {
+                    bool nearBottom = true;
+                    if (targetIndex > m_focusedIndex) {
+                        m_focusedIndex = targetIndex;
+                        nearBottom = false;
                     }
-                }
-                
-                if (targetIndex < m_items.size() && targetIndex != m_focusedIndex) {
-                    m_focusedIndex = targetIndex;
                     isTableScrolling = false;
-                    updateScrollOffset();
+                    updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        return newFocus;
-                    }
+                    return (newFocus && newFocus != oldFocus && !nearBottom) ? newFocus : handleJumpToBottom(oldFocus);
                 }
                 
-                return oldFocus;
+                return handleJumpToBottom(oldFocus);
             }
             
-            Element* handleSkipToTop(Element* oldFocus) {
+            Element* handleSkipUp(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
-                
+            
                 invalidate();
                 resetNavigationState();
-                
-                // ADD THIS CHECK: If we're already at top, don't skip
-                if (m_offset <= 0.0f) {
-                    return oldFocus;
-                }
-                
-                const float viewHeight = static_cast<float>(getHeight());
-                const float currentViewTop = m_offset;
-                const float targetScrollPosition = m_offset - viewHeight;
-                const s32 viewTop = getTopBound();
-                
-                // First check if we're currently on a table that needs more scrolling
-                if (m_focusedIndex < m_items.size()) {
-                    Element* currentItem = m_items[m_focusedIndex];
-                    if (currentItem->isTable() && currentItem->getTopBound() < viewTop) {
-                        isTableScrolling = true;
-                        const float tableSkipAmount = viewHeight;
-                        m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
-                        return oldFocus;
+            
+                // Define constants for clarity and consistency
+                const float targetOffset = 0.0f;
+                const float tolerance = 5.0f;
+
+                // Find the first focusable item
+                size_t firstFocusableIndex = m_items.size();  // Default to invalid
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (test) {
+                        firstFocusableIndex = i;
+                        break;
                     }
                 }
                 
-                // Find the last item that would be at the target scroll position
-                float itemPos = 0.0f;
-                ssize_t targetIndex = -1;
+                // Check if we're already at the top with proper tolerance
+                bool alreadyAtTop = false;
+                if (firstFocusableIndex < m_items.size()) {
+                    alreadyAtTop = (m_focusedIndex == firstFocusableIndex) && 
+                                  (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                }
                 
+                if (alreadyAtTop) {
+                    return oldFocus;  // Already at top, do nothing
+                }
+
+
+                const float viewHeight = static_cast<float>(getHeight());
+                
+                // Calculate the target viewport center after skipping
+                const float targetViewportTop = std::max(0.0f, m_offset - viewHeight);
+                const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
+            
+                // Find the item closest to the center of the new viewport
+                float itemTop = 0.0f;
+                size_t targetIndex = 0;
+                bool foundFocusable = false;
+                float bestDistance = std::numeric_limits<float>::max();
+            
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     const float itemHeight = m_items[i]->getHeight();
-                    const float itemBottom = itemPos + itemHeight;
-                    
-                    // CHANGE THIS LINE: Find last item whose bottom is at or above target scroll position
-                    if (itemBottom <= targetScrollPosition) {  // CHANGED from currentViewTop to targetScrollPosition
-                        Element* item = m_items[i];
-                        
-                        if (item->isTable()) {
-                            const s32 tableTop = item->getTopBound();
-                            if (tableTop < viewTop) {
-                                m_focusedIndex = i;
-                                isTableScrolling = true;
-                                const float tableSkipAmount = viewHeight;
-                                m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
-                                
-                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
-                                if (newFocus && newFocus != oldFocus) {
-                                    return newFocus;
-                                }
-                                return oldFocus;
-                            }
-                        }
-                        
-                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
-                        if (test) {
-                            targetIndex = static_cast<ssize_t>(i);
-                        }
+                    const float itemCenter = itemTop + (itemHeight / 2.0f);
+                    const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
+            
+                    // Check if this item is focusable and closer to center
+                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (test && distanceFromCenter < bestDistance) {
+                        targetIndex = i;
+                        bestDistance = distanceFromCenter;
+                        foundFocusable = true;
                     }
-                    
-                    itemPos += itemHeight;
+            
+                    itemTop += itemHeight;
                 }
-                
-                // Rest stays the same...
-                if (targetIndex < 0) {
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        Element* item = m_items[i];
-                        
-                        if (item->isTable()) {
-                            const s32 tableTop = item->getTopBound();
-                            if (tableTop < viewTop) {
-                                m_focusedIndex = i;
-                                isTableScrolling = true;
-                                const float tableSkipAmount = viewHeight;
-                                m_nextOffset = std::max(m_nextOffset - tableSkipAmount, 0.0f);
-                                
-                                Element* newFocus = item->requestFocus(oldFocus, FocusDirection::None);
-                                if (newFocus && newFocus != oldFocus) {
-                                    return newFocus;
-                                }
-                                return oldFocus;
-                            }
-                        }
-                        
-                        Element* test = item->requestFocus(nullptr, FocusDirection::None);
-                        if (test) {
-                            targetIndex = static_cast<ssize_t>(i);
-                            break;
-                        }
+            
+                if (foundFocusable) {
+
+                    bool nearTop = true;
+                    if (targetIndex < m_focusedIndex) {
+                        m_focusedIndex = targetIndex;
+                        nearTop = false;
                     }
-                }
-                
-                if (targetIndex >= 0 && static_cast<size_t>(targetIndex) != m_focusedIndex) {
-                    m_focusedIndex = static_cast<size_t>(targetIndex);
                     isTableScrolling = false;
-                    updateScrollOffset();
+                    updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        return newFocus;
-                    }
+                    return (newFocus && newFocus != oldFocus && !nearTop) ? newFocus : handleJumpToTop(oldFocus);
                 }
                 
-                return oldFocus;
+                return handleJumpToTop(oldFocus);
             }
-                        
+                                    
                         
             inline void initializePrefixSums() {
                 prefixSums.clear();
@@ -8063,8 +7997,8 @@ namespace tsl {
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
                 
                     renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
-                                       (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
-                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+                                       (!this->m_focused ? (defaultTextColor) : (selectedTextColor)));
+                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (onTextColor));
                 } else {
                     // Original Style: Draw icon
                     if (m_icon[0] != '\0')
@@ -8475,7 +8409,8 @@ namespace tsl {
                      std::function<std::vector<std::vector<std::string>>(const std::vector<std::vector<std::string>>&, const std::string&, size_t, const std::string&)> sourceReplacementFunc = nullptr,
                      std::vector<std::vector<std::string>> cmd = {}, const std::string& selCmd = "", bool usingStepTrackbar = false, bool usingNamedStepTrackbar = false, s16 numSteps = -1, bool unlockedTrackbar = false, bool executeOnEveryTick = false)
                 : m_label(label), m_packagePath(packagePath), m_minValue(minValue), m_maxValue(maxValue), m_units(units),
-                  interpretAndExecuteCommands(executeCommands), getSourceReplacement(sourceReplacementFunc), commands(std::move(cmd)), selectedCommand(selCmd), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar), m_numSteps(numSteps), m_unlockedTrackbar(unlockedTrackbar), m_executeOnEveryTick(executeOnEveryTick) {
+                  interpretAndExecuteCommands(executeCommands), getSourceReplacement(sourceReplacementFunc), commands(std::move(cmd)), selectedCommand(selCmd),
+                  m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar), m_numSteps(numSteps), m_unlockedTrackbar(unlockedTrackbar), m_executeOnEveryTick(executeOnEveryTick) {
                 m_isItem = true;
         
                 if ((!usingStepTrackbar && !usingNamedStepTrackbar) || numSteps == -1) {
@@ -8834,8 +8769,8 @@ namespace tsl {
             
                 const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
             
-                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused ? a(defaultTextColor) : a(selectedTextColor)));
-                renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, a(onTextColor));
+                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused ? (defaultTextColor) : (selectedTextColor)));
+                renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (onTextColor));
             
             
                 if (lastBottomBound != this->getTopBound())
@@ -9208,6 +9143,12 @@ namespace tsl {
                 : StepTrackBarV2(label, packagePath, stepDescriptions.size(), 0, (stepDescriptions.size()-1), "", executeCommands, sourceReplacementFunc, cmd, selCmd, true, unlockedTrackbar, executeOnEveryTick), m_stepDescriptions(stepDescriptions) {
                     //usingNamedStepTrackbar = true;
                     //logMessage("on initialization");
+
+                    // Initialize the selection with the current index
+                    if (!m_stepDescriptions.empty() && m_index >= 0 && m_index < static_cast<s16>(m_stepDescriptions.size())) {
+                        this->m_selection = m_stepDescriptions[m_index];
+                        currentDescIndex = m_index;
+                    }
                 }
             
             virtual ~NamedStepTrackBarV2() {}
@@ -9958,24 +9899,24 @@ namespace tsl {
         //#if !IS_STATUS_MONITOR_DIRECTIVE
         //    if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
         //        //jumpToTop = true;
-        //        skipToTop = true;
+        //        skipUp = true;
         //        currentGui->requestFocus(topElement, FocusDirection::None);
         //    }
         //    if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
         //        //jumpToBottom = true;
-        //        skipToBottom = true;
+        //        skipDown = true;
         //        currentGui->requestFocus(topElement, FocusDirection::None);
         //    }
         //#else
         //    if (!disableJumpTo) {
         //        if (!touchDetected && (keysDown & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
         //            //jumpToTop = true;
-        //            skipToTop = true;
+        //            skipUp = true;
         //            currentGui->requestFocus(topElement, FocusDirection::None);
         //        }
         //        if (!touchDetected && (keysDown & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK) && !interpreterIsRunning && topElement) {
         //            //jumpToBottom = true;
-        //            skipToBottom = true;
+        //            skipDown = true;
         //            currentGui->requestFocus(topElement, FocusDirection::None);
         //        }
         //    }
@@ -10019,7 +9960,7 @@ namespace tsl {
                         const u64 timeSinceLastRelease = currentTime_ns - lLastRelease_ns;
                         
                         // Always trigger action immediately for rapid clicking
-                        skipToTop = true;
+                        skipUp = true;
                         currentGui->requestFocus(topElement, FocusDirection::None);
                         
                         // Check if this could be a double-click
@@ -10052,7 +9993,7 @@ namespace tsl {
                             
                             if (!lHoldTriggered) {
                                 // First hold trigger (single-click hold)
-                                skipToTop = true;
+                                skipUp = true;
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 lHoldTriggered = true;
                                 lLastHoldTrigger_ns = currentTime_ns;
@@ -10061,7 +10002,7 @@ namespace tsl {
                                 if (lDoubleClickConfirmed) {
                                     jumpToTop = true;
                                 } else {
-                                    skipToTop = true;
+                                    skipUp = true;
                                 }
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 lLastHoldTrigger_ns = currentTime_ns;
@@ -10088,7 +10029,7 @@ namespace tsl {
                         const u64 timeSinceLastRelease = currentTime_ns - rLastRelease_ns;
                         
                         // Always trigger action immediately for rapid clicking
-                        skipToBottom = true;
+                        skipDown = true;
                         currentGui->requestFocus(topElement, FocusDirection::None);
                         
                         // Check if this could be a double-click
@@ -10121,7 +10062,7 @@ namespace tsl {
                             
                             if (!rHoldTriggered) {
                                 // First hold trigger (single-click hold)
-                                skipToBottom = true;
+                                skipDown = true;
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 rHoldTriggered = true;
                                 rLastHoldTrigger_ns = currentTime_ns;
@@ -10130,7 +10071,7 @@ namespace tsl {
                                 if (rDoubleClickConfirmed) {
                                     jumpToBottom = true;
                                 } else {
-                                    skipToBottom = true;
+                                    skipDown = true;
                                 }
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 rLastHoldTrigger_ns = currentTime_ns;
@@ -11426,11 +11367,12 @@ extern "C" {
             ASSERT_FATAL(hidsysInitialize());                       // Focus control
             ASSERT_FATAL(setsysInitialize());                       // Settings querying
             
-            #if USING_WIDGET_DIRECTIVE
+            // Time initializations
             ASSERT_FATAL(timeInitialize()); // CUSTOM MODIFICATION
             __libnx_init_time();            // CUSTOM MODIFICATION
             timeExit(); // CUSTOM MODIFICATION
 
+            #if USING_WIDGET_DIRECTIVE
             ult::powerInit();
             i2cInitialize();
             #endif

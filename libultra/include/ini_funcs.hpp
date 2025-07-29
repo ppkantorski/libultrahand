@@ -35,10 +35,17 @@
 //#include <sstream>  // For std::istringstream
 #include <algorithm> // For std::remove_if
 //#include <cctype>   // For ::isspace
+
+#include <shared_mutex>
+#include <unordered_map>
+#include <mutex>
+
 #include "get_funcs.hpp"
 #include "path_funcs.hpp"
 
 namespace ult {
+
+    extern void clearIniMutexCache();
 
     extern size_t INI_BUFFER_SIZE;
     extern size_t INI_BUFFER_LARGE;
