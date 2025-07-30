@@ -6943,11 +6943,6 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) [[unlikely]] {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                    keys |= KEY_A;
-                }
-                
                 if (keys & KEY_A) [[likely]] {
                     if (m_useClickAnimation)
                         triggerClickAnimation();
@@ -7608,10 +7603,6 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                    keys |= KEY_A;
-                }
                 if (keys & KEY_A) {
                     this->triggerClickAnimation();
                 }
@@ -7762,10 +7753,7 @@ namespace tsl {
             virtual ~ToggleListItem() {}
             
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                    keys |= KEY_A;
-                }
+
                 // Handle KEY_A for toggling
                 if (keys & HidNpadButton_A) {
                     this->m_state = !this->m_state;
@@ -8666,12 +8654,7 @@ namespace tsl {
                 if ((keysHeld & KEY_R)) {
                     return true;
                 }
-        
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                    keysDown |= KEY_A;
-                }
-        
+
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if (keysDown & KEY_A) {
                     if (!m_unlockedTrackbar) {
@@ -9127,11 +9110,6 @@ namespace tsl {
 
                 if ((keysHeld & KEY_R)) {
                     return true;
-                }
-
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                    keysDown |= KEY_A;
                 }
 
                 // Check if KEY_A is pressed to toggle ult::allowSlide
@@ -9844,25 +9822,43 @@ namespace tsl {
         
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
-                if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
+                    keysDown |= KEY_A;
+                }
+                else if (ult::simulatedBack.load(std::memory_order_acquire)) {
                     ult::simulatedBack.store(false, std::memory_order_release);
-                    //ult::simulatedBack = false;
-                    ult::stillTouching.store(false, std::memory_order_release);
-                    this->goBack();
-                    //ult::simulatedBackComplete = true;
-                    return;
+                    keysDown |= KEY_B;
+                }
+
+                if (!overrideBackButton) {
+                    if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
+                        if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
+                            this->goBack();
+                            //ult::simulatedBackComplete = true;
+                        }
+                        return;
+                    }
                 }
             } else {
-                if (ult::simulatedBack.load(std::memory_order_acquire))
+                if (ult::simulatedSelect.load(std::memory_order_acquire))
+                    ult::simulatedSelect.store(false, std::memory_order_release);
+                else if (ult::simulatedBack.load(std::memory_order_acquire))
                     ult::simulatedBack.store(false, std::memory_order_release);
             }
         #else
+            if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                ult::simulatedSelect.store(false, std::memory_order_release);
+                keysDown |= KEY_A;
+            }
+
+            else if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                ult::simulatedBack.store(false, std::memory_order_release);
+                keysDown |= KEY_B;
+                //ult::simulatedBack = false;
+            }
+
             if (!overrideBackButton) {
-                if (ult::simulatedBack.load(std::memory_order_acquire)) {
-                    ult::simulatedBack.store(false, std::memory_order_release);
-                    keysDown |= KEY_B;
-                    //ult::simulatedBack = false;
-                }
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
@@ -10014,14 +10010,15 @@ namespace tsl {
                     } else {
                         buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                         // Handle the rest of the input
-                        if (ult::simulatedBack.load(std::memory_order_acquire)) {
-                            ult::simulatedBack.store(false, std::memory_order_release);
-                            keysDown |= KEY_B;
-                            //ult::simulatedBack = false;
-                        }
+                        //if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                        //    ult::simulatedBack.store(false, std::memory_order_release);
+                        //    keysDown |= KEY_B;
+                        //    return;
+                        //    //ult::simulatedBack = false;
+                        //}
         
-                        if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK))
-                            this->goBack();
+                        //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK))
+                        //    this->goBack();
                         singlePressHandled = false;
         #endif
                     }
