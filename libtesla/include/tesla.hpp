@@ -3604,7 +3604,8 @@ namespace tsl {
                 this->waitForVSync();
                 framebufferEnd(&this->m_framebuffer);
                 this->m_currentFramebuffer = nullptr;
-                if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                if (tsl::clearGlyphCacheNow.load(std::memory_order_acquire)) {
+                    tsl::clearGlyphCacheNow.store(false, std::memory_order_release);
                     tsl::gfx::FontManager::clearCache();       // exclusive clear
                 }
             }
@@ -4048,7 +4049,7 @@ namespace tsl {
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
                 }
                 
-                ult::onTrackBar.exchange(false, std::memory_order_acq_rel);
+                ult::onTrackBar.store(false, std::memory_order_release);
             }
             
             
@@ -4344,7 +4345,8 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                     tsl::initializeThemeVars();
                 }
 
@@ -4558,7 +4560,8 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                     tsl::initializeThemeVars();
                 }
                 
@@ -4997,7 +5000,8 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
                     tsl::initializeThemeVars();
                 }
                 renderer->fillScreen(a(defaultBackgroundColor));
@@ -5146,6 +5150,7 @@ namespace tsl {
 
         class ListItem; // forward declaration
 
+        static std::mutex s_lastFrameItemsMutex;
         static std::vector<Element*> s_lastFrameItems;
         static std::atomic<bool> s_isForwardCache(false); // NEW VARIABLE FOR FORWARD CACHING
         static std::atomic<bool> s_hasValidFrame(false);
@@ -5176,58 +5181,63 @@ namespace tsl {
         
         public:
             List() : Element() {
-                m_isItem = false; // not a list item
-                s_hasClearedCache.exchange(false, std::memory_order_acq_rel);
-                s_safeToSwap.exchange(false, std::memory_order_acq_rel);
+                s_safeToSwap.store(false, std::memory_order_release);
+                // Initialize instance state
+                m_hasForwardCached = false;
+                m_pendingJump = false;
+                m_cachingDisabled = false;
+                m_clearList = false;
+                m_focusedIndex = 0;
+                m_offset = 0;
+                m_nextOffset = 0;
+                m_listHeight = 0;
+                actualItemCount = 0;
+                m_isItem = false;
 
-                if (skipDeconstruction) {
-                    purgePendingItems();
-                } else {
-                    //if (!s_hasValidFrame.load(std::memory_order_acquire))
-                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
-                    skipOnce = false;
-                }
-                
-            }
-            virtual ~List() {
-                s_safeToSwap.exchange(false, std::memory_order_acq_rel);
-
-                if (!skipDeconstruction) {
-                    //while (!s_safeToSwap.load(std::memory_order_acquire)) {
-                    //    //std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    //    svcSleepThread(100'000);
-                    //}
-
-                    //bool deleteRemainingItems = (!m_itemsToAdd.empty());
-                    // Incase deconstruction happens too fast
-                    purgePendingItems();
-
-
-                    //clearStaticCache(true); // destroy forward cache
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
                     
-
-                    if (!s_isForwardCache.load(std::memory_order_acquire)) {
-                        clearStaticCache();
-                        clearItems();
+                    s_hasClearedCache.store(false, std::memory_order_release);
+                    
+                    if (skipDeconstruction) {
+                        purgePendingItems();
+                    } else {
+                        s_cacheForwardFrameOnce.store(true, std::memory_order_release);
+                        skipOnce = false;
                     }
-
-
-                    s_isForwardCache.exchange(false, std::memory_order_acq_rel); // label cache as backwards cache for deletion in draw
-                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
-                    //s_skipCaching.exchange(false, std::memory_order_acq_rel);
                 }
-
-                if (m_cachingDisabled || (skipOnce && skipDeconstruction)) {
-                    purgePendingItems();
-                    clearItems();
-                } else if (skipDeconstruction) {
-                    skipOnce = true;
+            }
+            
+            virtual ~List() {
+                s_safeToSwap.store(false, std::memory_order_release);
+            
+                // NOW take mutex for shared static variable operations
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+            
+                    if (!skipDeconstruction) {
+                        purgePendingItems();
+                        
+                        if (!s_isForwardCache.load(std::memory_order_acquire)) {
+                            clearStaticCacheUnsafe();
+                            clearItems();
+                        }
+            
+                        s_isForwardCache.store(false, std::memory_order_release);
+                        s_cacheForwardFrameOnce.store(true, std::memory_order_release);
+                    }
+            
+                    if (m_cachingDisabled || (skipOnce && skipDeconstruction)) {
+                        purgePendingItems();
+                        clearItems();
+                    } else if (skipDeconstruction) {
+                        skipOnce = true;
+                    }
                 }
             }
             
             
             virtual void draw(gfx::Renderer* renderer) override {
-
                 // Early exit optimizations
                 if (m_clearList) {
                     clearItems();
@@ -5237,21 +5247,26 @@ namespace tsl {
                 // Process pending operations in batch
                 if (!m_itemsToAdd.empty()) addPendingItems();
                 if (!m_itemsToRemove.empty()) removePendingItems();
-
-                // Draw: backup reset if instance missed its chance  
-                if (!s_hasValidFrame.load(std::memory_order_acquire) && s_lastFrameItems.empty() && 
-                    !s_cacheForwardFrameOnce.load(std::memory_order_acquire)) {
-                    s_cacheForwardFrameOnce.exchange(true, std::memory_order_acq_rel);
+        
+                // Only lock when checking s_lastFrameItems.empty()
+                bool shouldResetCache = false;
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                    if (!s_hasValidFrame.load(std::memory_order_acquire) && s_lastFrameItems.empty() && 
+                        !s_cacheForwardFrameOnce.load(std::memory_order_acquire)) {
+                        shouldResetCache = true;
+                    }
                 }
-
-                //if (s_skipCaching.load(std::memory_order_acquire)) {
-                //    s_cacheForwardFrameOnce.exchange(false, std::memory_order_acq_rel);
-                //    s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
-                //}
-
-                // This part is for fixing returing to Ultrahand without rendering that first frame skip
+                
+                if (shouldResetCache) {
+                    s_cacheForwardFrameOnce.store(true, std::memory_order_release);
+                }
+        
+                // This part is for fixing returning to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
-                if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && !s_isForwardCache.load(std::memory_order_acquire) && ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && 
+                    !s_isForwardCache.load(std::memory_order_acquire) && 
+                    ult::internalTouchReleased.load(std::memory_order_acquire)) {
                     if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
                         checkOnce = false;
                         return;
@@ -5264,27 +5279,25 @@ namespace tsl {
                         checkOnce2 = false;
                     }
                 }
-
-                if ((m_pendingJump || !m_hasForwardCached) && (s_hasValidFrame.load(std::memory_order_acquire) || s_isForwardCache.load(std::memory_order_acquire))) {
-                    
-
-                    // Render using cached frame state if available
-                    renderCachedFrame(renderer);
-
-                    //if (!skipDeconstruction) {
-                    if (s_isForwardCache.load(std::memory_order_acquire))
-                        clearStaticCache(true);
-                    else
-                        clearStaticCache();
-                    //s_isForwardCache.exchange(false, std::memory_order_acq_rel);
-                    //s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
-                    
-                    //}
-                    //m_hasRenderedCache = true;
+                
+                // Check if we should render cached frame
+                if ((m_pendingJump || !m_hasForwardCached) && 
+                    (s_hasValidFrame.load(std::memory_order_acquire) || s_isForwardCache.load(std::memory_order_acquire))) {
+                    {
+                        std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);                    
+                        // Render using cached frame state if available
+                        renderCachedFrame(renderer);  // This method handles its own locking
+                        
+                        // Clear cache after rendering
+                        if (s_isForwardCache.load(std::memory_order_acquire))
+                            clearStaticCacheUnsafe(true);  // This method handles its own locking
+                        else
+                            clearStaticCacheUnsafe();      // This method handles its own locking
+                    }
                     
                     return;
                 }
-
+        
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
@@ -5294,49 +5307,44 @@ namespace tsl {
         
                 // Optimized visibility culling
                 for (Element* entry : m_items) {
-                    //const s32 entryBottom = entry->getBottomBound();
                     if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
                         entry->frame(renderer);
                     }
                 }
                 
                 renderer->disableScissoring();
-
-                // FIXED: Check if content actually extends beyond viewport bounds
-                // Calculate the actual bottom position of the last item
-                //s32 actualContentBottom = 0;
-                //if (!m_items.empty()) {
-                //    Element* lastItem = m_items.back();
-                //    actualContentBottom = lastItem->getBottomBound() - getTopBound();
-                //}
-                
-
+        
                 // Draw scrollbar only when needed
-                if (m_listHeight > height) {  // -20 fixes the alignment
+                if (m_listHeight > height) {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
-
-                if (!s_isForwardCache.load(std::memory_order_acquire) && s_hasValidFrame.load(std::memory_order_acquire)) {
-                    clearStaticCache(); // clear cache after rendering (for smoother transitions)
-                    s_hasValidFrame.exchange(false, std::memory_order_acq_rel);
+        
+                // Handle caching operations - lock only for the critical section
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                    
+                    if (!s_isForwardCache.load(std::memory_order_acquire) && s_hasValidFrame.load(std::memory_order_acquire)) {
+                        // Clear cache after rendering (this is called within the lock)
+                        clearStaticCacheUnsafe(); // New unsafe version for use within lock
+                        s_hasValidFrame.store(false, std::memory_order_release);
+                    }
+                    
+                    if (!m_cachingDisabled && s_cacheForwardFrameOnce.load(std::memory_order_acquire) && 
+                        !s_hasValidFrame.load(std::memory_order_acquire)) {
+                        // Cache current frame (this is called within the lock)
+                        cacheCurrentFrameUnsafe(true); // New unsafe version for use within lock
+                        s_cacheForwardFrameOnce.store(false, std::memory_order_release);
+                        s_isForwardCache.store(true, std::memory_order_release);
+                        s_hasValidFrame.store(true, std::memory_order_release);
+                        m_hasForwardCached = true;
+                    }
+        
+                    if (!m_cachingDisabled)
+                        cacheCurrentScrollbar();
                 }
-                
-                if (!m_cachingDisabled && s_cacheForwardFrameOnce.load(std::memory_order_acquire) && !s_hasValidFrame.load(std::memory_order_acquire)) {
-                    cacheCurrentFrame(true);
-                    s_cacheForwardFrameOnce.exchange(false, std::memory_order_acq_rel);
-                    s_isForwardCache.exchange(true, std::memory_order_acq_rel);
-                    s_hasValidFrame.exchange(true, std::memory_order_acq_rel);
-                    m_hasForwardCached = true;
-                }
-
-                //if (s_hasValidFrame.load(std::memory_order_acquire)) {
-                
-                //}
-                if (!m_cachingDisabled)
-                    cacheCurrentScrollbar();
-                s_safeToSwap.exchange(true, std::memory_order_acq_rel);
-                //svcSleepThread(300'000'000); // for testing
+        
+                s_safeToSwap.store(true, std::memory_order_release);
             }
 
         
@@ -5546,6 +5554,7 @@ namespace tsl {
             bool m_pendingJump = false;
             bool m_hasForwardCached = false;
             bool m_cachingDisabled = false;  // New flag to disable caching
+            
             //bool m_hasRenderedCache = false;
 
             // Stack variables for hot path - reused to avoid allocations
@@ -5595,9 +5604,21 @@ namespace tsl {
             //static size_t generateInstanceId() {
             //    return s_nextInstanceId++;
             //}
-        
-            static void clearStaticCache(bool preservePointers = false) {
 
+            // Thread-safe versions (handle their own locking)
+            static void clearStaticCache(bool preservePointers = false) {
+                std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                clearStaticCacheUnsafe(preservePointers);
+            }
+            
+            void cacheCurrentFrame(bool preservePointers = false) {
+                std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                cacheCurrentFrameUnsafe(preservePointers);
+            }
+
+        
+            static void clearStaticCacheUnsafe(bool preservePointers = false) {
+                //std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
                 if (!preservePointers) {
                     // Normal case: delete elements and clear
                     for (Element* el : s_lastFrameItems) {
@@ -5609,27 +5630,38 @@ namespace tsl {
                 //s_lastFrameItems.shrink_to_fit();
 
                 // CRITICAL: Always reset these, even for forward cache!
-                s_hasValidFrame.exchange(false, std::memory_order_acq_rel);  // This MUST be false after clearing
-                s_isForwardCache.exchange(false, std::memory_order_acq_rel);
+                s_hasValidFrame.store(false, std::memory_order_release);  // This MUST be false after clearing
+                s_isForwardCache.store(false, std::memory_order_release);
                 s_cachedTopBound = 0;
                 s_cachedBottomBound = 0;
                 s_cachedHeight = 0;
                 s_cachedListHeight = 0;
                 s_cachedActualContentBottom = 0;
-                s_shouldDrawScrollbar.exchange(false, std::memory_order_acq_rel);
+                s_shouldDrawScrollbar.store(false, std::memory_order_release);
                 s_cachedScrollbarHeight = 0;
                 s_cachedScrollbarOffset = 0;
                 s_cachedScrollbarX = 0;
                 s_cachedScrollbarY = 0;
             }
                     
-            void cacheCurrentFrame(bool preservePointers = false) {
+            void cacheCurrentFrameUnsafe(bool preservePointers = false) {
+                //std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
                 if (!preservePointers) {
                     for (Element* el : s_lastFrameItems) delete el;
                 }
-                s_lastFrameItems.clear();
+                //s_lastFrameItems.clear();
                 //s_lastFrameItems.shrink_to_fit();
                 s_lastFrameItems = m_items;
+
+                //s_lastFrameItems.clear();
+                //
+                //// Resize vector to exactly match m_items size
+                //s_lastFrameItems.resize(m_items.size());
+                //
+                //// Direct slot assignment - no growth, no push_back
+                //for (size_t i = 0; i < m_items.size(); ++i) {
+                //    s_lastFrameItems[i] = m_items[i];
+                //}
             
                 s_cachedTopBound    = getTopBound();
                 s_cachedBottomBound = getBottomBound();
@@ -5637,11 +5669,11 @@ namespace tsl {
                 s_cachedListHeight  = m_listHeight;
             
                 if (preservePointers) s_isForwardCache = true;
-                s_hasValidFrame.exchange(true, std::memory_order_acq_rel);
+                s_hasValidFrame.store(true, std::memory_order_release);
             }
             
             void cacheCurrentScrollbar() {
-                s_shouldDrawScrollbar.exchange((s_cachedListHeight > s_cachedHeight), std::memory_order_acq_rel);
+                s_shouldDrawScrollbar.store((s_cachedListHeight > s_cachedHeight), std::memory_order_release);
             
                 if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
                     const float viewHeight   = static_cast<float>(s_cachedHeight);
@@ -5661,11 +5693,10 @@ namespace tsl {
             }
                                                 
             void renderCachedFrame(gfx::Renderer* renderer) {
-                //renderer->enableScissoring(getLeftBound(), s_cachedTopBound, getWidth() + 8, s_cachedHeight + 6);
                 renderer->enableScissoring(getLeftBound(), s_cachedTopBound-8, getWidth() + 8, s_cachedHeight + 14);
-            
+        
                 for (Element* entry : s_lastFrameItems) {
-                    if (entry->getBottomBound() > s_cachedTopBound && entry->getTopBound() < s_cachedBottomBound) {
+                    if (entry && entry->getBottomBound() > s_cachedTopBound && entry->getTopBound() < s_cachedBottomBound) {
                         entry->frame(renderer);
                     }
                 }
@@ -5688,8 +5719,9 @@ namespace tsl {
                 //}
 
                 for (Element* item : m_items) delete item;
-                m_items.clear();
-                m_items.shrink_to_fit();
+                m_items = {};
+                //m_items.clear();
+                //m_items.shrink_to_fit();
                 m_offset = 0;
                 m_focusedIndex = 0;
                 invalidate();
@@ -5706,8 +5738,9 @@ namespace tsl {
                         m_items.push_back(element);
                     }
                 }
-                m_itemsToAdd.clear();
-                m_itemsToAdd.shrink_to_fit();
+                m_itemsToAdd = {};
+                //m_itemsToAdd.clear();
+                //m_itemsToAdd.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5725,8 +5758,9 @@ namespace tsl {
                         delete element;
                     }
                 }
-                m_itemsToRemove.clear();
-                m_itemsToRemove.shrink_to_fit();
+                m_itemsToRemove = {};
+                //m_itemsToRemove.clear();
+                //m_itemsToRemove.shrink_to_fit();
                 invalidate();
                 updateScrollOffset();
             }
@@ -5736,8 +5770,9 @@ namespace tsl {
                 for (auto& [_, element] : m_itemsToAdd) {
                     if (element) { element->invalidate(); delete element; }
                 }
-                m_itemsToAdd.clear();
-                m_itemsToAdd.shrink_to_fit();
+                m_itemsToAdd = {};
+                //m_itemsToAdd.clear();
+                //m_itemsToAdd.shrink_to_fit();
                 
                 //size_t index;
                 for (Element* element : m_itemsToRemove) {
@@ -5756,8 +5791,9 @@ namespace tsl {
                             --m_focusedIndex;
                     }
                 }
-                m_itemsToRemove.clear();
-                m_itemsToRemove.shrink_to_fit();
+                m_itemsToRemove = {};
+               //m_itemsToRemove.clear();
+               //m_itemsToRemove.shrink_to_fit();
             
                 invalidate();
                 updateScrollOffset();
@@ -6907,7 +6943,8 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) [[unlikely]] {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) [[unlikely]] {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
                     keys |= KEY_A;
                 }
                 
@@ -7571,7 +7608,8 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
                     keys |= KEY_A;
                 }
                 if (keys & KEY_A) {
@@ -7724,7 +7762,8 @@ namespace tsl {
             virtual ~ToggleListItem() {}
             
             virtual bool onClick(u64 keys) override {
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
                     keys |= KEY_A;
                 }
                 // Handle KEY_A for toggling
@@ -8049,7 +8088,8 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    ult::unlockedSlide.exchange(m_unlockedTrackbar, std::memory_order_acq_rel);
+                    if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
+                        ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
@@ -8172,8 +8212,9 @@ namespace tsl {
                 }
             
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
-            
-                ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
+                
+                if (!ult::onTrackBar.load(std::memory_order_acquire))
+                    ult::onTrackBar.store(true, std::memory_order_release);
             }
 
             /**
@@ -8626,7 +8667,8 @@ namespace tsl {
                     return true;
                 }
         
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
                     keysDown |= KEY_A;
                 }
         
@@ -8828,7 +8870,8 @@ namespace tsl {
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
-                    ult::unlockedSlide.exchange(m_unlockedTrackbar, std::memory_order_acq_rel);
+                    if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
+                        ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
@@ -8975,8 +9018,8 @@ namespace tsl {
                 }
             
                 renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
-            
-                ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
+                
+                ult::onTrackBar.store(true, std::memory_order_release);
             
                 if (clickActive) {
                     const u64 elapsedTime_ns = currentTime_ns - clickStartTime_ns;
@@ -9086,7 +9129,8 @@ namespace tsl {
                     return true;
                 }
 
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
+                    ult::simulatedSelect.store(false, std::memory_order_release);
                     keysDown |= KEY_A;
                 }
 
@@ -9766,14 +9810,20 @@ namespace tsl {
             static constexpr u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
 
+            //static u64 lastTouchReleaseTime_ns = 0;
+            //static constexpr u64 TOUCH_DEBOUNCE_NS = 300000000ULL; // 300ms
+
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
+
         
             auto& currentGui = this->getCurrentGui();
-            //static bool isTopElement = true;
-            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_relaxed);
+
             // Return early if current GUI is not available
             if (!currentGui) return;
+
+            //static bool isTopElement = true;
+            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_relaxed);
             if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
@@ -9794,19 +9844,22 @@ namespace tsl {
         
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
-                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                    ult::simulatedBack.store(false, std::memory_order_release);
                     //ult::simulatedBack = false;
-                    ult::stillTouching.exchange(false, std::memory_order_acq_rel);
+                    ult::stillTouching.store(false, std::memory_order_release);
                     this->goBack();
                     //ult::simulatedBackComplete = true;
                     return;
                 }
             } else {
-                ult::simulatedBack.exchange(false, std::memory_order_acq_rel);
+                if (ult::simulatedBack.load(std::memory_order_acquire))
+                    ult::simulatedBack.store(false, std::memory_order_release);
             }
         #else
             if (!overrideBackButton) {
-                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
+                if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                    ult::simulatedBack.store(false, std::memory_order_release);
                     keysDown |= KEY_B;
                     //ult::simulatedBack = false;
                 }
@@ -9899,7 +9952,7 @@ namespace tsl {
                             singlePressHandled = false;
                             // Immediate single press action
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, shouldShake);
+                                currentGui->requestFocus(topElement, FocusDirection::Up, shouldShake);
                             else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
                                 //isTopElement = false;
@@ -9947,7 +10000,7 @@ namespace tsl {
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentGui->getTopElement(), FocusDirection::Up, false);
+                                currentGui->requestFocus(topElement, FocusDirection::Up, false);
                             else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
                                 //isTopElement = false;
@@ -9961,7 +10014,8 @@ namespace tsl {
                     } else {
                         buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                         // Handle the rest of the input
-                        if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel)) {
+                        if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                            ult::simulatedBack.store(false, std::memory_order_release);
                             keysDown |= KEY_B;
                             //ult::simulatedBack = false;
                         }
@@ -10195,23 +10249,25 @@ namespace tsl {
             const u32 footerY = cfg::FramebufferHeight - 73U +1;
             
             // Touch region calculations
-            ult::touchingBack.exchange((touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
-                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
+            ult::touchingBack.store((touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
+                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
             
-            ult::touchingSelect.exchange(!ult::noClickableItems && 
+            ult::touchingSelect.store(!ult::noClickableItems && 
                                   (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
-                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
+                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
             
-            ult::touchingNextPage.exchange((touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
-                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY), std::memory_order_acq_rel);
+            //if (tsl::elm::s_safeToSwap.load(std::memory_order_acquire)) {
+            ult::touchingNextPage.store((touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
+                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
+            //}
             
-            ult::touchingMenu.exchange((touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
-                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U), std::memory_order_acq_rel);
+            ult::touchingMenu.store((touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
+                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U), std::memory_order_release);
         
             if (touchDetected) {
                 //if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
                 
-                ult::interruptedTouch.exchange(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_acq_rel);
+                ult::interruptedTouch.store(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_release);
 
                 const u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 const u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
@@ -10258,19 +10314,39 @@ namespace tsl {
                     this->hide();
         #endif
                 }
-                ult::stillTouching.exchange(true, std::memory_order_acq_rel);
+                ult::stillTouching.store(true, std::memory_order_release);
             } else {
+
+                // GLOBAL TOUCH DEBOUNCE - Prevent rapid taps faster than 300ms
+                //const u64 timeSinceLastRelease = currentTime_ns - lastTouchReleaseTime_ns;
+                //if (timeSinceLastRelease < TOUCH_DEBOUNCE_NS || !tsl::elm::s_safeToSwap.load(std::memory_order_acquire)) {
+                //    // Too fast - ignore this touch release
+                //    elm::Element::setInputMode(InputMode::Controller);
+                //    oldTouchPos = { 0 };
+                //    initialTouchPos = { 0 };
+                //    touchEvent = elm::TouchEvent::None;
+                //    ult::stillTouching.store(false, std::memory_order_release);
+                //    ult::interruptedTouch.store(false, std::memory_order_release);
+                //    oldTouchDetected = touchDetected;
+                //    oldTouchEvent = touchEvent;
+                //    return; // Skip all touch release processing
+                //}
+                //
+                //// Update last release time for next debounce check
+                //lastTouchReleaseTime_ns = currentTime_ns;
+
+
                 if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
                         (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
                         //ult::simulatedBackComplete = false;
                         //ult::simulatedBack = true;
-                        ult::simulatedBack.exchange(true, std::memory_order_acq_rel);
+                        ult::simulatedBack.store(true, std::memory_order_release);
                     } else if (!ult::noClickableItems && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
                         //ult::simulatedSelectComplete = false;
                         //ult::simulatedSelect = true;
-                        ult::simulatedSelect.exchange(true, std::memory_order_acq_rel);
+                        ult::simulatedSelect.store(true, std::memory_order_release);
                     } else if ((oldTouchPos.x >= nextPageLeftEdge && oldTouchPos.x < nextPageRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY)) {
                         //u64 currentTimeNs = armTicksToNs(armGetSystemTick());
@@ -10283,12 +10359,13 @@ namespace tsl {
                         //    ult::simulatedNextPage.exchange(true, std::memory_order_acq_rel);
                         //    
                         //}
-                        ult::simulatedNextPage.exchange(true, std::memory_order_acq_rel);
+                        //if (tsl::elm::s_safeToSwap.load(std::memory_order_acquire))
+                        ult::simulatedNextPage.store(true, std::memory_order_release);
                     } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
                                (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
                         //ult::simulatedMenuComplete = false;
                         //ult::simulatedMenu = true;
-                        ult::simulatedMenu.exchange(true, std::memory_order_acq_rel);
+                        ult::simulatedMenu.store(true, std::memory_order_release);
                     }
                 } else if (interpreterIsRunning) {
                     if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
@@ -10305,8 +10382,8 @@ namespace tsl {
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
-                ult::stillTouching.exchange(false, std::memory_order_acq_rel);
-                ult::interruptedTouch.exchange(false, std::memory_order_acq_rel);
+                ult::stillTouching.store(false, std::memory_order_release);
+                ult::interruptedTouch.store(false, std::memory_order_release);
             }
 
             oldTouchDetected = touchDetected;
@@ -10561,7 +10638,7 @@ namespace tsl {
          */
         static void backgroundEventPoller(void *args) {
             tsl::hlp::loadEntryKeyCombos();
-            ult::launchingOverlay.exchange(false, std::memory_order_acq_rel);
+            ult::launchingOverlay.store(false, std::memory_order_release);
 
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
             
@@ -10715,7 +10792,7 @@ namespace tsl {
                     
                         if (!shData->overlayOpen) {
                             //ult::internalTouchReleased = false;
-                            ult::internalTouchReleased.exchange(false, std::memory_order_acq_rel);
+                            ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
                         
                         const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
@@ -10735,7 +10812,7 @@ namespace tsl {
                     
                         // Handle touch release state
                         if (currentTouch.x == 0 && currentTouch.y == 0) {
-                            ult::internalTouchReleased.exchange(true, std::memory_order_acq_rel);
+                            ult::internalTouchReleased.store(true, std::memory_order_release);
                             //ult::internalTouchReleased = true;  // Indicate that the touch has been released
                             //ult::internalTouchReleased.store(true, std::memory_order_release);
                             lastTouchX = currentTouch.x;
@@ -10751,7 +10828,7 @@ namespace tsl {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
                         //ult::internalTouchReleased = true;
-                        ult::internalTouchReleased.exchange(true, std::memory_order_acq_rel);
+                        ult::internalTouchReleased.store(true, std::memory_order_release);
                         //ult::internalTouchReleased.store(true, std::memory_order_release);
                     
                         // Reset touch history to invalid state
@@ -10817,12 +10894,12 @@ namespace tsl {
                             }
 
                             // Reset navigation state variables (these control slide navigation)
-                            ult::allowSlide.exchange(false, std::memory_order_acq_rel);
-                            ult::unlockedSlide.exchange(false, std::memory_order_acq_rel);
+                            ult::allowSlide.store(false, std::memory_order_release);
+                            ult::unlockedSlide.store(false, std::memory_order_release);
                             
                             // Launch the overlay using the same mechanism as key combos
                             //shData->overlayOpen = false;
-                            ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                            ult::launchingOverlay.store(true, std::memory_order_release);
                             tsl::setNextOverlay(requestedPath, requestedArgs);
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
@@ -10874,7 +10951,7 @@ namespace tsl {
                                     );
                                 
                                     //shData->overlayOpen = false;
-                                    ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                                    ult::launchingOverlay.store(true, std::memory_order_release);
                                     tsl::setNextOverlay(
                                         ult::OVERLAY_PATH + "ovlmenu.ovl",
                                         "--direct"
@@ -10931,7 +11008,7 @@ namespace tsl {
                                 }
                     
                                 //shData->overlayOpen = false;
-                                ult::launchingOverlay.exchange(true, std::memory_order_acq_rel);
+                                ult::launchingOverlay.store(true, std::memory_order_release);
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 tsl::Overlay::get()->close();
                                 eventFire(&shData->comboEvent);
