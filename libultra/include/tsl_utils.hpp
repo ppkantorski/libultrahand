@@ -104,7 +104,7 @@ namespace ult {
     extern std::unordered_map<u64, OverlayCombo> g_entryCombos;
     extern std::atomic<bool> launchingOverlay;
     extern std::atomic<bool> settingsInitialized;
-    extern bool currentForeground;
+    extern std::atomic<bool> currentForeground;
 
     //void loadOverlayKeyCombos();
     //std::string getOverlayForKeyCombo(u64 keys);
@@ -122,7 +122,7 @@ namespace ult {
     std::string getTitleIdAsString();
     
     extern std::string lastTitleID;
-    extern bool resetForegroundCheck;
+    extern std::atomic<bool> resetForegroundCheck;
 
 
     //extern bool isLauncher;
@@ -163,9 +163,9 @@ namespace ult {
     
     // CUSTOM SECTION START
     extern float backWidth, selectWidth, nextPageWidth;
-    extern bool inMainMenu;
-    extern bool inOverlaysPage;
-    extern bool inPackagesPage;
+    extern std::atomic<bool> inMainMenu;
+    extern std::atomic<bool> inOverlaysPage;
+    extern std::atomic<bool> inPackagesPage;
     
     extern bool firstBoot; // for detecting first boot
     

@@ -149,17 +149,17 @@ double elapsedTime;
 
 // Custom variables
 //static bool jumpToListItem = false;
-inline bool jumpToTop = false;
-inline bool jumpToBottom = false;
-inline bool skipUp = false;
-inline bool skipDown = false;
+inline std::atomic<bool> jumpToTop{false};
+inline std::atomic<bool> jumpToBottom{false};
+inline std::atomic<bool> skipUp{false};
+inline std::atomic<bool> skipDown{false};
 inline u32 offsetWidthVar = 112;
 inline std::string g_overlayFilename;;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 inline std::string jumpItemName;
 inline std::string jumpItemValue;
-inline bool jumpItemExactMatch = true;
+inline std::atomic<bool> jumpItemExactMatch{true};
 
 
 //#if IS_LAUNCHER_DIRECTIVE
@@ -672,7 +672,7 @@ namespace tsl {
          */
         static void requestForeground(bool enabled, bool updateGlobalFlag = true) {
             if (updateGlobalFlag)
-                ult::currentForeground = enabled;
+                ult::currentForeground.store(enabled, std::memory_order_release);
 
             u64 applicationAruid = 0, appletAruid = 0;
             
@@ -4574,7 +4574,7 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Current interpreter state (atomic<bool>)
-                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_relaxed) && (ult::downloadPercentage.load(std::memory_order_relaxed) != -1 || ult::unzipPercentage.load(std::memory_order_relaxed) != -1 || ult::copyPercentage.load(std::memory_order_relaxed) != -1) ;
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) && (ult::downloadPercentage.load(std::memory_order_acquire) != -1 || ult::unzipPercentage.load(std::memory_order_acquire) != -1 || ult::copyPercentage.load(std::memory_order_acquire) != -1) ;
                 
 
                 if (m_noClickableItems != ult::noClickableItems)
@@ -4589,7 +4589,7 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
             
-                    if (ult::touchingMenu.load(std::memory_order_acquire) && ult::inMainMenu) {
+                    if (ult::touchingMenu.load(std::memory_order_acquire) && ult::inMainMenu.load(std::memory_order_acquire)) {
                         renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
                     }
                     
@@ -4798,7 +4798,7 @@ namespace tsl {
                 }
 
                 // Calculate next page button dimensions and position
-                if (!interpreterIsRunningNow && (ult::inMainMenu || !m_pageLeftName.empty() || !m_pageRightName.empty())) {
+                if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) || !m_pageLeftName.empty() || !m_pageRightName.empty())) {
                     //std::string pageText;
                     //std::string pageIcon;
                     //
@@ -4824,11 +4824,11 @@ namespace tsl {
                             ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
                         (!m_pageRightName.empty()) ?
                             ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
-                        (ult::inMainMenu) ?
+                        (ult::inMainMenu.load(std::memory_order_acquire)) ?
                             (((m_menuMode == "packages") ? 
                                 (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
                                 (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) + 
-                             ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR)) :
+                             ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ? ult::PACKAGES : ult::OVERLAYS_ABBR)) :
                         "",  // fallback case
                         false, 23).first + gapWidth;
 
@@ -5172,10 +5172,10 @@ namespace tsl {
 
         static std::atomic<bool> s_safeToSwap{false};
 
-        static bool skipDeconstruction = false;
-        static bool skipOnce = false;
+        static std::atomic<bool> skipDeconstruction{false};
+        static std::atomic<bool> skipOnce{false};
 
-        static bool isTableScrolling = false;
+        static std::atomic<bool> isTableScrolling{false};
 
         class List : public Element {
         
@@ -5199,11 +5199,11 @@ namespace tsl {
                     
                     s_hasClearedCache.store(false, std::memory_order_release);
                     
-                    if (skipDeconstruction) {
+                    if (skipDeconstruction.load(std::memory_order_acquire)) {
                         purgePendingItems();
                     } else {
                         s_cacheForwardFrameOnce.store(true, std::memory_order_release);
-                        skipOnce = false;
+                        skipOnce.store(false, std::memory_order_release);
                     }
                 }
             }
@@ -5215,7 +5215,7 @@ namespace tsl {
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
             
-                    if (!skipDeconstruction) {
+                    if (!skipDeconstruction.load(std::memory_order_acquire)) {
                         purgePendingItems();
                         
                         if (!s_isForwardCache.load(std::memory_order_acquire)) {
@@ -5227,11 +5227,11 @@ namespace tsl {
                         s_cacheForwardFrameOnce.store(true, std::memory_order_release);
                     }
             
-                    if (m_cachingDisabled || (skipOnce && skipDeconstruction)) {
+                    if (m_cachingDisabled || (skipOnce.load(std::memory_order_acquire) && skipDeconstruction.load(std::memory_order_acquire))) {
                         purgePendingItems();
                         clearItems();
-                    } else if (skipDeconstruction) {
-                        skipOnce = true;
+                    } else if (skipDeconstruction.load(std::memory_order_acquire)) {
+                        skipOnce.store(true, std::memory_order_release);
                     }
                 }
             }
@@ -5443,21 +5443,20 @@ namespace tsl {
                     return handleJumpToItem(oldFocus); // needs to be handled 2x for proper rendering
                 }
                 
-                if (jumpToBottom) {
-                    jumpToBottom = false;
+                if (jumpToBottom.load(std::memory_order_acquire)) {
+                    jumpToBottom.store(false, std::memory_order_release);
                     return handleJumpToBottom(oldFocus);
                 }
-                if (jumpToTop) {
-                    jumpToTop = false;
+                if (jumpToTop.load(std::memory_order_acquire)) {
+                    jumpToTop.store(false, std::memory_order_release);
                     return handleJumpToTop(oldFocus);
                 }
-
-                if (skipDown) {
-                    skipDown = false;
+                if (skipDown.load(std::memory_order_acquire)) {
+                    skipDown.store(false, std::memory_order_release);
                     return handleSkipDown(oldFocus);
                 }
-                if (skipUp) {
-                    skipUp = false;
+                if (skipUp.load(std::memory_order_acquire)) {
+                    skipUp.store(false, std::memory_order_release);
                     return handleSkipUp(oldFocus);
                 }
 
@@ -6004,7 +6003,7 @@ namespace tsl {
                 if (m_focusedIndex + 1 < int(m_items.size())) {
                     Element* nextItem = m_items[m_focusedIndex + 1];
                     if (!nextItem->m_isItem) {
-                        isTableScrolling = true;  // Set this IMMEDIATELY
+                        isTableScrolling.store(true, std::memory_order_release);  // Set this IMMEDIATELY
                     }
                 }
                 
@@ -6066,7 +6065,7 @@ namespace tsl {
                 if (m_focusedIndex > 0) {
                     Element* prevItem = m_items[m_focusedIndex - 1];
                     if (prevItem->isTable()) {
-                        isTableScrolling = true;  // Set this IMMEDIATELY
+                        isTableScrolling.store(true, std::memory_order_release);  // Set this IMMEDIATELY
                     }
                 }
                 
@@ -6245,7 +6244,7 @@ namespace tsl {
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
                     if (currentTable->getBottomBound() > getBottomBound()) {
-                        isTableScrolling = true;
+                        isTableScrolling.store(true, std::memory_order_release);
                         scrollDown();
                         return oldFocus;
                     }
@@ -6264,7 +6263,7 @@ namespace tsl {
                         // Table needs scrolling
                         const s32 tableBottom = item->getBottomBound();
                         if (tableBottom > viewBottom) {
-                            isTableScrolling = true;
+                            isTableScrolling.store(true, std::memory_order_release);
                             scrollDown();
                             return oldFocus;
                         }
@@ -6276,14 +6275,14 @@ namespace tsl {
                     Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus) {
                         // ONLY reset when we successfully focus something
-                        isTableScrolling = false;
+                        isTableScrolling.store(false, std::memory_order_release);
                         updateScrollOffset();
                         return newFocus;
                     } else {
                         // Non-focusable item (gap/header)
                         const float itemBottom = calculateItemPosition(searchIndex) + item->getHeight();
                         if (itemBottom > offsetPlusHeight) {
-                            isTableScrolling = true;  // Treat gaps/headers like tables
+                            isTableScrolling.store(true, std::memory_order_release);  // Treat gaps/headers like tables
                             scrollDown();
                             return oldFocus;
                         }
@@ -6302,7 +6301,7 @@ namespace tsl {
                 if (m_focusedIndex < m_items.size() && m_items[m_focusedIndex]->isTable()) {
                     Element* currentTable = m_items[m_focusedIndex];
                     if (currentTable->getTopBound() < getTopBound()) {
-                        isTableScrolling = true;
+                        isTableScrolling.store(true, std::memory_order_release);
                         scrollUp();
                         return oldFocus;
                     }
@@ -6320,7 +6319,7 @@ namespace tsl {
                         // Table needs scrolling
                         const s32 tableTop = item->getTopBound();
                         if (tableTop < viewTop) {
-                            isTableScrolling = true;
+                            isTableScrolling.store(true, std::memory_order_release);
                             scrollUp();
                             return oldFocus;
                         }
@@ -6332,14 +6331,14 @@ namespace tsl {
                     Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
                     if (newFocus && newFocus != oldFocus) {
                         // ONLY reset when we successfully focus something
-                        isTableScrolling = false;
+                        isTableScrolling.store(false, std::memory_order_release);
                         updateScrollOffset();
                         return newFocus;
                     } else {
                         // Non-focusable item (gap/header)
                         const float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
                         if (itemTop < offset) {
-                            isTableScrolling = true;  // Treat gaps/headers like tables
+                            isTableScrolling.store(true, std::memory_order_release);  // Treat gaps/headers like tables
                             scrollUp();
                             return oldFocus;
                         }
@@ -6471,7 +6470,7 @@ namespace tsl {
                 
                 invalidate();
                 resetNavigationState();
-                jumpToBottom = false;  // Reset flag
+                jumpToBottom.store(false, std::memory_order_release);  // Reset flag
                 
                 // Calculate target offset once (good optimization to keep)
                 const float targetOffset = (m_listHeight > getHeight()) ? 
@@ -6520,7 +6519,7 @@ namespace tsl {
                 
                 invalidate();
                 resetNavigationState();
-                jumpToTop = false;  // Reset flag
+                jumpToTop.store(false, std::memory_order_release);  // Reset flag
                 
                 // Define constants for clarity and consistency
                 const float targetOffset = 0.0f;
@@ -6635,13 +6634,13 @@ namespace tsl {
                         m_focusedIndex = targetIndex;
                         nearBottom = false;
                     }
-                    isTableScrolling = false;
+                    isTableScrolling.store(false, std::memory_order_release);
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
                     return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
                 } else {
-                    isTableScrolling = true;
+                    isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
 
                     // NEW: Find the last focusable item that's still visible
@@ -6752,13 +6751,13 @@ namespace tsl {
                         nearTop = false;
                     }
                     //if (traveledFullViewport)
-                    isTableScrolling = false;
+                    isTableScrolling.store(false, std::memory_order_release);
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
                     return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
                 } else {
-                    isTableScrolling = true;
+                    isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
                     
                     // NEW: Find the first focusable item that's still visible
@@ -7289,7 +7288,7 @@ namespace tsl {
                 } else {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
-                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_relaxed); // Relaxed ordering is sufficient
+                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire); // Relaxed ordering is sufficient
             }
         
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
@@ -7304,7 +7303,7 @@ namespace tsl {
                         (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
                 }
                 
-                const bool isRunning = ult::runningInterpreter.load(std::memory_order_relaxed) || lastRunningInterpreter;
+                const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::COPY_SYMBOL) != std::string::npos)) [[unlikely]] {
@@ -9481,9 +9480,9 @@ namespace tsl {
     
 
     // Swap state tracking variables
-    inline u64 lastNextPageTapTime = 0;
-    static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 400'000'000; // 400ms in nanoseconds
-    inline bool swapComplete = true;
+    //inline u64 lastNextPageTapTime = 0;
+    //static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 400'000'000; // 400ms in nanoseconds
+    //inline bool swapComplete = true;
 
     // Overlay
     
@@ -9619,7 +9618,7 @@ namespace tsl {
          *
          */
         void close() {
-            tsl::elm::skipDeconstruction = true;
+            tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
             this->m_shouldClose = true;
 
         }
@@ -9801,7 +9800,7 @@ namespace tsl {
             if (!currentGui) return;
 
             //static bool isTopElement = true;
-            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_relaxed);
+            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
             if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
@@ -9969,7 +9968,7 @@ namespace tsl {
                             singlePressHandled = true;
                         }
                         
-                        if (!tsl::elm::isTableScrolling) {
+                        if (!tsl::elm::isTableScrolling.load(std::memory_order_acquire)) {
                             // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
                             static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
                             static constexpr u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
@@ -10068,7 +10067,7 @@ namespace tsl {
                 } else {
                     if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
                         // Button just released - jump to top
-                        jumpToTop = true;
+                        jumpToTop.store(true, std::memory_order_release);
                         currentGui->requestFocus(topElement, FocusDirection::None);
                     }
                     lWasPressed = false;
@@ -10080,7 +10079,7 @@ namespace tsl {
                 } else {
                     if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
                         // Button just released - jump to bottom
-                        jumpToBottom = true;
+                        jumpToBottom.store(true, std::memory_order_release);
                         currentGui->requestFocus(topElement, FocusDirection::None);
                     }
                     rWasPressed = false;
@@ -10107,7 +10106,7 @@ namespace tsl {
                         
                         // Only trigger immediately if in rapid click mode
                         if (zlInRapidClickMode) {
-                            skipUp = true;
+                            skipUp.store(true, std::memory_order_release);
                             currentGui->requestFocus(topElement, FocusDirection::None);
                             zlLastClickTime_ns = currentTime_ns;
                         }
@@ -10131,7 +10130,7 @@ namespace tsl {
                             
                             if (!zlHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
                                 // Trigger skip
-                                skipUp = true;
+                                skipUp.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zlHoldTriggered = true;
                                 zlLastHoldTrigger_ns = currentTime_ns;
@@ -10147,7 +10146,7 @@ namespace tsl {
                         
                         // If not in rapid click mode and not a hold, trigger on release
                         if (!zlInRapidClickMode && !zlHoldTriggered) {
-                            skipUp = true;
+                            skipUp.store(true, std::memory_order_release);
                             currentGui->requestFocus(topElement, FocusDirection::None);
                             zlLastClickTime_ns = currentTime_ns;
                             zlInRapidClickMode = true;  // Enter rapid mode after first release
@@ -10171,7 +10170,7 @@ namespace tsl {
                         
                         // Only trigger immediately if in rapid click mode
                         if (zrInRapidClickMode) {
-                            skipDown = true;
+                            skipDown.store(true, std::memory_order_release);
                             currentGui->requestFocus(topElement, FocusDirection::None);
                             zrLastClickTime_ns = currentTime_ns;
                         }
@@ -10195,7 +10194,7 @@ namespace tsl {
                             
                             if (!zrHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
                                 // Trigger skip
-                                skipDown = true;
+                                skipDown.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zrHoldTriggered = true;
                                 zrLastHoldTrigger_ns = currentTime_ns;
@@ -10211,7 +10210,7 @@ namespace tsl {
                         
                         // If not in rapid click mode and not a hold, trigger on release
                         if (!zrInRapidClickMode && !zrHoldTriggered) {
-                            skipDown = true;
+                            skipDown.store(true, std::memory_order_release);
                             currentGui->requestFocus(topElement, FocusDirection::None);
                             zrLastClickTime_ns = currentTime_ns;
                             zrInRapidClickMode = true;  // Enter rapid mode after first release
@@ -10478,15 +10477,15 @@ namespace tsl {
             }
             
             if (actualCount > 1)
-                tsl::elm::skipDeconstruction = true;
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
 
             // Pop the specified number of GUIs
             for (u32 i = 0; i < actualCount && !this->m_guiStack.empty(); ++i) {
                 this->m_guiStack.pop();
             }
             
-            if (tsl::elm::skipDeconstruction)
-                tsl::elm::skipDeconstruction = false;
+            if (tsl::elm::skipDeconstruction.load(std::memory_order_acquire))
+                tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
 
             // Close overlay if stack is empty
             if (this->m_guiStack.empty()) {
@@ -10501,12 +10500,12 @@ namespace tsl {
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
             
             if (actualCount > 1)
-                tsl::elm::skipDeconstruction = true;
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
             // Pop the specified number of GUIs
             for (u32 i = 0; i < actualCount; ++i) {
                 this->m_guiStack.pop();
             }
-            if (tsl::elm::skipDeconstruction)
+            if (tsl::elm::skipDeconstruction.load(std::memory_order_acquire))
                 tsl::elm::skipDeconstruction = false;
         }
 
@@ -10739,13 +10738,13 @@ namespace tsl {
                 const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
 
                 // Poll Title ID every 1 seconds
-                if (!ult::resetForegroundCheck && elapsedNs >= 1'000'000'000ULL) {
+                if (!ult::resetForegroundCheck.load(std::memory_order_acquire) && elapsedNs >= 1'000'000'000ULL) {
                     lastPollTick = nowTick;
                 
                     currentTitleID = ult::getTitleIdAsString();
                     if (currentTitleID != ult::lastTitleID) {
                         ult::lastTitleID = currentTitleID;
-                        ult::resetForegroundCheck = true;
+                        ult::resetForegroundCheck.store(true, std::memory_order_release);
                         resetStartTick = nowTick;
                     }
                 }
@@ -10753,18 +10752,18 @@ namespace tsl {
                 //currentTitleID = ult::getTitleIdAsString();
                 //if (currentTitleID != ult::lastTitleID) {
                 //    ult::lastTitleID = currentTitleID;
-                //    ult::resetForegroundCheck = true;
+                //    ult::resetForegroundCheck.store(true, std::memory_order_release);
                 //    resetStartTick = nowTick;
                 //}
             
                 // If a reset is scheduled, trigger after 3.5s delay
-                if (ult::resetForegroundCheck) {
+                if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
                     const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
                     if (resetElapsedNs >= 3'500'000'000ULL) {
-                        if (shData->overlayOpen && ult::currentForeground) {
+                        if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
                             hlp::requestForeground(true, false);
                         }
-                        ult::resetForegroundCheck = false;
+                        ult::resetForegroundCheck.store(false, std::memory_order_release);
                     }
                 }
 
@@ -11154,7 +11153,7 @@ namespace tsl {
             memcpy(p, " --foregroundFix ", 17);
             p += 17;
             if (p < bufferEnd) {
-                *p++ = (ult::resetForegroundCheck || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+                *p++ = (ult::resetForegroundCheck.load(std::memory_order_acquire) || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
             }
         }
         
@@ -11299,7 +11298,7 @@ namespace tsl {
                             g_overlayFilename = "";
                             jumpItemName = "";
                             jumpItemValue = "";
-                            jumpItemExactMatch = true;
+                            jumpItemExactMatch.store(true, std::memory_order_release);
                             break;
                             
                         case 2: // skipCombo  
@@ -11311,7 +11310,7 @@ namespace tsl {
                             if (++arg < argc) {
                                 const char* providedID = argv[arg];
                                 if (ult::getTitleIdAsString() != providedID) {
-                                    ult::resetForegroundCheck = true;
+                                    ult::resetForegroundCheck.store(true, std::memory_order_release);
                                 }
                             }
                             break;
@@ -11319,8 +11318,8 @@ namespace tsl {
                             
                         case 4: // foregroundFix
                             if (++arg < argc) {
-                                ult::resetForegroundCheck = ult::resetForegroundCheck || 
-                                                           (argv[arg][0] == '1');
+                                ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) || 
+                                                           (argv[arg][0] == '1'), std::memory_order_release);
                             }
                             break;
                     }

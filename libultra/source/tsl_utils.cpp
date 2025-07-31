@@ -39,7 +39,7 @@ namespace ult {
     std::unordered_map<u64, OverlayCombo> g_entryCombos;
     std::atomic<bool> launchingOverlay(false);
     std::atomic<bool> settingsInitialized(false);
-    bool currentForeground = false;
+    std::atomic<bool> currentForeground(false);
 
 
     // Helper function to read file content into a string
@@ -205,7 +205,7 @@ namespace ult {
 
     
     std::string lastTitleID;
-    bool resetForegroundCheck = false; // initialize as true
+    std::atomic<bool> resetForegroundCheck(false); // initialize as true
 
 
     
@@ -244,9 +244,9 @@ namespace ult {
     
     // CUSTOM SECTION START
     float backWidth, selectWidth, nextPageWidth;
-    bool inMainMenu = false;
-    bool inOverlaysPage = false;
-    bool inPackagesPage = false;
+    std::atomic<bool> inMainMenu{false};
+    std::atomic<bool> inOverlaysPage{false};
+    std::atomic<bool> inPackagesPage{false};
     
     bool firstBoot = true; // for detecting first boot
     
