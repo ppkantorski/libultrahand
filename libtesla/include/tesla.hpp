@@ -157,6 +157,8 @@ inline u32 offsetWidthVar = 112;
 inline std::string g_overlayFilename;;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
+
+inline std::mutex jumpItemMutex;
 inline std::string jumpItemName;
 inline std::string jumpItemValue;
 inline std::atomic<bool> jumpItemExactMatch{true};
@@ -3035,14 +3037,22 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15+2-2, 1, 64+2, (topSeparatorColor));
+                    drawRect(239, 15 + 2 - 2, 1, 64 + 2, topSeparatorColor);
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(247, 15+2-2, (ult::extendedWidgetBackdrop) ? tsl::cfg::FramebufferWidth - 255 : tsl::cfg::FramebufferWidth - 255 +40, 64+2, (widgetBackdropColor));
+                        drawUniformRoundedRect(
+                            247, 15 + 2 - 2,
+                            (ult::extendedWidgetBackdrop
+                                ? tsl::cfg::FramebufferWidth - 255
+                                : tsl::cfg::FramebufferWidth - 215),
+                            64 + 2, widgetBackdropColor
+                        );
                     }
                 }
                 
                 // Calculate base Y offset
-                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock) ? 55+2-1 : 44+2-1;
+                size_t y_offset = ((ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp) || ult::hideClock)
+                                  ? (55 + 2 - 1)
+                                  : (44 + 2 - 1);
                 
                 // Constants for centering calculations
                 const int backdropCenterX = 247 + ((tsl::cfg::FramebufferWidth - 255) >> 1);
@@ -3057,14 +3067,14 @@ namespace tsl {
                         lastTimeUpdate = currentTime;
                     }
                     
-                    const auto timeWidth = getTextDimensions(timeStr, false, 20).first;
+                    const int timeWidth = getTextDimensions(timeStr, false, 20).first;
                     
                     if (ult::centerWidgetAlignment) {
                         // Centered alignment
-                        drawString(timeStr, false, backdropCenterX - (timeWidth >> 1), y_offset, 20, (clockColor));
+                        drawString(timeStr, false, backdropCenterX - (timeWidth >> 1), y_offset, 20, clockColor);
                     } else {
-                        // Right alignment (old code style)
-                        drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 20 -5, y_offset, 20, (clockColor));
+                        // Right alignment
+                        drawString(timeStr, false, tsl::cfg::FramebufferWidth - timeWidth - 25, y_offset, 20, clockColor);
                     }
                     
                     y_offset += 22;
@@ -3073,101 +3083,138 @@ namespace tsl {
                 // Update sensor data every second
                 if ((currentTime - lastSensorUpdate) >= 1) {
                     if (!ult::hideSOCTemp) {
-                        ult::ReadSocTemperature(&ult::SOC_temperature);
-                        snprintf(SOC_temperatureStr, sizeof(SOC_temperatureStr), "%d°C", static_cast<int>(round(ult::SOC_temperature)));
+                        float socTemp = 0.0f;
+                        ult::ReadSocTemperature(&socTemp);
+                        ult::SOC_temperature.store(socTemp, std::memory_order_release);
+                        snprintf(
+                            SOC_temperatureStr, sizeof(SOC_temperatureStr),
+                            "%d°C",
+                            static_cast<int>(round(ult::SOC_temperature.load(std::memory_order_acquire)))
+                        );
                     }
                     
                     if (!ult::hidePCBTemp) {
-                        ult::ReadPcbTemperature(&ult::PCB_temperature);
-                        snprintf(PCB_temperatureStr, sizeof(PCB_temperatureStr), "%d°C", static_cast<int>(round(ult::PCB_temperature)));
+                        float pcbTemp = 0.0f;
+                        ult::ReadPcbTemperature(&pcbTemp);
+                        ult::PCB_temperature.store(pcbTemp, std::memory_order_release);
+                        snprintf(
+                            PCB_temperatureStr, sizeof(PCB_temperatureStr),
+                            "%d°C",
+                            static_cast<int>(round(ult::PCB_temperature.load(std::memory_order_acquire)))
+                        );
                     }
                     
                     if (!ult::hideBattery) {
-                        ult::powerGetDetails(&ult::batteryCharge, &ult::isCharging);
-                        ult::batteryCharge = std::min(ult::batteryCharge, 100U);
-                        sprintf(chargeString, "%d%%", ult::batteryCharge);
+                        uint32_t bc = 0;
+                        bool charging = false;
+                        ult::powerGetDetails(&bc, &charging);
+                        bc = std::min(bc, 100U);
+                        ult::batteryCharge.store(bc, std::memory_order_release);
+                        ult::isCharging.store(charging, std::memory_order_release);
+                        snprintf(chargeString, sizeof(chargeString), "%u%%", bc);
                     }
                     
                     lastSensorUpdate = currentTime;
                 }
                 
                 if (ult::centerWidgetAlignment) {
-                    // CENTERED ALIGNMENT (current code logic)
-                    
-                    // Calculate total width for centering
+                    // CENTERED ALIGNMENT
                     int totalWidth = 0;
                     int socWidth = 0, pcbWidth = 0, chargeWidth = 0;
                     bool hasMultiple = false;
                     
-                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
+                    float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
+                    float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
+                    uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
+                    bool charging = ult::isCharging.load(std::memory_order_acquire);
+                    
+                    if (!ult::hideSOCTemp && socTemp > 0.0f) {
                         socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
                         totalWidth += socWidth;
                         hasMultiple = true;
                     }
-                    
-                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
+                    if (!ult::hidePCBTemp && pcbTemp > 0.0f) {
                         pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
                         if (hasMultiple) totalWidth += 5;
                         totalWidth += pcbWidth;
                         hasMultiple = true;
                     }
-                    
-                    if (!ult::hideBattery && ult::batteryCharge > 0) {
+                    if (!ult::hideBattery && batteryCharge > 0) {
                         chargeWidth = getTextDimensions(chargeString, false, 20).first;
                         if (hasMultiple) totalWidth += 5;
                         totalWidth += chargeWidth;
                     }
                     
-                    // Draw temperature/battery info centered
                     int currentX = backdropCenterX - (totalWidth >> 1);
-                    
                     if (socWidth > 0) {
-                        drawString(SOC_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : temperatureColor);
+                        drawString(
+                            SOC_temperatureStr, false, currentX, y_offset, 20,
+                            ult::dynamicWidgetColors
+                                ? tsl::GradientColor(socTemp)
+                                : temperatureColor
+                        );
                         currentX += socWidth + 5;
                     }
-                    
                     if (pcbWidth > 0) {
-                        drawString(PCB_temperatureStr, false, currentX, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : temperatureColor);
+                        drawString(
+                            PCB_temperatureStr, false, currentX, y_offset, 20,
+                            ult::dynamicWidgetColors
+                                ? tsl::GradientColor(pcbTemp)
+                                : temperatureColor
+                        );
                         currentX += pcbWidth + 5;
                     }
-                    
                     if (chargeWidth > 0) {
-                        const Color batteryColorToUse = ult::isCharging ? batteryChargingColor : 
-                                                (ult::batteryCharge < 20 ? batteryLowColor : batteryColor);
-                        drawString(chargeString, false, currentX, y_offset, 20,  (batteryColorToUse));
+                        const Color batteryColorToUse = charging
+                            ? batteryChargingColor
+                            : (batteryCharge < 20 ? batteryLowColor : batteryColor);
+                        drawString(chargeString, false, currentX, y_offset, 20, batteryColorToUse);
                     }
                     
                 } else {
-                    // RIGHT ALIGNMENT (old code style)
+                    // RIGHT ALIGNMENT
+                    int chargeWidth = 0, pcbWidth = 0, socWidth = 0;
+                    float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
+                    float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
+                    uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
+                    bool charging = ult::isCharging.load(std::memory_order_acquire);
                     
-                    // Calculate string widths only when needed
-                    s32 chargeWidth = 0, pcbWidth = 0, socWidth = 0;
-                    
-                    // Draw battery percentage
-                    if (!ult::hideBattery && ult::batteryCharge > 0) {
-                        const Color batteryColorToUse = ult::isCharging ? batteryChargingColor : 
-                                                (ult::batteryCharge < 20 ? batteryLowColor : batteryColor);
-                        //auto [width, height] = getTextDimensions(chargeString, false, 20);
+                    if (!ult::hideBattery && batteryCharge > 0) {
+                        const Color batteryColorToUse = charging
+                            ? batteryChargingColor
+                            : (batteryCharge < 20 ? batteryLowColor : batteryColor);
                         chargeWidth = getTextDimensions(chargeString, false, 20).first;
-                        drawString(chargeString, false, tsl::cfg::FramebufferWidth - chargeWidth - 20 -5, y_offset, 20, (batteryColorToUse));
+                        drawString(
+                            chargeString, false,
+                            tsl::cfg::FramebufferWidth - chargeWidth - 25,
+                            y_offset, 20, batteryColorToUse
+                        );
                     }
-                
-                    // Draw PCB and SOC temperatures
+                    
                     int offset = 0;
-                    if (!ult::hidePCBTemp && ult::PCB_temperature > 0) {
-                        if (!ult::hideBattery)
-                            offset -= 5;
-                        //auto [width, height] = getTextDimensions(PCB_temperatureStr, false, 20);
+                    if (!ult::hidePCBTemp && pcbTemp > 0.0f) {
+                        if (!ult::hideBattery) offset -= 5;
                         pcbWidth = getTextDimensions(PCB_temperatureStr, false, 20).first;
-                        drawString(PCB_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::PCB_temperature)) : defaultTextColor);
+                        drawString(
+                            PCB_temperatureStr, false,
+                            tsl::cfg::FramebufferWidth + offset - pcbWidth - chargeWidth - 25,
+                            y_offset, 20,
+                            ult::dynamicWidgetColors
+                                ? tsl::GradientColor(pcbTemp)
+                                : defaultTextColor
+                        );
                     }
-                
-                    if (!ult::hideSOCTemp && ult::SOC_temperature > 0) {
-                        if (!ult::hidePCBTemp || !ult::hideBattery)
-                            offset -= 5;
-                        //auto [width, height] = getTextDimensions(SOC_temperatureStr, false, 20);
+                    if (!ult::hideSOCTemp && socTemp > 0.0f) {
+                        if (!ult::hidePCBTemp || !ult::hideBattery) offset -= 5;
                         socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
-                        drawString(SOC_temperatureStr, false, tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 20 -5, y_offset, 20, ult::dynamicWidgetColors ? (tsl::GradientColor(ult::SOC_temperature)) : defaultTextColor);
+                        drawString(
+                            SOC_temperatureStr, false,
+                            tsl::cfg::FramebufferWidth + offset - socWidth - pcbWidth - chargeWidth - 25,
+                            y_offset, 20,
+                            ult::dynamicWidgetColors
+                                ? tsl::GradientColor(socTemp)
+                                : defaultTextColor
+                        );
                     }
                 }
             }
@@ -4350,8 +4397,9 @@ namespace tsl {
                     tsl::initializeThemeVars();
                 }
 
-                if (m_noClickableItems != ult::noClickableItems)
-                    ult::noClickableItems = m_noClickableItems;
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                    ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
+                }
                 
                 
                 if (FullMode == true) {
@@ -4373,30 +4421,32 @@ namespace tsl {
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
                     const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    ult::halfGap = gapWidth / 2.0f;
-                    
+                    ult::halfGap.store(gapWidth / 2.0f, std::memory_order_release);
+                
                     // Calculate text dimensions for buttons without gaps
                     const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
                     const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-                    
+                
                     // Update widths to include the half-gap padding on each side
-                    ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                    ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                    
+                    ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_release);    // halfGap on both sides
+                    ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_release);
+                
                     // Use consistent edge padding equal to halfGap
-                    const float edgePadding = ult::halfGap;
+                    const float edgePadding = ult::halfGap.load(std::memory_order_acquire);
                     buttonStartX = edgePadding;
-                    
+                
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                                  ult::backWidth, 73.0f, 10.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73 + 1),
+                                                  ult::backWidth.load(std::memory_order_acquire), 73.0f, 10.0f, a(clickColor));
                     }
-                    
+                
                     // Draw select button rectangle (starts right after back button)
                     if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                        renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                                  ult::selectWidth, 73.0f, 10.0f, a(clickColor));
+                        const float backWidth = ult::backWidth.load(std::memory_order_acquire);
+                        const float selectWidth = ult::selectWidth.load(std::memory_order_acquire);
+                        renderer->drawRoundedRect(buttonStartX + backWidth, static_cast<float>(cfg::FramebufferHeight - 73 + 1),
+                                                  selectWidth, 73.0f, 10.0f, a(clickColor));
                     }
                 }
                 
@@ -4577,8 +4627,9 @@ namespace tsl {
                 const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) && (ult::downloadPercentage.load(std::memory_order_acquire) != -1 || ult::unzipPercentage.load(std::memory_order_acquire) != -1 || ult::copyPercentage.load(std::memory_order_acquire) != -1) ;
                 
 
-                if (m_noClickableItems != ult::noClickableItems)
-                    ult::noClickableItems = m_noClickableItems;
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                    ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
+                }
 
                 const bool isUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                         m_subtitle.find("Ultrahand Package") == std::string::npos && 
@@ -4749,9 +4800,9 @@ namespace tsl {
                 }
             
             #else
-                if (m_noClickableItems != ult::noClickableItems)
-                    ult::noClickableItems = m_noClickableItems;
-                {
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                    ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
+                }
                 #if USING_WIDGET_DIRECTIVE
                     renderer->drawWidget();
                 #endif
@@ -4762,95 +4813,74 @@ namespace tsl {
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
 
-                // Get the exact gap width from ult::GAP_1
-                const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                // Compute gap width once from GAP_1 and derive halfGap
+                const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 ult::halfGap = gapWidth / 2.0f;
                 
-            #if IS_LAUNCHER_DIRECTIVE
-                // Calculate text dimensions for buttons without gaps
-                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
-                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
-            #else
-                // Calculate text dimensions for buttons without gaps
-                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (ult::BACK), false, 23).first;
-                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (ult::OK), false, 23).first;
-            #endif
-                // Update widths to include the half-gap padding on each side
-                ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
+                // Calculate text widths for buttons depending on launch mode and interpreter state
+                #if IS_LAUNCHER_DIRECTIVE
+                    const float backTextWidth = renderer->getTextDimensions(
+                        "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
+                    const float selectTextWidth = renderer->getTextDimensions(
+                        "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
+                #else
+                    const float backTextWidth = renderer->getTextDimensions(
+                        "\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    const float selectTextWidth = renderer->getTextDimensions(
+                        "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                #endif
                 
-                // Use consistent edge padding equal to halfGap
-                const float edgePadding = ult::halfGap;
+                // Total button widths include half-gap padding on both sides
+                ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_release);
+                ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_release);
+                
+                // Set initial button position
                 const float buttonStartX = ult::halfGap;
+                const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
-                // Draw back button rectangle
+                // Draw back button if touched
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                              ult::backWidth, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX, buttonY, ult::backWidth.load(std::memory_order_acquire), 73.0f, 10.0f, a(clickColor));
                 }
                 
-                
-            #if IS_LAUNCHER_DIRECTIVE
-                // Draw select button rectangle (starts right after back button)
+                // Draw select button (to the right of back) if touched
                 if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
+                    renderer->drawRoundedRect(buttonStartX + ult::backWidth.load(std::memory_order_acquire), buttonY,
                                               ult::selectWidth, 73.0f, 10.0f, a(clickColor));
                 }
-
-                // Calculate next page button dimensions and position
-                if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) || !m_pageLeftName.empty() || !m_pageRightName.empty())) {
-                    //std::string pageText;
-                    //std::string pageIcon;
-                    //
-                    //if (!m_pageLeftName.empty()) {
-                    //    pageText = ult::GAP_2 + m_pageLeftName;
-                    //    pageIcon = "\uE0ED";
-                    //} else if (!m_pageRightName.empty()) {
-                    //    pageText = ult::GAP_2 + m_pageRightName;
-                    //    pageIcon = "\uE0EE";
-                    //} else if (ult::inMainMenu) {
-                    //    pageText = ult::GAP_2 + (ult::inOverlaysPage ? ult::PACKAGES : ult::OVERLAYS_ABBR);
-                    //    pageIcon = (m_menuMode == "packages") ? 
-                    //               (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
-                    //               (ult::usePageSwap ? "\uE0ED" : "\uE0EE");
-                    //}
-                    //
-                    ////const auto pageTextWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first;
-                    //ult::nextPageWidth = renderer->getTextDimensions(pageIcon + pageText, false, 23).first + gapWidth;  // halfGap on left + halfGap on right
-                    
-                    // Construct page text directly in getTextDimensions call to avoid intermediate strings
-                    ult::nextPageWidth = renderer->getTextDimensions(
-                        (!m_pageLeftName.empty()) ? 
-                            ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
-                        (!m_pageRightName.empty()) ?
-                            ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
-                        (ult::inMainMenu.load(std::memory_order_acquire)) ?
-                            (((m_menuMode == "packages") ? 
-                                (ult::usePageSwap ? "\uE0EE" : "\uE0ED") : 
-                                (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) + 
-                             ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ? ult::PACKAGES : ult::OVERLAYS_ABBR)) :
-                        "",  // fallback case
-                        false, 23).first + gapWidth;
-
-
-                    // Position next page button
-                    //float nextPageX = m_noClickableItems ? 
-                    //                  (buttonStartX + ult::backWidth) :
-                    //                  (buttonStartX + ult::backWidth + ult::selectWidth);
-                    
+                
+                #if IS_LAUNCHER_DIRECTIVE
+                // Handle optional next page button when in launcher mode and appropriate conditions are met
+                if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
+                                                 !m_pageLeftName.empty() || !m_pageRightName.empty())) {
+                    // Construct next-page label inline without creating temporary strings
+                    ult::nextPageWidth.store(
+                        renderer->getTextDimensions(
+                            !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
+                            !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
+                            (ult::inMainMenu.load(std::memory_order_acquire) ?
+                                ((m_menuMode == "packages" ?
+                                    (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
+                                    (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
+                                ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ?
+                                    ult::PACKAGES : ult::OVERLAYS_ABBR)) :
+                                ""),
+                            false, 23).first + gapWidth,
+                        std::memory_order_release
+                    );
+                
+                    // Draw next-page button if touched
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(m_noClickableItems ? (buttonStartX + ult::backWidth) : (buttonStartX + ult::backWidth + ult::selectWidth),
-                                                  static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                                  ult::nextPageWidth, 73.0f, 10.0f, a(clickColor));
+                        float nextX = buttonStartX + ult::backWidth.load(std::memory_order_acquire);
+                        if (!m_noClickableItems)
+                            nextX += ult::selectWidth.load(std::memory_order_acquire);
+                
+                        renderer->drawRoundedRect(nextX, buttonY,
+                                                  ult::nextPageWidth.load(std::memory_order_acquire),
+                                                  73.0f, 10.0f, a(clickColor));
                     }
                 }
-            #else
-                // Draw select button rectangle (starts right after back button)
-                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73 +1), 
-                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
-                }
-            #endif
+                #endif
                 
                 #if IS_LAUNCHER_DIRECTIVE
                 const std::string menuBottomLine =
@@ -4891,7 +4921,7 @@ namespace tsl {
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
-                                                        edgePadding + ult::halfGap, 693, 23, 
+                                                        buttonStartX + ult::halfGap, 693, 23, 
                                                         (bottomTextColor), (buttonColor));
             
             #if USING_FPS_INDICATOR_DIRECTIVE
@@ -4908,8 +4938,8 @@ namespace tsl {
                     snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.2f", currentFps);
                     lastFps = currentFps;
                 }
-                
-                renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, (tsl::Color(0xFF, 0xFF, 0xFF, 0xFF)));
+                static auto whiteColor = tsl::Color(0xF,0xF,0xF,0xF);
+                renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, whiteColor);
             #endif
             
                 if (m_contentElement != nullptr)
@@ -5004,47 +5034,55 @@ namespace tsl {
                     ult::themeIsInitialized.store(true, std::memory_order_release);
                     tsl::initializeThemeVars();
                 }
+            
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
-                //renderer->fillScreen(tsl::style::color::ColorFrameBackground);
                 renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
-                
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
-
+            
                 // Get the exact gap width from ult::GAP_1
-                const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                ult::halfGap = gapWidth / 2.0f;
-                
+                const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                ult::halfGap.store(gapWidth / 2.0f, std::memory_order_relaxed);
+            
                 // Calculate text dimensions for buttons without gaps
-                const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-                
-                // Update widths to include the half-gap padding on each side
-                ult::backWidth = backTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                ult::selectWidth = selectTextWidth + gapWidth;  // halfGap on left + halfGap on right
-                
+                const float backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+            
+                // Store final widths with gap padding included
+                ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_relaxed);
+                ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_relaxed);
+            
                 // Use consistent edge padding equal to halfGap
-                //float edgePadding = ult::halfGap;
-                const float buttonStartX = ult::halfGap;
-                
+                const float buttonStartX = ult::halfGap.load(std::memory_order_relaxed);
+            
                 // Draw back button rectangle
                 if (ult::touchingBack.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                              ult::backWidth, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX,
+                                              static_cast<float>(cfg::FramebufferHeight - 73 + 1),
+                                              ult::backWidth.load(std::memory_order_relaxed),
+                                              73.0f, 10.0f, a(clickColor));
                 }
-                
-                // Draw select button rectangle (starts right after back button)
+            
+                // Draw select button rectangle
+                const float backWidth = ult::backWidth.load(std::memory_order_relaxed);
                 if (ult::touchingSelect.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth, static_cast<float>(cfg::FramebufferHeight - 73+1), 
-                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX + backWidth,
+                                              static_cast<float>(cfg::FramebufferHeight - 73 + 1),
+                                              ult::selectWidth.load(std::memory_order_relaxed),
+                                              73.0f, 10.0f, a(clickColor));
                 }
-                
-                const std::string menuBottomLine = "\uE0E1"+ult::GAP_2+ult::BACK+ult::GAP_1+"\uE0E0"+ult::GAP_2+ult::OK+ult::GAP_1;
-                renderer->drawStringWithColoredSections(menuBottomLine, false, {"\uE0E1","\uE0E0","\uE0ED","\uE0EE"}, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
-                
+            
+                // Draw bottom text
+                const std::string menuBottomLine = "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                                                   "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                renderer->drawStringWithColoredSections(menuBottomLine, false,
+                                                        {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
+                                                        buttonStartX, 693, 23,
+                                                        bottomTextColor, buttonColor);
+            
                 if (this->m_header != nullptr)
                     this->m_header->frame(renderer);
-                
+            
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
             }
@@ -5154,22 +5192,24 @@ namespace tsl {
         static std::vector<Element*> s_lastFrameItems;
         static std::atomic<bool> s_isForwardCache(false); // NEW VARIABLE FOR FORWARD CACHING
         static std::atomic<bool> s_hasValidFrame(false);
-        static s32 s_cachedTopBound = 0;
-        static s32 s_cachedBottomBound = 0;
-        static s32 s_cachedHeight = 0;
-        static s32 s_cachedListHeight = 0;
-        static s32 s_cachedActualContentBottom = 0;
+        static std::atomic<s32> s_cachedTopBound{0};
+        static std::atomic<s32> s_cachedBottomBound{0};
+        static std::atomic<s32> s_cachedHeight{0};
+        static std::atomic<s32> s_cachedListHeight{0};
+        static std::atomic<s32> s_cachedActualContentBottom{0};
         static std::atomic<bool> s_shouldDrawScrollbar(false);
-        static u32 s_cachedScrollbarHeight = 0;
-        static u32 s_cachedScrollbarOffset = 0;
-        static u32 s_cachedScrollbarX = 0;
-        static u32 s_cachedScrollbarY = 0;
+        static std::atomic<u32> s_cachedScrollbarHeight{0};
+        static std::atomic<u32> s_cachedScrollbarOffset{0};
+        static std::atomic<u32> s_cachedScrollbarX{0};
+        static std::atomic<u32> s_cachedScrollbarY{0};
         static std::atomic<bool> s_cacheForwardFrameOnce(true);
         static std::atomic<bool> lastInternalTouchRelease(true);
         static std::atomic<bool> s_hasClearedCache(false);
 
         //static std::atomic<bool> s_skipCaching(false);
 
+        static std::mutex s_safeToSwapMutex;
+        static std::mutex s_safeTransitionMutex;
         static std::atomic<bool> s_safeToSwap{false};
 
         static std::atomic<bool> skipDeconstruction{false};
@@ -5182,6 +5222,9 @@ namespace tsl {
         public:
             List() : Element() {
                 s_safeToSwap.store(false, std::memory_order_release);
+                //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
+                //s_safeToSwap.store(false, std::memory_order_release);
+                
                 // Initialize instance state
                 m_hasForwardCached = false;
                 m_pendingJump = false;
@@ -5210,6 +5253,8 @@ namespace tsl {
             
             virtual ~List() {
                 s_safeToSwap.store(false, std::memory_order_release);
+                //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
+                //s_safeToSwap.store(false, std::memory_order_release);
             
                 // NOW take mutex for shared static variable operations
                 {
@@ -5238,16 +5283,20 @@ namespace tsl {
             
             
             virtual void draw(gfx::Renderer* renderer) override {
+                std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
+                s_safeToSwap.store(false, std::memory_order_release);
                 // Early exit optimizations
                 if (m_clearList) {
                     clearItems();
                     return;
                 }
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                    // Process pending operations in batch
+                    if (!m_itemsToAdd.empty()) addPendingItems();
+                    if (!m_itemsToRemove.empty()) removePendingItems();
+                }
                 
-                // Process pending operations in batch
-                if (!m_itemsToAdd.empty()) addPendingItems();
-                if (!m_itemsToRemove.empty()) removePendingItems();
-        
                 // Only lock when checking s_lastFrameItems.empty()
                 bool shouldResetCache = false;
                 {
@@ -5261,7 +5310,7 @@ namespace tsl {
                 if (shouldResetCache) {
                     s_cacheForwardFrameOnce.store(true, std::memory_order_release);
                 }
-        
+                
                 // This part is for fixing returning to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
                 if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && 
@@ -5297,29 +5346,32 @@ namespace tsl {
                     
                     return;
                 }
-        
+                
                 // Cache bounds for hot loop
                 const s32 topBound = getTopBound();
                 const s32 bottomBound = getBottomBound();
                 const s32 height = getHeight();
                 
                 renderer->enableScissoring(getLeftBound(), topBound-8, getWidth() + 8, height + 14);
-        
-                // Optimized visibility culling
-                for (Element* entry : m_items) {
-                    if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
-                        entry->frame(renderer);
+                
+                {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                    // Optimized visibility culling
+                    for (Element* entry : m_items) {
+                        if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
+                            entry->frame(renderer);
+                        }
                     }
                 }
-                
+
                 renderer->disableScissoring();
-        
+                
                 // Draw scrollbar only when needed
                 if (m_listHeight > height) {
                     drawScrollbar(renderer, height);
                     updateScrollAnimation();
                 }
-        
+                
                 // Handle caching operations - lock only for the critical section
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
@@ -5328,26 +5380,29 @@ namespace tsl {
                         // Clear cache after rendering (this is called within the lock)
                         clearStaticCacheUnsafe(); // New unsafe version for use within lock
                         s_hasValidFrame.store(false, std::memory_order_release);
+                        s_cacheForwardFrameOnce.store(true, std::memory_order_release);
                     }
                     
-                    if (!m_cachingDisabled && s_cacheForwardFrameOnce.load(std::memory_order_acquire) && 
-                        !s_hasValidFrame.load(std::memory_order_acquire)) {
-                        // Cache current frame (this is called within the lock)
-                        cacheCurrentFrameUnsafe(true); // New unsafe version for use within lock
-                        s_cacheForwardFrameOnce.store(false, std::memory_order_release);
-                        s_isForwardCache.store(true, std::memory_order_release);
-                        s_hasValidFrame.store(true, std::memory_order_release);
-                        m_hasForwardCached = true;
-                    }
-        
-                    if (!m_cachingDisabled)
+                    if (!m_cachingDisabled) {
+                        if (s_cacheForwardFrameOnce.load(std::memory_order_acquire) && 
+                            !s_hasValidFrame.load(std::memory_order_acquire)) {
+                            // Cache current frame (this is called within the lock)
+                            cacheCurrentFrameUnsafe(true); // New unsafe version for use within lock
+                            s_cacheForwardFrameOnce.store(false, std::memory_order_release);
+                            s_isForwardCache.store(true, std::memory_order_release);
+                            s_hasValidFrame.store(true, std::memory_order_release);
+                            m_hasForwardCached = true;
+                        }
                         cacheCurrentScrollbar();
+                    }
+
+                    //if (m_cachingDisabled ||(s_hasValidFrame.load(std::memory_order_acquire) && s_isForwardCache.load(std::memory_order_acquire)))
+                    //    s_safeToSwap.store(true, std::memory_order_release);
                 }
-        
                 s_safeToSwap.store(true, std::memory_order_release);
             }
 
-        
+            
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 s32 y = getY() - m_offset;
                 
@@ -5624,23 +5679,25 @@ namespace tsl {
                         delete el;
                     }
                 }
-                
+            
                 s_lastFrameItems.clear();
                 //s_lastFrameItems.shrink_to_fit();
-
+            
                 // CRITICAL: Always reset these, even for forward cache!
                 s_hasValidFrame.store(false, std::memory_order_release);  // This MUST be false after clearing
                 s_isForwardCache.store(false, std::memory_order_release);
-                s_cachedTopBound = 0;
-                s_cachedBottomBound = 0;
-                s_cachedHeight = 0;
-                s_cachedListHeight = 0;
-                s_cachedActualContentBottom = 0;
+                
+                s_cachedTopBound.store(0, std::memory_order_release);
+                s_cachedBottomBound.store(0, std::memory_order_release);
+                s_cachedHeight.store(0, std::memory_order_release);
+                s_cachedListHeight.store(0, std::memory_order_release);
+                s_cachedActualContentBottom.store(0, std::memory_order_release);
+            
                 s_shouldDrawScrollbar.store(false, std::memory_order_release);
-                s_cachedScrollbarHeight = 0;
-                s_cachedScrollbarOffset = 0;
-                s_cachedScrollbarX = 0;
-                s_cachedScrollbarY = 0;
+                s_cachedScrollbarHeight.store(0, std::memory_order_release);
+                s_cachedScrollbarOffset.store(0, std::memory_order_release);
+                s_cachedScrollbarX.store(0, std::memory_order_release);
+                s_cachedScrollbarY.store(0, std::memory_order_release);
             }
                     
             void cacheCurrentFrameUnsafe(bool preservePointers = false) {
@@ -5648,70 +5705,82 @@ namespace tsl {
                 if (!preservePointers) {
                     for (Element* el : s_lastFrameItems) delete el;
                 }
-                //s_lastFrameItems.clear();
-                //s_lastFrameItems.shrink_to_fit();
+            
                 s_lastFrameItems = m_items;
-
-                //s_lastFrameItems.clear();
-                //
-                //// Resize vector to exactly match m_items size
-                //s_lastFrameItems.resize(m_items.size());
-                //
-                //// Direct slot assignment - no growth, no push_back
-                //for (size_t i = 0; i < m_items.size(); ++i) {
-                //    s_lastFrameItems[i] = m_items[i];
-                //}
             
-                s_cachedTopBound    = getTopBound();
-                s_cachedBottomBound = getBottomBound();
-                s_cachedHeight      = getHeight();
-                s_cachedListHeight  = m_listHeight;
+                // Store new cache values using atomic stores
+                s_cachedTopBound.store(getTopBound(), std::memory_order_release);
+                s_cachedBottomBound.store(getBottomBound(), std::memory_order_release);
+                s_cachedHeight.store(getHeight(), std::memory_order_release);
+                s_cachedListHeight.store(m_listHeight, std::memory_order_release);
             
-                if (preservePointers) s_isForwardCache = true;
+                if (preservePointers)
+                    s_isForwardCache.store(true, std::memory_order_release);
+            
                 s_hasValidFrame.store(true, std::memory_order_release);
             }
             
             void cacheCurrentScrollbar() {
-                s_shouldDrawScrollbar.store((s_cachedListHeight > s_cachedHeight), std::memory_order_release);
+                const s32 cachedHeight = s_cachedHeight.load(std::memory_order_acquire);
+                const s32 cachedListHeight = s_cachedListHeight.load(std::memory_order_acquire);
+            
+                s_shouldDrawScrollbar.store((cachedListHeight > cachedHeight), std::memory_order_release);
             
                 if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
-                    const float viewHeight   = static_cast<float>(s_cachedHeight);
-                    const float totalHeight  = static_cast<float>(s_cachedListHeight);
-                    const u32   maxScroll    = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
+                    const float viewHeight  = static_cast<float>(cachedHeight);
+                    const float totalHeight = static_cast<float>(cachedListHeight);
+                    const u32   maxScroll   = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
             
-                    s_cachedScrollbarHeight  = std::min(static_cast<u32>((viewHeight * viewHeight) / totalHeight),
-                                                        static_cast<u32>(viewHeight));
-                    s_cachedScrollbarOffset  = std::min(static_cast<u32>((m_offset / maxScroll) *
-                                                        (viewHeight - s_cachedScrollbarHeight)),
-                                                        static_cast<u32>(viewHeight - s_cachedScrollbarOffset));
+                    u32 scrollbarHeight = std::min(
+                        static_cast<u32>((viewHeight * viewHeight) / totalHeight),
+                        static_cast<u32>(viewHeight)
+                    );
             
-                    s_cachedScrollbarHeight -= SCROLLBAR_HEIGHT_TRIM;
-                    s_cachedScrollbarX       = getRightBound() + SCROLLBAR_X_OFFSET;
-                    s_cachedScrollbarY       = getY() + s_cachedScrollbarOffset + SCROLLBAR_Y_OFFSET;
+                    u32 scrollbarOffset = std::min(
+                        static_cast<u32>((m_offset / maxScroll) * (viewHeight - scrollbarHeight)),
+                        static_cast<u32>(viewHeight - scrollbarHeight) // corrected potential bug
+                    );
+            
+                    scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM;
+            
+                    s_cachedScrollbarHeight.store(scrollbarHeight, std::memory_order_release);
+                    s_cachedScrollbarOffset.store(scrollbarOffset, std::memory_order_release);
+                    s_cachedScrollbarX.store(getRightBound() + SCROLLBAR_X_OFFSET, std::memory_order_release);
+                    s_cachedScrollbarY.store(getY() + scrollbarOffset + SCROLLBAR_Y_OFFSET, std::memory_order_release);
                 }
             }
                                                 
             void renderCachedFrame(gfx::Renderer* renderer) {
-                renderer->enableScissoring(getLeftBound(), s_cachedTopBound-8, getWidth() + 8, s_cachedHeight + 14);
-        
+                const s32 cachedTopBound    = s_cachedTopBound.load(std::memory_order_acquire);
+                const s32 cachedBottomBound = s_cachedBottomBound.load(std::memory_order_acquire);
+                const s32 cachedHeight      = s_cachedHeight.load(std::memory_order_acquire);
+            
+                renderer->enableScissoring(getLeftBound(), cachedTopBound - 8, getWidth() + 8, cachedHeight + 14);
+            
                 for (Element* entry : s_lastFrameItems) {
-                    if (entry && entry->getBottomBound() > s_cachedTopBound && entry->getTopBound() < s_cachedBottomBound) {
+                    if (entry &&
+                        entry->getBottomBound() > cachedTopBound &&
+                        entry->getTopBound() < cachedBottomBound) {
                         entry->frame(renderer);
                     }
                 }
-                
+            
                 renderer->disableScissoring();
-                
-                // Draw cached scrollbar
+            
                 if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
-                    renderer->drawRect(s_cachedScrollbarX, s_cachedScrollbarY, 5, s_cachedScrollbarHeight, a(trackBarColor));
-                    renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY, 2, true, a(trackBarColor));
-                    renderer->drawCircle(s_cachedScrollbarX + 2, s_cachedScrollbarY + s_cachedScrollbarHeight, 2, true, a(trackBarColor));
+                    const u32 scrollbarX      = s_cachedScrollbarX.load(std::memory_order_acquire);
+                    const u32 scrollbarY      = s_cachedScrollbarY.load(std::memory_order_acquire);
+                    const u32 scrollbarHeight = s_cachedScrollbarHeight.load(std::memory_order_acquire);
+            
+                    renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
+                    renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
+                    renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
                 }
             }
-
+            
 
             void clearItems() {
+                //std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
                 // Clear static cache if it belongs to this instance
                 //if (s_cachedInstanceId == m_instanceId) {
                 //    clearStaticCache();
@@ -5764,8 +5833,7 @@ namespace tsl {
                 updateScrollOffset();
             }
 
-            void purgePendingItems()
-            {
+            void purgePendingItems() {
                 for (auto& [_, element] : m_itemsToAdd) {
                     if (element) { element->invalidate(); delete element; }
                 }
@@ -6410,60 +6478,7 @@ namespace tsl {
                //    m_scrollVelocity = 0.0f;
                //}
             }
-            
-            //Element* wrapToTop(Element* oldFocus) {
-                // Reset table scrolling when wrapping
-                //isTableScrolling = false;
-                //invalidate();
-                //
-                //// Find first focusable item (including tables)
-                //for (size_t i = 0; i < m_items.size(); ++i) {
-                //    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Down);
-                //    if (newFocus && newFocus != oldFocus) {
-                //        m_focusedIndex = i;
-                //        m_nextOffset = 0.0f;
-                //        return newFocus;
-                //    }
-                //}
-                //
-                //// No focusable items - just scroll to top
-                //m_nextOffset = 0.0f;
-                //
-                //return oldFocus;
-                //return handleJumpToTop(oldFocus);
-            //}
-            
-            //Element* wrapToBottom(Element* oldFocus) {
-                // Reset table scrolling when wrapping
-                //isTableScrolling = false;
-                //
-                //invalidate();
-                //
-                //// Calculate max offset once (this is a good optimization to keep)
-                //const float maxOffset = (m_listHeight > getHeight()) ? 
-                //                        static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                //
-                //// Find last focusable item (including tables)
-                //for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                //    Element* newFocus = m_items[i]->requestFocus(oldFocus, FocusDirection::Up);
-                //    if (newFocus && newFocus != oldFocus) {
-                //        m_focusedIndex = static_cast<size_t>(i);
-                //        if (m_listHeight > getHeight()) {
-                //            m_nextOffset = maxOffset;
-                //        }
-                //        invalidate();
-                //        return newFocus;
-                //    }
-                //}
-                //
-                //// No focusable items - just scroll to bottom
-                //if (m_listHeight > getHeight()) {
-                //    m_nextOffset = maxOffset;
-                //    //invalidate();
-                //}
-                //invalidate();
-            //
-            
+
             // Add these methods to handle jumps with smooth scrolling
             Element* handleJumpToBottom(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
@@ -9661,7 +9676,7 @@ namespace tsl {
         
         bool m_closeOnExit;
         
-        bool isNavigatingBackwards = false;
+        static inline std::atomic<bool> isNavigatingBackwards{false};
         bool justNavigated = false;
 
         /**
@@ -9774,6 +9789,7 @@ namespace tsl {
             return t < 0.5f ? 4.0f * t * t * t : 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
         }
         
+        
 
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
             // Static variables to maintain state between function calls
@@ -9786,6 +9802,7 @@ namespace tsl {
             static bool singlePressHandled = false;
             static constexpr u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
+            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
 
             //static u64 lastTouchReleaseTime_ns = 0;
             //static constexpr u64 TOUCH_DEBOUNCE_NS = 300000000ULL; // 300ms
@@ -9886,20 +9903,20 @@ namespace tsl {
                     currentGui->markInitialFocusSet();
                 }
             }
-            if (isNavigatingBackwards && !currentFocus && topElement && keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+            if (isNavigatingBackwards.load(std::memory_order_acquire) && !currentFocus && topElement && keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
                 currentGui->requestFocus(topElement, FocusDirection::None);
                 currentGui->markInitialFocusSet();
-                isNavigatingBackwards = false;
+                isNavigatingBackwards.store(false, std::memory_order_release);
                 
                 // Reset navigation timing to prevent fast scrolling
-                buttonPressTime_ns = armTicksToNs(armGetSystemTick());
+                buttonPressTime_ns = currentTime_ns;
                 lastKeyEventTime_ns = buttonPressTime_ns;
                 singlePressHandled = false;
             }
             
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!(isNavigatingBackwards) && !ult::simulatedBack.load(std::memory_order_acquire) && topElement) {
+                if (!(isNavigatingBackwards.load(std::memory_order_acquire)) && !ult::simulatedBack.load(std::memory_order_acquire) && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -9922,7 +9939,7 @@ namespace tsl {
             
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
-            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+            
             if (hasScrolled) {
                 const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                 
@@ -9931,7 +9948,7 @@ namespace tsl {
                     buttonPressTime_ns = currentTime_ns;
                     lastKeyEventTime_ns = currentTime_ns;
                     hasScrolled = false;
-                    isNavigatingBackwards = false;
+                    isNavigatingBackwards.store(false, std::memory_order_release);
                 }
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
@@ -10230,16 +10247,16 @@ namespace tsl {
 
             // Cache common calculations
             // Use consistent edge padding equal to halfGap (matching drawing code)
-            const float edgePadding = ult::halfGap;
+            const float edgePadding = ult::halfGap.load(std::memory_order_acquire);
             const float buttonStartX = edgePadding;
             
             // Calculate button positions matching the drawing code
             const float backLeftEdge = buttonStartX + ult::layerEdge;
-            const float backRightEdge = backLeftEdge + ult::backWidth;
+            const float backRightEdge = backLeftEdge + ult::backWidth.load(std::memory_order_acquire);
             const float selectLeftEdge = backRightEdge;
-            const float selectRightEdge = selectLeftEdge + ult::selectWidth;
-            const float nextPageLeftEdge = ult::noClickableItems ? backRightEdge : selectRightEdge;
-            const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth;
+            const float selectRightEdge = selectLeftEdge + ult::selectWidth.load(std::memory_order_acquire);
+            const float nextPageLeftEdge = ult::noClickableItems.load(std::memory_order_acquire) ? backRightEdge : selectRightEdge;
+            const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth.load(std::memory_order_acquire);
             
             const float menuRightEdge = 245.0f + ult::layerEdge - 13;
             const u32 footerY = cfg::FramebufferHeight - 73U +1;
@@ -10248,7 +10265,7 @@ namespace tsl {
             ult::touchingBack.store((touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
                                 (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
             
-            ult::touchingSelect.store(!ult::noClickableItems && 
+            ult::touchingSelect.store(!ult::noClickableItems.load(std::memory_order_acquire) && 
                                   (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
                                   (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
             
@@ -10338,7 +10355,7 @@ namespace tsl {
                         //ult::simulatedBackComplete = false;
                         //ult::simulatedBack = true;
                         ult::simulatedBack.store(true, std::memory_order_release);
-                    } else if (!ult::noClickableItems && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
+                    } else if (!ult::noClickableItems.load(std::memory_order_acquire) && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
                                (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
                         //ult::simulatedSelectComplete = false;
                         //ult::simulatedSelect = true;
@@ -10428,7 +10445,7 @@ namespace tsl {
             if (this->m_guiStack.top() != nullptr && this->m_guiStack.top()->m_focusedElement != nullptr)
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
-            isNavigatingBackwards = false;
+            isNavigatingBackwards.store(false, std::memory_order_release);
 
             // cache frame for forward rendering using external list method (to be implemented)
 
@@ -10458,6 +10475,70 @@ namespace tsl {
             return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), false);
         }
         
+
+        /**
+         * @brief Swaps to a different Gui
+         *
+         * @param gui Gui to change to
+         * @return Reference to the Gui
+         */
+        std::unique_ptr<tsl::Gui>& swapTo(std::unique_ptr<tsl::Gui>&& gui, u32 count = 1) {
+            //isNavigatingBackwards = true;
+            
+            isNavigatingBackwards.store(true, std::memory_order_release);
+            
+            // Clamp count to available stack size to prevent underflow
+            const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
+            
+            if (actualCount > 1) {
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                // Pop the specified number of GUIs
+                for (u32 i = 0; i < actualCount; ++i) {
+                    this->m_guiStack.pop();
+                }
+                tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
+            } else {
+                this->m_guiStack.pop();
+            }
+
+
+
+            if (this->m_guiStack.top() != nullptr && this->m_guiStack.top()->m_focusedElement != nullptr)
+                this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
+            
+            isNavigatingBackwards.store(false, std::memory_order_release);
+
+            // cache frame for forward rendering using external list method (to be implemented)
+            
+            // Create the top element of the new Gui
+            gui->m_topElement = gui->createUI();
+
+            
+            // Push the new Gui onto the stack
+            this->m_guiStack.push(std::move(gui));
+            //if (clearGlyphCache)
+            //    tsl::gfx::FontManager::clearCache();
+            return this->m_guiStack.top();
+        }
+
+        /**
+         * @brief Creates a new Gui and changes to it
+         *
+         * @tparam G Gui to create
+         * @tparam Args Arguments to pass to the Gui
+         * @param args Arguments to pass to the Gui
+         * @return Reference to the newly created Gui
+         */
+        // Template version without clearGlyphCache (for backward compatibility)
+        template<typename G, typename ...Args>
+        std::unique_ptr<tsl::Gui>& swapTo(SwapDepth depth, Args&&... args) {
+            return this->swapTo(std::make_unique<G>(std::forward<Args>(args)...), depth.value);
+        }
+        
+        template<typename G, typename ...Args>
+        std::unique_ptr<tsl::Gui>& swapTo(Args&&... args) {
+            return this->swapTo(std::make_unique<G>(std::forward<Args>(args)...), 1);
+        }
         
         /**
          * @brief Pops the top Gui(s) from the stack and goes back count number of times
@@ -10465,7 +10546,7 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
-            isNavigatingBackwards = true;
+            isNavigatingBackwards.store(true, std::memory_order_release);
             
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
@@ -10494,24 +10575,32 @@ namespace tsl {
         }
 
         void pop(u32 count = 1) {
-            isNavigatingBackwards = true;
+            isNavigatingBackwards.store(true, std::memory_order_release);
             
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
             
-            if (actualCount > 1)
+            if (actualCount > 1) {
                 tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-            // Pop the specified number of GUIs
-            for (u32 i = 0; i < actualCount; ++i) {
+                // Pop the specified number of GUIs
+                for (u32 i = 0; i < actualCount; ++i) {
+                    this->m_guiStack.pop();
+                }
+                tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
+            } else {
                 this->m_guiStack.pop();
             }
-            if (tsl::elm::skipDeconstruction.load(std::memory_order_acquire))
-                tsl::elm::skipDeconstruction = false;
         }
+
 
         
         template<typename G, typename ...Args>
         friend std::unique_ptr<tsl::Gui>& changeTo(Args&&... args);
+        template<typename G, typename ...Args>
+        friend std::unique_ptr<tsl::Gui>& swapTo(Args&&... args);
+        
+        template<typename G, typename ...Args>
+        friend std::unique_ptr<tsl::Gui>& swapTo(SwapDepth depth, Args&&... args);
         
         friend void goBack(u32 count);
         friend void pop(u32 count);
@@ -11071,6 +11160,16 @@ namespace tsl {
     std::unique_ptr<tsl::Gui>& changeTo(Args&&... args) {
         return Overlay::get()->changeTo<G, Args...>(std::forward<Args>(args)...);
     }
+
+    template<typename G, typename ...Args>
+    std::unique_ptr<tsl::Gui>& swapTo(Args&&... args) {
+        return Overlay::get()->swapTo<G, Args...>(std::forward<Args>(args)...);
+    }
+
+    template<typename G, typename ...Args>
+    std::unique_ptr<tsl::Gui>& swapTo(SwapDepth depth, Args&&... args) {
+        return Overlay::get()->swapTo<G, Args...>(depth, std::forward<Args>(args)...);
+    }
     
 
     /**
@@ -11295,10 +11394,13 @@ namespace tsl {
                     
                     switch (options[i].action) {
                         case 1: // direct
-                            g_overlayFilename = "";
-                            jumpItemName = "";
-                            jumpItemValue = "";
-                            jumpItemExactMatch.store(true, std::memory_order_release);
+                            {
+                                //std::lock_guard<std::mutex> lock(jumpItemMutex);
+                                g_overlayFilename = "";
+                                jumpItemName = "";
+                                jumpItemValue = "";
+                                jumpItemExactMatch.store(true, std::memory_order_release);
+                            }
                             break;
                             
                         case 2: // skipCombo  

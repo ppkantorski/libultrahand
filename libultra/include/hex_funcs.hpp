@@ -33,6 +33,8 @@
 #include <functional>
 //#include <cstdio> // Added for FILE and fopen
 #include <cstring> // Added for std::memcmp
+#include <mutex>
+#include <shared_mutex>
 
 #include <global_vars.hpp>
 #include <debug_funcs.hpp>
@@ -61,6 +63,10 @@ namespace ult {
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
     };
+
+
+    extern void clearHexSumCache();
+    extern size_t getHexSumCacheSize();
 
     /**
      * @brief Converts an ASCII string to a hexadecimal string.

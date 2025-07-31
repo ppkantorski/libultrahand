@@ -93,6 +93,11 @@ struct OverlayCombo {
     std::string launchArg; // empty = use per-overlay launch_args key, otherwise a “mode” arg
 };
 
+struct SwapDepth {
+    u32 value;
+    explicit SwapDepth(u32 v) : value(v) {}
+};
+
 namespace ult {
     extern bool correctFrameSize; // for detecting the correct Overlay display size
 
@@ -133,7 +138,7 @@ namespace ult {
     extern bool useDynamicLogo;
     extern bool useLaunchCombos;
     extern bool usePageSwap;
-    extern bool noClickableItems;
+    extern std::atomic<bool> noClickableItems;
 
 
     
@@ -162,7 +167,10 @@ namespace ult {
     //#include <filesystem> // Comment out filesystem
     
     // CUSTOM SECTION START
-    extern float backWidth, selectWidth, nextPageWidth;
+    //extern float backWidth, selectWidth, nextPageWidth;
+    extern std::atomic<float> backWidth;
+    extern std::atomic<float> selectWidth;
+    extern std::atomic<float> nextPageWidth;
     extern std::atomic<bool> inMainMenu;
     extern std::atomic<bool> inOverlaysPage;
     extern std::atomic<bool> inPackagesPage;
@@ -424,7 +432,7 @@ namespace ult {
 
     extern std::string GAP_1;
     extern std::string GAP_2;
-    extern float halfGap;
+    extern std::atomic<float> halfGap;
 
     extern std::string EMPTY;
     
@@ -575,16 +583,16 @@ namespace ult {
     extern PsmSession powerSession;
     
     // Define variables to store previous battery charge and time
-    extern uint32_t prevBatteryCharge;
+    //extern uint32_t prevBatteryCharge;
     //extern s64 timeOut;
     
     
-    extern uint32_t batteryCharge;
-    extern bool isCharging;
+    extern std::atomic<uint32_t> batteryCharge;
+    extern std::atomic<bool> isCharging;
     
     //constexpr std::chrono::seconds min_delay = std::chrono::seconds(3); // Minimum delay between checks
     
-    bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging);
+    bool powerGetDetails(uint32_t *_batteryCharge, bool *_isCharging);
     
     void powerInit(void);
     
@@ -592,7 +600,8 @@ namespace ult {
     #endif
     
     // Temperature Implementation
-    extern float PCB_temperature, SOC_temperature;
+    extern std::atomic<float> PCB_temperature;
+    extern std::atomic<float> SOC_temperature;
     
     /*
     I2cReadRegHandler was taken from Switch-OC-Suite source code made by KazushiMe

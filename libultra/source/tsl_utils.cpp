@@ -27,7 +27,6 @@ extern "C" { // assertion override
     }
 }
 
-
 namespace ult {
     bool correctFrameSize; // for detecting the correct Overlay display size
 
@@ -217,7 +216,7 @@ namespace ult {
     bool useDynamicLogo = true;
     bool useLaunchCombos = false;
     bool usePageSwap = false;
-    bool noClickableItems = false;
+    std::atomic<bool> noClickableItems{false};
     
     #if IS_LAUNCHER_DIRECTIVE
     std::atomic<bool> overlayLaunchRequested{false};
@@ -243,7 +242,10 @@ namespace ult {
     //#include <filesystem> // Comment out filesystem
     
     // CUSTOM SECTION START
-    float backWidth, selectWidth, nextPageWidth;
+    //float backWidth, selectWidth, nextPageWidth;
+    std::atomic<float> backWidth;
+    std::atomic<float> selectWidth;
+    std::atomic<float> nextPageWidth;
     std::atomic<bool> inMainMenu{false};
     std::atomic<bool> inOverlaysPage{false};
     std::atomic<bool> inPackagesPage{false};
@@ -498,7 +500,8 @@ namespace ult {
 
     std::string GAP_1 = "     ";
     std::string GAP_2 = "  ";
-    float halfGap = 0.0;
+
+    std::atomic<float> halfGap = 0.0f;
     
 
     std::string EMPTY = "Empty";
@@ -1307,17 +1310,17 @@ namespace ult {
     PsmSession powerSession;
     
     // Define variables to store previous battery charge and time
-    uint32_t prevBatteryCharge = 0;
+    //uint32_t prevBatteryCharge = 0;
     //s64 timeOut = 0;
     
     
-    uint32_t batteryCharge;
-    bool isCharging;
+    std::atomic<uint32_t> batteryCharge{0};
+    std::atomic<bool> isCharging{false};
     //bool validPower;
     
     
     
-    bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging) {
+    bool powerGetDetails(uint32_t *_batteryCharge, bool *_isCharging) {
         static uint64_t last_call_ns = 0;
         
         // Ensure power system is initialized
@@ -1335,18 +1338,18 @@ namespace ult {
         const bool useCache = (now_ns - last_call_ns <= min_delay_ns) && powerCacheInitialized;
         if (!useCache) {
             PsmChargerType charger = PsmChargerType_Unconnected;
-            Result rc = psmGetBatteryChargePercentage(batteryCharge);
+            Result rc = psmGetBatteryChargePercentage(_batteryCharge);
             bool hwReadsSucceeded = R_SUCCEEDED(rc);
     
             if (hwReadsSucceeded) {
                 rc = psmGetChargerType(&charger);
                 hwReadsSucceeded &= R_SUCCEEDED(rc);
-                *isCharging = (charger != PsmChargerType_Unconnected);
+                *_isCharging = (charger != PsmChargerType_Unconnected);
     
                 if (hwReadsSucceeded) {
                     // Update cache
-                    powerCacheCharge = *batteryCharge;
-                    powerCacheIsCharging = *isCharging;
+                    powerCacheCharge = *_batteryCharge;
+                    powerCacheIsCharging = *_isCharging;
                     powerCacheInitialized = true;
                     last_call_ns = now_ns; // Update last call time after successful hardware read
                     return true;
@@ -1355,8 +1358,8 @@ namespace ult {
     
             // Use cached values if the hardware read fails
             if (powerCacheInitialized) {
-                *batteryCharge = powerCacheCharge;
-                *isCharging = powerCacheIsCharging;
+                *_batteryCharge = powerCacheCharge;
+                *_isCharging = powerCacheIsCharging;
                 return hwReadsSucceeded; // Return false if hardware read failed but cache is valid
             }
     
@@ -1365,32 +1368,34 @@ namespace ult {
         }
     
         // Use cached values if not enough time has passed
-        *batteryCharge = powerCacheCharge;
-        *isCharging = powerCacheIsCharging;
+        *_batteryCharge = powerCacheCharge;
+        *_isCharging = powerCacheIsCharging;
         return true; // Return true as cache is used
     }
     
     
     void powerInit(void) {
         uint32_t charge = 0;
-        isCharging = 0;
-        
+        bool charging = false;
+    
         powerCacheInitialized = false;
         powerCacheCharge = 0;
         powerCacheIsCharging = false;
-        
+    
         if (!powerInitialized) {
             Result rc = psmInitialize();
             if (R_SUCCEEDED(rc)) {
                 rc = psmBindStateChangeEvent(&powerSession, 1, 1, 1);
-                
-                if (R_FAILED(rc)) psmExit();
+    
+                if (R_FAILED(rc))
+                    psmExit();
+    
                 if (R_SUCCEEDED(rc)) {
                     powerInitialized = true;
-                    powerGetDetails(&charge, &isCharging);
-                    
-                    // Initialize prevBatteryCharge here with a non-zero value if needed.
-                    prevBatteryCharge = charge;
+                    ult::powerGetDetails(&charge, &charging);
+                    ult::batteryCharge.store(charge, std::memory_order_release);
+                    ult::isCharging.store(charging, std::memory_order_release);
+                    //prevBatteryCharge = charge; // if needed
                 }
             }
         }
@@ -1408,7 +1413,8 @@ namespace ult {
     
     
     // Temperature Implementation
-    float PCB_temperature, SOC_temperature;
+    std::atomic<float> PCB_temperature{0.0f};
+    std::atomic<float> SOC_temperature{0.0f};
     
     /*
     I2cReadRegHandler was taken from Switch-OC-Suite source code made by KazushiMe

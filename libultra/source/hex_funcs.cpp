@@ -23,11 +23,28 @@
 namespace ult {
     size_t HEX_BUFFER_SIZE = 4096;//65536/4;
     
+    // Thread-safe cache and file operation mutexes
+    std::shared_mutex cacheMutex;  // Allows multiple readers, single writer
+    std::mutex fileWriteMutex;     // Protects file write operations
     
     // For improving the speed of hexing consecutively with the same file and asciiPattern.
-    std::unordered_map<std::string, std::string> hexSumCache; // MOVED TO main.cpp
+    std::unordered_map<std::string, std::string> hexSumCache;
     
     
+    /**
+     * @brief Thread-safe cache management functions
+     */
+    void clearHexSumCache() {
+        std::lock_guard<std::shared_mutex> writeLock(cacheMutex);
+        //hexSumCache.clear();
+        hexSumCache = {};
+    }
+
+    size_t getHexSumCacheSize() {
+        std::shared_lock<std::shared_mutex> readLock(cacheMutex);
+        return hexSumCache.size();
+    }
+
     /**
      * @brief Converts an ASCII string to a hexadecimal string.
      *
@@ -399,6 +416,9 @@ namespace ult {
      * @param hexData The hexadecimal data to replace at the offset.
      */
     void hexEditByOffset(const std::string& filePath, const std::string& offsetStr, const std::string& hexData) {
+        // Lock file writes to prevent concurrent modifications to the same file
+        std::lock_guard<std::mutex> fileWriteLock(fileWriteMutex);
+
         const std::streampos offset = std::stoll(offsetStr);
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -509,10 +529,13 @@ namespace ult {
         
         int hexSum = -1;
         
-        // Check if the result is already cached
-        const auto cachedResult = hexSumCache.find(cacheKey);
-        if (cachedResult != hexSumCache.end()) {
-            hexSum = ult::stoi(cachedResult->second); // load sum from cache
+        // Thread-safe cache access
+        {
+            std::shared_lock<std::shared_mutex> readLock(cacheMutex);
+            const auto cachedResult = hexSumCache.find(cacheKey);
+            if (cachedResult != hexSumCache.end()) {
+                hexSum = ult::stoi(cachedResult->second);
+            }
         }
         
         if (hexSum == -1) {
@@ -532,8 +555,11 @@ namespace ult {
             if (!offsets.empty()) {
                 hexSum = ult::stoi(offsets[occurrence]);
                 
-                // Convert 'hexSum' to a string and add it to the cache
-                hexSumCache[cacheKey] = ult::to_string(hexSum);
+                // Thread-safe cache write
+                {
+                    std::lock_guard<std::shared_mutex> writeLock(cacheMutex);
+                    hexSumCache[cacheKey] = ult::to_string(hexSum);
+                }
             } else {
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
@@ -605,20 +631,32 @@ namespace ult {
      * @param hexDataReplacement The hexadecimal data to replace with.
      * @param occurrence The occurrence/index of the data to replace (default is "0" to replace all occurrences).
      */
-    std::string parseHexDataAtCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, const std::string& offsetStr, size_t length, size_t occurrence) {
+    std::string parseHexDataAtCustomOffset(const std::string& filePath, const std::string& customAsciiPattern, 
+                                         const std::string& offsetStr, size_t length, size_t occurrence) {
         const std::string cacheKey = filePath + '?' + customAsciiPattern + '?' + ult::to_string(occurrence);
         int hexSum = -1;
-    
-        const auto cachedResult = hexSumCache.find(cacheKey);
-        if (cachedResult != hexSumCache.end()) {
-            hexSum = ult::stoi(cachedResult->second);
-        } else {
+
+        // Thread-safe cache read
+        {
+            std::shared_lock<std::shared_mutex> readLock(cacheMutex);
+            const auto cachedResult = hexSumCache.find(cacheKey);
+            if (cachedResult != hexSumCache.end()) {
+                hexSum = ult::stoi(cachedResult->second);
+            }
+        }
+
+        if (hexSum == -1) {
             const std::string customHexPattern = asciiToHex(customAsciiPattern);
             const std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
-    
+
             if (!offsets.empty() && offsets.size() > occurrence) {
                 hexSum = ult::stoi(offsets[occurrence]);
-                hexSumCache[cacheKey] = ult::to_string(hexSum);
+                
+                // Thread-safe cache write
+                {
+                    std::lock_guard<std::shared_mutex> writeLock(cacheMutex);
+                    hexSumCache[cacheKey] = ult::to_string(hexSum);
+                }
             } else {
                 #if USING_LOGGING_DIRECTIVE
                 logMessage("Offset not found.");
@@ -626,11 +664,11 @@ namespace ult {
                 return "";
             }
         }
-    
+
         const std::streampos totalOffset = hexSum + std::stoll(offsetStr);
         std::vector<char> hexBuffer(length);
         std::vector<char> hexStream(length * 2);
-    
+
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
@@ -639,7 +677,7 @@ namespace ult {
             #endif
             return "";
         }
-    
+
         if (fseek(file, totalOffset, SEEK_SET) != 0) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Error seeking to offset.");
@@ -647,10 +685,9 @@ namespace ult {
             fclose(file);
             return "";
         }
-    
+
         const size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
         if (bytesRead == length) {
-            // ONLY OPTIMIZATION: Use static array instead of creating new array each time
             static const char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
@@ -663,7 +700,7 @@ namespace ult {
             fclose(file);
             return "";
         }
-    
+
         fclose(file);
     #else
         std::ifstream file(filePath, std::ios::binary);
@@ -673,7 +710,7 @@ namespace ult {
             #endif
             return "";
         }
-    
+
         file.seekg(totalOffset);
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -681,10 +718,9 @@ namespace ult {
             #endif
             return "";
         }
-    
+
         file.read(hexBuffer.data(), length);
         if (file.gcount() == static_cast<std::streamsize>(length)) {
-            // ONLY OPTIMIZATION: Use static array instead of creating new array each time
             static const char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
@@ -696,13 +732,13 @@ namespace ult {
             #endif
             return "";
         }
-    
+
         file.close();
     #endif
-    
+
         std::string result(hexStream.begin(), hexStream.end());
         result = stringToUppercase(result);
-    
+
         return result;
     }
     

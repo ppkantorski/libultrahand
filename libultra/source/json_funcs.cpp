@@ -20,6 +20,8 @@
 
 namespace ult {
 
+    static std::mutex json_access_mutex;
+
     /**
      * @brief Reads JSON data from a file and returns it as a `json_t` object.
      *
@@ -27,6 +29,7 @@ namespace ult {
      * @return A `json_t` object representing the parsed JSON data. Returns `nullptr` on error.
      */
     json_t* readJsonFromFile(const std::string& filePath) {
+        std::lock_guard<std::mutex> lock(json_access_mutex);
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
@@ -272,24 +275,27 @@ namespace ult {
         if (!jsonString) {
             return false;
         }
-    
+        
         bool success = false;
-    #if !USING_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
-        if (file) {
-            const size_t jsonLength = std::strlen(jsonString);
-            const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
-            success = (bytesWritten == jsonLength);
-            fclose(file);
+        {
+            std::lock_guard<std::mutex> lock(json_access_mutex);
+        #if !USING_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
+            if (file) {
+                const size_t jsonLength = std::strlen(jsonString);
+                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+                success = (bytesWritten == jsonLength);
+                fclose(file);
+            }
+        #else
+            std::ofstream file(filePath); // Use text mode for JSON
+            if (file.is_open()) {
+                file << jsonString;
+                success = !file.fail();
+                file.close();
+            }
+        #endif
         }
-    #else
-        std::ofstream file(filePath); // Use text mode for JSON
-        if (file.is_open()) {
-            file << jsonString;
-            success = !file.fail();
-            file.close();
-        }
-    #endif
     
         cJSON_free(jsonString);
         return success;
@@ -332,22 +338,26 @@ namespace ult {
         }
     
         bool success = false;
-    #if !USING_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
-        if (file) {
-            const size_t jsonLength = std::strlen(jsonString);
-            const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
-            success = (bytesWritten == jsonLength);
-            fclose(file);
+
+        {
+            std::lock_guard<std::mutex> lock(json_access_mutex);
+        #if !USING_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
+            if (file) {
+                const size_t jsonLength = std::strlen(jsonString);
+                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+                success = (bytesWritten == jsonLength);
+                fclose(file);
+            }
+        #else
+            std::ofstream file(filePath); // Use text mode
+            if (file.is_open()) {
+                file << jsonString;
+                success = !file.fail();
+                file.close();
+            }
+        #endif
         }
-    #else
-        std::ofstream file(filePath); // Use text mode
-        if (file.is_open()) {
-            file << jsonString;
-            success = !file.fail();
-            file.close();
-        }
-    #endif
     
         cJSON_free(jsonString);
         return success;
