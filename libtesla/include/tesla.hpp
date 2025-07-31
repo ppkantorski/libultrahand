@@ -163,6 +163,9 @@ inline std::string jumpItemName;
 inline std::string jumpItemValue;
 inline std::atomic<bool> jumpItemExactMatch{true};
 
+inline std::atomic<bool> s_onLeftPage{false};
+inline std::atomic<bool> s_onRightPage{false};
+
 
 //#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
@@ -4882,7 +4885,9 @@ namespace tsl {
                 }
                 #endif
                 
+
                 #if IS_LAUNCHER_DIRECTIVE
+
                 const std::string menuBottomLine =
                     "\uE0E1" + ult::GAP_2 +
                     (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
@@ -9496,7 +9501,7 @@ namespace tsl {
 
     // Swap state tracking variables
     //inline u64 lastNextPageTapTime = 0;
-    //static constexpr u64 NEXT_PAGE_COOLDOWN_NS = 400'000'000; // 400ms in nanoseconds
+    
     //inline bool swapComplete = true;
 
     // Overlay
@@ -9802,7 +9807,8 @@ namespace tsl {
             static bool singlePressHandled = false;
             static constexpr u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
             static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
-            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+            
+
 
             //static u64 lastTouchReleaseTime_ns = 0;
             //static constexpr u64 TOUCH_DEBOUNCE_NS = 300000000ULL; // 300ms
@@ -9813,16 +9819,17 @@ namespace tsl {
         
             auto& currentGui = this->getCurrentGui();
 
-            // Return early if current GUI is not available
-            if (!currentGui) return;
+            // Return early if current GUI is not available or internal touch is not released
+            if (!currentGui || !ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                return;
+            }
 
-            //static bool isTopElement = true;
-            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
-            if (!ult::internalTouchReleased.load(std::memory_order_acquire)) return;
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             auto topElement = currentGui->getTopElement();
 
+
+            const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (interpreterIsRunning) {
                 if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
@@ -9873,6 +9880,17 @@ namespace tsl {
                 keysDown |= KEY_B;
                 //ult::simulatedBack = false;
             }
+            
+            //else if (ult::simulatedNextPage.load(std::memory_order_acquire)) {
+            //    ult::simulatedNextPage.store(false, std::memory_order_release);
+            //    if (s_onLeftPage.load(std::memory_order_acquire)) {
+            //        keysDown |= KEY_RIGHT;
+            //    }
+            //    else if (s_onRightPage.load(std::memory_order_acquire)) {
+            //        keysDown |= KEY_LEFT;
+            //    }
+            //}
+
 
             if (!overrideBackButton) {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
@@ -9895,6 +9913,8 @@ namespace tsl {
                 lastGuiPtr = currentGui.get();  // or just currentGui
             }
             
+            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+
             if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
                 
@@ -9914,6 +9934,7 @@ namespace tsl {
                 singlePressHandled = false;
             }
             
+
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
                 if (!(isNavigatingBackwards.load(std::memory_order_acquire)) && !ult::simulatedBack.load(std::memory_order_acquire) && topElement) {
@@ -10046,24 +10067,7 @@ namespace tsl {
         #else
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
         #endif
-                // Static variables for L/R button timing (simple jump)
-                static bool lWasPressed = false;
-                static bool rWasPressed = false;
-                
-                // Static variables for ZL/ZR button timing and state (skip with hold)
-                static u64 zlButtonPressStart_ns = 0;
-                static u64 zrButtonPressStart_ns = 0;
-                static u64 zlLastHoldTrigger_ns = 0;
-                static u64 zrLastHoldTrigger_ns = 0;
-                static u64 zlLastClickTime_ns = 0;
-                static u64 zrLastClickTime_ns = 0;
-                static bool zlWasPressed = false;
-                static bool zrWasPressed = false;
-                static bool zlHoldTriggered = false;
-                static bool zrHoldTriggered = false;
-                static bool zlInRapidClickMode = false;
-                static bool zrInRapidClickMode = false;
-                
+                // Shared constants used by ZL/ZR buttons
                 static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
                 static constexpr u64 RAPID_CLICK_WINDOW_NS = 500000000ULL;     // 500ms window for rapid clicking
                 static constexpr u64 RAPID_MODE_TIMEOUT_NS = 1000000000ULL;    // 1s timeout to exit rapid mode
@@ -10079,163 +10083,195 @@ namespace tsl {
                 const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
                 // Handle L button (simple jump to top on release)
-                if (lPressed) {
-                    lWasPressed = true;
-                } else {
-                    if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
-                        // Button just released - jump to top
-                        jumpToTop.store(true, std::memory_order_release);
-                        currentGui->requestFocus(topElement, FocusDirection::None);
+                {
+                    static bool lWasPressed = false;
+                    
+                    if (lPressed) {
+                        lWasPressed = true;
+                    } else {
+                        if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
+                            // Button just released - jump to top
+                            jumpToTop.store(true, std::memory_order_release);
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                        }
+                        lWasPressed = false;
                     }
-                    lWasPressed = false;
                 }
                 
                 // Handle R button (simple jump to bottom on release)
-                if (rPressed) {
-                    rWasPressed = true;
-                } else {
-                    if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
-                        // Button just released - jump to bottom
-                        jumpToBottom.store(true, std::memory_order_release);
-                        currentGui->requestFocus(topElement, FocusDirection::None);
+                {
+                    static bool rWasPressed = false;
+                    
+                    if (rPressed) {
+                        rWasPressed = true;
+                    } else {
+                        if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
+                            // Button just released - jump to bottom
+                            jumpToBottom.store(true, std::memory_order_release);
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                        }
+                        rWasPressed = false;
                     }
-                    rWasPressed = false;
-                }
-                
-                // Check if we should exit rapid click mode due to timeout
-                if (zlInRapidClickMode && (currentTime_ns - zlLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                    zlInRapidClickMode = false;
-                }
-                if (zrInRapidClickMode && (currentTime_ns - zrLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                    zrInRapidClickMode = false;
                 }
                 
                 // Handle ZL button (skip up with hold)
-                if (zlPressed) {
-                    if (!zlWasPressed) {
-                        // Button just pressed
-                        const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
-                        
-                        // Enter rapid click mode if clicking within window
-                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                            zlInRapidClickMode = true;
-                        }
-                        
-                        // Only trigger immediately if in rapid click mode
-                        if (zlInRapidClickMode) {
-                            skipUp.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            zlLastClickTime_ns = currentTime_ns;
-                        }
-                        
-                        zlButtonPressStart_ns = currentTime_ns;
-                        zlLastHoldTrigger_ns = currentTime_ns;
-                        zlHoldTriggered = false;
+                {
+                    static u64 zlLastClickTime_ns = 0;
+                    static bool zlWasPressed = false;
+                    static bool zlInRapidClickMode = false;
+                    
+                    // Check if we should exit rapid click mode due to timeout
+                    if (zlInRapidClickMode && (currentTime_ns - zlLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                        zlInRapidClickMode = false;
                     }
                     
-                    // Check for hold behavior - ONLY if in rapid click mode
-                    if (zlInRapidClickMode) {
-                        const u64 holdDuration = currentTime_ns - zlButtonPressStart_ns;
-                        
-                        if (holdDuration >= HOLD_THRESHOLD_NS) {
-                            // Calculate dynamic interval based on hold duration (accelerating)
-                            const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                           (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                            const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                    if (zlPressed) {
+                        if (!zlWasPressed) {
+                            // Button just pressed
+                            const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
                             
-                            const u64 timeSinceLastHoldTrigger = currentTime_ns - zlLastHoldTrigger_ns;
+                            // Enter rapid click mode if clicking within window
+                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
+                                zlInRapidClickMode = true;
+                            }
                             
-                            if (!zlHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
-                                // Trigger skip
+                            // Only trigger immediately if in rapid click mode
+                            if (zlInRapidClickMode) {
                                 skipUp.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
-                                zlHoldTriggered = true;
-                                zlLastHoldTrigger_ns = currentTime_ns;
-                                zlLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                                zlLastClickTime_ns = currentTime_ns;
                             }
                         }
-                    }
-                    
-                    zlWasPressed = true;
-                } else {
-                    if (zlWasPressed && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
-                        // Button just released
                         
-                        // If not in rapid click mode and not a hold, trigger on release
-                        if (!zlInRapidClickMode && !zlHoldTriggered) {
-                            skipUp.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            zlLastClickTime_ns = currentTime_ns;
-                            zlInRapidClickMode = true;  // Enter rapid mode after first release
+                        // Check for hold behavior - ONLY if in rapid click mode
+                        if (zlInRapidClickMode) {
+                            static u64 zlButtonPressStart_ns = 0;
+                            static u64 zlLastHoldTrigger_ns = 0;
+                            static bool zlHoldTriggered = false;
+                            
+                            // Initialize on new press
+                            if (!zlWasPressed) {
+                                zlButtonPressStart_ns = currentTime_ns;
+                                zlLastHoldTrigger_ns = currentTime_ns;
+                                zlHoldTriggered = false;
+                            }
+                            
+                            const u64 holdDuration = currentTime_ns - zlButtonPressStart_ns;
+                            
+                            if (holdDuration >= HOLD_THRESHOLD_NS) {
+                                // Calculate dynamic interval based on hold duration (accelerating)
+                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                               (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                                const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                                
+                                const u64 timeSinceLastHoldTrigger = currentTime_ns - zlLastHoldTrigger_ns;
+                                
+                                if (!zlHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
+                                    // Trigger skip
+                                    skipUp.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                    zlHoldTriggered = true;
+                                    zlLastHoldTrigger_ns = currentTime_ns;
+                                    zlLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                                }
+                            }
                         }
                         
-                        zlHoldTriggered = false;
+                        zlWasPressed = true;
+                    } else {
+                        if (zlWasPressed && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
+                            // Button just released
+                            
+                            // If not in rapid click mode and not a hold, trigger on release
+                            if (!zlInRapidClickMode) {
+                                skipUp.store(true, std::memory_order_release);
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                zlLastClickTime_ns = currentTime_ns;
+                                zlInRapidClickMode = true;  // Enter rapid mode after first release
+                            }
+                        }
+                        zlWasPressed = false;
                     }
-                    zlWasPressed = false;
                 }
                 
                 // Handle ZR button (skip down with hold)
-                if (zrPressed) {
-                    if (!zrWasPressed) {
-                        // Button just pressed
-                        const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
-                        
-                        // Enter rapid click mode if clicking within window
-                        if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                            zrInRapidClickMode = true;
-                        }
-                        
-                        // Only trigger immediately if in rapid click mode
-                        if (zrInRapidClickMode) {
-                            skipDown.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            zrLastClickTime_ns = currentTime_ns;
-                        }
-                        
-                        zrButtonPressStart_ns = currentTime_ns;
-                        zrLastHoldTrigger_ns = currentTime_ns;
-                        zrHoldTriggered = false;
+                {
+                    static u64 zrLastClickTime_ns = 0;
+                    static bool zrWasPressed = false;
+                    static bool zrInRapidClickMode = false;
+                    
+                    // Check if we should exit rapid click mode due to timeout
+                    if (zrInRapidClickMode && (currentTime_ns - zrLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
+                        zrInRapidClickMode = false;
                     }
                     
-                    // Check for hold behavior - ONLY if in rapid click mode
-                    if (zrInRapidClickMode) {
-                        const u64 holdDuration = currentTime_ns - zrButtonPressStart_ns;
-                        
-                        if (holdDuration >= HOLD_THRESHOLD_NS) {
-                            // Calculate dynamic interval based on hold duration (accelerating)
-                            const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                           (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                            const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                    if (zrPressed) {
+                        if (!zrWasPressed) {
+                            // Button just pressed
+                            const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
                             
-                            const u64 timeSinceLastHoldTrigger = currentTime_ns - zrLastHoldTrigger_ns;
+                            // Enter rapid click mode if clicking within window
+                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
+                                zrInRapidClickMode = true;
+                            }
                             
-                            if (!zrHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
-                                // Trigger skip
+                            // Only trigger immediately if in rapid click mode
+                            if (zrInRapidClickMode) {
                                 skipDown.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
-                                zrHoldTriggered = true;
-                                zrLastHoldTrigger_ns = currentTime_ns;
-                                zrLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                                zrLastClickTime_ns = currentTime_ns;
                             }
                         }
-                    }
-                    
-                    zrWasPressed = true;
-                } else {
-                    if (zrWasPressed && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
-                        // Button just released
                         
-                        // If not in rapid click mode and not a hold, trigger on release
-                        if (!zrInRapidClickMode && !zrHoldTriggered) {
-                            skipDown.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
-                            zrLastClickTime_ns = currentTime_ns;
-                            zrInRapidClickMode = true;  // Enter rapid mode after first release
+                        // Check for hold behavior - ONLY if in rapid click mode
+                        if (zrInRapidClickMode) {
+                            static u64 zrButtonPressStart_ns = 0;
+                            static u64 zrLastHoldTrigger_ns = 0;
+                            static bool zrHoldTriggered = false;
+                            
+                            // Initialize on new press
+                            if (!zrWasPressed) {
+                                zrButtonPressStart_ns = currentTime_ns;
+                                zrLastHoldTrigger_ns = currentTime_ns;
+                                zrHoldTriggered = false;
+                            }
+                            
+                            const u64 holdDuration = currentTime_ns - zrButtonPressStart_ns;
+                            
+                            if (holdDuration >= HOLD_THRESHOLD_NS) {
+                                // Calculate dynamic interval based on hold duration (accelerating)
+                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
+                                               (float)holdDuration / (float)ACCELERATION_POINT_NS;
+                                const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                                
+                                const u64 timeSinceLastHoldTrigger = currentTime_ns - zrLastHoldTrigger_ns;
+                                
+                                if (!zrHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
+                                    // Trigger skip
+                                    skipDown.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                    zrHoldTriggered = true;
+                                    zrLastHoldTrigger_ns = currentTime_ns;
+                                    zrLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                                }
+                            }
                         }
                         
-                        zrHoldTriggered = false;
+                        zrWasPressed = true;
+                    } else {
+                        if (zrWasPressed && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
+                            // Button just released
+                            
+                            // If not in rapid click mode and not a hold, trigger on release
+                            if (!zrInRapidClickMode) {
+                                skipDown.store(true, std::memory_order_release);
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                                zrLastClickTime_ns = currentTime_ns;
+                                zrInRapidClickMode = true;  // Enter rapid mode after first release
+                            }
+                        }
+                        zrWasPressed = false;
                     }
-                    zrWasPressed = false;
                 }
             }
             
@@ -10259,29 +10295,39 @@ namespace tsl {
             const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth.load(std::memory_order_acquire);
             
             const float menuRightEdge = 245.0f + ult::layerEdge - 13;
-            const u32 footerY = cfg::FramebufferHeight - 73U +1;
+            const u32 footerY = cfg::FramebufferHeight - 73U + 1;
+            static std::vector<bool> lastSimulatedTouch = {false, false, false, false};
             
             // Touch region calculations
-            ult::touchingBack.store((touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) && 
-                                (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
+            const bool backTouched = (touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) &&
+                                     (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY);
             
-            ult::touchingSelect.store(!ult::noClickableItems.load(std::memory_order_acquire) && 
-                                  (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) && 
-                                  (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
+            const bool selectTouched = !ult::noClickableItems.load(std::memory_order_acquire) &&
+                                       (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) &&
+                                       (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
             
-            //if (tsl::elm::s_safeToSwap.load(std::memory_order_acquire)) {
-            ult::touchingNextPage.store((touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) && 
-                                    (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY), std::memory_order_release);
-            //}
+            const bool nextPageTouched = (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
+                                          (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
             
-            ult::touchingMenu.store((touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) && 
-                                (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U), std::memory_order_release);
-        
+            const bool menuTouched = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
+                                     (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+            
+            ult::touchingBack.store(backTouched, std::memory_order_release);
+            ult::touchingSelect.store(selectTouched, std::memory_order_release);
+            ult::touchingNextPage.store(nextPageTouched, std::memory_order_release);
+            ult::touchingMenu.store(menuTouched, std::memory_order_release);
+            
             if (touchDetected) {
-                //if (!ult::interruptedTouch) ult::interruptedTouch = (keysHeld & ALL_KEYS_MASK) != 0;
-                
-                ult::interruptedTouch.store(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_release);
+                // Update lastSimulatedTouch with current touch states
+                lastSimulatedTouch = {
+                    backTouched, 
+                    selectTouched, 
+                    nextPageTouched, 
+                    menuTouched
+                };
 
+                ult::interruptedTouch.store(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_release);
+            
                 const u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 const u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
                 
@@ -10319,77 +10365,56 @@ namespace tsl {
                 if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
-        #if IS_STATUS_MONITOR_DIRECTIVE
+            #if IS_STATUS_MONITOR_DIRECTIVE
                     if (FullMode && !deactivateOriginalFooter) {
                         this->hide();
                     }
-        #else
+            #else
                     this->hide();
-        #endif
+            #endif
                 }
                 ult::stillTouching.store(true, std::memory_order_release);
             } else {
-
-                // GLOBAL TOUCH DEBOUNCE - Prevent rapid taps faster than 300ms
-                //const u64 timeSinceLastRelease = currentTime_ns - lastTouchReleaseTime_ns;
-                //if (timeSinceLastRelease < TOUCH_DEBOUNCE_NS || !tsl::elm::s_safeToSwap.load(std::memory_order_acquire)) {
-                //    // Too fast - ignore this touch release
-                //    elm::Element::setInputMode(InputMode::Controller);
-                //    oldTouchPos = { 0 };
-                //    initialTouchPos = { 0 };
-                //    touchEvent = elm::TouchEvent::None;
-                //    ult::stillTouching.store(false, std::memory_order_release);
-                //    ult::interruptedTouch.store(false, std::memory_order_release);
-                //    oldTouchDetected = touchDetected;
-                //    oldTouchEvent = touchEvent;
-                //    return; // Skip all touch release processing
-                //}
-                //
-                //// Update last release time for next debounce check
-                //lastTouchReleaseTime_ns = currentTime_ns;
-
-
-                if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
-                    if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
-                        (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
-                        //ult::simulatedBackComplete = false;
-                        //ult::simulatedBack = true;
-                        ult::simulatedBack.store(true, std::memory_order_release);
-                    } else if (!ult::noClickableItems.load(std::memory_order_acquire) && (oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
-                        //ult::simulatedSelectComplete = false;
-                        //ult::simulatedSelect = true;
-                        ult::simulatedSelect.store(true, std::memory_order_release);
-                    } else if ((oldTouchPos.x >= nextPageLeftEdge && oldTouchPos.x < nextPageRightEdge && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY)) {
-                        //u64 currentTimeNs = armTicksToNs(armGetSystemTick());
-                        //u64 timeSinceLastTap = currentTimeNs - lastNextPageTapTime;
-                        //
-                        //if (timeSinceLastTap >= NEXT_PAGE_COOLDOWN_NS) {
-                        //    lastNextPageTapTime = currentTimeNs;
-                        //    //bool expected = false;
-                        //    //ult::simulatedNextPage.compare_exchange_strong(expected, true, std::memory_order_release);
-                        //    ult::simulatedNextPage.exchange(true, std::memory_order_acq_rel);
-                        //    
-                        //}
-                        //if (tsl::elm::s_safeToSwap.load(std::memory_order_acquire))
-                        ult::simulatedNextPage.store(true, std::memory_order_release);
-                    } else if ((oldTouchPos.x > ult::layerEdge && oldTouchPos.x <= menuRightEdge && oldTouchPos.y > 10U && oldTouchPos.y <= 83U) && 
-                               (initialTouchPos.x > ult::layerEdge && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U)) {
-                        //ult::simulatedMenuComplete = false;
-                        //ult::simulatedMenu = true;
-                        ult::simulatedMenu.store(true, std::memory_order_release);
-                    }
-                } else if (interpreterIsRunning) {
-                    if ((oldTouchPos.x >= backLeftEdge && oldTouchPos.x < backRightEdge && oldTouchPos.y > footerY) && 
-                        (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY)) {
-                        this->hide();
-                    } else if ((oldTouchPos.x >= selectLeftEdge && oldTouchPos.x < selectRightEdge && oldTouchPos.y > footerY) && 
-                               (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY)) {
-                        ult::externalAbortCommands.store(true, std::memory_order_release);
+                // Process touch release using stored touch states - no need to recalculate boundaries
+                for (int i = 0; i < 4; ++i) {
+                    if (lastSimulatedTouch[i]) {
+                        if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
+                            switch (i) {
+                                case 0: // Back button
+                                    ult::simulatedBack.store(true, std::memory_order_release);
+                                    break;
+                                case 1: // Select button
+                                    ult::simulatedSelect.store(true, std::memory_order_release);
+                                    break;
+                                case 2: // Next page button
+                                    ult::simulatedNextPage.store(true, std::memory_order_release);
+                                    break;
+                                case 3: // Menu button
+                                    ult::simulatedMenu.store(true, std::memory_order_release);
+                                    break;
+                            }
+                        } else if (interpreterIsRunning) {
+                            switch (i) {
+                                case 0: // Back button when interpreter is running
+                                    this->hide();
+                                    break;
+                                case 1: // Select button when interpreter is running
+                                    ult::externalAbortCommands.store(true, std::memory_order_release);
+                                    break;
+                                // cases 2 and 3 don't have interpreter running logic in original code
+                            }
+                        }
                     }
                 }
                 
+                // Update lastSimulatedTouch with current touch states
+                lastSimulatedTouch = {
+                    false, 
+                    false, 
+                    false, 
+                    false
+                };
+
                 elm::Element::setInputMode(InputMode::Controller);
                 
                 oldTouchPos = { 0 };
@@ -10398,7 +10423,7 @@ namespace tsl {
                 ult::stillTouching.store(false, std::memory_order_release);
                 ult::interruptedTouch.store(false, std::memory_order_release);
             }
-
+            
             oldTouchDetected = touchDetected;
             oldTouchEvent = touchEvent;
 
@@ -10509,7 +10534,7 @@ namespace tsl {
             isNavigatingBackwards.store(false, std::memory_order_release);
 
             // cache frame for forward rendering using external list method (to be implemented)
-            
+
             // Create the top element of the new Gui
             gui->m_topElement = gui->createUI();
 

@@ -110,6 +110,7 @@ namespace ult {
     extern std::atomic<bool> launchingOverlay;
     extern std::atomic<bool> settingsInitialized;
     extern std::atomic<bool> currentForeground;
+    extern std::mutex simulatedNextPageMutex;
 
     //void loadOverlayKeyCombos();
     //std::string getOverlayForKeyCombo(u64 keys);

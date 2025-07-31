@@ -39,7 +39,7 @@ namespace ult {
     std::atomic<bool> launchingOverlay(false);
     std::atomic<bool> settingsInitialized(false);
     std::atomic<bool> currentForeground(false);
-
+    std::mutex simulatedNextPageMutex;
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
