@@ -2273,7 +2273,7 @@ namespace tsl {
                 s32 y_curr, x_curr;
                 s32 dy, dy_sq, x_offset_sq;
                 s32 x_offset, row_start, row_end;
-                u32 pixel_offset;
+                //u32 pixel_offset;
                 
                 // Main drawing loop
                 for (y_curr = clip_top; y_curr < clip_bottom; ++y_curr) {
@@ -2328,8 +2328,9 @@ namespace tsl {
                     if (fullOpacity) {
                         // Use setPixel for full opacity
                         for (x_curr = row_start; x_curr < row_end; ++x_curr) {
-                            
-                            this->setPixelAtOffset(pixel_offset, color);
+                            //this->setPixel(x_curr, y_curr, color);
+                            //const u32 pixel_offset = this->getPixelOffset(x, y);
+                            this->setPixelAtOffset(this->getPixelOffset(x_curr, y_curr), color);
                         }
                     } else {
                         // Blended drawing
@@ -7655,14 +7656,14 @@ namespace tsl {
                     this->m_touched = false;
         
                     if (Element::getInputMode() == InputMode::Touch) {
-                        bool handled = this->onClick(HidNpadButton_A);
+                        bool handled = this->onClick(KEY_A);
         
                         this->m_clickAnimationProgress = 0;
                         return handled;
                     }
                 }
-        
-        
+                
+                
                 return false;
             }
         
@@ -7790,7 +7791,7 @@ namespace tsl {
             virtual bool onClick(u64 keys) override {
 
                 // Handle KEY_A for toggling
-                if (keys & HidNpadButton_A) {
+                if (keys & KEY_A) {
                     this->m_state = !this->m_state;
                     
                     this->setState(this->m_state);
@@ -8007,10 +8008,10 @@ namespace tsl {
             }
 
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
+                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                     return true;
 
-                if (keysHeld & HidNpadButton_AnyLeft) {
+                if (keysHeld & KEY_LEFT) {
                     if (this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
@@ -8018,7 +8019,7 @@ namespace tsl {
                     }
                 }
 
-                if (keysHeld & HidNpadButton_AnyRight) {
+                if (keysHeld & KEY_RIGHT) {
                     if (this->m_value < 100) {
                         this->m_value++;
                         this->m_valueChangedListener(this->m_value);
@@ -8312,16 +8313,16 @@ namespace tsl {
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
 
-                if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
+                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
                     tick = 0;
                     return true;
                 }
 
-                if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
                     if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
-                        if (keysHeld & HidNpadButton_AnyLeft && this->m_value > 0) {
+                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
                             this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
-                        } else if (keysHeld & HidNpadButton_AnyRight && this->m_value < 100) {
+                        } else if (keysHeld & KEY_RIGHT && this->m_value < 100) {
                             this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
                         } else {
                             return false;
@@ -8691,7 +8692,7 @@ namespace tsl {
                 }
 
                 // Check if KEY_A is pressed to toggle ult::allowSlide
-                if (keysDown & KEY_A) {
+                if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
                     if (!m_unlockedTrackbar) {
                         //ult::allowSlide = !ult::allowSlide;
                         //ult::allowSlide.fetch_xor(true, std::memory_order_acq_rel);
@@ -8706,7 +8707,7 @@ namespace tsl {
                 }
         
                 // Handle SCRIPT_KEY press
-                if (keysDown & SCRIPT_KEY) {
+                if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
                         m_scriptKeyListener();
                     }
@@ -8717,8 +8718,8 @@ namespace tsl {
                 // Allow sliding only if KEY_A has been pressed
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
         
-                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
-                        (wasLastHeld && !((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight)))) {
+                    if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) ||
+                        (wasLastHeld && !((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT)))) {
         
                         wasLastHeld = false;
                         updateAndExecute();
@@ -8728,10 +8729,10 @@ namespace tsl {
                         return true;
                     }
                     
-                    if (keysDown & HidNpadButton_AnyLeft && keysDown & HidNpadButton_AnyRight)
+                    if (keysDown & KEY_LEFT && keysDown & KEY_RIGHT)
                         return true;
         
-                    if (keysDown & HidNpadButton_AnyLeft) {
+                    if (keysDown & KEY_LEFT) {
                         if (this->m_value > m_minValue) {
                             this->m_index--;
                             this->m_value--;
@@ -8742,7 +8743,7 @@ namespace tsl {
                         }
                     }
                     
-                    if (keysDown & HidNpadButton_AnyRight) {
+                    if (keysDown & KEY_RIGHT) {
                         if (this->m_value < m_maxValue) {
                             this->m_index++;
                             this->m_value++;
@@ -8755,11 +8756,11 @@ namespace tsl {
         
         
         
-                    if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight)
+                    if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                         return true;
                     
                     // Check if the button is being held down
-                    if (((keysHeld & HidNpadButton_AnyLeft) || (keysHeld & HidNpadButton_AnyRight))) {
+                    if (((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
                         
                         if (!holding) {
                             holding = true;
@@ -8780,7 +8781,7 @@ namespace tsl {
                         const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
                         
                         if (elapsed_ns >= currentInterval_ns) {
-                            if (keysHeld & HidNpadButton_AnyLeft) {
+                            if (keysHeld & KEY_LEFT) {
                                 if (this->m_value > m_minValue) {
                                     this->m_index--;
                                     this->m_value--;
@@ -8794,7 +8795,7 @@ namespace tsl {
                                 }
                             }
                             
-                            if (keysHeld & HidNpadButton_AnyRight) {
+                            if (keysHeld & KEY_RIGHT) {
                                 if (this->m_value < m_maxValue) {
                                     this->m_index++;
                                     this->m_value++;
@@ -9148,7 +9149,7 @@ namespace tsl {
                 }
 
                 // Check if KEY_A is pressed to toggle ult::allowSlide
-                if ((keysDown & KEY_A)) {
+                if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
                     if (!m_unlockedTrackbar) {
                         //ult::allowSlide = !ult::allowSlide;
                         //ult::allowSlide.fetch_xor(true, std::memory_order_acq_rel);
@@ -9166,7 +9167,7 @@ namespace tsl {
                 }
 
                 // Handle SCRIPT_KEY press
-                if (keysDown & SCRIPT_KEY) {
+                if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
                         m_scriptKeyListener();
                     }
@@ -9174,8 +9175,8 @@ namespace tsl {
                 }
 
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
-                    if (((keysReleased & HidNpadButton_AnyLeft) || (keysReleased & HidNpadButton_AnyRight)) ||
-                        (wasLastHeld && !(keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)))) {
+                    if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) ||
+                        (wasLastHeld && !(keysHeld & (KEY_LEFT | KEY_RIGHT)))) {
                         //if (!m_executeOnEveryTick)
                         updateAndExecute();
                         holding = false;
@@ -9184,16 +9185,16 @@ namespace tsl {
                         return true;
                     }
 
-                    //if ((keysDown & HidNpadButton_AnyLeft) || (keysDown & HidNpadButton_AnyRight)) {
+                    //if ((keysDown & KEY_LEFT) || (keysDown & KEY_RIGHT)) {
                     //    tick = 0;
                     //}
                     
-                    if (keysHeld & HidNpadButton_AnyLeft && keysHeld & HidNpadButton_AnyRight) {
+                    if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
                         tick = 0;
                         return true;
                     }
                     
-                    if (keysHeld & (HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                    if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
                         if (!holding) {
                             holding = true;
                             tick = 0;
@@ -9201,11 +9202,11 @@ namespace tsl {
                         
                         if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                             const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
-                            if (keysHeld & HidNpadButton_AnyLeft && this->m_index > 0) {
+                            if (keysHeld & KEY_LEFT && this->m_index > 0) {
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                                 //this->m_value = static_cast<s16>(std::max(std::round(this->m_value - stepSize), static_cast<float>(m_minValue)));
-                            } else if (keysHeld & HidNpadButton_AnyRight && this->m_index < this->m_numSteps-1) {
+                            } else if (keysHeld & KEY_RIGHT && this->m_index < this->m_numSteps-1) {
                                 this->m_index++;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                                 //this->m_value = static_cast<s16>(std::min(std::round(this->m_value + stepSize), static_cast<float>(m_maxValue)));
@@ -9855,13 +9856,13 @@ namespace tsl {
             const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (interpreterIsRunning) {
-                if (keysDown & KEY_UP && !(keysDown & ~KEY_UP & ALL_KEYS_MASK))
+                if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Up);
-                else if (keysDown & KEY_DOWN && !(keysDown & ~KEY_DOWN & ALL_KEYS_MASK))
+                else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Down);
-                else if (keysDown & KEY_LEFT && !(keysDown & ~KEY_LEFT & ALL_KEYS_MASK))
+                else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Left);
-                else if (keysDown & KEY_RIGHT && !(keysDown & ~KEY_RIGHT & ALL_KEYS_MASK))
+                else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
                     currentFocus->shakeHighlight(FocusDirection::Right);
             }
         #endif
@@ -9941,12 +9942,12 @@ namespace tsl {
             if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
                 
-                if (!currentGui->initialFocusSet() || keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+                if (!currentGui->initialFocusSet() || keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
                 }
             }
-            if (isNavigatingBackwards.load(std::memory_order_acquire) && !currentFocus && topElement && keysDown & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight)) {
+            if (isNavigatingBackwards.load(std::memory_order_acquire) && !currentFocus && topElement && keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
                 currentGui->requestFocus(topElement, FocusDirection::None);
                 currentGui->markInitialFocusSet();
                 isNavigatingBackwards.store(false, std::memory_order_release);
