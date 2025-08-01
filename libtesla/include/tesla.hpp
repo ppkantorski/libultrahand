@@ -1558,7 +1558,6 @@ namespace tsl {
             inline void setPixel(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset != UINT32_MAX) [[likely]] {
-                    setPixelAtOffset(offset, color);
                     Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
                     framebuffer[offset] = color;
                 }
