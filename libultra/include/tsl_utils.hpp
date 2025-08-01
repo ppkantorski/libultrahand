@@ -110,7 +110,7 @@ namespace ult {
     extern std::atomic<bool> launchingOverlay;
     extern std::atomic<bool> settingsInitialized;
     extern std::atomic<bool> currentForeground;
-    extern std::mutex simulatedNextPageMutex;
+    //extern std::mutex simulatedNextPageMutex;
 
     //void loadOverlayKeyCombos();
     //std::string getOverlayForKeyCombo(u64 keys);
@@ -301,6 +301,8 @@ namespace ult {
     
     extern const std::string whiteColor;
     extern const std::string blackColor;
+
+    extern std::atomic<bool> languageWasChanged;
     
     inline constexpr double _M_PI = 3.14159265358979323846;  // For double precision
     inline constexpr double RAD_TO_DEG = 180.0f / _M_PI;
@@ -562,6 +564,8 @@ namespace ult {
     extern std::atomic<bool> touchingSelect;
     extern std::atomic<bool> touchingNextPage;
     extern std::atomic<bool> touchingMenu;
+    extern std::atomic<bool> shortTouchAndRelease;
+    extern std::atomic<bool> longTouchAndRelease;
     extern std::atomic<bool> simulatedBack;
     //extern bool simulatedBackComplete;
     extern std::atomic<bool> simulatedSelect;

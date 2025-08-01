@@ -1555,11 +1555,18 @@ namespace tsl {
              * @param y Y pos
              * @param color Color
              */
-            inline void setPixel(const u32 x, const u32 y, const Color& color, const u32 offset) {
+            inline void setPixel(const u32 x, const u32 y, const Color& color) {
+                const u32 offset = this->getPixelOffset(x, y);
                 if (offset != UINT32_MAX) [[likely]] {
+                    setPixelAtOffset(offset, color);
                     Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
                     framebuffer[offset] = color;
                 }
+            }
+
+            inline void setPixelAtOffset(const u32 offset, const Color& color) {
+                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                framebuffer[offset] = color;
             }
 
 
@@ -1655,7 +1662,7 @@ namespace tsl {
                     end.b = blendColor(src.b, blue[i], currentAlpha);
                     end.a = (currentAlpha + (src.a * invAlpha >> 4));
                     
-                    this->setPixel(currentX, baseY, end, offset);
+                    this->setPixelAtOffset(offset, end);
                 }
             }
 
@@ -2322,8 +2329,8 @@ namespace tsl {
                     if (fullOpacity) {
                         // Use setPixel for full opacity
                         for (x_curr = row_start; x_curr < row_end; ++x_curr) {
-                            pixel_offset = this->getPixelOffset(x_curr, y_curr);
-                            this->setPixel(x_curr, y_curr, color, pixel_offset);
+                            
+                            this->setPixelAtOffset(pixel_offset, color);
                         }
                     } else {
                         // Blended drawing
@@ -2432,7 +2439,7 @@ namespace tsl {
                                     src.a
                                 };
                             
-                                this->setPixel(pixelX, baseY, end, offset);
+                                this->setPixelAtOffset(offset, end);
                             }
                         }
                     }
@@ -3064,7 +3071,7 @@ namespace tsl {
                 
                 // Draw clock
                 if (!ult::hideClock) {
-                    if (currentTime != lastTimeUpdate) {
+                    if (currentTime != lastTimeUpdate || ult::languageWasChanged.load(std::memory_order_acquire)) {
                         strftime(timeStr, sizeof(timeStr), ult::datetimeFormat.c_str(), localtime(&currentTime));
                         ult::localizeTimeStr(timeStr);
                         lastTimeUpdate = currentTime;
@@ -3271,7 +3278,7 @@ namespace tsl {
                         if (alpha) {
                             pixelX = xPos + bmpX;
                             if (alpha == 0xF) {
-                                this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
+                                this->setPixel(pixelX, pixelY, color);
                             } else {
                                 this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                             }
@@ -3284,7 +3291,7 @@ namespace tsl {
                         if (alpha) {
                             pixelX = xPos + bmpX;
                             if (alpha == 0xF) {
-                                this->setPixel(pixelX, pixelY, color, this->getPixelOffset(pixelX, pixelY));
+                                this->setPixel(pixelX, pixelY, color);
                             } else {
                                 this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                             }
@@ -4818,7 +4825,6 @@ namespace tsl {
 
                 // Compute gap width once from GAP_1 and derive halfGap
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                ult::halfGap = gapWidth / 2.0f;
                 
                 // Calculate text widths for buttons depending on launch mode and interpreter state
                 #if IS_LAUNCHER_DIRECTIVE
@@ -4833,23 +4839,31 @@ namespace tsl {
                         "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 #endif
                 
+                const float _halfGap = gapWidth / 2.0f;
+                if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
+                    ult::halfGap.store(_halfGap, std::memory_order_release);
+
                 // Total button widths include half-gap padding on both sides
-                ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_release);
-                ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_release);
+                const float _backWidth = backTextWidth + gapWidth;
+                if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
+                    ult::backWidth.store(_backWidth, std::memory_order_release);
+                const float _selectWidth = selectTextWidth + gapWidth;
+                if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
+                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
                 // Set initial button position
-                const float buttonStartX = ult::halfGap;
+                const float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
                 // Draw back button if touched
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(buttonStartX, buttonY, ult::backWidth.load(std::memory_order_acquire), 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 // Draw select button (to the right of back) if touched
                 if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX + ult::backWidth.load(std::memory_order_acquire), buttonY,
-                                              ult::selectWidth, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
+                                              _selectWidth-2, 73.0f, 10.0f, a(clickColor));
                 }
                 
                 #if IS_LAUNCHER_DIRECTIVE
@@ -4857,8 +4871,7 @@ namespace tsl {
                 if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
                                                  !m_pageLeftName.empty() || !m_pageRightName.empty())) {
                     // Construct next-page label inline without creating temporary strings
-                    ult::nextPageWidth.store(
-                        renderer->getTextDimensions(
+                    const float _nextPageWidth = renderer->getTextDimensions(
                             !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
                             !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
                             (ult::inMainMenu.load(std::memory_order_acquire) ?
@@ -4868,18 +4881,19 @@ namespace tsl {
                                 ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ?
                                     ult::PACKAGES : ult::OVERLAYS_ABBR)) :
                                 ""),
-                            false, 23).first + gapWidth,
-                        std::memory_order_release
-                    );
+                            false, 23).first + gapWidth;
+
+                    if (_nextPageWidth != ult::nextPageWidth.load(std::memory_order_acquire))
+                        ult::nextPageWidth.store(_nextPageWidth, std::memory_order_release);
                 
                     // Draw next-page button if touched
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
-                        float nextX = buttonStartX + ult::backWidth.load(std::memory_order_acquire);
+                        float nextX = buttonStartX+2 - _halfGap + _backWidth +1;
                         if (!m_noClickableItems)
-                            nextX += ult::selectWidth.load(std::memory_order_acquire);
+                            nextX += _selectWidth;
                 
                         renderer->drawRoundedRect(nextX, buttonY,
-                                                  ult::nextPageWidth.load(std::memory_order_acquire),
+                                                  _nextPageWidth-2,
                                                   73.0f, 10.0f, a(clickColor));
                     }
                 }
@@ -4926,7 +4940,7 @@ namespace tsl {
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
-                                                        buttonStartX + ult::halfGap, 693, 23, 
+                                                        buttonStartX, 693, 23, 
                                                         (bottomTextColor), (buttonColor));
             
             #if USING_FPS_INDICATOR_DIRECTIVE
@@ -5058,7 +5072,7 @@ namespace tsl {
                 ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_relaxed);
             
                 // Use consistent edge padding equal to halfGap
-                const float buttonStartX = ult::halfGap.load(std::memory_order_relaxed);
+                const float buttonStartX = ult::halfGap.load(std::memory_order_relaxed) - 5;
             
                 // Draw back button rectangle
                 if (ult::touchingBack.load(std::memory_order_acquire)) {
@@ -6890,7 +6904,7 @@ namespace tsl {
             u64 m_touchStartTime_ns;
         
         #if IS_LAUNCHER_DIRECTIVE
-            ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = false)
+            ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey)
             
             {
@@ -7353,10 +7367,13 @@ namespace tsl {
                 const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f; // More efficient than division
                 
-                if (touchDurationInSeconds >= 1.0f) [[unlikely]] {
+                if (touchDurationInSeconds >= 0.7f) [[unlikely]] {
+                    ult::longTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : STAR_KEY;
                 }
                 if (touchDurationInSeconds >= 0.3f) [[unlikely]] {
+                    if (useScriptKey)
+                        ult::shortTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : SETTINGS_KEY;
                 }
                 return KEY_A;
@@ -9803,10 +9820,9 @@ namespace tsl {
             static bool oldTouchDetected = false;
             static elm::TouchEvent touchEvent, oldTouchEvent;
         
-            static u64 buttonPressTime_ns = 0, lastKeyEventTime_ns = 0;
+            static u64 buttonPressTime_ns = 0, lastKeyEventTime_ns = 0, keyEventInterval_ns = 67000000ULL;
             static bool singlePressHandled = false;
-            static constexpr u64 clickThreshold_ns = 340000000ULL; // 340ms in nanoseconds
-            static u64 keyEventInterval_ns = 67000000ULL; // 67ms in nanoseconds
+            static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL; // 340ms in nanoseconds
             
 
 
@@ -9821,6 +9837,14 @@ namespace tsl {
 
             // Return early if current GUI is not available or internal touch is not released
             if (!currentGui || !ult::internalTouchReleased.load(std::memory_order_acquire)) {
+
+                elm::Element::setInputMode(InputMode::Controller);
+                
+                oldTouchPos = { 0 };
+                initialTouchPos = { 0 };
+                touchEvent = elm::TouchEvent::None;
+                ult::stillTouching.store(false, std::memory_order_release);
+                ult::interruptedTouch.store(false, std::memory_order_release);
                 return;
             }
 
@@ -9849,7 +9873,7 @@ namespace tsl {
                     ult::simulatedSelect.store(false, std::memory_order_release);
                     keysDown |= KEY_A;
                 }
-                else if (ult::simulatedBack.load(std::memory_order_acquire)) {
+                if (ult::simulatedBack.load(std::memory_order_acquire)) {
                     ult::simulatedBack.store(false, std::memory_order_release);
                     keysDown |= KEY_B;
                 }
@@ -9866,7 +9890,7 @@ namespace tsl {
             } else {
                 if (ult::simulatedSelect.load(std::memory_order_acquire))
                     ult::simulatedSelect.store(false, std::memory_order_release);
-                else if (ult::simulatedBack.load(std::memory_order_acquire))
+                if (ult::simulatedBack.load(std::memory_order_acquire))
                     ult::simulatedBack.store(false, std::memory_order_release);
             }
         #else
@@ -9875,7 +9899,7 @@ namespace tsl {
                 keysDown |= KEY_A;
             }
 
-            else if (ult::simulatedBack.load(std::memory_order_acquire)) {
+            if (ult::simulatedBack.load(std::memory_order_acquire)) {
                 ult::simulatedBack.store(false, std::memory_order_release);
                 keysDown |= KEY_B;
                 //ult::simulatedBack = false;
@@ -9937,7 +9961,7 @@ namespace tsl {
 
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!(isNavigatingBackwards.load(std::memory_order_acquire)) && !ult::simulatedBack.load(std::memory_order_acquire) && topElement) {
+                if (!isNavigatingBackwards.load(std::memory_order_acquire) && !ult::shortTouchAndRelease.load(std::memory_order_acquire) && !ult::longTouchAndRelease.load(std::memory_order_acquire) && !ult::simulatedSelect.load(std::memory_order_acquire) && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -9946,7 +9970,29 @@ namespace tsl {
                         currentGui->requestFocus(topElement, FocusDirection::None);
                     }
                 }
+                else if (ult::longTouchAndRelease.load(std::memory_order_acquire)) {
+                    ult::longTouchAndRelease.store(false, std::memory_order_release);
+                    hasScrolled = true;
+                } else if (ult::shortTouchAndRelease.load(std::memory_order_acquire)) { // cant be handled correctly without knowing where it is going after release
+                    ult::shortTouchAndRelease.store(false, std::memory_order_release);
+                    hasScrolled = true;
+                }
             }
+
+            //if (!currentFocus && !touchDetected && (!oldTouchDetected || (oldTouchEvent == elm::TouchEvent::Scroll))) {
+            //    if (!isNavigatingBackwards.load(std::memory_order_acquire) && !ult::longTouchAndRelease.load(std::memory_order_acquire) && !ult::simulatedSelect.load(std::memory_order_acquire) && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
+            //        if (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll) {
+            //            hasScrolled = true;
+            //        }
+            //        if (!hasScrolled) {
+            //            currentGui->removeFocus();
+            //            currentGui->requestFocus(topElement, FocusDirection::None);
+            //        }
+            //    }
+            //    else if (ult::longTouchAndRelease.load(std::memory_order_acquire)) {
+            //        ult::longTouchAndRelease.store(false, std::memory_order_release);
+            //    }
+            //}
             
             bool handled = false;
             elm::Element* parentElement = currentFocus;
@@ -10002,7 +10048,7 @@ namespace tsl {
                         const u64 durationSincePress_ns = currentTime_ns - buttonPressTime_ns;
                         const u64 durationSinceLastEvent_ns = currentTime_ns - lastKeyEventTime_ns;
                         
-                        if (!singlePressHandled && durationSincePress_ns >= clickThreshold_ns) {
+                        if (!singlePressHandled && durationSincePress_ns >= CLICK_THRESHOLD_NS) {
                             singlePressHandled = true;
                         }
                         
@@ -10283,7 +10329,7 @@ namespace tsl {
 
             // Cache common calculations
             // Use consistent edge padding equal to halfGap (matching drawing code)
-            const float edgePadding = ult::halfGap.load(std::memory_order_acquire);
+            const float edgePadding = ult::halfGap.load(std::memory_order_acquire) - 5;
             const float buttonStartX = edgePadding;
             
             // Calculate button positions matching the drawing code

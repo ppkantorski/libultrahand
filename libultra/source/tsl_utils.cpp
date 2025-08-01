@@ -39,7 +39,7 @@ namespace ult {
     std::atomic<bool> launchingOverlay(false);
     std::atomic<bool> settingsInitialized(false);
     std::atomic<bool> currentForeground(false);
-    std::mutex simulatedNextPageMutex;
+    //std::mutex simulatedNextPageMutex;
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
@@ -372,6 +372,8 @@ namespace ult {
     CONSTEXPR_STRING std::string whiteColor = "#FFFFFF";
     CONSTEXPR_STRING std::string blackColor = "#000000";
     
+    std::atomic<bool> languageWasChanged{false};
+
     #if IS_LAUNCHER_DIRECTIVE
     std::string ENGLISH = "English";
     std::string SPANISH = "Spanish";
@@ -1287,6 +1289,8 @@ namespace ult {
     std::atomic<bool> touchingSelect(false);
     std::atomic<bool> touchingNextPage(false);
     std::atomic<bool> touchingMenu(false);
+    std::atomic<bool> shortTouchAndRelease(false);
+    std::atomic<bool> longTouchAndRelease(false);
     std::atomic<bool> simulatedBack(false);
     //bool simulatedBackComplete = true;
     std::atomic<bool> simulatedSelect(false);
