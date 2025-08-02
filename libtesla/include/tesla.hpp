@@ -4814,9 +4814,9 @@ namespace tsl {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
                 #if USING_WIDGET_DIRECTIVE
-                    renderer->drawWidget();
+                renderer->drawWidget();
                 #endif
-                }
+                
                 renderer->drawString(m_title, false, 20, 52, 32, (defaultOverlayColor));
                 renderer->drawString(m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
             #endif
@@ -8686,7 +8686,9 @@ namespace tsl {
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
                 
                 static bool wasLastHeld = false;
-        
+
+                m_keyRHeld = (keysHeld & KEY_R) != 0;
+
                 if ((keysHeld & KEY_R)) {
                     return true;
                 }
@@ -8883,17 +8885,23 @@ namespace tsl {
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
                 
                 
+                // Determine visual appearance: look locked if KEY_R is held and trackbar is unlocked
+                bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
+                bool visuallyUnlocked = (m_unlockedTrackbar && !m_keyRHeld) || touchInSliderBounds;
+                
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
-                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a(visuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    // For focused state, check both allowSlide and visual unlock state
+                    bool focusedVisuallyUnlocked = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked;
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(focusedVisuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
                  
                 std::string labelPart = this->m_label;
@@ -8974,8 +8982,10 @@ namespace tsl {
                     }
             
                 } else {
-            
-                    if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
+                    // Determine if should appear locked: unlocked trackbar with KEY_R held
+                    bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
+                    
+                    if ((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked) {
                         // High precision floating point color interpolation for unlocked trackbar
                         highlightColor = {
                             static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r + 0.5),
@@ -8984,7 +8994,7 @@ namespace tsl {
                             0xF
                         };
                     } else {
-                        // High precision floating point color interpolation for locked trackbar
+                        // High precision floating point color interpolation for locked trackbar (or visually locked)
                         highlightColor = {
                             static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r + 0.5),
                             static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g + 0.5),
@@ -8993,7 +9003,7 @@ namespace tsl {
                         };
                     }
                 }
-                
+                            
                 x = 0;
                 y = 0;
                 
@@ -9091,6 +9101,7 @@ namespace tsl {
             s16 m_maxValue;
             std::string m_units;
             bool m_interactionLocked = false;
+            bool m_keyRHeld = false;  // Track KEY_R state for visual appearance
             
             std::function<void(u8)> m_valueChangedListener = [](u8) {};
         
@@ -9133,31 +9144,28 @@ namespace tsl {
                 : TrackBarV2(label, packagePath, minValue, maxValue, units, executeCommands, sourceReplacementFunc, cmd, selCmd, !usingNamedStepTrackbar, usingNamedStepTrackbar, numSteps, unlockedTrackbar, executeOnEveryTick) {}
             
             virtual ~StepTrackBarV2() {}
-
+            
             virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
                 static bool holding = false;
                 static u64 prevKeysHeld = 0;
                 const u64 keysReleased = prevKeysHeld & ~keysHeld;
                 prevKeysHeld = keysHeld;
-                //static bool usingUnlockedTrackbar = m_unlockedTrackbar;
-
+            
                 static bool wasLastHeld = false;
-
+            
+                // ADD THIS LINE: Update KEY_R state for visual appearance
+                m_keyRHeld = (keysHeld & KEY_R) != 0;
+            
                 if ((keysHeld & KEY_R)) {
                     return true;
                 }
-
+            
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
                     if (!m_unlockedTrackbar) {
-                        //ult::allowSlide = !ult::allowSlide;
-                        //ult::allowSlide.fetch_xor(true, std::memory_order_acq_rel);
                         ult::atomicToggle(ult::allowSlide);
                         holding = false; // Reset holding state when KEY_A is pressed
-                    //} else {
-                    //    m_unlockedTrackbar = !m_unlockedTrackbar;
-                    //    holding = false; // Reset holding state when KEY_A is pressed
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         updateAndExecute();
@@ -9165,7 +9173,7 @@ namespace tsl {
                     }
                     return true;
                 }
-
+            
                 // Handle SCRIPT_KEY press
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
@@ -9173,21 +9181,16 @@ namespace tsl {
                     }
                     return true;
                 }
-
+            
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
                     if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) ||
                         (wasLastHeld && !(keysHeld & (KEY_LEFT | KEY_RIGHT)))) {
-                        //if (!m_executeOnEveryTick)
                         updateAndExecute();
                         holding = false;
                         wasLastHeld = false;
                         tick = 0;
                         return true;
                     }
-
-                    //if ((keysDown & KEY_LEFT) || (keysDown & KEY_RIGHT)) {
-                    //    tick = 0;
-                    //}
                     
                     if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
                         tick = 0;
@@ -9205,11 +9208,9 @@ namespace tsl {
                             if (keysHeld & KEY_LEFT && this->m_index > 0) {
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
-                                //this->m_value = static_cast<s16>(std::max(std::round(this->m_value - stepSize), static_cast<float>(m_minValue)));
                             } else if (keysHeld & KEY_RIGHT && this->m_index < this->m_numSteps-1) {
                                 this->m_index++;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
-                                //this->m_value = static_cast<s16>(std::min(std::round(this->m_value + stepSize), static_cast<float>(m_maxValue)));
                             } else {
                                 return false;
                             }
@@ -10128,33 +10129,47 @@ namespace tsl {
                 const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
                 const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
-                // Handle L button (simple jump to top on release)
+                // Handle L button (simple jump to top on release, but not if held too long)
                 {
                     static bool lWasPressed = false;
+                    static u64 lButtonPressStart_ns = 0;
                     
                     if (lPressed) {
+                        if (!lWasPressed) {
+                            lButtonPressStart_ns = currentTime_ns;
+                        }
                         lWasPressed = true;
                     } else {
                         if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
-                            // Button just released - jump to top
-                            jumpToTop.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            // Button just released - only jump to top if not held too long
+                            const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
+                            if (holdDuration < HOLD_THRESHOLD_NS) {
+                                jumpToTop.store(true, std::memory_order_release);
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                            }
                         }
                         lWasPressed = false;
                     }
                 }
                 
-                // Handle R button (simple jump to bottom on release)
+                // Handle R button (simple jump to bottom on release, but not if held too long)
                 {
                     static bool rWasPressed = false;
+                    static u64 rButtonPressStart_ns = 0;
                     
                     if (rPressed) {
+                        if (!rWasPressed) {
+                            rButtonPressStart_ns = currentTime_ns;
+                        }
                         rWasPressed = true;
                     } else {
                         if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
-                            // Button just released - jump to bottom
-                            jumpToBottom.store(true, std::memory_order_release);
-                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            // Button just released - only jump to bottom if not held too long
+                            const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
+                            if (holdDuration < HOLD_THRESHOLD_NS) {
+                                jumpToBottom.store(true, std::memory_order_release);
+                                currentGui->requestFocus(topElement, FocusDirection::None);
+                            }
                         }
                         rWasPressed = false;
                     }
@@ -10165,6 +10180,7 @@ namespace tsl {
                     static u64 zlLastClickTime_ns = 0;
                     static bool zlWasPressed = false;
                     static bool zlInRapidClickMode = false;
+                    static u64 zlFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
                     // Check if we should exit rapid click mode due to timeout
                     if (zlInRapidClickMode && (currentTime_ns - zlLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
@@ -10175,6 +10191,11 @@ namespace tsl {
                         if (!zlWasPressed) {
                             // Button just pressed
                             const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
+                            
+                            // Track press start time for first clicks (when not in rapid mode)
+                            if (!zlInRapidClickMode) {
+                                zlFirstClickPressStart_ns = currentTime_ns;
+                            }
                             
                             // Enter rapid click mode if clicking within window
                             if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
@@ -10228,12 +10249,17 @@ namespace tsl {
                         if (zlWasPressed && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
                             // Button just released
                             
-                            // If not in rapid click mode and not a hold, trigger on release
+                            // If not in rapid click mode, check hold duration before triggering (first click only)
                             if (!zlInRapidClickMode) {
-                                skipUp.store(true, std::memory_order_release);
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                zlLastClickTime_ns = currentTime_ns;
-                                zlInRapidClickMode = true;  // Enter rapid mode after first release
+                                const u64 holdDuration = currentTime_ns - zlFirstClickPressStart_ns;
+                                
+                                // Only trigger if not held too long
+                                if (holdDuration < HOLD_THRESHOLD_NS) {
+                                    skipUp.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                    zlLastClickTime_ns = currentTime_ns;
+                                    zlInRapidClickMode = true;  // Enter rapid mode after first release
+                                }
                             }
                         }
                         zlWasPressed = false;
@@ -10245,6 +10271,7 @@ namespace tsl {
                     static u64 zrLastClickTime_ns = 0;
                     static bool zrWasPressed = false;
                     static bool zrInRapidClickMode = false;
+                    static u64 zrFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
                     // Check if we should exit rapid click mode due to timeout
                     if (zrInRapidClickMode && (currentTime_ns - zrLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
@@ -10255,6 +10282,11 @@ namespace tsl {
                         if (!zrWasPressed) {
                             // Button just pressed
                             const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
+                            
+                            // Track press start time for first clicks (when not in rapid mode)
+                            if (!zrInRapidClickMode) {
+                                zrFirstClickPressStart_ns = currentTime_ns;
+                            }
                             
                             // Enter rapid click mode if clicking within window
                             if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
@@ -10308,12 +10340,17 @@ namespace tsl {
                         if (zrWasPressed && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
                             // Button just released
                             
-                            // If not in rapid click mode and not a hold, trigger on release
+                            // If not in rapid click mode, check hold duration before triggering (first click only)
                             if (!zrInRapidClickMode) {
-                                skipDown.store(true, std::memory_order_release);
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                zrLastClickTime_ns = currentTime_ns;
-                                zrInRapidClickMode = true;  // Enter rapid mode after first release
+                                const u64 holdDuration = currentTime_ns - zrFirstClickPressStart_ns;
+                                
+                                // Only trigger if not held too long
+                                if (holdDuration < HOLD_THRESHOLD_NS) {
+                                    skipDown.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                    zrLastClickTime_ns = currentTime_ns;
+                                    zrInRapidClickMode = true;  // Enter rapid mode after first release
+                                }
                             }
                         }
                         zrWasPressed = false;
