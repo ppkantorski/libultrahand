@@ -7389,10 +7389,15 @@ namespace tsl {
         
         class MiniListItem : public ListItem {
         public:
+        #if IS_LAUNCHER_DIRECTIVE
             // Constructor for MiniListItem, with no `isMini` boolean.
-            MiniListItem(const std::string& text, const std::string& value = "", bool useScriptKey = false)
-                : ListItem(text, value, true, useScriptKey)  // Call the parent constructor with `isMini = true`
-            {
+            MiniListItem(const std::string& text, const std::string& value = "", bool useScriptKey = false) 
+                : ListItem(text, value, true, useScriptKey) { // Call the parent constructor with `isMini = true`
+        #else
+            MiniListItem(const std::string& text, const std::string& value = "")
+                : ListItem(text, value, true) {  // Call the parent constructor with `isMini = true`
+        #endif
+            
                 // Additional MiniListItem-specific initialization can go here, if necessary.
             }
             
