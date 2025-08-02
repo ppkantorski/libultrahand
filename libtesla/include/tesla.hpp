@@ -2360,10 +2360,10 @@ namespace tsl {
             }
 
             // Fixed compilation errors - simplified SIMD version
-            const uint8x16_t lut = {0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255};
+            static constexpr uint8x16_t lut = {0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255};
             const uint8x16_t mask_low = vdupq_n_u8(0x0F);
             // Pre-computed lookup table for 4-bit to 8-bit conversion
-            const u8 expand4to8[16] = {
+            static constexpr u8 expand4to8[16] = {
                 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
             };
             
@@ -4670,7 +4670,7 @@ namespace tsl {
                         
                         // Pre-calculate wave constants - NOW MATCHES CYCLE DURATION
                         const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
-                        const double phaseShift = ult::_M_PI / 2.0;
+                        static constexpr double phaseShift = ult::_M_PI / 2.0;
                         
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                             // Smooth, precise wave calculation
@@ -9859,19 +9859,22 @@ namespace tsl {
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
 
+
+            if (ult::refreshWallpaper.load(std::memory_order_acquire))
+                return;
         
             auto& currentGui = this->getCurrentGui();
 
             // Return early if current GUI is not available or internal touch is not released
             if (!currentGui || !ult::internalTouchReleased.load(std::memory_order_acquire)) {
 
-                elm::Element::setInputMode(InputMode::Controller);
-                
-                oldTouchPos = { 0 };
-                initialTouchPos = { 0 };
-                touchEvent = elm::TouchEvent::None;
-                ult::stillTouching.store(false, std::memory_order_release);
-                ult::interruptedTouch.store(false, std::memory_order_release);
+                //elm::Element::setInputMode(InputMode::Controller);
+                //
+                //oldTouchPos = { 0 };
+                //initialTouchPos = { 0 };
+                //touchEvent = elm::TouchEvent::None;
+                //ult::stillTouching.store(false, std::memory_order_release);
+                //ult::interruptedTouch.store(false, std::memory_order_release);
                 return;
             }
 
@@ -10158,10 +10161,10 @@ namespace tsl {
                 static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
                 //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const bool lPressed = (keysHeld & KEY_L);// && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
-                const bool rPressed = (keysHeld & KEY_R);// && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
-                const bool zlPressed = (keysHeld & KEY_ZL);// && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
-                const bool zrPressed = (keysHeld & KEY_ZR);// && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
+                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
+                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
+                const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
                 // Handle L button (simple jump to top on release, but not if held too long)
                 {
@@ -10864,6 +10867,7 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
+
             tsl::hlp::loadEntryKeyCombos();
             ult::launchingOverlay.store(false, std::memory_order_release);
 
@@ -11451,8 +11455,17 @@ namespace tsl {
             for (auto* el : tsl::elm::s_lastFrameItems) {
                 delete el;
             }
-            tsl::elm::s_lastFrameItems.clear();
-            //tsl::elm::s_lastFrameItems.shrink_to_fit();
+            tsl::elm::s_lastFrameItems = {};
+        }
+
+        // Initialize buffer sizes based on expanded memory setting
+        if (ult::expandedMemory) {
+            ult::COPY_BUFFER_SIZE = 262144;
+            ult::HEX_BUFFER_SIZE = 8192;
+            ult::UNZIP_READ_BUFFER = 262144;
+            ult::UNZIP_WRITE_BUFFER = 131072;
+            ult::DOWNLOAD_READ_BUFFER = 262144;
+            ult::DOWNLOAD_WRITE_BUFFER = 131072;
         }
 
 
@@ -11737,7 +11750,6 @@ extern "C" {
      *
      */
     void __appInit(void) {
-
         tsl::hlp::doWithSmSession([]{
             
             ASSERT_FATAL(fsInitialize());
