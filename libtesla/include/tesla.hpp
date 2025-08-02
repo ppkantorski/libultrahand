@@ -7391,7 +7391,7 @@ namespace tsl {
         public:
             // Constructor for MiniListItem, with no `isMini` boolean.
             MiniListItem(const std::string& text, const std::string& value = "", bool useScriptKey = false)
-                : ListItem(text, value, useScriptKey)  // Call the parent constructor with `isMini = true`
+                : ListItem(text, value, true, useScriptKey)  // Call the parent constructor with `isMini = true`
             {
                 // Additional MiniListItem-specific initialization can go here, if necessary.
             }
@@ -8689,7 +8689,19 @@ namespace tsl {
 
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
 
-                if ((keysHeld & KEY_R)) {
+                if ((keysHeld & KEY_R)) {                             
+                    //auto currentFocus = currentGui->getFocusedElement();
+                    if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Up);
+                    else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Down);
+                    else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ~KEY_R & ALL_KEYS_MASK)){
+                        this->shakeHighlight(FocusDirection::Left);
+                    }
+                    else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ~KEY_R & ALL_KEYS_MASK)) {
+                        this->shakeHighlight(FocusDirection::Right);
+                    }
+
                     return true;
                 }
 
@@ -9158,6 +9170,17 @@ namespace tsl {
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
             
                 if ((keysHeld & KEY_R)) {
+                    //auto currentFocus = currentGui->getFocusedElement();
+                    if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Up);
+                    else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Down);
+                    else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ~KEY_R & ALL_KEYS_MASK)){
+                        this->shakeHighlight(FocusDirection::Left);
+                    }
+                    else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ~KEY_R & ALL_KEYS_MASK)) {
+                        this->shakeHighlight(FocusDirection::Right);
+                    }
                     return true;
                 }
             
@@ -10124,10 +10147,10 @@ namespace tsl {
                 static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
                 //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
-                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
-                const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
-                const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
+                const bool lPressed = (keysHeld & KEY_L);// && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
+                const bool rPressed = (keysHeld & KEY_R);// && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool zlPressed = (keysHeld & KEY_ZL);// && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
+                const bool zrPressed = (keysHeld & KEY_ZR);// && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
                 // Handle L button (simple jump to top on release, but not if held too long)
                 {
