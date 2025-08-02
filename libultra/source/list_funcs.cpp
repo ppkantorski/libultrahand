@@ -97,7 +97,7 @@ namespace ult {
             return lines;
         }
     
-        constexpr size_t BUFFER_SIZE = 8192;
+        static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         size_t len;
         
@@ -166,7 +166,7 @@ namespace ult {
             return "";
         }
     
-        constexpr size_t BUFFER_SIZE = 8192;
+        static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
     
         // Skip lines until reaching the desired index
@@ -293,7 +293,7 @@ namespace ult {
             return lines;
         }
     
-        constexpr size_t BUFFER_SIZE = 8192;
+        static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         size_t len;
         while (fgets(buffer, BUFFER_SIZE, file)) {
@@ -395,7 +395,7 @@ namespace ult {
         }
     
         // OPTIMIZATION 1: Larger buffer for better I/O performance
-        constexpr size_t BUFFER_SIZE = 8192;
+        static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         
         while (fgets(buffer, BUFFER_SIZE, file)) {

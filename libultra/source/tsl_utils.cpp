@@ -1336,7 +1336,7 @@ namespace ult {
         const uint64_t now_ns = armTicksToNs(armGetSystemTick());
         
         // 3 seconds in nanoseconds
-        constexpr uint64_t min_delay_ns = 3000000000ULL;
+        static constexpr uint64_t min_delay_ns = 3000000000ULL;
         
         // Check if enough time has elapsed or if cache is not initialized
         const bool useCache = (now_ns - last_call_ns <= min_delay_ns) && powerCacheInitialized;

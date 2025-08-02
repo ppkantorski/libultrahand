@@ -54,7 +54,7 @@ namespace ult {
             return false;
         }
         
-        size_t nextPos = data.find(delimiter, position);
+        const size_t nextPos = data.find(delimiter, position);
         
         if (nextPos != std::string::npos) {
             output.assign(data, position, nextPos - position);  // No temporary string creation

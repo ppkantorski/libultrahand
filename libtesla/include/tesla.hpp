@@ -2928,7 +2928,7 @@ namespace tsl {
                 if (text.size() < 2) return text;
                 
                 // Get ellipsis width using shared cache (now thread-safe)
-                constexpr u32 ellipsisChar = 0x2026;
+                static constexpr u32 ellipsisChar = 0x2026;
                 std::shared_ptr<FontManager::Glyph> ellipsisGlyph = FontManager::getOrCreateGlyph(ellipsisChar, monospace, fontSize);
                 if (!ellipsisGlyph) return text;
                 
@@ -4852,7 +4852,7 @@ namespace tsl {
                     ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
                 // Set initial button position
-                const float buttonStartX = 30;
+                static constexpr float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
                 // Draw back button if touched
@@ -5978,8 +5978,8 @@ namespace tsl {
                     const bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;
                     
                     if (isLargeJump && isFromRest) {
-                        const float gentleAcceleration = 0.08f;
-                        const float gentleDamping = 0.85f;
+                        static constexpr float gentleAcceleration = 0.08f;
+                        static constexpr float gentleDamping = 0.85f;
                         
                         const float targetVelocity = diff * gentleAcceleration;
                         m_scrollVelocity += (targetVelocity - m_scrollVelocity) * gentleDamping;
@@ -6509,7 +6509,7 @@ namespace tsl {
                 // Calculate target offset once (good optimization to keep)
                 const float targetOffset = (m_listHeight > getHeight()) ? 
                                            static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                const float tolerance = 5.0f;
+                static constexpr float tolerance = 5.0f;
                 
                 // Find the last focusable item
                 size_t lastFocusableIndex = m_items.size();
@@ -6556,8 +6556,8 @@ namespace tsl {
                 jumpToTop.store(false, std::memory_order_release);  // Reset flag
                 
                 // Define constants for clarity and consistency
-                const float targetOffset = 0.0f;
-                const float tolerance = 0.0f;
+                static constexpr float targetOffset = 0.0f;
+                static constexpr float tolerance = 0.0f;
                 
                 // Find the first focusable item
                 size_t firstFocusableIndex = m_items.size();  // Default to invalid
@@ -6605,7 +6605,7 @@ namespace tsl {
                 // Calculate target offset once (good optimization to keep)
                 const float targetOffset = (m_listHeight > getHeight()) ? 
                                            static_cast<float>(m_listHeight - getHeight()) : 0.0f;
-                const float tolerance = 0.0f;
+                static constexpr float tolerance = 0.0f;
 
                 // Find the last focusable item
                 size_t lastFocusableIndex = m_items.size();
@@ -6719,8 +6719,8 @@ namespace tsl {
                 resetNavigationState();
             
                 // Define constants for clarity and consistency
-                const float targetOffset = 0.0f;
-                const float tolerance = 0.0f;
+                static constexpr float targetOffset = 0.0f;
+                static constexpr float tolerance = 0.0f;
 
                 // Find the first focusable item
                 size_t firstFocusableIndex = m_items.size();  // Default to invalid
@@ -7232,10 +7232,10 @@ namespace tsl {
                 if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
                     // Constants for velocity-based scrolling
                     delayDuration = 2.0;
-                    const double pauseDuration = 1.0;
+                    static constexpr double pauseDuration = 1.0;
                     maxVelocity = 166.0;
                     accelTime = 0.5;
-                    const double decelTime = 0.5;
+                    static constexpr double decelTime = 0.5;
                     
                     // Pre-calculate derived constants
                     minScrollDistance = static_cast<double>(m_textWidth);
@@ -7310,7 +7310,7 @@ namespace tsl {
             void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 const s32 xPosition = getX() + m_maxWidth + 47;
                 const s32 yPosition = getY() + 45 - yOffset;
-                constexpr s32 fontSize = 20;
+                static constexpr s32 fontSize = 20;
         
                 static bool lastRunningInterpreter = false;
                 const auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
@@ -7509,10 +7509,10 @@ namespace tsl {
                         if (!constantsInitialized || minScrollDistance != static_cast<double>(this->m_textWidth)) {
                             // Constants for velocity-based scrolling
                             delayDuration = 2.0;
-                            const double pauseDuration = 1.0;
+                            static constexpr double pauseDuration = 1.0;
                             maxVelocity = 166.0;
                             accelTime = 0.5;
-                            const double decelTime = 0.5;
+                            static constexpr double decelTime = 0.5;
                             
                             // Pre-calculate derived constants
                             minScrollDistance = static_cast<double>(this->m_textWidth);
@@ -7603,7 +7603,7 @@ namespace tsl {
                 //const std::string& value = this->m_value;
                 const s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
                 const s32 yPosition = this->getY() + 45 - yOffset;
-                const s32 fontSize = 20;
+                static constexpr s32 fontSize = 20;
                 //bool isFaint = ;
                 //bool isFocused = this->m_focused;
             
@@ -8038,7 +8038,7 @@ namespace tsl {
                 const u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
-                const s32 circleRadius = 16;
+                static constexpr s32 circleRadius = 16;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
@@ -8840,9 +8840,9 @@ namespace tsl {
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
-                const s32 circleRadius = 16;
+                static constexpr s32 circleRadius = 16;
                 
-                bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
                 if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))
                     return false;
@@ -8998,7 +8998,7 @@ namespace tsl {
             
                 } else {
                     // Determine if should appear locked: unlocked trackbar with KEY_R held
-                    bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
+                    const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
                     
                     if ((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked) {
                         // High precision floating point color interpolation for unlocked trackbar
@@ -9716,7 +9716,7 @@ namespace tsl {
         
         bool m_fadeInAnimationPlaying = false, m_fadeOutAnimationPlaying = false;
         u8 m_animationCounter = 0;
-        const int MAX_ANIMATION_COUNTER = 5; // Define the maximum animation counter value
+        static constexpr int MAX_ANIMATION_COUNTER = 5; // Define the maximum animation counter value
 
         bool m_shouldHide = false;
         bool m_shouldClose = false;
@@ -9988,7 +9988,14 @@ namespace tsl {
 
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
-                if (!isNavigatingBackwards.load(std::memory_order_acquire) && !ult::shortTouchAndRelease.load(std::memory_order_acquire) && !ult::longTouchAndRelease.load(std::memory_order_acquire) && !ult::simulatedSelect.load(std::memory_order_acquire) && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
+                if (!isNavigatingBackwards.load(std::memory_order_acquire) &&
+                    !ult::shortTouchAndRelease.load(std::memory_order_acquire) &&
+                    !ult::longTouchAndRelease.load(std::memory_order_acquire) &&
+                    !ult::simulatedSelect.load(std::memory_order_acquire) &&
+                    !ult::simulatedBack.load(std::memory_order_acquire) &&
+                    !ult::simulatedNextPage.load(std::memory_order_acquire)
+                    && topElement) {
+
                     if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
@@ -10141,6 +10148,7 @@ namespace tsl {
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
         #endif
                 // Shared constants used by ZL/ZR buttons
+                static constexpr u64 INITIAL_HOLD_THRESHOLD_NS = 400000000ULL;
                 static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
                 static constexpr u64 RAPID_CLICK_WINDOW_NS = 500000000ULL;     // 500ms window for rapid clicking
                 static constexpr u64 RAPID_MODE_TIMEOUT_NS = 1000000000ULL;    // 1s timeout to exit rapid mode
@@ -10169,7 +10177,7 @@ namespace tsl {
                         if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
                             // Button just released - only jump to top if not held too long
                             const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
-                            if (holdDuration < HOLD_THRESHOLD_NS) {
+                            if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                 jumpToTop.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                             }
@@ -10192,7 +10200,7 @@ namespace tsl {
                         if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
                             // Button just released - only jump to bottom if not held too long
                             const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
-                            if (holdDuration < HOLD_THRESHOLD_NS) {
+                            if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                 jumpToBottom.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                             }
@@ -10280,7 +10288,7 @@ namespace tsl {
                                 const u64 holdDuration = currentTime_ns - zlFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
-                                if (holdDuration < HOLD_THRESHOLD_NS) {
+                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                     skipUp.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
                                     zlLastClickTime_ns = currentTime_ns;
@@ -10371,7 +10379,7 @@ namespace tsl {
                                 const u64 holdDuration = currentTime_ns - zrFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
-                                if (holdDuration < HOLD_THRESHOLD_NS) {
+                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                     skipDown.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
                                     zrLastClickTime_ns = currentTime_ns;
@@ -10747,8 +10755,8 @@ namespace tsl {
     
     
     namespace impl {
-        static const char* TESLA_CONFIG_FILE = "/config/tesla/config.ini"; // CUSTOM MODIFICATION
-        static const char* ULTRAHAND_CONFIG_FILE = "/config/ultrahand/config.ini"; // CUSTOM MODIFICATION
+        static constexpr const char* TESLA_CONFIG_FILE = "/config/tesla/config.ini";
+        static constexpr const char* ULTRAHAND_CONFIG_FILE = "/config/ultrahand/config.ini";
         
         /**
          * @brief Data shared between the different ult::renderThreads
@@ -10921,10 +10929,10 @@ namespace tsl {
             auto lastTouchX = 0;
 
             // Preset touch boundaries
-            const int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
-            const int SWIPE_LEFT_BOUND = (1280 - 16);
-            const u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
-            const u64 FAST_SWAP_THRESHOLD_NS = 150'000'000ULL;
+            static constexpr int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
+            static constexpr int SWIPE_LEFT_BOUND = (1280 - 16);
+            static constexpr u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
+            static constexpr u64 FAST_SWAP_THRESHOLD_NS = 150'000'000ULL;
 
             s32 idx;
             Result rc;

@@ -732,7 +732,7 @@ namespace ult {
      */
     void copySingleFile(const std::string& fromFile, const std::string& toFile, long long& totalBytesCopied, 
                         const long long totalSize, const std::string& logSource, const std::string& logDestination) {
-        constexpr size_t maxRetries = 10;
+        static constexpr size_t maxRetries = 10;
         const size_t bufferSize = COPY_BUFFER_SIZE;
         
         // Create destination directory once

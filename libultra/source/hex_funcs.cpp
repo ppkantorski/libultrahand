@@ -688,7 +688,7 @@ namespace ult {
 
         const size_t bytesRead = fread(hexBuffer.data(), sizeof(char), length, file);
         if (bytesRead == length) {
-            static const char hexDigits[] = "0123456789ABCDEF";
+            static constexpr char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
@@ -721,7 +721,7 @@ namespace ult {
 
         file.read(hexBuffer.data(), length);
         if (file.gcount() == static_cast<std::streamsize>(length)) {
-            static const char hexDigits[] = "0123456789ABCDEF";
+            static constexpr char hexDigits[] = "0123456789ABCDEF";
             for (size_t i = 0; i < length; ++i) {
                 hexStream[i * 2] = hexDigits[(hexBuffer[i] >> 4) & 0xF];
                 hexStream[i * 2 + 1] = hexDigits[hexBuffer[i] & 0xF];
