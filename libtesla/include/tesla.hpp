@@ -6905,9 +6905,7 @@ namespace tsl {
         
         #if IS_LAUNCHER_DIRECTIVE
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey)
-            
-            {
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey) {
                 m_isItem = true;
                 applyInitialTranslations();
                 if (!value.empty()) applyInitialTranslations(true);
