@@ -9860,13 +9860,13 @@ namespace tsl {
             static void* lastGuiPtr = nullptr;  // Use void* instead
 
 
-            if (ult::refreshWallpaper.load(std::memory_order_acquire))
+            if (ult::refreshWallpaper.load(std::memory_order_acquire) || !ult::internalTouchReleased.load(std::memory_order_acquire))
                 return;
         
             auto& currentGui = this->getCurrentGui();
 
             // Return early if current GUI is not available or internal touch is not released
-            if (!currentGui || !ult::internalTouchReleased.load(std::memory_order_acquire)) {
+            if (!currentGui) {
 
                 //elm::Element::setInputMode(InputMode::Controller);
                 //
