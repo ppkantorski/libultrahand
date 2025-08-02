@@ -74,7 +74,7 @@ namespace ult {
     extern size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
     #endif
     
-    extern "C" int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
+    extern int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
     
     
     // Thread-safe initialization and cleanup functions
