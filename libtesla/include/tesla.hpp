@@ -5225,6 +5225,9 @@ namespace tsl {
         static std::atomic<u32> s_cachedScrollbarOffset{0};
         static std::atomic<u32> s_cachedScrollbarX{0};
         static std::atomic<u32> s_cachedScrollbarY{0};
+        static std::atomic<float> s_currentScrollVelocity{0};
+
+        static std::atomic<bool> s_directionalKeyReleased{false};
         static std::atomic<bool> s_cacheForwardFrameOnce(true);
         static std::atomic<bool> lastInternalTouchRelease(true);
         static std::atomic<bool> s_hasClearedCache(false);
@@ -5245,6 +5248,7 @@ namespace tsl {
         public:
             List() : Element() {
                 s_safeToSwap.store(false, std::memory_order_release);
+                s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
                 
@@ -5276,6 +5280,7 @@ namespace tsl {
             
             virtual ~List() {
                 s_safeToSwap.store(false, std::memory_order_release);
+                s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
             
@@ -5934,6 +5939,7 @@ namespace tsl {
                     if (distance < 1.0f) {  // Increased threshold from 0.5f
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
+                        s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
                         
                         if (prevOffset != m_offset) {
                             invalidate();
@@ -5948,11 +5954,13 @@ namespace tsl {
                         if (distance < 3.0f) {  // Larger snap zone for boundaries
                             m_offset = m_nextOffset;
                             m_scrollVelocity = 0.0f;
+                            s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
                             
                             if (prevOffset != m_offset) {
                                 invalidate();
                                 prevOffset = m_offset;
                             }
+
                             return;
                         }
                     }
@@ -5977,6 +5985,7 @@ namespace tsl {
                             
                             m_offset += diff * emergencySpeed;
                             m_scrollVelocity = diff * 0.3f;
+                            s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
                             
                             if (prevOffset != m_offset) {
                                 invalidate();
@@ -6023,6 +6032,8 @@ namespace tsl {
                         m_offset = maxOffset;
                         m_scrollVelocity = 0.0f;
                     }
+
+                    s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
                 
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     // Your existing touch scroll logic...
@@ -6130,11 +6141,14 @@ namespace tsl {
                 }
                 
                 // At absolute bottom - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom() && s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
                     return handleJumpToTop(oldFocus);
+                } else {
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
                 }
                 
                 // Set boundary flag
@@ -6192,11 +6206,14 @@ namespace tsl {
                 }
                 
                 // At absolute top - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop() && s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
                     return handleJumpToBottom(oldFocus);
+                } else {
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
                 }
                 
                 // Set boundary flag
@@ -10065,9 +10082,20 @@ namespace tsl {
             
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
-            
+
+            // Navigational boundary cases for handling wrapping
+            static bool lastDirectionPressed;
+            const bool directionPressed = ((keysHeld & KEY_UP) || (keysHeld & KEY_DOWN) || (keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT));
+
+            if (!directionPressed && lastDirectionPressed)
+                tsl::elm::s_directionalKeyReleased.store(true, std::memory_order_release);
+
+            lastDirectionPressed = directionPressed;
+
+            const float currentScrollVelocity = tsl::elm::s_currentScrollVelocity.load(std::memory_order_acquire);
+
             if (hasScrolled) {
-                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_A | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
+                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP : KEY_UP) | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                 
                 if (singleArrowKeyPress) {
                    // const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -10079,7 +10107,7 @@ namespace tsl {
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
-                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_A | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
+                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP: KEY_UP) | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                     
                     if (singleArrowKeyPress) {
                         //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -10137,9 +10165,9 @@ namespace tsl {
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
-                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_A & ~KEY_UP & ALL_KEYS_MASK))
+                            if (keysHeld & KEY_UP && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP: KEY_UP)) & ALL_KEYS_MASK))
                                 currentGui->requestFocus(topElement, FocusDirection::Up, false);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_A & ~KEY_DOWN & ALL_KEYS_MASK)) {
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_DOWN: KEY_DOWN)) & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
                                 //isTopElement = false;
                             }
@@ -10161,7 +10189,7 @@ namespace tsl {
         
                         //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK))
                         //    this->goBack();
-                        singlePressHandled = false;
+                        //singlePressHandled = false;
         #endif
                     }
                 }
