@@ -4435,7 +4435,8 @@ namespace tsl {
                     // Get the exact gap width from ult::GAP_1
                     const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                     const float _halfGap = gapWidth / 2.0f;
-                    ult::halfGap.store(_halfGap, std::memory_order_release);
+                    if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
+                        ult::halfGap.store(_halfGap, std::memory_order_release);
                 
                     // Calculate text dimensions for buttons without gaps
                     const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
@@ -4443,9 +4444,11 @@ namespace tsl {
                 
                     // Update widths to include the half-gap padding on each side
                     const float _backWidth = backTextWidth + gapWidth;
+                    if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
+                        ult::backWidth.store(_backWidth, std::memory_order_release);
                     const float _selectWidth = selectTextWidth + gapWidth;
-                    ult::backWidth.store(_backWidth, std::memory_order_release);
-                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
+                    if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
+                        ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
                     const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
@@ -5062,7 +5065,8 @@ namespace tsl {
                 // Get the exact gap width from ult::GAP_1
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 const float _halfGap = gapWidth / 2.0f;
-                ult::halfGap.store(_halfGap, std::memory_order_relaxed);
+                if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
+                    ult::halfGap.store(_halfGap, std::memory_order_release);
             
                 // Calculate text dimensions for buttons without gaps
                 const float backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
@@ -5070,9 +5074,11 @@ namespace tsl {
             
                 // Store final widths with gap padding included
                 const float _backWidth = backTextWidth + gapWidth;
+                if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
+                    ult::backWidth.store(_backWidth, std::memory_order_release);
                 const float _selectWidth = selectTextWidth + gapWidth;
-                ult::backWidth.store(_backWidth, std::memory_order_relaxed);
-                ult::selectWidth.store(_selectWidth, std::memory_order_relaxed);
+                if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
+                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
             
                 // Set initial button position
                 static constexpr float buttonStartX = 30;
