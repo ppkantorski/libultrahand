@@ -4984,7 +4984,7 @@ namespace tsl {
             
             inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
-                if (!m_contentElement || !m_contentElement->inBounds(currX, currY) || !ult::internalTouchReleased.load(std::memory_order_acquire))
+                if (!m_contentElement || !m_contentElement->inBounds(currX, currY))
                     return false;
                 
                 return m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
@@ -5306,11 +5306,21 @@ namespace tsl {
             
             
             virtual void draw(gfx::Renderer* renderer) override {
+                s_safeToSwap.store(false, std::memory_order_release);
                 std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
                 s_safeToSwap.store(false, std::memory_order_release);
+                
                 // Early exit optimizations
                 if (m_clearList) {
+                    if (!s_isForwardCache.load(std::memory_order_acquire)) {
+                        clearStaticCacheUnsafe();
+                        
+                    } else {
+                        clearStaticCacheUnsafe(true);
+                    }
                     clearItems();
+                    s_isForwardCache.store(false, std::memory_order_release);
+                    s_cacheForwardFrameOnce.store(true, std::memory_order_release);
                     return;
                 }
                 {
@@ -5337,17 +5347,19 @@ namespace tsl {
                 // This part is for fixing returning to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
                 if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && 
-                    !s_isForwardCache.load(std::memory_order_acquire) && 
-                    ult::internalTouchReleased.load(std::memory_order_acquire)) {
-                    if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
-                        checkOnce = false;
-                        return;
-                    }
+                    !s_isForwardCache.load(std::memory_order_acquire)) {// && 
+                    //ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                    //if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
+                    //    checkOnce = false;
+                    //    return;
+                    //}
+                    checkOnce = false;
+                    return;
                 } else {
                     static bool checkOnce2 = true;
                     if (checkOnce2) {
                         checkOnce = true;
-                        lastInternalTouchRelease = ult::internalTouchReleased.load(std::memory_order_acquire);
+                        //lastInternalTouchRelease = ult::internalTouchReleased.load(std::memory_order_acquire);
                         checkOnce2 = false;
                     }
                 }
@@ -10951,6 +10963,7 @@ namespace tsl {
             
             u64 currentTouchTick = 0;
             auto lastTouchX = 0;
+            auto lastTouchY = 0;
 
             // Preset touch boundaries
             static constexpr int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
@@ -11038,19 +11051,19 @@ namespace tsl {
                     
                     // Read in touch positions
                     if (hidGetTouchScreenStates(&shData->touchState, 1) > 0) { // Check if any touch event is present
-                        HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
-                        
-                    
                         if (!shData->overlayOpen) {
                             //ult::internalTouchReleased = false;
                             ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
+
+                        HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
+                        
                         
                         const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
                         
                         // Check if the touch is within bounds for left-to-right swipe within the time window
                         if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
-                            if (lastTouchX != 0 && currentTouch.x != 0) {
+                            if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
                                 if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
                                     eventFire(&shData->comboEvent);
                                 }
@@ -11066,15 +11079,17 @@ namespace tsl {
                             ult::internalTouchReleased.store(true, std::memory_order_release);
                             //ult::internalTouchReleased = true;  // Indicate that the touch has been released
                             //ult::internalTouchReleased.store(true, std::memory_order_release);
-                            lastTouchX = currentTouch.x;
+                            lastTouchX = 0;
+                            lastTouchY = 0;
                         }
 
                         // If this is the first touch of a gesture, store lastTouchX
-                        if (lastTouchX == 0 && currentTouch.x != 0) {
-                            lastTouchX = currentTouch.x;
+                        else if ((lastTouchX == 0 && lastTouchY == 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
                             currentTouchTick = nowTick;
+                            lastTouchX = currentTouch.x;
+                            lastTouchY = currentTouch.y;
                         }
-                    
+
                     } else {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
@@ -11084,9 +11099,10 @@ namespace tsl {
                     
                         // Reset touch history to invalid state
                         lastTouchX = 0;
+                        lastTouchY = 0;
                     
                         // Reset time tracking
-                        currentTouchTick = nowTick;
+                        //currentTouchTick = nowTick;
                     }
 
                     // Check main launch combo first (highest priority)
