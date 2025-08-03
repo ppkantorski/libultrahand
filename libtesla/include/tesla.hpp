@@ -5599,6 +5599,7 @@ namespace tsl {
                 m_isHolding = false;
                 m_stoppedAtBoundary = false;
                 m_lastNavigationTime = 0;
+                m_lastScrollTime = 0;
             }
 
             inline void disableCaching() {
@@ -5654,6 +5655,8 @@ namespace tsl {
             static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
             static constexpr float BOTTOM_PADDING = 7.0f;
             static constexpr float VIEW_CENTER_OFFSET = 7.0f;
+
+            u64 m_lastScrollTime = 0;
 
             float m_scrollVelocity = 0.0f;
             
@@ -6265,8 +6268,8 @@ namespace tsl {
             // Helper to check if there are any focusable items
             inline bool hasAnyFocusableItems() {
                 for (size_t i = 0; i < m_items.size(); ++i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) return true;
+                    //Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    if (m_items[i]->m_isItem) return true;
                 }
                 return false;
             }
@@ -6472,40 +6475,48 @@ namespace tsl {
 
             // Enhanced scroll methods that snap to exact boundaries
             inline void scrollDown() {
-                //u64 currentTime = armTicksToNs(armGetSystemTick());
-                //if ((currentTime - m_lastScrollNavigationTime) < HOLD_THRESHOLD_NS) {
-                //    m_isHoldingOnTable = true;
-                //    m_isHolding=true;
-                //} else {
-                //    m_isHoldingOnTable = false;
-                //    m_stoppedAtBoundary = false;
-                //    m_hasWrappedInCurrentSequence = false;
-                //}
-            
-                //float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
-                //float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                u64 currentTime = armTicksToNs(armGetSystemTick());
                 
-                m_nextOffset = std::min(m_nextOffset + ((m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK), (static_cast<float>(m_listHeight - getHeight())));
+                // Calculate frame time
+                float frameTimeMs = 0.0f;
+                if (m_lastScrollTime != 0) {
+                    frameTimeMs = static_cast<float>(currentTime - m_lastScrollTime) / 1000000.0f;
+                }
+                m_lastScrollTime = currentTime;
                 
-                // BOUNDARY SNAP: If we're very close to the bottom boundary, snap both positions exactly
-                //if (m_nextOffset >= maxOffset - 2.0f) {
-                //    m_nextOffset = maxOffset;
-                //    m_offset = maxOffset;  // Also snap current position immediately
-                //    m_scrollVelocity = 0.0f;
-                //}
+                // Use original frame-based amounts
+                float scrollAmount = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                
+                // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
+                if (frameTimeMs > 33.0f) {
+                    float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
+                    scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
+                }
+                
+                m_nextOffset = std::min(m_nextOffset + scrollAmount, 
+                                       static_cast<float>(m_listHeight - getHeight()));
             }
             
             inline void scrollUp() {
-                //float scrollStep = (m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                u64 currentTime = armTicksToNs(armGetSystemTick());
                 
-                m_nextOffset = std::max(m_nextOffset - ((m_isHolding) ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK), 0.0f);
+                // Calculate frame time
+                float frameTimeMs = 0.0f;
+                if (m_lastScrollTime != 0) {
+                    frameTimeMs = static_cast<float>(currentTime - m_lastScrollTime) / 1000000.0f;
+                }
+                m_lastScrollTime = currentTime;
                 
-                // ENHANCED BOUNDARY SNAP: More aggressive snapping to zero
-               //if (m_nextOffset <= 5.0f) {  // Increased threshold
-               //    m_nextOffset = 0.0f;
-               //    m_offset = 0.0f;  
-               //    m_scrollVelocity = 0.0f;
-               //}
+                // Use original frame-based amounts
+                float scrollAmount = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                
+                // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
+                if (frameTimeMs > 33.0f) {
+                    float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
+                    scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
+                }
+                
+                m_nextOffset = std::max(m_nextOffset - scrollAmount, 0.0f);
             }
 
             // Add these methods to handle jumps with smooth scrolling
@@ -10154,7 +10165,7 @@ namespace tsl {
                 }
             }
         
-#if !IS_STATUS_MONITOR_DIRECTIVE
+        #if !IS_STATUS_MONITOR_DIRECTIVE
             if (!touchDetected && !interpreterIsRunning && topElement) {
         #else
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
@@ -10170,34 +10181,37 @@ namespace tsl {
                 static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
                 //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                
-                // Detect actual key states (regardless of combos)
+                                
+                // Detect PHYSICAL key states (whether key is actually pressed)
                 const bool lKeyPressed = (keysHeld & KEY_L);
                 const bool rKeyPressed = (keysHeld & KEY_R);
                 const bool zlKeyPressed = (keysHeld & KEY_ZL);
                 const bool zrKeyPressed = (keysHeld & KEY_ZR);
                 
-                // Detect isolated key states (only this key pressed)
-                const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
-                const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
-                const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
-                const bool zrPressed = (keysHeld & KEY_ZR) && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
+                // Detect if other keys are pressed (for preventing timer resets)
+                const bool notlKeyPressed = (keysHeld & ~KEY_L & ALL_KEYS_MASK);
+                const bool notrKeyPressed = (keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool notzlKeyPressed = (keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
+                const bool notzrKeyPressed = (keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
                 // Handle L button (simple jump to top on release, but not if held too long)
                 {
                     static bool lKeyWasPressed = false;
+                    static bool lWasIsolated = false;  // Track if L was isolated when first pressed
                     static u64 lButtonPressStart_ns = 0;
                     
                     if (lKeyPressed) {
                         if (!lKeyWasPressed) {
-                            // L key physically pressed (start timer)
+                            // L key physically pressed for the first time (start timer)
                             lButtonPressStart_ns = currentTime_ns;
+                            lWasIsolated = !notlKeyPressed;  // Remember if it started isolated
                         }
+                        // Don't reset timer if other keys are pressed after L was already held
                         lKeyWasPressed = true;
                     } else {
                         if (lKeyWasPressed) {
-                            // L key physically released - only jump to top if was isolated at release and not held too long
-                            if (lPressed || (!(keysHeld & ~KEY_L & ALL_KEYS_MASK))) {  // Was isolated when released
+                            // L key physically released - only jump to top if was isolated when first pressed and not held too long
+                            if (lWasIsolated && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {  // Was isolated initially and no other keys held at release
                                 const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
                                 if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                     jumpToTop.store(true, std::memory_order_release);
@@ -10206,24 +10220,28 @@ namespace tsl {
                             }
                         }
                         lKeyWasPressed = false;
+                        lWasIsolated = false;
                     }
                 }
                 
                 // Handle R button (simple jump to bottom on release, but not if held too long)
                 {
                     static bool rKeyWasPressed = false;
+                    static bool rWasIsolated = false;  // Track if R was isolated when first pressed
                     static u64 rButtonPressStart_ns = 0;
                     
                     if (rKeyPressed) {
                         if (!rKeyWasPressed) {
-                            // R key physically pressed (start timer)
+                            // R key physically pressed for the first time (start timer)
                             rButtonPressStart_ns = currentTime_ns;
+                            rWasIsolated = !notrKeyPressed;  // Remember if it started isolated
                         }
+                        // Don't reset timer if other keys are pressed after R was already held
                         rKeyWasPressed = true;
                     } else {
                         if (rKeyWasPressed) {
-                            // R key physically released - only jump to bottom if was isolated at release and not held too long
-                            if (rPressed || (!(keysHeld & ~KEY_R & ALL_KEYS_MASK))) {  // Was isolated when released
+                            // R key physically released - only jump to bottom if was isolated when first pressed and not held too long
+                            if (rWasIsolated && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {  // Was isolated initially and no other keys held at release
                                 const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
                                 if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
                                     jumpToBottom.store(true, std::memory_order_release);
@@ -10232,6 +10250,7 @@ namespace tsl {
                             }
                         }
                         rKeyWasPressed = false;
+                        rWasIsolated = false;
                     }
                 }
                 
@@ -10239,6 +10258,7 @@ namespace tsl {
                 {
                     static u64 zlLastClickTime_ns = 0;
                     static bool zlKeyWasPressed = false;
+                    static bool zlWasIsolated = false;  // Track if ZL was isolated when first pressed
                     static bool zlInRapidClickMode = false;
                     static u64 zlFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
@@ -10249,8 +10269,10 @@ namespace tsl {
                     
                     if (zlKeyPressed) {
                         if (!zlKeyWasPressed) {
-                            // ZL key physically pressed
+                            // ZL key physically pressed for the first time
                             const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
+                            
+                            zlWasIsolated = !notzlKeyPressed;  // Remember if it started isolated
                             
                             // Track press start time for first clicks (when not in rapid mode)
                             if (!zlInRapidClickMode) {
@@ -10262,16 +10284,16 @@ namespace tsl {
                                 zlInRapidClickMode = true;
                             }
                             
-                            // Only trigger immediately if in rapid click mode AND isolated
-                            if (zlInRapidClickMode && zlPressed) {
+                            // Only trigger immediately if in rapid click mode AND was isolated initially
+                            if (zlInRapidClickMode && zlWasIsolated) {
                                 skipUp.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zlLastClickTime_ns = currentTime_ns;
                             }
                         }
                         
-                        // Check for hold behavior - ONLY if in rapid click mode AND isolated
-                        if (zlInRapidClickMode && zlPressed) {
+                        // Check for hold behavior - ONLY if in rapid click mode AND was isolated initially
+                        if (zlInRapidClickMode && zlWasIsolated) {
                             static u64 zlButtonPressStart_ns = 0;
                             static u64 zlLastHoldTrigger_ns = 0;
                             static bool zlHoldTriggered = false;
@@ -10307,11 +10329,8 @@ namespace tsl {
                         zlKeyWasPressed = true;
                     } else {
                         if (zlKeyWasPressed) {
-                            // ZL key physically released
-                            
-                            // If not in rapid click mode, check hold duration before triggering (first click only)
-                            // Only trigger if was isolated when released
-                            if (!zlInRapidClickMode && (zlPressed || (!(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)))) {
+                            // ZL key physically released - only trigger if was isolated initially and no other keys held at release
+                            if (!zlInRapidClickMode && zlWasIsolated && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
                                 const u64 holdDuration = currentTime_ns - zlFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
@@ -10324,6 +10343,7 @@ namespace tsl {
                             }
                         }
                         zlKeyWasPressed = false;
+                        zlWasIsolated = false;
                     }
                 }
                 
@@ -10331,6 +10351,7 @@ namespace tsl {
                 {
                     static u64 zrLastClickTime_ns = 0;
                     static bool zrKeyWasPressed = false;
+                    static bool zrWasIsolated = false;  // Track if ZR was isolated when first pressed
                     static bool zrInRapidClickMode = false;
                     static u64 zrFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
@@ -10341,8 +10362,10 @@ namespace tsl {
                     
                     if (zrKeyPressed) {
                         if (!zrKeyWasPressed) {
-                            // ZR key physically pressed
+                            // ZR key physically pressed for the first time
                             const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
+                            
+                            zrWasIsolated = !notzrKeyPressed;  // Remember if it started isolated
                             
                             // Track press start time for first clicks (when not in rapid mode)
                             if (!zrInRapidClickMode) {
@@ -10354,16 +10377,16 @@ namespace tsl {
                                 zrInRapidClickMode = true;
                             }
                             
-                            // Only trigger immediately if in rapid click mode AND isolated
-                            if (zrInRapidClickMode && zrPressed) {
+                            // Only trigger immediately if in rapid click mode AND was isolated initially
+                            if (zrInRapidClickMode && zrWasIsolated) {
                                 skipDown.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zrLastClickTime_ns = currentTime_ns;
                             }
                         }
                         
-                        // Check for hold behavior - ONLY if in rapid click mode AND isolated
-                        if (zrInRapidClickMode && zrPressed) {
+                        // Check for hold behavior - ONLY if in rapid click mode AND was isolated initially
+                        if (zrInRapidClickMode && zrWasIsolated) {
                             static u64 zrButtonPressStart_ns = 0;
                             static u64 zrLastHoldTrigger_ns = 0;
                             static bool zrHoldTriggered = false;
@@ -10399,11 +10422,8 @@ namespace tsl {
                         zrKeyWasPressed = true;
                     } else {
                         if (zrKeyWasPressed) {
-                            // ZR key physically released
-                            
-                            // If not in rapid click mode, check hold duration before triggering (first click only)
-                            // Only trigger if was isolated when released
-                            if (!zrInRapidClickMode && (zrPressed || (!(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)))) {
+                            // ZR key physically released - only trigger if was isolated initially and no other keys held at release
+                            if (!zrInRapidClickMode && zrWasIsolated && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
                                 const u64 holdDuration = currentTime_ns - zrFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
@@ -10416,6 +10436,7 @@ namespace tsl {
                             }
                         }
                         zrKeyWasPressed = false;
+                        zrWasIsolated = false;
                     }
                 }
             }
