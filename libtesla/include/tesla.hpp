@@ -6016,13 +6016,13 @@ namespace tsl {
                     }
                     
                     // ADDITIONAL: Force exact boundary values
-                    //if (m_nextOffset == 0.0f && m_offset < 1.0f) {
-                    //    m_offset = 0.0f;
-                    //    m_scrollVelocity = 0.0f;
-                    //} else if (m_nextOffset == maxOffset && m_offset > maxOffset - 1.0f) {
-                    //    m_offset = maxOffset;
-                    //    m_scrollVelocity = 0.0f;
-                    //}
+                    if (m_nextOffset == 0.0f && m_offset < 1.0f) {
+                        m_offset = 0.0f;
+                        m_scrollVelocity = 0.0f;
+                    } else if (m_nextOffset == maxOffset && m_offset > maxOffset - 1.0f) {
+                        m_offset = maxOffset;
+                        m_scrollVelocity = 0.0f;
+                    }
                 
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     // Your existing touch scroll logic...
@@ -6269,6 +6269,8 @@ namespace tsl {
             inline bool hasAnyFocusableItems() {
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     //Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                    //
+                    //if (test) return true;
                     if (m_items[i]->m_isItem) return true;
                 }
                 return false;
