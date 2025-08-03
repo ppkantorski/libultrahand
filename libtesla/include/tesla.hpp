@@ -5347,19 +5347,13 @@ namespace tsl {
                 // This part is for fixing returning to Ultrahand without rendering that first frame skip
                 static bool checkOnce = true;
                 if (checkOnce && m_pendingJump && !s_hasValidFrame.load(std::memory_order_acquire) && 
-                    !s_isForwardCache.load(std::memory_order_acquire)) {// && 
-                    //ult::internalTouchReleased.load(std::memory_order_acquire)) {
-                    //if (lastInternalTouchRelease == ult::internalTouchReleased.load(std::memory_order_acquire)) {
-                    //    checkOnce = false;
-                    //    return;
-                    //}
+                    !s_isForwardCache.load(std::memory_order_acquire)) {
                     checkOnce = false;
                     return;
                 } else {
                     static bool checkOnce2 = true;
                     if (checkOnce2) {
                         checkOnce = true;
-                        //lastInternalTouchRelease = ult::internalTouchReleased.load(std::memory_order_acquire);
                         checkOnce2 = false;
                     }
                 }
@@ -6019,13 +6013,13 @@ namespace tsl {
                     }
                     
                     // ADDITIONAL: Force exact boundary values
-                    if (m_nextOffset == 0.0f && m_offset < 1.0f) {
-                        m_offset = 0.0f;
-                        m_scrollVelocity = 0.0f;
-                    } else if (m_nextOffset == maxOffset && m_offset > maxOffset - 1.0f) {
-                        m_offset = maxOffset;
-                        m_scrollVelocity = 0.0f;
-                    }
+                    //if (m_nextOffset == 0.0f && m_offset < 1.0f) {
+                    //    m_offset = 0.0f;
+                    //    m_scrollVelocity = 0.0f;
+                    //} else if (m_nextOffset == maxOffset && m_offset > maxOffset - 1.0f) {
+                    //    m_offset = maxOffset;
+                    //    m_scrollVelocity = 0.0f;
+                    //}
                 
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
                     // Your existing touch scroll logic...
@@ -6319,11 +6313,11 @@ namespace tsl {
                         const float itemHeight = m_items[i]->getHeight();
                         // For middle items, use centering logic
                         const float itemCenterPos = h + (itemHeight / 2.0f);  // FIXED: Use center, not bottom
-                        const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET; // Same offset as updateScrollOffset
-                        float idealOffset = itemCenterPos - viewportCenter;
+                        const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f; // Same offset as updateScrollOffset
+                        //float idealOffset = itemCenterPos - viewportCenter;
                         
                         // Clamp to valid bounds (same as updateScrollOffset)
-                        idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                        const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
                         
                         // Set both current and target offset
                         m_offset = m_nextOffset = idealOffset;
@@ -6876,28 +6870,28 @@ namespace tsl {
                 const float viewHeight = static_cast<float>(getHeight());
             
                 // FIXED: Special handling for the first focusable item
-                if (m_focusedIndex == 0 || itemPos <= viewHeight * 0.3f) {
-                    // For items at the very top or very close to top, snap to absolute zero
-                    m_nextOffset = 0.0f;
-                    return;
-                }
+                //if (m_focusedIndex == 0 || itemPos <= viewHeight * 0.3f) {
+                //    // For items at the very top or very close to top, snap to absolute zero
+                //    m_nextOffset = 0.0f;
+                //    return;
+                //}
                 
                 // FIXED: Special handling for items near the bottom
                 const float maxOffset = static_cast<float>(m_listHeight - getHeight());
-                const float itemBottom = itemPos + itemHeight;
-                if (itemBottom >= m_listHeight - (viewHeight * 0.3f)) {
-                    // For items near the bottom, snap to max offset
-                    m_nextOffset = maxOffset;
-                    return;
-                }
+                //const float itemBottom = itemPos + itemHeight;
+                //if (itemBottom >= m_listHeight - (viewHeight * 0.3f)) {
+                //    // For items near the bottom, snap to max offset
+                //    m_nextOffset = maxOffset;
+                //    return;
+                //}
                 
                 // For middle items, use centering logic
                 const float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET; // add slight offset
-                float idealOffset = itemCenterPos - viewportCenter;
+                const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f; // add slight offset
+                //float idealOffset = itemCenterPos - viewportCenter;
                 
                 // Clamp to valid scroll bounds
-                idealOffset = std::max(0.0f, std::min(idealOffset, maxOffset));
+                const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
                 
                 // Set target for smooth animation
                 m_nextOffset = idealOffset;
@@ -9857,6 +9851,9 @@ namespace tsl {
         
 
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
+            if (!ult::internalTouchReleased.load(std::memory_order_acquire))
+                return;
+
             // Static variables to maintain state between function calls
             static HidTouchState initialTouchPos = { 0 };
             static HidTouchState oldTouchPos = { 0 };
@@ -9874,23 +9871,19 @@ namespace tsl {
 
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
-
-
-            if (ult::refreshWallpaper.load(std::memory_order_acquire) || !ult::internalTouchReleased.load(std::memory_order_acquire))
-                return;
         
             auto& currentGui = this->getCurrentGui();
 
             // Return early if current GUI is not available or internal touch is not released
             if (!currentGui) {
 
-                //elm::Element::setInputMode(InputMode::Controller);
-                //
-                //oldTouchPos = { 0 };
-                //initialTouchPos = { 0 };
-                //touchEvent = elm::TouchEvent::None;
-                //ult::stillTouching.store(false, std::memory_order_release);
-                //ult::interruptedTouch.store(false, std::memory_order_release);
+                elm::Element::setInputMode(InputMode::Controller);
+                
+                oldTouchPos = { 0 };
+                initialTouchPos = { 0 };
+                touchEvent = elm::TouchEvent::None;
+                ult::stillTouching.store(false, std::memory_order_release);
+                ult::interruptedTouch.store(false, std::memory_order_release);
                 return;
             }
 
@@ -10061,7 +10054,7 @@ namespace tsl {
             
             
             if (hasScrolled) {
-                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
+                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_A | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                 
                 if (singleArrowKeyPress) {
                    // const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -10073,7 +10066,7 @@ namespace tsl {
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
-                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
+                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~(KEY_A | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
                     
                     if (singleArrowKeyPress) {
                         //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -10131,9 +10124,9 @@ namespace tsl {
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
-                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
+                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_A & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(topElement, FocusDirection::Up, false);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
+                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_A & ~KEY_DOWN & ALL_KEYS_MASK)) {
                                 currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
                                 //isTopElement = false;
                             }
