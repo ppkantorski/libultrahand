@@ -4427,36 +4427,37 @@ namespace tsl {
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
-                float buttonStartX;
+                
+                // Set initial button position
+                static constexpr float buttonStartX = 30;
+                
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
                     const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    ult::halfGap.store(gapWidth / 2.0f, std::memory_order_release);
+                    const float _halfGap = gapWidth / 2.0f;
+                    ult::halfGap.store(_halfGap, std::memory_order_release);
                 
                     // Calculate text dimensions for buttons without gaps
                     const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
                     const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 
                     // Update widths to include the half-gap padding on each side
-                    ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_release);    // halfGap on both sides
-                    ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_release);
+                    const float _backWidth = backTextWidth + gapWidth;
+                    const float _selectWidth = selectTextWidth + gapWidth;
+                    ult::backWidth.store(_backWidth, std::memory_order_release);
+                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
-                    // Use consistent edge padding equal to halfGap
-                    const float edgePadding = ult::halfGap.load(std::memory_order_acquire);
-                    buttonStartX = edgePadding;
+                    const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(buttonStartX, static_cast<float>(cfg::FramebufferHeight - 73 + 1),
-                                                  ult::backWidth.load(std::memory_order_acquire), 73.0f, 10.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
                     }
                 
                     // Draw select button rectangle (starts right after back button)
                     if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                        const float backWidth = ult::backWidth.load(std::memory_order_acquire);
-                        const float selectWidth = ult::selectWidth.load(std::memory_order_acquire);
-                        renderer->drawRoundedRect(buttonStartX + backWidth, static_cast<float>(cfg::FramebufferHeight - 73 + 1),
-                                                  selectWidth, 73.0f, 10.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
+                                                  _selectWidth-2, 73.0f, 10.0f, a(clickColor));
                     }
                 }
                 
@@ -4467,7 +4468,6 @@ namespace tsl {
                         (!m_noClickableItems 
                             ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
                             : "");
-
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                     renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 }
@@ -5061,34 +5061,32 @@ namespace tsl {
             
                 // Get the exact gap width from ult::GAP_1
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                ult::halfGap.store(gapWidth / 2.0f, std::memory_order_relaxed);
+                const float _halfGap = gapWidth / 2.0f;
+                ult::halfGap.store(_halfGap, std::memory_order_relaxed);
             
                 // Calculate text dimensions for buttons without gaps
                 const float backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
                 const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
             
                 // Store final widths with gap padding included
-                ult::backWidth.store(backTextWidth + gapWidth, std::memory_order_relaxed);
-                ult::selectWidth.store(selectTextWidth + gapWidth, std::memory_order_relaxed);
+                const float _backWidth = backTextWidth + gapWidth;
+                const float _selectWidth = selectTextWidth + gapWidth;
+                ult::backWidth.store(_backWidth, std::memory_order_relaxed);
+                ult::selectWidth.store(_selectWidth, std::memory_order_relaxed);
             
-                // Use consistent edge padding equal to halfGap
-                const float buttonStartX = ult::halfGap.load(std::memory_order_relaxed) - 5;
+                // Set initial button position
+                static constexpr float buttonStartX = 30;
+                const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
             
                 // Draw back button rectangle
                 if (ult::touchingBack.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX,
-                                              static_cast<float>(cfg::FramebufferHeight - 73 + 1),
-                                              ult::backWidth.load(std::memory_order_relaxed),
-                                              73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
                 }
             
                 // Draw select button rectangle
-                const float backWidth = ult::backWidth.load(std::memory_order_relaxed);
                 if (ult::touchingSelect.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX + backWidth,
-                                              static_cast<float>(cfg::FramebufferHeight - 73 + 1),
-                                              ult::selectWidth.load(std::memory_order_relaxed),
-                                              73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
+                                              _selectWidth-2, 73.0f, 10.0f, a(clickColor));
                 }
             
                 // Draw bottom text
@@ -10145,7 +10143,7 @@ namespace tsl {
                 }
             }
         
-        #if !IS_STATUS_MONITOR_DIRECTIVE
+#if !IS_STATUS_MONITOR_DIRECTIVE
             if (!touchDetected && !interpreterIsRunning && topElement) {
         #else
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
@@ -10161,6 +10159,14 @@ namespace tsl {
                 static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
                 
                 //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                
+                // Detect actual key states (regardless of combos)
+                const bool lKeyPressed = (keysHeld & KEY_L);
+                const bool rKeyPressed = (keysHeld & KEY_R);
+                const bool zlKeyPressed = (keysHeld & KEY_ZL);
+                const bool zrKeyPressed = (keysHeld & KEY_ZR);
+                
+                // Detect isolated key states (only this key pressed)
                 const bool lPressed = (keysHeld & KEY_L) && !(keysHeld & ~KEY_L & ALL_KEYS_MASK);
                 const bool rPressed = (keysHeld & KEY_R) && !(keysHeld & ~KEY_R & ALL_KEYS_MASK);
                 const bool zlPressed = (keysHeld & KEY_ZL) && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
@@ -10168,54 +10174,60 @@ namespace tsl {
                 
                 // Handle L button (simple jump to top on release, but not if held too long)
                 {
-                    static bool lWasPressed = false;
+                    static bool lKeyWasPressed = false;
                     static u64 lButtonPressStart_ns = 0;
                     
-                    if (lPressed) {
-                        if (!lWasPressed) {
+                    if (lKeyPressed) {
+                        if (!lKeyWasPressed) {
+                            // L key physically pressed (start timer)
                             lButtonPressStart_ns = currentTime_ns;
                         }
-                        lWasPressed = true;
+                        lKeyWasPressed = true;
                     } else {
-                        if (lWasPressed && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {
-                            // Button just released - only jump to top if not held too long
-                            const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
-                            if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                jumpToTop.store(true, std::memory_order_release);
-                                currentGui->requestFocus(topElement, FocusDirection::None);
+                        if (lKeyWasPressed) {
+                            // L key physically released - only jump to top if was isolated at release and not held too long
+                            if (lPressed || (!(keysHeld & ~KEY_L & ALL_KEYS_MASK))) {  // Was isolated when released
+                                const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
+                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
+                                    jumpToTop.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                }
                             }
                         }
-                        lWasPressed = false;
+                        lKeyWasPressed = false;
                     }
                 }
                 
                 // Handle R button (simple jump to bottom on release, but not if held too long)
                 {
-                    static bool rWasPressed = false;
+                    static bool rKeyWasPressed = false;
                     static u64 rButtonPressStart_ns = 0;
                     
-                    if (rPressed) {
-                        if (!rWasPressed) {
+                    if (rKeyPressed) {
+                        if (!rKeyWasPressed) {
+                            // R key physically pressed (start timer)
                             rButtonPressStart_ns = currentTime_ns;
                         }
-                        rWasPressed = true;
+                        rKeyWasPressed = true;
                     } else {
-                        if (rWasPressed && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {
-                            // Button just released - only jump to bottom if not held too long
-                            const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
-                            if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                jumpToBottom.store(true, std::memory_order_release);
-                                currentGui->requestFocus(topElement, FocusDirection::None);
+                        if (rKeyWasPressed) {
+                            // R key physically released - only jump to bottom if was isolated at release and not held too long
+                            if (rPressed || (!(keysHeld & ~KEY_R & ALL_KEYS_MASK))) {  // Was isolated when released
+                                const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
+                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
+                                    jumpToBottom.store(true, std::memory_order_release);
+                                    currentGui->requestFocus(topElement, FocusDirection::None);
+                                }
                             }
                         }
-                        rWasPressed = false;
+                        rKeyWasPressed = false;
                     }
                 }
                 
                 // Handle ZL button (skip up with hold)
                 {
                     static u64 zlLastClickTime_ns = 0;
-                    static bool zlWasPressed = false;
+                    static bool zlKeyWasPressed = false;
                     static bool zlInRapidClickMode = false;
                     static u64 zlFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
@@ -10224,9 +10236,9 @@ namespace tsl {
                         zlInRapidClickMode = false;
                     }
                     
-                    if (zlPressed) {
-                        if (!zlWasPressed) {
-                            // Button just pressed
+                    if (zlKeyPressed) {
+                        if (!zlKeyWasPressed) {
+                            // ZL key physically pressed
                             const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
                             
                             // Track press start time for first clicks (when not in rapid mode)
@@ -10239,22 +10251,22 @@ namespace tsl {
                                 zlInRapidClickMode = true;
                             }
                             
-                            // Only trigger immediately if in rapid click mode
-                            if (zlInRapidClickMode) {
+                            // Only trigger immediately if in rapid click mode AND isolated
+                            if (zlInRapidClickMode && zlPressed) {
                                 skipUp.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zlLastClickTime_ns = currentTime_ns;
                             }
                         }
                         
-                        // Check for hold behavior - ONLY if in rapid click mode
-                        if (zlInRapidClickMode) {
+                        // Check for hold behavior - ONLY if in rapid click mode AND isolated
+                        if (zlInRapidClickMode && zlPressed) {
                             static u64 zlButtonPressStart_ns = 0;
                             static u64 zlLastHoldTrigger_ns = 0;
                             static bool zlHoldTriggered = false;
                             
                             // Initialize on new press
-                            if (!zlWasPressed) {
+                            if (!zlKeyWasPressed) {
                                 zlButtonPressStart_ns = currentTime_ns;
                                 zlLastHoldTrigger_ns = currentTime_ns;
                                 zlHoldTriggered = false;
@@ -10281,13 +10293,14 @@ namespace tsl {
                             }
                         }
                         
-                        zlWasPressed = true;
+                        zlKeyWasPressed = true;
                     } else {
-                        if (zlWasPressed && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
-                            // Button just released
+                        if (zlKeyWasPressed) {
+                            // ZL key physically released
                             
                             // If not in rapid click mode, check hold duration before triggering (first click only)
-                            if (!zlInRapidClickMode) {
+                            // Only trigger if was isolated when released
+                            if (!zlInRapidClickMode && (zlPressed || (!(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)))) {
                                 const u64 holdDuration = currentTime_ns - zlFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
@@ -10299,14 +10312,14 @@ namespace tsl {
                                 }
                             }
                         }
-                        zlWasPressed = false;
+                        zlKeyWasPressed = false;
                     }
                 }
                 
                 // Handle ZR button (skip down with hold)
                 {
                     static u64 zrLastClickTime_ns = 0;
-                    static bool zrWasPressed = false;
+                    static bool zrKeyWasPressed = false;
                     static bool zrInRapidClickMode = false;
                     static u64 zrFirstClickPressStart_ns = 0;  // Track timing for first clicks only
                     
@@ -10315,9 +10328,9 @@ namespace tsl {
                         zrInRapidClickMode = false;
                     }
                     
-                    if (zrPressed) {
-                        if (!zrWasPressed) {
-                            // Button just pressed
+                    if (zrKeyPressed) {
+                        if (!zrKeyWasPressed) {
+                            // ZR key physically pressed
                             const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
                             
                             // Track press start time for first clicks (when not in rapid mode)
@@ -10330,22 +10343,22 @@ namespace tsl {
                                 zrInRapidClickMode = true;
                             }
                             
-                            // Only trigger immediately if in rapid click mode
-                            if (zrInRapidClickMode) {
+                            // Only trigger immediately if in rapid click mode AND isolated
+                            if (zrInRapidClickMode && zrPressed) {
                                 skipDown.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 zrLastClickTime_ns = currentTime_ns;
                             }
                         }
                         
-                        // Check for hold behavior - ONLY if in rapid click mode
-                        if (zrInRapidClickMode) {
+                        // Check for hold behavior - ONLY if in rapid click mode AND isolated
+                        if (zrInRapidClickMode && zrPressed) {
                             static u64 zrButtonPressStart_ns = 0;
                             static u64 zrLastHoldTrigger_ns = 0;
                             static bool zrHoldTriggered = false;
                             
                             // Initialize on new press
-                            if (!zrWasPressed) {
+                            if (!zrKeyWasPressed) {
                                 zrButtonPressStart_ns = currentTime_ns;
                                 zrLastHoldTrigger_ns = currentTime_ns;
                                 zrHoldTriggered = false;
@@ -10372,13 +10385,14 @@ namespace tsl {
                             }
                         }
                         
-                        zrWasPressed = true;
+                        zrKeyWasPressed = true;
                     } else {
-                        if (zrWasPressed && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
-                            // Button just released
+                        if (zrKeyWasPressed) {
+                            // ZR key physically released
                             
                             // If not in rapid click mode, check hold duration before triggering (first click only)
-                            if (!zrInRapidClickMode) {
+                            // Only trigger if was isolated when released
+                            if (!zrInRapidClickMode && (zrPressed || (!(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)))) {
                                 const u64 holdDuration = currentTime_ns - zrFirstClickPressStart_ns;
                                 
                                 // Only trigger if not held too long
@@ -10390,7 +10404,7 @@ namespace tsl {
                                 }
                             }
                         }
-                        zrWasPressed = false;
+                        zrKeyWasPressed = false;
                     }
                 }
             }
