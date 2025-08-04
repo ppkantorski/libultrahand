@@ -5247,7 +5247,7 @@ namespace tsl {
         
         public:
             List() : Element() {
-                s_safeToSwap.store(true, std::memory_order_release);
+                s_safeToSwap.store(false, std::memory_order_release);
                 //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
@@ -5279,7 +5279,7 @@ namespace tsl {
             }
             
             virtual ~List() {
-                s_safeToSwap.store(true, std::memory_order_release);
+                s_safeToSwap.store(false, std::memory_order_release);
                 //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
@@ -5313,7 +5313,7 @@ namespace tsl {
             virtual void draw(gfx::Renderer* renderer) override {
                 s_safeToSwap.store(false, std::memory_order_release);
                 std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
-                s_safeToSwap.store(false, std::memory_order_release);
+                //s_safeToSwap.store(false, std::memory_order_release);
                 
                 // Early exit optimizations
                 if (m_clearList) {
