@@ -304,9 +304,9 @@ namespace tsl {
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
     static Color overlayEntryTextColor = RGB888(ult::whiteColor);
-    static Color overlayEntryHighlightTextColor = RGB888(ult::whiteColor);
+    static Color overlayEntryHighlightTextColor = RGB888("9ed0ff");
     static Color packageEntryTextColor = RGB888(ult::whiteColor);
-    static Color packageEntryHighlightTextColor = RGB888(ult::whiteColor);
+    static Color packageEntryHighlightTextColor = RGB888("9ed0ff");
 
     static Color bannerVersionTextColor = RGB888("AAAAAA");
     static Color overlayVersionTextColor = RGB888("AAAAAA");
