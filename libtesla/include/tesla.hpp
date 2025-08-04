@@ -5247,8 +5247,8 @@ namespace tsl {
         
         public:
             List() : Element() {
-                s_safeToSwap.store(false, std::memory_order_release);
-                s_directionalKeyReleased.store(false, std::memory_order_release);
+                s_safeToSwap.store(true, std::memory_order_release);
+                //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
                 
@@ -5279,8 +5279,8 @@ namespace tsl {
             }
             
             virtual ~List() {
-                s_safeToSwap.store(false, std::memory_order_release);
-                s_directionalKeyReleased.store(false, std::memory_order_release);
+                s_safeToSwap.store(true, std::memory_order_release);
+                //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
             
@@ -6141,14 +6141,15 @@ namespace tsl {
                 }
                 
                 // At absolute bottom - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom() && s_directionalKeyReleased.load(std::memory_order_acquire)) {
-                    s_directionalKeyReleased.store(false, std::memory_order_release);
-                    m_hasWrappedInCurrentSequence = true;
-                    m_lastNavigationResult = NavigationResult::Wrapped;
-                    triggerShakeOnce = true;  // Reset when wrapping
-                    return handleJumpToTop(oldFocus);
-                } else {
-                    s_directionalKeyReleased.store(false, std::memory_order_release);
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
+                    if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                        s_directionalKeyReleased.store(false, std::memory_order_release);
+                        m_hasWrappedInCurrentSequence = true;
+                        m_lastNavigationResult = NavigationResult::Wrapped;
+                        triggerShakeOnce = true;  // Reset when wrapping
+                        return handleJumpToTop(oldFocus);
+                    } else
+                        s_directionalKeyReleased.store(false, std::memory_order_release);
                 }
                 
                 // Set boundary flag
@@ -6206,14 +6207,15 @@ namespace tsl {
                 }
                 
                 // At absolute top - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop() && s_directionalKeyReleased.load(std::memory_order_acquire)) {
-                    s_directionalKeyReleased.store(false, std::memory_order_release);
-                    m_hasWrappedInCurrentSequence = true;
-                    m_lastNavigationResult = NavigationResult::Wrapped;
-                    triggerShakeOnce = true;  // Reset when wrapping
-                    return handleJumpToBottom(oldFocus);
-                } else {
-                    s_directionalKeyReleased.store(false, std::memory_order_release);
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
+                    if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                        s_directionalKeyReleased.store(false, std::memory_order_release);
+                        m_hasWrappedInCurrentSequence = true;
+                        m_lastNavigationResult = NavigationResult::Wrapped;
+                        triggerShakeOnce = true;  // Reset when wrapping
+                        return handleJumpToBottom(oldFocus);
+                    } else
+                        s_directionalKeyReleased.store(false, std::memory_order_release);
                 }
                 
                 // Set boundary flag
@@ -10084,11 +10086,13 @@ namespace tsl {
             
 
             // Navigational boundary cases for handling wrapping
-            static bool lastDirectionPressed;
+            static bool lastDirectionPressed = true;
             const bool directionPressed = ((keysHeld & KEY_UP) || (keysHeld & KEY_DOWN) || (keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT));
 
             if (!directionPressed && lastDirectionPressed)
                 tsl::elm::s_directionalKeyReleased.store(true, std::memory_order_release);
+            else if (directionPressed && lastDirectionPressed)
+                tsl::elm::s_directionalKeyReleased.store(false, std::memory_order_release);
 
             lastDirectionPressed = directionPressed;
 
