@@ -100,7 +100,8 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             const char* error_ptr = cJSON_GetErrorPtr();
             if (error_ptr) {
-                logMessage("JSON parsing error: " + std::string(error_ptr));
+                if (!disableLogging)
+                    logMessage("JSON parsing error: " + std::string(error_ptr));
             }
             #endif
             return nullptr;
@@ -126,7 +127,8 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             const char* error_ptr = cJSON_GetErrorPtr();
             if (error_ptr != nullptr) {
-                logMessage("Failed to parse JSON: " + std::string(error_ptr));
+                if (!disableLogging)
+                    logMessage("Failed to parse JSON: " + std::string(error_ptr));
             }
             #endif
             return nullptr; // Return nullptr to indicate failure clearly

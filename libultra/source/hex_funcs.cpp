@@ -426,7 +426,8 @@ namespace ult {
         FILE* file = fopen(filePath.c_str(), "rb+");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the file.");
+            if (!disableLogging)
+                logMessage("Failed to open the file.");
             #endif
             return;
         }
@@ -438,7 +439,8 @@ namespace ult {
     
         if (offset >= fileSize) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Offset exceeds file size.");
+            if (!disableLogging)
+                logMessage("Offset exceeds file size.");
             #endif
             fclose(file);
             return;
@@ -457,7 +459,8 @@ namespace ult {
         const size_t bytesWritten = fwrite(binaryData.data(), sizeof(unsigned char), binaryData.size(), file);
         if (bytesWritten != binaryData.size()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to write data to the file.");
+            if (!disableLogging)
+                logMessage("Failed to write data to the file.");
             #endif
             fclose(file);
             return;
@@ -469,7 +472,8 @@ namespace ult {
         std::fstream file(filePath, std::ios::binary | std::ios::in | std::ios::out);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the file.");
+            if (!disableLogging)
+                logMessage("Failed to open the file.");
             #endif
             return;
         }
@@ -481,7 +485,8 @@ namespace ult {
     
         if (offset >= fileSize) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Offset exceeds file size.");
+            if (!disableLogging)
+                logMessage("Offset exceeds file size.");
             #endif
             return;
         }
@@ -499,7 +504,8 @@ namespace ult {
         file.write(reinterpret_cast<const char*>(binaryData.data()), binaryData.size());
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to write data to the file.");
+            if (!disableLogging)
+                logMessage("Failed to write data to the file.");
             #endif
             return;
         }
@@ -562,7 +568,8 @@ namespace ult {
                 }
             } else {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Offset not found.");
+                if (!disableLogging)
+                    logMessage("Offset not found.");
                 #endif
                 return;
             }
@@ -575,7 +582,8 @@ namespace ult {
             hexEditByOffset(filePath, ult::to_string(hexSum + ult::stoi(offsetStr)), hexDataReplacement);
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to find " + customAsciiPattern + ".");
+            if (!disableLogging)
+                logMessage("Failed to find " + customAsciiPattern + ".");
             #endif
         }
     }
@@ -612,7 +620,8 @@ namespace ult {
                 } else {
                     // Invalid occurrence/index specified
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Invalid hex occurrence/index specified.");
+                    if (!disableLogging)
+                        logMessage("Invalid hex occurrence/index specified.");
                     #endif
                 }
             }
@@ -659,7 +668,8 @@ namespace ult {
                 }
             } else {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Offset not found.");
+                if (!disableLogging)
+                    logMessage("Offset not found.");
                 #endif
                 return "";
             }
@@ -673,14 +683,16 @@ namespace ult {
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the file.");
+            if (!disableLogging)
+                logMessage("Failed to open the file.");
             #endif
             return "";
         }
 
         if (fseek(file, totalOffset, SEEK_SET) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error seeking to offset.");
+            if (!disableLogging)
+                logMessage("Error seeking to offset.");
             #endif
             fclose(file);
             return "";
@@ -695,7 +707,8 @@ namespace ult {
             }
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error reading data from file or end of file reached.");
+            if (!disableLogging)
+                logMessage("Error reading data from file or end of file reached.");
             #endif
             fclose(file);
             return "";
@@ -706,7 +719,8 @@ namespace ult {
         std::ifstream file(filePath, std::ios::binary);
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the file.");
+            if (!disableLogging)
+                logMessage("Failed to open the file.");
             #endif
             return "";
         }
@@ -714,7 +728,8 @@ namespace ult {
         file.seekg(totalOffset);
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error seeking to offset.");
+            if (!disableLogging)
+                logMessage("Error seeking to offset.");
             #endif
             return "";
         }
@@ -728,7 +743,8 @@ namespace ult {
             }
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error reading data from file or end of file reached.");
+            if (!disableLogging)
+                logMessage("Error reading data from file or end of file reached.");
             #endif
             return "";
         }

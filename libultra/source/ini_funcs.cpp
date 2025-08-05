@@ -969,7 +969,8 @@ namespace ult {
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -977,7 +978,8 @@ namespace ult {
         FILE* outputFile = fopen(tempPath.c_str(), "w");
         if (!outputFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the output file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the output file: " + tempPath);
             #endif
             fclose(inputFile);
             return;
@@ -1028,7 +1030,8 @@ namespace ult {
         std::ifstream inputFile(filePath);
         if (!inputFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1036,7 +1039,8 @@ namespace ult {
         std::ofstream outputFile(tempPath);
         if (!outputFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the output file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the output file: " + tempPath);
             #endif
             return;
         }
@@ -1079,7 +1083,8 @@ namespace ult {
         // Replace the original file with the temp file with error checking
         if (std::remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to delete the original file: " + filePath);
             #endif
             // Clean up temp file on error
             std::remove(tempPath.c_str());
@@ -1088,7 +1093,8 @@ namespace ult {
     
         if (std::rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }
@@ -1432,7 +1438,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Error: Failed to create new INI file.");
+                if (!disableLogging)
+                    logMessage("Error: Failed to create new INI file.");
             }
             #endif
             return;
@@ -1442,7 +1449,8 @@ namespace ult {
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Failed to create a temporary file.");
+            if (!disableLogging)
+                logMessage("Error: Failed to create a temporary file.");
             #endif
             fclose(inputFile);
             return;
@@ -1525,7 +1533,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Error: Failed to create new INI file.");
+                if (!disableLogging)
+                    logMessage("Error: Failed to create new INI file.");
             }
             #endif
             return;
@@ -1535,7 +1544,8 @@ namespace ult {
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Failed to create a temporary file.");
+            if (!disableLogging)
+                logMessage("Error: Failed to create a temporary file.");
             #endif
             return;
         }
@@ -1594,7 +1604,8 @@ namespace ult {
         // Replace the original file with the temp file
         if (std::remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to delete the original file: " + filePath);
             #endif
             // Clean up temp file on error
             std::remove(tempPath.c_str());
@@ -1603,7 +1614,8 @@ namespace ult {
     
         if (std::rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }
@@ -1628,7 +1640,8 @@ namespace ult {
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1637,7 +1650,8 @@ namespace ult {
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             fclose(configFile);
             return;
@@ -1666,7 +1680,8 @@ namespace ult {
         std::ifstream configFile(filePath);
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1675,7 +1690,8 @@ namespace ult {
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             return;
         }
@@ -1698,14 +1714,16 @@ namespace ult {
         // Replace the original file with the modified temporary file
         if (remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to delete the original file: " + filePath);
             #endif
             return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }
@@ -1729,7 +1747,8 @@ namespace ult {
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1738,7 +1757,8 @@ namespace ult {
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             fclose(configFile);
             return;
@@ -1814,7 +1834,8 @@ namespace ult {
         std::ifstream configFile(filePath);
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1823,7 +1844,8 @@ namespace ult {
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             return;
         }
@@ -1897,14 +1919,16 @@ namespace ult {
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to delete the original file: " + filePath);
             #endif
             return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }
@@ -1921,7 +1945,8 @@ namespace ult {
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -1930,7 +1955,8 @@ namespace ult {
         FILE* tempFile = fopen(tempPath.c_str(), "w");
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             fclose(configFile);
             return;
@@ -1992,7 +2018,8 @@ namespace ult {
         std::ifstream configFile(filePath);
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open the input file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to open the input file: " + filePath);
             #endif
             return;
         }
@@ -2001,7 +2028,8 @@ namespace ult {
         std::ofstream tempFile(tempPath);
         if (!tempFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to create the temporary file: " + tempPath);
             #endif
             return;
         }
@@ -2057,14 +2085,16 @@ namespace ult {
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete the original file: " + filePath);
+            if (!disableLogging)
+                logMessage("Failed to delete the original file: " + filePath);
             #endif
             return;
         }
     
         if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to rename the temporary file: " + tempPath);
+            if (!disableLogging)
+                logMessage("Failed to rename the temporary file: " + tempPath);
             #endif
         }
     }

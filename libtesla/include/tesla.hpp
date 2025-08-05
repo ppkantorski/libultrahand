@@ -269,7 +269,7 @@ namespace tsl {
         }
     }
 
-    static bool overrideBackButton = false; // for proprerly overriding the automatic "go back" functionality of KEY_B button presses
+    static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
@@ -322,6 +322,7 @@ namespace tsl {
     #endif
 
     static bool disableSelectionBG = false;
+    static bool disableSelectionValueColor = false;
     static bool invertBGClickColor = false;
 
     static size_t selectionBGAlpha = 11;
@@ -348,6 +349,7 @@ namespace tsl {
     static Color textSeparatorColor = RGB888("404040");
 
     static Color selectedTextColor = RGB888(ult::whiteColor);
+    static Color selectedValueTextColor = RGB888("FF7777");
     static Color inprogressTextColor = RGB888(ult::whiteColor);
     static Color invalidTextColor = RGB888("FF0000");
     static Color clickTextColor = RGB888(ult::whiteColor);
@@ -440,6 +442,7 @@ namespace tsl {
             #endif
 
             disableSelectionBG = (getValue("disable_selection_bg") == ult::TRUE_STR);
+            disableSelectionValueColor = (getValue("disable_selection_value_color") == ult::TRUE_STR);
             invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
 
             selectionBGAlpha = getAlpha("selection_bg_alpha");
@@ -464,6 +467,7 @@ namespace tsl {
             textSeparatorColor = getColor("text_separator_color");
             
             selectedTextColor = getColor("selection_text_color");
+            selectedValueTextColor = getColor("selection_value_text_color");
             inprogressTextColor = getColor("inprogress_text_color");
             invalidTextColor = getColor("invalid_text_color");
             clickTextColor = getColor("click_text_color");
@@ -6997,8 +7001,9 @@ namespace tsl {
             #endif
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
-                    const Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                        (m_focused ? (useClickTextColor ? clickTextColor : selectedTextColor) : (useClickTextColor ? clickTextColor : defaultTextColor));
+                    const Color textColor = m_focused ? 
+                        (useClickTextColor ? clickTextColor : selectedTextColor) : 
+                        (m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor));
                     
                     renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         textColor, (m_focused ? starColor : selectionStarColor));
@@ -7235,7 +7240,7 @@ namespace tsl {
                     //    (useClickTextColor ? clickTextColor : selectedTextColor);
                     
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
+                        useClickTextColor ? clickTextColor : selectedTextColor, (starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
@@ -7364,15 +7369,42 @@ namespace tsl {
                 }
                 lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire); // Relaxed ordering is sufficient
             }
-        
+                    
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
+                // Check if selection value colors should be disabled
+                if (m_focused && !disableSelectionValueColor) {
+                    // Use selection colors when focused and selection colors are enabled
+                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
+                        return useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedValueTextColor);
+                    }
+                    
+                    const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
+                    if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
+                                     m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
+                                     m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
+                        return m_faint ? offTextColor : (inprogressTextColor);
+                    }
+                    
+                    if (m_value == ult::INPROGRESS_SYMBOL) {
+                        return m_faint ? offTextColor : (inprogressTextColor);
+                    }
+                    
+                    if (m_value == ult::CROSSMARK_SYMBOL) {
+                        return m_faint ? offTextColor : (invalidTextColor);
+                    }
+                    
+                    // For normal values when focused, use selectedValueTextColor
+                    return useClickTextColor ? clickTextColor : selectedValueTextColor;
+                }
+                
+                // If focused but selection colors are disabled, or if not focused, use original logic
                 // Check for custom value color first
-                if (m_hasCustomValueColor) [[unlikely]] {
+                if (m_hasCustomValueColor) {
                     return m_customValueColor;
                 }
                 
-                // Fast path for most common cases
-                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) [[unlikely]] {
+                // Original logic for all other cases
+                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
                     return (m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedTextColor)) :
                         (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
                 }
@@ -7380,21 +7412,21 @@ namespace tsl {
                 const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
-                                 m_value.find(ult::COPY_SYMBOL) != std::string::npos)) [[unlikely]] {
+                                 m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
                     return m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
-                if (m_value == ult::INPROGRESS_SYMBOL) [[unlikely]] {
+                if (m_value == ult::INPROGRESS_SYMBOL) {
                     return m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
-                if (m_value == ult::CROSSMARK_SYMBOL) [[unlikely]] {
+                if (m_value == ult::CROSSMARK_SYMBOL) {
                     return m_faint ? offTextColor : (invalidTextColor);
                 }
                 
                 return (m_faint ? offTextColor : (onTextColor));
             }
-        
+
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
                 static size_t throbberCounter = 0;
                 const auto& throbberSymbol = ult::THROBBER_SYMBOLS[(throbberCounter / 10) % ult::THROBBER_SYMBOLS.size()];

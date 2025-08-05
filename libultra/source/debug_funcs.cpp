@@ -18,8 +18,8 @@ namespace ult {
     std::mutex logMutex;
     
     void logMessage(const std::string& message) {
-        if (disableLogging)
-            return;
+        //if (disableLogging)
+        //    return;
         
         std::time_t currentTime = std::time(nullptr);
         std::tm* timeInfo = std::localtime(&currentTime);

@@ -69,21 +69,21 @@ namespace ult {
     
     // Thread-safe callback functions
     #if !USING_FSTREAM_DIRECTIVE
-    extern size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
+    size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
     #else
-    extern size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
+    size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
     #endif
     
-    extern int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
+    int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
     
     
     // Thread-safe initialization and cleanup functions
-    extern void initializeCurl();
-    extern void cleanupCurl();
+    void initializeCurl();
+    void cleanupCurl();
     
     // Main API functions - thread-safe and optimized
-    extern bool downloadFile(const std::string& url, const std::string& toDestination, bool noPercentagePolling=false);
-    extern bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
+    bool downloadFile(const std::string& url, const std::string& toDestination, bool noPercentagePolling=false);
+    bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
 }
 
 #endif // DOWNLOAD_FUNCS_HPP

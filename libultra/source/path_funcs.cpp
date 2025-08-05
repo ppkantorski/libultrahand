@@ -80,6 +80,23 @@ namespace ult {
         return (stat(path.c_str(), &pathStat) == 0);
     }
     
+    // Helper function to check if directory is empty
+    bool isDirectoryEmpty(const std::string& dirPath) {
+        DIR* dir = opendir(dirPath.c_str());
+        if (!dir) return false; // Can't open, assume not empty
+        
+        dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                closedir(dir);
+                return false; // Found a file/directory
+            }
+        }
+        closedir(dir);
+        return true; // Empty directory
+    }
+
+
     /**
      * @brief Creates a single directory if it doesn't exist.
      *
@@ -93,7 +110,8 @@ namespace ult {
             // Only log error if it's not EEXIST
             if (errno != EEXIST) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to create directory: " + directoryPath + " - " + std::string(strerror(errno)));
+                if (!disableLogging)
+                    logMessage("Failed to create directory: " + directoryPath + " - " + std::string(strerror(errno)));
                 #endif
             }
         }
@@ -144,7 +162,8 @@ namespace ult {
             fflush(logFile); // Ensure data is written immediately
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to write to log file.");
+            if (!disableLogging)
+                logMessage("Failed to write to log file.");
             #endif
         }
     }
@@ -156,7 +175,8 @@ namespace ult {
             logFile.flush(); // Ensure data is written immediately
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to write to log file.");
+            if (!disableLogging)
+                logMessage("Failed to write to log file.");
             #endif
         }
     }
@@ -180,7 +200,8 @@ namespace ult {
             fputs(content.c_str(), file.get());
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create file " + filePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create file " + filePath);
             #endif
         }
     #else
@@ -190,7 +211,8 @@ namespace ult {
             file.close();
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create file " + filePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create file " + filePath);
             #endif
         }
     #endif
@@ -221,7 +243,8 @@ namespace ult {
                     }
                 } else {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Failed to delete file: " + pathToDelete);
+                    if (!disableLogging)
+                        logMessage("Failed to delete file: " + pathToDelete);
                     #endif
                 }
             }
@@ -236,7 +259,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
     #else
@@ -248,7 +272,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
     #endif
@@ -278,14 +303,16 @@ namespace ult {
                     }
                 } else {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Failed to delete file: " + currentPath);
+                    if (!disableLogging)
+                        logMessage("Failed to delete file: " + currentPath);
                     #endif
                 }
             } else if (S_ISDIR(pathStat.st_mode)) { // It's a directory
                 DIR* directory = opendir(currentPath.c_str());
                 if (!directory) {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Failed to open directory: " + currentPath);
+                    if (!disableLogging)
+                        logMessage("Failed to open directory: " + currentPath);
                     #endif
                     stack.pop_back();
                     continue;
@@ -313,14 +340,16 @@ namespace ult {
                         // }
                     } else {
                         #if USING_LOGGING_DIRECTIVE
-                        logMessage("Failed to delete directory: " + currentPath);
+                        if (!disableLogging)
+                            logMessage("Failed to delete directory: " + currentPath);
                         #endif
                     }
                 }
             } else {
                 stack.pop_back(); // Unknown file type, just remove from stack
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Unknown file type: " + currentPath);
+                if (!disableLogging)
+                    logMessage("Unknown file type: " + currentPath);
                 #endif
             }
         }
@@ -338,7 +367,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Failed to open source log file: " + logSource);
+                if (!disableLogging)
+                    logMessage("Failed to open source log file: " + logSource);
             }
             #endif
     #else
@@ -352,7 +382,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Failed to open source log file: " + logSource);
+                if (!disableLogging)
+                    logMessage("Failed to open source log file: " + logSource);
             }
             #endif
     #endif
@@ -384,14 +415,16 @@ namespace ult {
         struct stat sourceInfo;
         if (stat(sourcePath.c_str(), &sourceInfo) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Source directory doesn't exist: " + sourcePath);
+            if (!disableLogging)
+                logMessage("Source directory doesn't exist: " + sourcePath);
             #endif
             return;
         }
     
         if (mkdir(destinationPath.c_str(), 0777) != 0 && errno != EEXIST) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to create destination directory: " + destinationPath);
+            if (!disableLogging)
+                logMessage("Failed to create destination directory: " + destinationPath);
             #endif
             return;
         }
@@ -418,7 +451,8 @@ namespace ult {
             dir = opendir(currentSource.c_str());
             if (!dir) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to open source directory: " + currentSource);
+                if (!disableLogging)
+                    logMessage("Failed to open source directory: " + currentSource);
                 #endif
                 continue;
             }
@@ -443,12 +477,19 @@ namespace ult {
                 if (entry->d_type == DT_DIR) {
                     if (mkdir(fullPathDst.c_str(), 0777) != 0 && errno != EEXIST) {
                         #if USING_LOGGING_DIRECTIVE
-                        logMessage("Failed to create destination directory: " + fullPathDst);
+                        if (!disableLogging)
+                            logMessage("Failed to create destination directory: " + fullPathDst);
                         #endif
                         continue;
                     }
                     stack.push_back({fullPathSrc, fullPathDst});
                     directoriesToRemove.push_back(fullPathSrc);
+
+                    // Log each subdirectory that gets successfully created
+                    if (needsLogging) {
+                        successfulSources.push_back(fullPathSrc + "/");
+                        successfulDestinations.push_back(fullPathDst + "/");
+                    }
                 } else {
                     remove(fullPathDst.c_str());
                     if (rename(fullPathSrc.c_str(), fullPathDst.c_str()) == 0) {
@@ -459,7 +500,8 @@ namespace ult {
                         }
                     } else {
                         #if USING_LOGGING_DIRECTIVE
-                        logMessage("Failed to move: " + fullPathSrc);
+                        if (!disableLogging)
+                            logMessage("Failed to move: " + fullPathSrc);
                         #endif
                     }
                 }
@@ -471,14 +513,16 @@ namespace ult {
         for (auto it = directoriesToRemove.rbegin(); it != directoriesToRemove.rend(); ++it) {
             if (rmdir(it->c_str()) != 0) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to delete source directory: " + *it);
+                if (!disableLogging)
+                    logMessage("Failed to delete source directory: " + *it);
                 #endif
             }
         }
     
         if (rmdir(sourcePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to delete source directory: " + sourcePath);
+            if (!disableLogging)
+                logMessage("Failed to delete source directory: " + sourcePath);
             #endif
         }
     
@@ -489,14 +533,15 @@ namespace ult {
             if (!logSource.empty()) {
                 createDirectory(getParentDirFromPath(logSource));
                 if (FILE* logFile = fopen(logSource.c_str(), "a")) {
-                    for (const auto& source : successfulSources) {
-                        writeLog(logFile, source);
+                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
+                        writeLog(logFile, *it);
                     }
                     fclose(logFile);
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
             }
@@ -504,14 +549,15 @@ namespace ult {
             if (!logDestination.empty()) {
                 createDirectory(getParentDirFromPath(logDestination));
                 if (FILE* logFile = fopen(logDestination.c_str(), "a")) {
-                    for (const auto& destination : successfulDestinations) {
-                        writeLog(logFile, destination);
+                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
+                        writeLog(logFile, *it);
                     }
                     fclose(logFile);
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open destination log file: " + logDestination);
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
                 }
                 #endif
             }
@@ -520,14 +566,15 @@ namespace ult {
                 createDirectory(getParentDirFromPath(logSource));
                 std::ofstream logSourceFile(logSource, std::ios::app);
                 if (logSourceFile.is_open()) {
-                    for (const auto& source : successfulSources) {
-                        writeLog(logSourceFile, source);
+                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
+                        writeLog(logSourceFile, *it);
                     }
                     logSourceFile.close();
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
             }
@@ -536,14 +583,15 @@ namespace ult {
                 createDirectory(getParentDirFromPath(logDestination));
                 std::ofstream logDestFile(logDestination, std::ios::app);
                 if (logDestFile.is_open()) {
-                    for (const auto& destination : successfulDestinations) {
-                        writeLog(logDestFile, destination);
+                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
+                        writeLog(logDestFile, *it);
                     }
                     logDestFile.close();
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open destination log file: " + logDestination);
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
                 }
                 #endif
             }
@@ -557,7 +605,8 @@ namespace ult {
                   const std::string& logDestination) {
         if (!isFileOrDirectory(sourcePath)) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Source file doesn't exist or is not a regular file: " + sourcePath);
+            if (!disableLogging)
+                logMessage("Source file doesn't exist or is not a regular file: " + sourcePath);
             #endif
             return false;
         }
@@ -578,7 +627,8 @@ namespace ult {
                 moveSuccess = true;
             } else {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to move file to directory: " + sourcePath);
+                if (!disableLogging)
+                    logMessage("Failed to move file to directory: " + sourcePath);
                 #endif
             }
         } else {
@@ -591,8 +641,10 @@ namespace ult {
                 moveSuccess = true;
             } else {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to move file: " + sourcePath + " -> " + finalDestPath);
-                logMessage("Error: " + std::string(strerror(errno)));
+                if (!disableLogging) {
+                    logMessage("Failed to move file: " + sourcePath + " -> " + finalDestPath);
+                    logMessage("Error: " + std::string(strerror(errno)));
+                }
                 #endif
             }
         }
@@ -609,7 +661,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
             }
@@ -622,7 +675,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open destination log file: " + logDestination);
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
                 }
                 #endif
             }
@@ -636,7 +690,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open source log file: " + logSource);
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
             }
@@ -650,7 +705,8 @@ namespace ult {
                 }
                 #if USING_LOGGING_DIRECTIVE
                 else {
-                    logMessage("Failed to open destination log file: " + logDestination);
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
                 }
                 #endif
             }
@@ -751,7 +807,8 @@ namespace ult {
             if (!srcFile) {
                 if (retryCount == maxRetries) {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Error: Failed to open source file after " + std::to_string(maxRetries) + " retries");
+                    if (!disableLogging)
+                        logMessage("Error: Failed to open source file after " + std::to_string(maxRetries) + " retries");
                     #endif
                     return;
                 }
@@ -763,7 +820,8 @@ namespace ult {
                 fclose(srcFile);
                 if (retryCount == maxRetries) {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Error: Failed to open destination file after " + std::to_string(maxRetries) + " retries");
+                    if (!disableLogging)
+                        logMessage("Error: Failed to open destination file after " + std::to_string(maxRetries) + " retries");
                     #endif
                     return;
                 }
@@ -796,7 +854,8 @@ namespace ult {
                 written = fwrite(writePtr, 1, remainingBytes, destFile);
                 if (written == 0) {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Error writing to destination file");
+                    if (!disableLogging)
+                        logMessage("Error writing to destination file");
                     #endif
                     remove(toFile.c_str());
                     copyPercentage.store(-1, std::memory_order_release);
@@ -815,7 +874,8 @@ namespace ult {
         // Check for read errors
         if (ferror(srcFile)) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error reading from source file");
+            if (!disableLogging)
+                logMessage("Error reading from source file");
             #endif
             remove(toFile.c_str());
             copyPercentage.store(-1, std::memory_order_release);
@@ -840,7 +900,8 @@ namespace ult {
             
             if (retryCount == maxRetries) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Error: Failed to open files after " + std::to_string(maxRetries) + " retries");
+                if (!disableLogging)
+                    logMessage("Error: Failed to open files after " + std::to_string(maxRetries) + " retries");
                 #endif
                 return;
             }
@@ -862,7 +923,8 @@ namespace ult {
             
             if (!destFile.good()) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Error writing to destination file");
+                if (!disableLogging)
+                    logMessage("Error writing to destination file");
                 #endif
                 srcFile.close();
                 destFile.close();
@@ -890,7 +952,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Failed to open source log file: " + logSource);
+                if (!disableLogging)
+                    logMessage("Failed to open source log file: " + logSource);
             }
             #endif
         }
@@ -903,7 +966,8 @@ namespace ult {
             }
             #if USING_LOGGING_DIRECTIVE
             else {
-                logMessage("Failed to open destination log file: " + logDestination);
+                if (!disableLogging)
+                    logMessage("Failed to open destination log file: " + logDestination);
             }
             #endif
         }
@@ -981,6 +1045,11 @@ namespace ult {
         bool isTopLevelCall = totalBytesCopied == nullptr;
         long long tempBytesCopied = 0;
     
+        // Batch logging optimization - collect successful operations instead of logging immediately
+        std::vector<std::string> successfulSources, successfulDestinations;
+        bool needsLogging = !logSource.empty() || !logDestination.empty();
+        bool filesCopied = false;
+    
         if (isTopLevelCall) {
             totalSize = getTotalSize(fromPath);
             totalBytesCopied = &tempBytesCopied;
@@ -1020,7 +1089,8 @@ namespace ult {
     
             if (stat(currentFromPath.c_str(), &fromStat) != 0) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to get stat of " + currentFromPath);
+                if (!disableLogging)
+                    logMessage("Failed to get stat of " + currentFromPath);
                 #endif
                 continue;
             }
@@ -1036,6 +1106,9 @@ namespace ult {
                 
                 createDirectory(getParentDirFromPath(toFilePath)); // Ensure the parent directory exists
                 copySingleFile(currentFromPath, toFilePath, *totalBytesCopied, totalSize, logSource, logDestination);
+                
+                // Mark that files were copied
+                filesCopied = true;
     
                 if (totalSize > 0) {
                     copyPercentage.store(static_cast<int>((*totalBytesCopied * 100) / totalSize), std::memory_order_release); // Update progress
@@ -1045,15 +1118,19 @@ namespace ult {
                 DIR* dir = opendir(currentFromPath.c_str());
                 if (!dir) {
                     #if USING_LOGGING_DIRECTIVE
-                    logMessage("Failed to open directory: " + currentFromPath);
+                    if (!disableLogging)
+                        logMessage("Failed to open directory: " + currentFromPath);
                     #endif
                     continue;
                 }
     
+                bool hasContent = false;
                 // Cache current path lengths for efficient string building
                 dirent* entry;
                 while ((entry = readdir(dir)) != nullptr) {
                     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+                    
+                    hasContent = true;
                     
                     // More efficient path building
                     subFromPath.clear();
@@ -1069,7 +1146,84 @@ namespace ult {
                     directories.emplace_back(std::move(subFromPath), std::move(subToPath)); // Use move semantics
                 }
                 closedir(dir);
+                
+                // Log this directory if it has content and we need logging
+                if (hasContent && needsLogging) {
+                    successfulSources.push_back(currentFromPath + "/");
+                    successfulDestinations.push_back(currentToPath + "/");
+                }
             }
+        }
+    
+        // Batch write all successful operations to log files at the end
+        if (isTopLevelCall && needsLogging && filesCopied && !successfulSources.empty()) {
+    #if !USING_FSTREAM_DIRECTIVE
+            if (!logSource.empty()) {
+                createDirectory(getParentDirFromPath(logSource));
+                if (FILE* logFile = fopen(logSource.c_str(), "a")) {
+                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
+                        writeLog(logFile, *it);
+                    }
+                    fclose(logFile);
+                }
+                #if USING_LOGGING_DIRECTIVE
+                else {
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
+                }
+                #endif
+            }
+    
+            if (!logDestination.empty()) {
+                createDirectory(getParentDirFromPath(logDestination));
+                if (FILE* logFile = fopen(logDestination.c_str(), "a")) {
+                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
+                        writeLog(logFile, *it);
+                    }
+                    fclose(logFile);
+                }
+                #if USING_LOGGING_DIRECTIVE
+                else {
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
+                }
+                #endif
+            }
+    #else
+            if (!logSource.empty()) {
+                createDirectory(getParentDirFromPath(logSource));
+                std::ofstream logSourceFile(logSource, std::ios::app);
+                if (logSourceFile.is_open()) {
+                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
+                        writeLog(logSourceFile, *it);
+                    }
+                    logSourceFile.close();
+                }
+                #if USING_LOGGING_DIRECTIVE
+                else {
+                    if (!disableLogging)
+                        logMessage("Failed to open source log file: " + logSource);
+                }
+                #endif
+            }
+    
+            if (!logDestination.empty()) {
+                createDirectory(getParentDirFromPath(logDestination));
+                std::ofstream logDestFile(logDestination, std::ios::app);
+                if (logDestFile.is_open()) {
+                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
+                        writeLog(logDestFile, *it);
+                    }
+                    logDestFile.close();
+                }
+                #if USING_LOGGING_DIRECTIVE
+                else {
+                    if (!disableLogging)
+                        logMessage("Failed to open destination log file: " + logDestination);
+                }
+                #endif
+            }
+    #endif
         }
     
         if (isTopLevelCall) {
@@ -1192,4 +1346,82 @@ namespace ult {
         }
     }
     
+    /**
+     * @brief Removes all files starting with "._" from a directory and its subdirectories.
+     *
+     * This function recursively scans the specified directory and removes all files
+     * whose names start with "._" (commonly macOS metadata files). It processes
+     * all subdirectories recursively.
+     *
+     * @param sourcePath The path of the directory to clean.
+     */
+    void dotCleanDirectory(const std::string& sourcePath) {
+        if (!isDirectory(sourcePath)) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Path is not a directory: " + sourcePath);
+            #endif
+            return;
+        }
+    
+        std::vector<std::string> stack;
+        stack.push_back(sourcePath);
+        
+        std::string currentPath, filePath;
+        std::string fileName;
+        struct stat pathStat;
+        DIR* directory;
+        dirent* entry;
+    
+        while (!stack.empty()) {
+            currentPath = stack.back();
+            stack.pop_back();
+    
+            directory = opendir(currentPath.c_str());
+            if (!directory) {
+                #if USING_LOGGING_DIRECTIVE
+                if (!disableLogging)
+                    logMessage("Failed to open directory: " + currentPath);
+                #endif
+                continue;
+            }
+    
+            while ((entry = readdir(directory)) != nullptr) {
+                fileName = entry->d_name;
+                if (fileName == "." || fileName == "..") continue;
+    
+                // Build full file path
+                filePath = currentPath;
+                if (!filePath.empty() && filePath.back() != '/') {
+                    filePath += '/';
+                }
+                filePath += fileName;
+    
+                if (stat(filePath.c_str(), &pathStat) != 0) {
+                    continue; // Skip if can't stat
+                }
+    
+                if (S_ISDIR(pathStat.st_mode)) {
+                    // Add subdirectory to stack for processing
+                    stack.push_back(filePath);
+                } else if (S_ISREG(pathStat.st_mode)) {
+                    // Check if filename starts with "._"
+                    if (fileName.length() >= 2 && fileName.substr(0, 2) == "._") {
+                        if (remove(filePath.c_str()) == 0) {
+                            #if USING_LOGGING_DIRECTIVE
+                            if (!disableLogging)
+                                logMessage("Removed dot-underscore file: " + filePath);
+                            #endif
+                        } else {
+                            #if USING_LOGGING_DIRECTIVE
+                            if (!disableLogging)
+                                logMessage("Failed to remove dot-underscore file: " + filePath);
+                            #endif
+                        }
+                    }
+                }
+            }
+            closedir(directory);
+        }
+    }
 }

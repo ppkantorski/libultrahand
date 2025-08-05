@@ -1101,6 +1101,7 @@ namespace ult {
         {"invalid_text_color", "FF0000"},
         {"inprogress_text_color", "FFFF45"},
         {"selection_text_color", whiteColor},
+        {"selection_value_text_color", "FF7777"},
         {"selection_bg_color", blackColor},
         {"selection_bg_alpha", "11"},
         {"trackbar_color", "555555"},
@@ -1115,6 +1116,7 @@ namespace ult {
         {"progress_color", "253EF7"},
         {"invert_bg_click_color", FALSE_STR},
         {"disable_selection_bg", FALSE_STR},
+        {"disable_selection_value_color", FALSE_STR},
         {"disable_colorful_logo", FALSE_STR},
         {"logo_color_1", whiteColor},
         {"logo_color_2", "FF0000"},
@@ -1547,9 +1549,9 @@ namespace ult {
     
     bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
     
-    std::string loaderInfo = envGetLoaderInfo();
-    std::string loaderTitle = extractTitle(loaderInfo);
-    bool expandedMemory = (loaderTitle == "nx-ovlloader+");
+    const std::string loaderInfo = envGetLoaderInfo();
+    const std::string loaderTitle = extractTitle(loaderInfo);
+    const bool expandedMemory = (loaderTitle == "nx-ovlloader+");
     
     std::string versionLabel;
     

@@ -22,10 +22,10 @@
 
 namespace ult {
 
-size_t DOWNLOAD_READ_BUFFER = 131072/2;//64 * 1024;//4096*10;
-size_t DOWNLOAD_WRITE_BUFFER = 32768;//64 * 1024;
-size_t UNZIP_READ_BUFFER = 131072/2;//131072*2;//4096*4;
-size_t UNZIP_WRITE_BUFFER = 32768;//131072*2;//4096*4;
+size_t DOWNLOAD_READ_BUFFER = 16*1024;//64 * 1024;//4096*10;
+size_t DOWNLOAD_WRITE_BUFFER = 16*1024;//64 * 1024;
+size_t UNZIP_READ_BUFFER = 32*1024;//131072*2;//4096*4;
+size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
 
 
 // Path to the CA certificate
@@ -103,7 +103,8 @@ void initializeCurl() {
         const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
         if (res != CURLE_OK) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
+            if (!disableLogging)
+                logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
             #endif
             // Handle error appropriately, possibly exit the program
         } else {
@@ -133,7 +134,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Invalid URL: " + url);
+        if (!disableLogging)
+            logMessage("Invalid URL: " + url);
         #endif
         return false;
     }
@@ -146,7 +148,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
             destination += url.substr(lastSlash + 1);
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Invalid URL: " + url);
+            if (!disableLogging)
+                logMessage("Invalid URL: " + url);
             #endif
             return false;
         }
@@ -161,7 +164,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     std::ofstream file(tempFilePath, std::ios::binary);
     if (!file.is_open()) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening file: " + tempFilePath);
+        if (!disableLogging)
+            logMessage("Error opening file: " + tempFilePath);
         #endif
         return false;
     }
@@ -170,7 +174,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     std::unique_ptr<FILE, FileDeleter> file(fopen(tempFilePath.c_str(), "wb"));
     if (!file) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening file: " + tempFilePath);
+        if (!disableLogging)
+            logMessage("Error opening file: " + tempFilePath);
         #endif
         return false;
     }
@@ -190,7 +195,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error initializing curl.");
+        if (!disableLogging)
+            logMessage("Error initializing curl.");
         #endif
 #if USING_FSTREAM_DIRECTIVE
         file.close();
@@ -247,11 +253,14 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
         if (result == CURLE_OPERATION_TIMEDOUT) {
-            logMessage("Download timed out: " + url);
+            if (!disableLogging)
+                logMessage("Download timed out: " + url);
         } else if (result == CURLE_COULDNT_CONNECT) {
-            logMessage("Could not connect to: " + url);
+            if (!disableLogging)
+                logMessage("Could not connect to: " + url);
         } else {
-            logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+            if (!disableLogging)
+                logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
         }
         #endif
         deleteFileOrDirectory(tempFilePath);
@@ -266,7 +275,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     std::ifstream checkFile(tempFilePath);
     if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
+        if (!disableLogging)
+            logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
         // Only update percentage if we're tracking it
@@ -282,7 +292,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     struct stat fileStat;
     if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
+        if (!disableLogging)
+            logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
         // Only update percentage if we're tracking it
@@ -303,7 +314,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         destination += ".ultra";
         
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Protected file detected, renaming download to: " + destination);
+        if (!disableLogging)
+            logMessage("Protected file detected, renaming download to: " + destination);
         #endif
     }
 
@@ -459,7 +471,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     UnzFileManager zipFile(zipFilePath);
     if (!zipFile.is_valid()) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Failed to open zip file: " + zipFilePath);
+        if (!disableLogging)
+            logMessage("Failed to open zip file: " + zipFilePath);
         #endif
         return false;
     }
@@ -468,7 +481,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     unz_global_info64 globalInfo;
     if (unzGetGlobalInfo64(zipFile, &globalInfo) != UNZ_OK) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Failed to get zip file info");
+        if (!disableLogging)
+            logMessage("Failed to get zip file info");
         #endif
         return false;
     }
@@ -476,7 +490,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     const uLong numFiles = globalInfo.number_entry;
     if (numFiles == 0) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("No files found in archive");
+        if (!disableLogging)
+            logMessage("No files found in archive");
         #endif
         return false;
     }
@@ -505,7 +520,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         if (abortUnzip.load(std::memory_order_relaxed)) {
             unzipPercentage.store(-1, std::memory_order_release);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Extraction aborted during size calculation");
+            if (!disableLogging)
+                logMessage("Extraction aborted during size calculation");
             #endif
             abortUnzip.store(false, std::memory_order_release);
             return false;
@@ -527,8 +543,11 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     }
 
     #if USING_LOGGING_DIRECTIVE
-    logMessage("Processing " + std::to_string(numFiles) + " files, " + 
-              std::to_string(totalUncompressedSize) + " total bytes from archive");
+    if (!disableLogging) {
+        logMessage("Processing " + std::to_string(numFiles) + " files, " + 
+                  std::to_string(totalUncompressedSize) + " total bytes from archive");
+    }
+
     #endif
 
     // Pre-allocate ALL reusable strings and variables outside the main loop
@@ -636,14 +655,16 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             extractedFilePath += ".ultra";
             
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Protected file detected, renaming to: " + extractedFilePath);
+            if (!disableLogging)
+                logMessage("Protected file detected, renaming to: " + extractedFilePath);
             #endif
         }
 
         // Open the current file in the ZIP
         if (unzOpenCurrentFile(zipFile) != UNZ_OK) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Could not open file in ZIP: " + fileName);
+            if (!disableLogging)
+                logMessage("Could not open file in ZIP: " + fileName);
             #endif
             result = unzGoToNextFile(zipFile);
             continue;
@@ -660,7 +681,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         if (!outputFile.open(extractedFilePath)) {
             unzCloseCurrentFile(zipFile);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error creating file: " + extractedFilePath);
+            if (!disableLogging)
+                logMessage("Error creating file: " + extractedFilePath);
             #endif
             result = unzGoToNextFile(zipFile);
             continue;
@@ -697,9 +719,11 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                     #if USING_LOGGING_DIRECTIVE
                     // Only log at 10% intervals to avoid spam
                     if (currentProgress % 10 == 0) {
-                        logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
-                                  std::to_string(totalBytesProcessed) + "/" + 
-                                  std::to_string(totalUncompressedSize) + " bytes)");
+                        if (!disableLogging) {
+                            logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
+                                      std::to_string(totalBytesProcessed) + "/" + 
+                                      std::to_string(totalUncompressedSize) + " bytes)");
+                        }
                     }
                     #endif
                 }
@@ -720,7 +744,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
                     
                     #if USING_LOGGING_DIRECTIVE
                     if (currentProgress % 10 == 0) {
-                        logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
+                        if (!disableLogging)
+                            logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
                     }
                     #endif
                 }
@@ -739,7 +764,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         if (!extractSuccess) {
             deleteFileOrDirectory(extractedFilePath);
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to extract: " + fileName);
+            if (!disableLogging)
+                logMessage("Failed to extract: " + fileName);
             #endif
             
             if (abortUnzip.load(std::memory_order_relaxed)) {
@@ -758,7 +784,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     if (abortUnzip.load(std::memory_order_relaxed)) {
         unzipPercentage.store(-1, std::memory_order_release);
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Extraction aborted by user");
+        if (!disableLogging)
+            logMessage("Extraction aborted by user");
         #endif
         abortUnzip.store(false, std::memory_order_release);
         return false;
@@ -769,8 +796,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         unzipPercentage.store(100, std::memory_order_release);
         
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Extraction completed: " + std::to_string(filesProcessed) + " files, " + 
-                  std::to_string(totalBytesProcessed) + " bytes");
+        if (!disableLogging) {
+            logMessage("Extraction completed: " + std::to_string(filesProcessed) + " files, " + 
+                      std::to_string(totalBytesProcessed) + " bytes");
+        }
         #endif
         
         return true;

@@ -81,6 +81,7 @@ namespace ult {
     bool isFileOrDirectory(const std::string& path);
     
     
+    bool isDirectoryEmpty(const std::string& dirPath);
     
     /**
      * @brief Creates a single directory if it doesn't exist.
@@ -261,6 +262,18 @@ namespace ult {
      *                        Created if it doesn't already exist.
      */
     void createFlagFiles(const std::string& wildcardPattern, const std::string& outputDir);
+
+
+    /**
+     * @brief Removes all files starting with "._" from a directory and its subdirectories.
+     *
+     * This function recursively scans the specified directory and removes all files
+     * whose names start with "._" (commonly macOS metadata files). It processes
+     * all subdirectories recursively.
+     *
+     * @param sourcePath The path of the directory to clean.
+     */
+    void dotCleanDirectory(const std::string& sourcePath);
 }
 
 #endif

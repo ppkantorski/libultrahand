@@ -83,7 +83,8 @@ namespace ult {
         FILE* cheatFile = fopen(cheatFilePath.c_str(), "a");  // Open the cheat file in append mode
         if (!cheatFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            if (!disableLogging)
+                logMessage("Failed to open cheat file for appending: " + cheatFilePath);
             #endif
             return;  // Handle the error accordingly
         }
@@ -94,7 +95,8 @@ namespace ult {
         std::ofstream cheatFile(cheatFilePath, std::ios::app);
         if (!cheatFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open cheat file for appending: " + cheatFilePath);
+            if (!disableLogging)
+                logMessage("Failed to open cheat file for appending: " + cheatFilePath);
             #endif
             return;  // Handle the error accordingly
         }
@@ -169,14 +171,16 @@ namespace ult {
      */
     bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName, std::string outCheatPath) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Starting pchtxt2cheat with pchtxtPath: " + pchtxtPath);
+        if (!disableLogging)
+            logMessage("Starting pchtxt2cheat with pchtxtPath: " + pchtxtPath);
         #endif
     
     #if !USING_FSTREAM_DIRECTIVE
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false;
         }
@@ -192,7 +196,8 @@ namespace ult {
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false;
         }
@@ -203,7 +208,8 @@ namespace ult {
         const size_t nsobidPos = pchtxt.find("@nsobid-");
         if (nsobidPos == std::string::npos) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Could not find bid in pchtxt file, the file is likely invalid.");
+            if (!disableLogging)
+                logMessage("Error: Could not find bid in pchtxt file, the file is likely invalid.");
             #endif
             return false;
         }
@@ -214,7 +220,8 @@ namespace ult {
         const std::string tid = findTitleID(pchtxt);
         if (tid.empty()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Could not find TID in pchtxt file, the file is likely invalid.");
+            if (!disableLogging)
+                logMessage("Error: Could not find TID in pchtxt file, the file is likely invalid.");
             #endif
             return false;
         }
@@ -262,7 +269,8 @@ namespace ult {
         FILE* outCheatFile = fopen(cheatFilePath.c_str(), "a");
         if (!outCheatFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create cheat file " + cheatFilePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create cheat file " + cheatFilePath);
             #endif
             return false;
         }
@@ -270,7 +278,8 @@ namespace ult {
         std::ofstream outCheatFile(cheatFilePath, std::ios::app);
         if (!outCheatFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create cheat file " + cheatFilePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create cheat file " + cheatFilePath);
             #endif
             return false;
         }
@@ -388,7 +397,8 @@ namespace ult {
         // ADDED: Check if any valid cheats were processed
         if (validCheatsProcessed == 0) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Warning: No valid patch data found to convert to cheats in " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Warning: No valid patch data found to convert to cheats in " + pchtxtPath);
             #endif
             return false;
         }
@@ -446,7 +456,8 @@ namespace ult {
         FILE* pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false;
         }
@@ -522,7 +533,8 @@ namespace ult {
         std::ifstream pchtxtFile(pchtxtPath);
         if (!pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false;
         }
@@ -586,7 +598,8 @@ namespace ult {
         // CHECK: Return false if no patches were found
         if (patches.empty()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Warning: No valid patches found in " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Warning: No valid patches found in " + pchtxtPath);
             #endif
             return false;
         }
@@ -608,7 +621,8 @@ namespace ult {
         FILE* ipsFile = fopen(ipsFilePath.c_str(), "wb");
         if (!ipsFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create IPS file " + ipsFilePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create IPS file " + ipsFilePath);
             #endif
             return false;
         }
@@ -635,7 +649,8 @@ namespace ult {
         FILE* _pchtxtFile = fopen(pchtxtPath.c_str(), "r");
         if (!_pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false; // Changed: Return false if we can't read the file for title ID
         }
@@ -658,7 +673,8 @@ namespace ult {
             }
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Warning: Could not find Title ID in " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Warning: Could not find Title ID in " + pchtxtPath);
             #endif
         }
     #else
@@ -666,7 +682,8 @@ namespace ult {
         std::ofstream ipsFile(ipsFilePath, std::ios::binary);
         if (!ipsFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to create IPS file " + ipsFilePath);
+            if (!disableLogging)
+                logMessage("Error: Unable to create IPS file " + ipsFilePath);
             #endif
             return false;
         }
@@ -692,7 +709,8 @@ namespace ult {
         std::ifstream _pchtxtFile(pchtxtPath);
         if (!_pchtxtFile) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Error: Unable to open file " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Error: Unable to open file " + pchtxtPath);
             #endif
             return false; // Changed: Return false if we can't read the file for title ID
         }
@@ -706,7 +724,8 @@ namespace ult {
             tidFile.close();  // Creates an empty file
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Warning: Could not find Title ID in " + pchtxtPath);
+            if (!disableLogging)
+                logMessage("Warning: Could not find Title ID in " + pchtxtPath);
             #endif
         }
     #endif

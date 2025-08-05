@@ -649,9 +649,9 @@ namespace ult {
     
     extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
     
-    extern std::string loaderInfo;
-    extern std::string loaderTitle;
-    extern bool expandedMemory;
+    extern const std::string loaderInfo;
+    extern const std::string loaderTitle;
+    extern const bool expandedMemory;
     
     extern std::string versionLabel;
     
