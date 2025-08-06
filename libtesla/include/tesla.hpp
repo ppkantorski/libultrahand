@@ -272,7 +272,7 @@ namespace tsl {
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
 
     // Theme color variable definitions
-    static bool disableColorfulLogo = false;
+    //static bool disableColorfulLogo = false;
 
     
     static Color logoColor1 = RGB888(ult::whiteColor);
@@ -4670,7 +4670,7 @@ namespace tsl {
                     offset = 6;
                     countOffset = 0;
                                                                                                                                     
-                    if (!disableColorfulLogo && ult::useDynamicLogo) {
+                    if (ult::useDynamicLogo) {
                         const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                         
                         // High precision time calculation to prevent stepping artifacts
