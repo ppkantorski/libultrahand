@@ -3037,7 +3037,7 @@ namespace tsl {
             }
 
 
-            #if USING_WIDGET_DIRECTIVE
+        #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
             inline void drawWidget() {
                 static time_t lastTimeUpdate = 0;
@@ -3232,7 +3232,7 @@ namespace tsl {
                     }
                 }
             }
-            #endif
+        #endif
 
             // Single unified glyph cache for all text operations
             //inline static std::unordered_map<u64, Glyph> s_unifiedGlyphCache;
