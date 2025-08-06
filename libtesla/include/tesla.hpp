@@ -270,7 +270,10 @@ namespace tsl {
     }
 
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
+
+    #if USING_WIDGET_DIRECTIVE
     static bool overrideWidgetDraw = false;
+    #endif
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
@@ -5069,7 +5072,7 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
                 
                 #if USING_WIDGET_DIRECTIVE
-                if (overrideWidgetDraw)
+                if (!overrideWidgetDraw)
                     renderer->drawWidget();
                 #endif
 
