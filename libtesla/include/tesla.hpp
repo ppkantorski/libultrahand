@@ -6989,7 +6989,7 @@ namespace tsl {
                         renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
                 }
         
-                const s32 yOffset = (tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1; // Bit shift for division by 2
+                const s32 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) /2.0) +0.5f; // Bit shift for division by 2
         
                 if (!m_maxWidth) [[unlikely]] {
                     calculateWidths(renderer);
@@ -7376,7 +7376,7 @@ namespace tsl {
                     
             void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 const s32 xPosition = getX() + m_maxWidth + 47;
-                const s32 yPosition = getY() + 45 - yOffset;
+                const s32 yPosition = getY() + 45 - yOffset-1;
                 static constexpr s32 fontSize = 20;
         
                 static bool lastRunningInterpreter = false;
