@@ -424,10 +424,16 @@ namespace ult {
     std::string CENTER_ALIGNMENT = "Center Alignment";
     std::string EXTENDED_BACKDROP = "Extended Backdrop";
     std::string MISCELLANEOUS = "Miscellaneous";
-    std::string MENU_ITEMS = "Menu Items";
+    //std::string MENU_ITEMS = "Menu Items";
+    std::string MENU_SETTINGS = "Menu Settings";
     std::string USER_GUIDE = "User Guide";
     std::string SHOW_HIDDEN = "Show Hidden";
-    std::string VERSION_LABELS = "Version Labels";
+    std::string PAGE_SWAP = "Page Swap";
+    std::string RIGHT_SIDE_MODE = "Right-side Mode";
+    std::string OVERLAY_VERSIONS = "Overlay Versions";
+    std::string PACKAGE_VERSIONS = "Package Versions";
+    std::string CLEAN_VERSIONS = "Clean Versions";
+    //std::string VERSION_LABELS = "Version Labels";
     std::string KEY_COMBO = "Key Combo";
     std::string MODE = "Mode";
     std::string LANGUAGE = "Language";
@@ -456,13 +462,8 @@ namespace ult {
     std::string ROOT_PACKAGE = "Root Package";
     std::string SORT_PRIORITY = "Sort Priority";
     std::string FAILED_TO_OPEN = "Failed to open file";
-    std::string CLEAN_VERSIONS = "Clean Versions";
-    std::string OVERLAY_VERSIONS = "Overlay Versions";
-    std::string PACKAGE_VERSIONS = "Package Versions";
     std::string LAUNCH_COMBOS = "Launch Combos";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-    std::string PAGE_SWAP = "Page Swap";
-    std::string DYNAMIC_LOGO = "Dynamic Logo";
 
     std::string PACKAGE_INFO = "Package Info";
     std::string _TITLE = "Title";
@@ -481,8 +482,10 @@ namespace ult {
     std::string ON_OVERLAY_PACKAGE = "on overlay/package";
     std::string FEATURES = "Features";
     std::string SWIPE_TO_OPEN = "Swipe to Open";
-    std::string RIGHT_SIDE_MODE = "Right-side Mode";
-    std::string PROGRESS_ANIMATION = "Progress Animation";
+
+    std::string THEME_SETTINGS = "Theme Settings";
+    std::string DYNAMIC_LOGO = "Dynamic Logo";
+    //std::string PROGRESS_ANIMATION = "Progress Animation";
 
     std::string REBOOT_TO = "Reboot To";
     std::string REBOOT = "Reboot";
@@ -606,10 +609,16 @@ namespace ult {
         CENTER_ALIGNMENT = "Center Alignment";
         EXTENDED_BACKDROP = "Extended Backdrop";
         MISCELLANEOUS = "Miscellaneous";
-        MENU_ITEMS = "Menu Items";
+        //MENU_ITEMS = "Menu Items";
+        MENU_SETTINGS = "Menu Settings";
         USER_GUIDE = "User Guide";
         SHOW_HIDDEN = "Show Hidden";
-        VERSION_LABELS = "Version Labels";
+        PAGE_SWAP = "Page Swap";
+        RIGHT_SIDE_MODE = "Right-side Mode";
+        OVERLAY_VERSIONS = "Overlay Versions";
+        PACKAGE_VERSIONS = "Package Versions";
+        CLEAN_VERSIONS = "Clean Versions";
+        //VERSION_LABELS = "Version Labels";
         KEY_COMBO = "Key Combo";
         MODE = "Mode";
         LANGUAGE = "Language";
@@ -638,13 +647,9 @@ namespace ult {
         ROOT_PACKAGE = "Root Package";
         SORT_PRIORITY = "Sort Priority";
         FAILED_TO_OPEN = "Failed to open file";
-        CLEAN_VERSIONS = "Clean Versions";
-        OVERLAY_VERSIONS = "Overlay Versions";
-        PACKAGE_VERSIONS = "Package Versions";
+
         LAUNCH_COMBOS = "Launch Combos";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
-        PAGE_SWAP = "Page Swap";
-        DYNAMIC_LOGO = "Dynamic Logo";
         ON = "On";
         OFF = "Off";
         PACKAGE_INFO = "Package Info";
@@ -675,8 +680,11 @@ namespace ult {
         ON_OVERLAY_PACKAGE = "on overlay/package";
         FEATURES = "Features";
         SWIPE_TO_OPEN = "Swipe to Open";
-        RIGHT_SIDE_MODE = "Right-side Mode";
-        PROGRESS_ANIMATION = "Progress Animation";
+        //PROGRESS_ANIMATION = "Progress Animation";
+
+        THEME_SETTINGS = "Theme Settings";
+        DYNAMIC_LOGO = "Dynamic Logo";
+
         EMPTY = "Empty";
     
         SUNDAY = "Sunday";
@@ -790,10 +798,16 @@ namespace ult {
             {"CENTER_ALIGNMENT", &CENTER_ALIGNMENT},
             {"EXTENDED_BACKDROP", &EXTENDED_BACKDROP},
             {"MISCELLANEOUS", &MISCELLANEOUS},
-            {"MENU_ITEMS", &MENU_ITEMS},
+            //{"MENU_ITEMS", &MENU_ITEMS},
+            {"MENU_SETTINGS", &MENU_SETTINGS},
             {"USER_GUIDE", &USER_GUIDE},
             {"SHOW_HIDDEN", &SHOW_HIDDEN},
-            {"VERSION_LABELS", &VERSION_LABELS},
+            {"PAGE_SWAP", &PAGE_SWAP},
+            {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
+            {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
+            {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
+            {"CLEAN_VERSIONS", &CLEAN_VERSIONS},
+            //{"VERSION_LABELS", &VERSION_LABELS},
             {"KEY_COMBO", &KEY_COMBO},
             {"MODE", &MODE},
             {"LANGUAGE", &LANGUAGE},
@@ -822,13 +836,9 @@ namespace ult {
             {"ROOT_PACKAGE", &ROOT_PACKAGE},
             {"SORT_PRIORITY", &SORT_PRIORITY},
             {"FAILED_TO_OPEN", &FAILED_TO_OPEN},
-            {"CLEAN_VERSIONS", &CLEAN_VERSIONS},
-            {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
-            {"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
+
             {"LAUNCH_COMBOS", &LAUNCH_COMBOS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
-            {"PAGE_SWAP", &PAGE_SWAP},
-            {"DYNAMIC_LOGO", &DYNAMIC_LOGO},
 
             {"PACKAGE_INFO", &PACKAGE_INFO},
             {"TITLE", &_TITLE},
@@ -847,8 +857,10 @@ namespace ult {
             {"ON_OVERLAY_PACKAGE", &ON_OVERLAY_PACKAGE},
             {"FEATURES", &FEATURES},
             {"SWIPE_TO_OPEN", &SWIPE_TO_OPEN},
-            {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
-            {"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
+
+            {"THEME_SETTINGS", &THEME_SETTINGS},
+            {"DYNAMIC_LOGO", &DYNAMIC_LOGO},
+            //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
 
             {"REBOOT_TO", &REBOOT_TO},
             {"REBOOT", &REBOOT},

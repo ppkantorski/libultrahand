@@ -358,10 +358,16 @@ namespace ult {
     extern std::string CENTER_ALIGNMENT;
     extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
-    extern std::string MENU_ITEMS;
+    //extern std::string MENU_ITEMS;
+    extern std::string MENU_SETTINGS;
     extern std::string USER_GUIDE;
     extern std::string SHOW_HIDDEN;
-    extern std::string VERSION_LABELS;
+    extern std::string PAGE_SWAP;
+    extern std::string RIGHT_SIDE_MODE;
+    extern std::string OVERLAY_VERSIONS;
+    extern std::string PACKAGE_VERSIONS;
+    extern std::string CLEAN_VERSIONS;
+    //extern std::string VERSION_LABELS;
     extern std::string KEY_COMBO;
     extern std::string MODE;
     extern std::string LANGUAGE;
@@ -390,13 +396,9 @@ namespace ult {
     extern std::string ROOT_PACKAGE;
     extern std::string SORT_PRIORITY;
     extern std::string FAILED_TO_OPEN;
-    extern std::string CLEAN_VERSIONS;
-    extern std::string OVERLAY_VERSIONS;
-    extern std::string PACKAGE_VERSIONS;
+
     extern std::string LAUNCH_COMBOS;
     extern std::string OPAQUE_SCREENSHOTS;
-    extern std::string PAGE_SWAP;
-    extern std::string DYNAMIC_LOGO;
 
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
@@ -415,8 +417,10 @@ namespace ult {
     extern std::string ON_OVERLAY_PACKAGE;
     extern std::string FEATURES;
     extern std::string SWIPE_TO_OPEN;
-    extern std::string RIGHT_SIDE_MODE;
-    extern std::string PROGRESS_ANIMATION;
+
+    extern std::string THEME_SETTINGS;
+    extern std::string DYNAMIC_LOGO;
+    //extern std::string PROGRESS_ANIMATION;
 
     extern std::string REBOOT_TO;
     extern std::string REBOOT;
