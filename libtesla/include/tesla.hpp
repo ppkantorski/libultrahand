@@ -348,7 +348,7 @@ namespace tsl {
 
     static Color textSeparatorColor = RGB888("404040");
 
-    static Color selectedTextColor = RGB888(ult::whiteColor);
+    static Color selectedTextColor = RGB888("9ed0ff");
     static Color selectedValueTextColor = RGB888("FF7777");
     static Color inprogressTextColor = RGB888(ult::whiteColor);
     static Color invalidTextColor = RGB888("FF0000");

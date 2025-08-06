@@ -1104,7 +1104,7 @@ namespace ult {
         {"off_text_color", "AAAAAA"},
         {"invalid_text_color", "FF0000"},
         {"inprogress_text_color", "FFFF45"},
-        {"selection_text_color", whiteColor},
+        {"selection_text_color", "9ed0ff"},
         {"selection_value_text_color", "FF7777"},
         {"selection_bg_color", blackColor},
         {"selection_bg_alpha", "11"},
