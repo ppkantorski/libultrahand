@@ -404,6 +404,7 @@ namespace ult {
     std::string HIDE_OVERLAY = "Hide Overlay";
     std::string HIDE_PACKAGE = "Hide Package";
     std::string LAUNCH_ARGUMENTS = "Launch Arguments";
+    std::string QUICK_LAUNCH = "Quick Launch";
     std::string BOOT_COMMANDS = "Boot Commands";
     std::string EXIT_COMMANDS = "Exit Commands";
     std::string ERROR_LOGGING = "Error Logging";
@@ -485,6 +486,14 @@ namespace ult {
 
     std::string THEME_SETTINGS = "Theme Settings";
     std::string DYNAMIC_LOGO = "Dynamic Logo";
+    std::string SELECTION_BACKGROUND = "Selection Background";
+    std::string SELECTION_TEXT = "Selection Text";
+    std::string SELECTION_VALUE = "Selection Value";
+    std::string LIBULTRAHAND_TITLES = "libultrahand Titles";
+    std::string LIBULTRAHAND_VERSIONS = "libultrahand Versions";
+    std::string PACKAGE_TITLES = "Package Titles";
+    //std::string PACKAGE_VERSIONS = "Package Versions";
+
     //std::string PROGRESS_ANIMATION = "Progress Animation";
 
     std::string REBOOT_TO = "Reboot To";
@@ -590,6 +599,7 @@ namespace ult {
         HIDE_OVERLAY = "Hide Overlay";
         HIDE_PACKAGE = "Hide Package";
         LAUNCH_ARGUMENTS = "Launch Arguments";
+        QUICK_LAUNCH = "Quick Launch";
         BOOT_COMMANDS = "Boot Commands";
         EXIT_COMMANDS = "Exit Commands";
         ERROR_LOGGING = "Error Logging";
@@ -684,6 +694,14 @@ namespace ult {
 
         THEME_SETTINGS = "Theme Settings";
         DYNAMIC_LOGO = "Dynamic Logo";
+        SELECTION_BACKGROUND = "Selection Background";
+        SELECTION_TEXT = "Selection Text";
+        SELECTION_VALUE = "Selection Value";
+        LIBULTRAHAND_TITLES = "libultrahand Titles";
+        LIBULTRAHAND_VERSIONS = "libultrahand Versions";
+        PACKAGE_TITLES = "Package Titles";
+        //PACKAGE_VERSIONS = "Package Versions";
+
 
         EMPTY = "Empty";
     
@@ -778,6 +796,7 @@ namespace ult {
             {"HIDE_PACKAGE", &HIDE_PACKAGE},
             {"HIDE_OVERLAY", &HIDE_OVERLAY},
             {"LAUNCH_ARGUMENTS", &LAUNCH_ARGUMENTS},
+            {"QUICK_LAUNCH", &QUICK_LAUNCH},
             {"BOOT_COMMANDS", &BOOT_COMMANDS},
             {"EXIT_COMMANDS", &EXIT_COMMANDS},
             {"ERROR_LOGGING", &ERROR_LOGGING},
@@ -860,6 +879,13 @@ namespace ult {
 
             {"THEME_SETTINGS", &THEME_SETTINGS},
             {"DYNAMIC_LOGO", &DYNAMIC_LOGO},
+            {"SELECTION_BACKGROUND", &SELECTION_BACKGROUND},
+            {"SELECTION_TEXT", &SELECTION_TEXT},
+            {"SELECTION_VALUE", &SELECTION_VALUE},
+            {"LIBULTRAHAND_TITLES", &LIBULTRAHAND_TITLES},
+            {"LIBULTRAHAND_VERSIONS", &LIBULTRAHAND_VERSIONS},
+            {"PACKAGE_TITLES", &PACKAGE_TITLES},
+            //{"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
 
             {"REBOOT_TO", &REBOOT_TO},

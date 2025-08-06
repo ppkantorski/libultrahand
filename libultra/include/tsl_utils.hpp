@@ -338,6 +338,7 @@ namespace ult {
     extern std::string HIDE_OVERLAY;
     extern std::string HIDE_PACKAGE;
     extern std::string LAUNCH_ARGUMENTS;
+    extern std::string QUICK_LAUNCH;
     extern std::string BOOT_COMMANDS;
     extern std::string EXIT_COMMANDS;
     extern std::string ERROR_LOGGING;
@@ -420,6 +421,13 @@ namespace ult {
 
     extern std::string THEME_SETTINGS;
     extern std::string DYNAMIC_LOGO;
+    extern std::string SELECTION_BACKGROUND;
+    extern std::string SELECTION_TEXT;
+    extern std::string SELECTION_VALUE;
+    extern std::string LIBULTRAHAND_TITLES;
+    extern std::string LIBULTRAHAND_VERSIONS;
+    extern std::string PACKAGE_TITLES;
+    //extern std::string PACKAGE_VERSIONS;
     //extern std::string PROGRESS_ANIMATION;
 
     extern std::string REBOOT_TO;
