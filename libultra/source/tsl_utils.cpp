@@ -213,9 +213,13 @@ namespace ult {
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
-    bool useDynamicLogo = true;
     bool useLaunchCombos = false;
     bool usePageSwap = false;
+    bool useDynamicLogo = true;
+    bool useSelectionBG = true;
+    bool useSelectionText = true;
+    bool useSelectionValue = false;
+
     std::atomic<bool> noClickableItems{false};
     
     #if IS_LAUNCHER_DIRECTIVE
@@ -1087,15 +1091,15 @@ namespace ult {
         {"trackbar_slider_malleable_color", "A0A0A0"},
         {"trackbar_full_color", "00FFDD"},
         {"trackbar_empty_color", "404040"},
-        {"ovl_entry_text_color", whiteColor},
-        {"ovl_entry_highlight_text_color", whiteColor},
-        {"pkg_entry_text_color", whiteColor},
-        {"pkg_entry_highlight_text_color", whiteColor},
+        {"overlay_text_color", whiteColor},
+        {"ult_overlay_text_color", "9ed0ff"},
+        {"package_text_color", whiteColor},
+        {"ult_package_text_color", "9ed0ff"},
         {"banner_version_text_color", "AAAAAA"},
-        {"ovl_version_text_color", "AAAAAA"},
-        {"ovl_version_highlight_text_color", "00FFDD"},
-        {"pkg_version_text_color", "AAAAAA"},
-        {"pkg_version_highlight_text_color", "00FFDD"},
+        {"overlay_version_text_color", "AAAAAA"},
+        {"ult_overlay_version_text_color", "00FFDD"},
+        {"package_version_text_color", "AAAAAA"},
+        {"ult_package_version_text_color", "00FFDD"},
         {"on_text_color", "00FFDD"},
         {"off_text_color", "AAAAAA"},
         {"invalid_text_color", "FF0000"},
@@ -1115,9 +1119,9 @@ namespace ult {
         {"progress_alpha", "7"},
         {"progress_color", "253EF7"},
         {"invert_bg_click_color", FALSE_STR},
-        {"disable_selection_bg", FALSE_STR},
-        {"disable_selection_value_color", FALSE_STR},
-        {"disable_colorful_logo", FALSE_STR},
+        //{"disable_selection_bg", FALSE_STR},
+        //{"disable_selection_value_color", FALSE_STR},
+        //{"disable_colorful_logo", FALSE_STR},
         {"logo_color_1", whiteColor},
         {"logo_color_2", "FF0000"},
         {"dynamic_logo_color_1", "00E669"},
@@ -1547,7 +1551,7 @@ namespace ult {
     }
     #endif
     
-    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
+    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
     
     const std::string loaderInfo = envGetLoaderInfo();
     const std::string loaderTitle = extractTitle(loaderInfo);
@@ -1572,9 +1576,9 @@ namespace ult {
         cleanVersionLabels = getBoolValue("clean_version_labels", false);        // FALSE_STR default
         hideOverlayVersions = getBoolValue("hide_overlay_versions", false);      // FALSE_STR default  
         hidePackageVersions = getBoolValue("hide_package_versions", false);      // FALSE_STR default
-        highlightVersions = getBoolValue("highlight_versions", true);            // TRUE_STR default
-        highlightTitles = getBoolValue("highlight_titles", false);               // FALSE_STR default
-        highlightPackages = getBoolValue("highlight_packages", true);            // TRUE_STR default
+        //libultrahandTitles = getBoolValue("libultrahand_titles", false);               // FALSE_STR default
+        //useLibultrahandVersions = getBoolValue("libultrahand_versions", true);            // TRUE_STR default
+        //matchPackages = getBoolValue("match_packages", true);            // TRUE_STR default
         
         //#ifdef APP_VERSION
         //versionLabel = cleanVersionLabel(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";

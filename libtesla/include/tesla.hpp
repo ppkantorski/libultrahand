@@ -303,16 +303,16 @@ namespace tsl {
     static size_t widgetBackdropAlpha = 15;
     static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
 
-    static Color overlayEntryTextColor = RGB888(ult::whiteColor);
-    static Color overlayEntryHighlightTextColor = RGB888("9ed0ff");
-    static Color packageEntryTextColor = RGB888(ult::whiteColor);
-    static Color packageEntryHighlightTextColor = RGB888("9ed0ff");
+    static Color overlayTextColor = RGB888(ult::whiteColor);
+    static Color ultOverlayTextColor = RGB888("9ed0ff");
+    static Color packageTextColor = RGB888(ult::whiteColor);
+    static Color ultPackageTextColor = RGB888("9ed0ff");
 
     static Color bannerVersionTextColor = RGB888("AAAAAA");
     static Color overlayVersionTextColor = RGB888("AAAAAA");
-    static Color overlayVersionHighlightTextColor = RGB888("00FFDD");
+    static Color ultOverlayVersionTextColor = RGB888("00FFDD");
     static Color packageVersionTextColor = RGB888("AAAAAA");
-    static Color packageVersionHighlightTextColor = RGB888("00FFDD");
+    static Color ultPackageVersionTextColor = RGB888("00FFDD");
     static Color onTextColor = RGB888("00FFDD");
     static Color offTextColor = RGB888("AAAAAA");
     
@@ -321,8 +321,8 @@ namespace tsl {
     static Color dynamicLogoRGB2 = RGB888("8080EA");
     #endif
 
-    static bool disableSelectionBG = false;
-    static bool disableSelectionValueColor = false;
+    //static bool disableSelectionBG = false;
+    //static bool disableSelectionValueColor = false;
     static bool invertBGClickColor = false;
 
     static size_t selectionBGAlpha = 11;
@@ -393,7 +393,7 @@ namespace tsl {
                 return !alphaStr.empty() ? ult::stoi(alphaStr) : ult::stoi(ult::defaultThemeSettingsMap[key]);
             };
             
-            disableColorfulLogo = (getValue("disable_colorful_logo") == ult::TRUE_STR);
+            //disableColorfulLogo = (getValue("disable_colorful_logo") == ult::TRUE_STR);
             
             #if IS_LAUNCHER_DIRECTIVE
             logoColor1 = getColor("logo_color_1");
@@ -423,16 +423,16 @@ namespace tsl {
             widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
             widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
             
-            overlayEntryTextColor = getColor("ovl_entry_text_color");
-            overlayEntryHighlightTextColor = getColor("ovl_entry_highlight_text_color");
-            packageEntryTextColor = getColor("pkg_entry_text_color");
-            packageEntryHighlightTextColor = getColor("pkg_entry_highlight_text_color");
+            overlayTextColor = getColor("overlay_text_color");
+            ultOverlayTextColor = getColor("ult_overlay_text_color");
+            packageTextColor = getColor("package_text_color");
+            ultPackageTextColor = getColor("ult_package_text_color");
 
             bannerVersionTextColor = getColor("banner_version_text_color");
-            overlayVersionTextColor = getColor("ovl_version_text_color");
-            overlayVersionHighlightTextColor = getColor("ovl_version_highlight_text_color");
-            packageVersionTextColor =getColor("pkg_version_text_color");
-            packageVersionHighlightTextColor = getColor("pkg_version_highlight_text_color");
+            overlayVersionTextColor = getColor("overlay_version_text_color");
+            ultOverlayVersionTextColor = getColor("ult_overlay_version_text_color");
+            packageVersionTextColor =getColor("package_version_text_color");
+            ultPackageVersionTextColor = getColor("ult_package_version_text_color");
             onTextColor = getColor("on_text_color");
             offTextColor = getColor("off_text_color");
             
@@ -441,8 +441,8 @@ namespace tsl {
             dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
             #endif
 
-            disableSelectionBG = (getValue("disable_selection_bg") == ult::TRUE_STR);
-            disableSelectionValueColor = (getValue("disable_selection_value_color") == ult::TRUE_STR);
+            //disableSelectionBG = (getValue("disable_selection_bg") == ult::TRUE_STR);
+            //disableSelectionValueColor = (getValue("disable_selection_value_color") == ult::TRUE_STR);
             invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
 
             selectionBGAlpha = getAlpha("selection_bg_alpha");
@@ -3896,7 +3896,7 @@ namespace tsl {
             virtual void drawClickAnimation(gfx::Renderer *renderer) {
                 if (!m_isItem)
                     return;
-                if (!disableSelectionBG) {
+                if (ult::useSelectionBG) {
                     if (ult::expandedMemory)
                         renderer->drawRectMultiThreaded(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
                     else
@@ -4081,7 +4081,7 @@ namespace tsl {
                 }
                 
                 if (this->m_clickAnimationProgress == 0) {
-                    if (!disableSelectionBG) {
+                    if (ult::useSelectionBG) {
                         if (ult::expandedMemory)
                             renderer->drawRectMultiThreaded(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
                         else
@@ -6997,13 +6997,21 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
                 static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
             #else
-                static const std::vector<std::string> specialChars = {};
+                static constexpr std::vector<std::string> specialChars = {};
             #endif
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
-                    const Color textColor = m_focused ? 
-                        (useClickTextColor ? clickTextColor : selectedTextColor) : 
-                        (m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor));
+                    const Color textColor = m_focused
+                        ? (!ult::useSelectionText
+                            ? (m_hasCustomTextColor ? m_customTextColor : defaultTextColor)
+                            : (useClickTextColor
+                                ? clickTextColor
+                                : selectedTextColor))
+                        : (m_hasCustomTextColor
+                            ? m_customTextColor
+                            : (useClickTextColor
+                                ? clickTextColor
+                                : defaultTextColor));
                     
                     renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         textColor, (m_focused ? starColor : selectionStarColor));
@@ -7240,7 +7248,7 @@ namespace tsl {
                     //    (useClickTextColor ? clickTextColor : selectedTextColor);
                     
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        useClickTextColor ? clickTextColor : selectedTextColor, (starColor));
+                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
@@ -7372,10 +7380,11 @@ namespace tsl {
                     
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
                 // Check if selection value colors should be disabled
-                if (m_focused && !disableSelectionValueColor) {
+                if (m_focused && ult::useSelectionValue) {
                     // Use selection colors when focused and selection colors are enabled
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedValueTextColor);
+                        return useClickTextColor ? (clickTextColor) :
+                               (m_faint ? offTextColor : (useClickTextColor ? clickTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor)));
                     }
                     
                     const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
@@ -7405,8 +7414,8 @@ namespace tsl {
                 
                 // Original logic for all other cases
                 if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : selectedTextColor)) :
-                        (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
+                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor))) :
+                           (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
                 }
                 
                 const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
@@ -7664,7 +7673,7 @@ namespace tsl {
                 #if IS_LAUNCHER_DIRECTIVE
                     static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
                 #else
-                    static const std::vector<std::string> specialChars = {};
+                    static constexpr std::vector<std::string> specialChars = {};
                 #endif
                     renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
                         (this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
@@ -8302,7 +8311,7 @@ namespace tsl {
                     }
                 }
             
-                if (!disableSelectionBG) {
+                if (ult::useSelectionBG) {
                     if (ult::expandedMemory)
                         renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
                     else
@@ -9004,8 +9013,10 @@ namespace tsl {
             
                 const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
             
-                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused ? (defaultTextColor) : (selectedTextColor)));
-                renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (onTextColor));
+                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+                //renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (onTextColor));
+                renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, 
+                    (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
             
                 if (lastBottomBound != this->getTopBound())
@@ -9126,7 +9137,7 @@ namespace tsl {
                     }
                 }
             
-                if (!disableSelectionBG) {
+                if (ult::useSelectionBG) {
                     if (ult::expandedMemory)
                         renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
                     else

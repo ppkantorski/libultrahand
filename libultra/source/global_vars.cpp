@@ -134,7 +134,7 @@ namespace ult {
     
     // Pre-defined symbols
     CONSTEXPR_STRING std::string OPTION_SYMBOL = "\u22EF";
-    CONSTEXPR_STRING std::string DROPDOWN_SYMBOL = "\u25B6";
+    CONSTEXPR_STRING std::string DROPDOWN_SYMBOL = "\uE14A";
     CONSTEXPR_STRING std::string CHECKMARK_SYMBOL = "\uE14B";
     CONSTEXPR_STRING std::string CROSSMARK_SYMBOL = "\uE14C";
     CONSTEXPR_STRING std::string DOWNLOAD_SYMBOL = "\u2193";

@@ -136,10 +136,14 @@ namespace ult {
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
-    extern bool useDynamicLogo;
     extern bool useLaunchCombos;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
+
+    extern bool useDynamicLogo;
+    extern bool useSelectionBG;
+    extern bool useSelectionText;
+    extern bool useSelectionValue;
 
 
     
@@ -647,7 +651,7 @@ namespace ult {
     void reinitializeWidgetVars();
     #endif
     
-    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, highlightVersions, highlightTitles, highlightPackages;
+    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
     
     extern const std::string loaderInfo;
     extern const std::string loaderTitle;
