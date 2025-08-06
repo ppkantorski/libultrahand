@@ -6984,9 +6984,9 @@ namespace tsl {
                 
                 if (useClickTextColor) [[unlikely]] {
                     if (ult::expandedMemory)
-                        renderer->drawRectMultiThreaded(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
+                        renderer->drawRectMultiThreaded(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                     else
-                        renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), a(clickColor));
+                        renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                 }
         
                 const s32 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) /2.0) +0.5f; // Bit shift for division by 2
