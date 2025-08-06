@@ -7007,7 +7007,7 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
                 static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
             #else
-                static constexpr std::vector<std::string> specialChars = {};
+                static const std::vector<std::string> specialChars = {};
             #endif
                 // Fast path for non-truncated text
                 if (!m_truncated) [[likely]] {
@@ -7683,7 +7683,7 @@ namespace tsl {
                 #if IS_LAUNCHER_DIRECTIVE
                     static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
                 #else
-                    static constexpr std::vector<std::string> specialChars = {};
+                    static const std::vector<std::string> specialChars = {};
                 #endif
                     renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
                         (this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
