@@ -595,7 +595,7 @@ namespace ult {
     extern std::atomic<bool> touchInBounds;
     
     
-    #if USING_WIDGET_DIRECTIVE
+#if USING_WIDGET_DIRECTIVE
     // Battery implementation
     extern bool powerInitialized;
     extern bool powerCacheInitialized;
@@ -618,7 +618,7 @@ namespace ult {
     void powerInit(void);
     
     void powerExit(void);
-    #endif
+#endif
     
     // Temperature Implementation
     extern std::atomic<float> PCB_temperature;

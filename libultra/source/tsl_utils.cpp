@@ -1348,7 +1348,7 @@ namespace ult {
     std::atomic<bool> touchInBounds(false);
     
     
-    #if USING_WIDGET_DIRECTIVE
+#if USING_WIDGET_DIRECTIVE
     // Battery implementation
     bool powerInitialized = false;
     bool powerCacheInitialized;
@@ -1457,7 +1457,7 @@ namespace ult {
             powerCacheInitialized = false;
         }
     }
-    #endif
+#endif
     
     
     // Temperature Implementation

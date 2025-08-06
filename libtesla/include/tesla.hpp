@@ -271,10 +271,6 @@ namespace tsl {
 
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
 
-    #if USING_WIDGET_DIRECTIVE
-    static bool overrideWidgetDraw = false;
-    #endif
-
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
 
@@ -4580,7 +4576,7 @@ namespace tsl {
             std::string m_colorSelection; // CUSTOM MODIFICATION
             std::string m_pageLeftName; // CUSTOM MODIFICATION
             std::string m_pageRightName; // CUSTOM MODIFICATION
-            bool m_showWidget = false;
+            
         
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
             static constexpr double cycleDuration = 1.6;
@@ -4588,6 +4584,10 @@ namespace tsl {
             float countOffset;
             float progress;
             float letterWidth;
+        #endif
+
+        #if USING_WIDGET_DIRECTIVE
+            bool m_showWidget = false;
         #endif
         
             float x, y;
@@ -4825,7 +4825,7 @@ namespace tsl {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
                 #if USING_WIDGET_DIRECTIVE
-                if (!overrideWidgetDraw)
+                if (m_showWidget)
                     renderer->drawWidget();
                 #endif
                 
@@ -5043,7 +5043,9 @@ namespace tsl {
          */
         class HeaderOverlayFrame : public Element {
         public:
-            
+        #if USING_WIDGET_DIRECTIVE
+            bool m_showWidget = false;
+        #endif
 
             HeaderOverlayFrame(u16 headerHeight = 175) : Element(), m_headerHeight(headerHeight) {
                 ult::activeHeaderHeight = headerHeight;
@@ -5072,7 +5074,7 @@ namespace tsl {
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
                 
                 #if USING_WIDGET_DIRECTIVE
-                if (!overrideWidgetDraw)
+                if (m_showWidget)
                     renderer->drawWidget();
                 #endif
 
