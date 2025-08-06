@@ -270,6 +270,7 @@ namespace tsl {
     }
 
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
+    static bool overrideWidgetDraw = false;
 
     // Theme color variable definitions
     static bool disableColorfulLogo = false;
@@ -4821,7 +4822,8 @@ namespace tsl {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
                 #if USING_WIDGET_DIRECTIVE
-                renderer->drawWidget();
+                if (!overrideWidgetDraw)
+                    renderer->drawWidget();
                 #endif
                 
                 renderer->drawString(m_title, false, 20, 52, 32, (defaultOverlayColor));
@@ -5065,7 +5067,12 @@ namespace tsl {
                 renderer->drawWallpaper();
                 renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
-            
+                
+                #if USING_WIDGET_DIRECTIVE
+                if (overrideWidgetDraw)
+                    renderer->drawWidget();
+                #endif
+
                 // Get the exact gap width from ult::GAP_1
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 const float _halfGap = gapWidth / 2.0f;
