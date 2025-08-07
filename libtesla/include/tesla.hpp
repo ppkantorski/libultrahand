@@ -4427,7 +4427,7 @@ namespace tsl {
                 offset = 0;
                 
                 renderer->drawString(this->m_title, false, 20, 50+2, 32, (defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
