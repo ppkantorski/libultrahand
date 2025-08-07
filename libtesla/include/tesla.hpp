@@ -4830,7 +4830,7 @@ namespace tsl {
                 #endif
                 
                 renderer->drawString(m_title, false, 20, 52, 32, (defaultOverlayColor));
-                renderer->drawString(m_subtitle, false, 20, y+23, 15, (bannerVersionTextColor));
+                renderer->drawString(m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
