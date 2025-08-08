@@ -215,7 +215,7 @@ namespace tsl {
     
     //#if USING_WIDGET_DIRECTIVE
     // Ultra-fast version - zero variables, optimized calculations
-    inline Color GradientColor(float temperature) {
+    inline constexpr Color GradientColor(float temperature) {
         if (temperature <= 35.0f) return Color(7, 7, 15, 0xFF);
         if (temperature >= 65.0f) return Color(15, 0, 0, 0xFF);
         
@@ -4969,7 +4969,7 @@ namespace tsl {
                     snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.2f", currentFps);
                     lastFps = currentFps;
                 }
-                static auto whiteColor = tsl::Color(0xF,0xF,0xF,0xF);
+                static constexpr auto whiteColor = tsl::Color(0xF,0xF,0xF,0xF);
                 renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, whiteColor);
             #endif
             
@@ -6549,7 +6549,7 @@ namespace tsl {
                 
                 // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
                 if (frameTimeMs > 33.0f) {
-                    float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
+                    const float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
                     scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
                 }
                 
@@ -7754,7 +7754,7 @@ namespace tsl {
                     this->m_touched = false;
         
                     if (Element::getInputMode() == InputMode::Touch) {
-                        bool handled = this->onClick(KEY_A);
+                        const bool handled = this->onClick(KEY_A);
         
                         this->m_clickAnimationProgress = 0;
                         return handled;
@@ -8553,7 +8553,7 @@ namespace tsl {
                 StepTrackBar::setProgress(value);
                 
                 // Update selection when progress is set programmatically
-                u8 currentIndex = this->getProgress();
+                const u8 currentIndex = this->getProgress();
                 if (currentIndex < m_stepDescriptions.size()) {
                     this->m_selection = m_stepDescriptions[currentIndex];
                 }
@@ -8997,8 +8997,8 @@ namespace tsl {
                 
                 
                 // Determine visual appearance: look locked if KEY_R is held and trackbar is unlocked
-                bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
-                bool visuallyUnlocked = (m_unlockedTrackbar && !m_keyRHeld) || touchInSliderBounds;
+                const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
+                const bool visuallyUnlocked = (m_unlockedTrackbar && !m_keyRHeld) || touchInSliderBounds;
                 
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
@@ -11628,6 +11628,11 @@ namespace tsl {
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
         }
 
+#if IS_STATUS_MONITOR_DIRECTIVE
+        // Check for mini/micro mode flags
+        bool isMiniOrMicroMode = false;
+#endif
+
 
         // CUSTOM SECTION START
         // Argument parsing
@@ -11644,6 +11649,14 @@ namespace tsl {
             bool skip;
             for (u8 arg = 1; arg < argc; arg++) {
                 const char* s = argv[arg];
+
+#if IS_STATUS_MONITOR_DIRECTIVE
+                // Check for mini/micro mode flags
+                if (s[0] == '-' && (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0)) {
+                    isMiniOrMicroMode = true;
+                }
+#endif
+
                 skip = false;
                 
                 // Check if this arg is a flag value for --lastTitleID or --foregroundFix
@@ -11826,8 +11839,12 @@ namespace tsl {
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
             
-            
+#if IS_STATUS_MONITOR_DIRECTIVE
+            if (!isMiniOrMicroMode)
+                hlp::requestForeground(true);
+#else
             hlp::requestForeground(true);
+#endif
             
             overlay->show();
             overlay->clearScreen();
