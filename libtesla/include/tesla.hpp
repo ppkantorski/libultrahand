@@ -8235,8 +8235,9 @@ namespace tsl {
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
                 
                     renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
-                                       (!this->m_focused ? (defaultTextColor) : (selectedTextColor)));
-                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (onTextColor));
+                                       ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+
+                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
                 } else {
                     // Original Style: Draw icon
                     if (m_icon[0] != '\0')
@@ -8607,7 +8608,7 @@ namespace tsl {
                 // Only draw the step description above the bar if not using V2 style (V2 style shows it on the right)
                 if (!m_useV2Style) {
                     const auto descWidth = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15).first;
-                    renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, a(tsl::style::color::ColorDescription));
+                    renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
                 }
                 
                 // Draw the parent trackbar
@@ -9017,7 +9018,7 @@ namespace tsl {
                 std::string labelPart = this->m_label;
                 ult::removeTag(labelPart);
             
-                std::string valuePart;
+                static std::string valuePart;
                 if (!m_usingNamedStepTrackbar)
                     valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? ult::to_string(this->m_value) + this->m_units : ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
                 else
@@ -10941,7 +10942,7 @@ namespace tsl {
                 ult::removeQuotes(ult::datetimeFormat);
             }
 
-                        
+
             std::string tempStr;
             
             tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_clock"];
