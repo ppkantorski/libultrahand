@@ -10940,37 +10940,57 @@ namespace tsl {
                 ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
                 ult::removeQuotes(ult::datetimeFormat);
             }
-            std::string hideClockStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_clock"];
-            ult::removeQuotes(hideClockStr);
-            ult::hideClock = hideClockStr != ult::FALSE_STR;
+
+                        
+            std::string tempStr;
             
-            std::string hideBatteryStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_battery"];
-            ult::removeQuotes(hideBatteryStr);
-            ult::hideBattery = hideBatteryStr != ult::FALSE_STR;
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_clock"];
+            ult::removeQuotes(tempStr);
+            ult::hideClock = tempStr != ult::FALSE_STR;
             
-            std::string hidePCBTempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_pcb_temp"];
-            ult::removeQuotes(hidePCBTempStr);
-            ult::hidePCBTemp = hidePCBTempStr != ult::FALSE_STR;
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_battery"];
+            ult::removeQuotes(tempStr);
+            ult::hideBattery = tempStr != ult::FALSE_STR;
             
-            std::string hideSOCTempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
-            ult::removeQuotes(hideSOCTempStr);
-            ult::hideSOCTemp = hideSOCTempStr != ult::FALSE_STR;
-
-            std::string dynamicWidgetColorsStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_widget_colors"];
-            ult::removeQuotes(dynamicWidgetColorsStr);
-            ult::dynamicWidgetColors = dynamicWidgetColorsStr != ult::FALSE_STR;
-
-            std::string hideWidgetBackdropStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_widget_backdrop"];
-            ult::removeQuotes(hideWidgetBackdropStr);
-            ult::hideWidgetBackdrop = hideWidgetBackdropStr != ult::FALSE_STR;
-
-            std::string centerWidgetAlignmentStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["center_widget_alignment"];
-            ult::removeQuotes(centerWidgetAlignmentStr);
-            ult::centerWidgetAlignment = centerWidgetAlignmentStr != ult::FALSE_STR;
-
-            std::string extendedWidgetBackdropStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["extended_widget_backdrop"];
-            ult::removeQuotes(extendedWidgetBackdropStr);
-            ult::extendedWidgetBackdrop = extendedWidgetBackdropStr != ult::FALSE_STR;
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_pcb_temp"];
+            ult::removeQuotes(tempStr);
+            ult::hidePCBTemp = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
+            ult::removeQuotes(tempStr);
+            ult::hideSOCTemp = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_widget_colors"];
+            ult::removeQuotes(tempStr);
+            ult::dynamicWidgetColors = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_widget_backdrop"];
+            ult::removeQuotes(tempStr);
+            ult::hideWidgetBackdrop = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["center_widget_alignment"];
+            ult::removeQuotes(tempStr);
+            ult::centerWidgetAlignment = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["extended_widget_backdrop"];
+            ult::removeQuotes(tempStr);
+            ult::extendedWidgetBackdrop = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_logo"];
+            ult::removeQuotes(tempStr);
+            ult::useDynamicLogo = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_bg"];
+            ult::removeQuotes(tempStr);
+            ult::useSelectionBG = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_text"];
+            ult::removeQuotes(tempStr);
+            ult::useSelectionText = tempStr != ult::FALSE_STR;
+            
+            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_value"];
+            ult::removeQuotes(tempStr);
+            ult::useSelectionValue = tempStr != ult::FALSE_STR;
 
             //#endif
             
