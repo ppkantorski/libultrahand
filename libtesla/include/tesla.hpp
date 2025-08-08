@@ -11872,7 +11872,13 @@ namespace tsl {
             overlay->clearScreen();
             overlay->resetFlags();
             
+#if IS_STATUS_MONITOR_DIRECTIVE
+            if (!isMiniOrMicroMode)
+                hlp::requestForeground(false);
+
+#else
             hlp::requestForeground(false);
+#endif
             
             shData.overlayOpen = false;
 
