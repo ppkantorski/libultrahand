@@ -133,6 +133,7 @@ struct KeyPairEqual {
 u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
 volatile bool isRendering = false;
+LEvent renderingStopEvent = {0};
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
 //bool fontCache = true;
@@ -3634,32 +3635,23 @@ namespace tsl {
             /**
              * @brief End the current frame
              * @warning Don't call this before calling \ref startFrame once
-                         */
+             */
             inline void endFrame() {
                 #if IS_STATUS_MONITOR_DIRECTIVE
-                if (isRendering) {
+                // Check if rendering is active by testing if the stop event is NOT signaled
+                if (isRendering) {  // Returns true if event is signaled
                     memcpy(this->getNextFramebuffer(), this->getCurrentFramebuffer(), this->getFramebufferSize());
                     
-                    static constexpr u64 checkIntervalNs = 1000*1000;
                     static u32 lastFPS = 0;
-                    static u64 cachedTargetTicks = 0;
+                    static u64 cachedIntervalNs = 0;
                     
                     if (__builtin_expect(TeslaFPS != lastFPS, 0)) { // Hint: FPS changes are rare
-                        cachedTargetTicks = armNsToTicks(1000*1000*1000 / TeslaFPS);
+                        cachedIntervalNs = 1000*1000*1000ULL / TeslaFPS;
                         lastFPS = TeslaFPS;
                     }
                     
-                    const u64 startTick = armGetSystemTick();
-                    const u64 endTick = startTick + cachedTargetTicks;
-                    u32 counter = 0;
-                    
-                    do {
-                        if (__builtin_expect((++counter & 15) == 0, 0)) { // Hint: break is rare
-                            if (!isRendering) break;
-                        }
-                        
-                        svcSleepThread(checkIntervalNs);
-                    } while (__builtin_expect(armGetSystemTick() < endTick, 1)); // Hint: continue is common
+                    // Wait for frame interval or rendering stop event
+                    leventWait(&renderingStopEvent, cachedIntervalNs);
                 }
                 #endif
                 this->waitForVSync();
@@ -3670,6 +3662,7 @@ namespace tsl {
                     tsl::gfx::FontManager::clearCache();       // exclusive clear
                 }
             }
+
 
         };
 
@@ -4406,7 +4399,7 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire) && FullMode) {
                     ult::themeIsInitialized.store(true, std::memory_order_release);
                     tsl::initializeThemeVars();
                 }
@@ -4437,24 +4430,24 @@ namespace tsl {
                 
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
-                    const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    const float _halfGap = gapWidth / 2.0f;
+                    static const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                    static const float _halfGap = gapWidth / 2.0f;
                     if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
                         ult::halfGap.store(_halfGap, std::memory_order_release);
                 
                     // Calculate text dimensions for buttons without gaps
-                    const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                    static const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    static const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 
                     // Update widths to include the half-gap padding on each side
-                    const float _backWidth = backTextWidth + gapWidth;
+                    static const float _backWidth = backTextWidth + gapWidth;
                     if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
                         ult::backWidth.store(_backWidth, std::memory_order_release);
-                    const float _selectWidth = selectTextWidth + gapWidth;
+                    static const float _selectWidth = selectTextWidth + gapWidth;
                     if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
                         ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
-                    const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
+                    static const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
@@ -11241,6 +11234,7 @@ namespace tsl {
                         
                         #if IS_STATUS_MONITOR_DIRECTIVE
                         isRendering = false;
+                        leventSignal(&renderingStopEvent);
                         #endif
 
                         if (shData->overlayOpen) {
@@ -11327,6 +11321,7 @@ namespace tsl {
 
                                 #if IS_STATUS_MONITOR_DIRECTIVE
                                 isRendering = false;
+                                leventSignal(&renderingStopEvent);
                                 #endif
                     
                     #if !IS_LAUNCHER_DIRECTIVE
