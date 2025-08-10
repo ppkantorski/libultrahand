@@ -2076,15 +2076,11 @@ namespace tsl {
             // Define processChunk as a static member function
             // Optimized processRoundedRectChunk - assumes bounds checking done by caller
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 x_end, const s32 y_end, const s32 r2, const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
-                // All constants pulled outside loops - minimal variable definitions
                 const s32 x_left = x + radius, x_right = x_end - radius;
                 const s32 y_top = y + radius, y_bottom = y_end - radius;
                 const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
-                
-                // Fixed stack arrays - no dynamic allocation overhead
+            
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
-                
-                // Optimized array initialization - 8-way unroll
                 for (s32 i = 0; i < 512; i += 8) {
                     redArray[i] = redArray[i+1] = redArray[i+2] = redArray[i+3] = 
                     redArray[i+4] = redArray[i+5] = redArray[i+6] = redArray[i+7] = red;
@@ -2095,38 +2091,37 @@ namespace tsl {
                     alphaArray[i] = alphaArray[i+1] = alphaArray[i+2] = alphaArray[i+3] = 
                     alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
                 }
-                
+            
                 s32 span_start, span_end;
                 s32 dx;
-                // Direct rendering - no intermediate span storage, minimal variables in loop
                 for (s32 y_current = startRow; y_current < endRow; ++y_current) {
-                    
-                    
                     if (y_current >= y_top && y_current < y_bottom) {
                         // Middle section
                         span_start = x;
                         span_end = x_end;
                     } else {
-                        // Corner section - use absolute distance for symmetry
+                        // Corner section
                         const s32 dy_abs = (y_current < y_top) ? (y_top - y_current) : (y_current - y_bottom);
                         const s32 dy2 = dy_abs * dy_abs;
                         if (dy2 > r2) continue;
-                        
-                        // Use integer-only calculation to avoid floating-point precision issues
+            
+                        // Compute dx using integer square root approximation for symmetry
                         dx = 0;
-                        while ((dx + 1) * (dx + 1) + dy2 <= r2) {
+                        const s32 t = r2 - dy2;
+                        while (dx * dx <= t) {
                             dx++;
                         }
-                        
+                        dx--; // Get the largest dx where dx^2 + dy2 <= r2
+            
+                        // Ensure symmetry by centering spans around corner points
                         span_start = std::max(x_left - dx, x);
                         span_end = std::min(x_right + dx, x_end);
                     }
-                    
+            
                     if (span_start >= span_end) continue;
-                    
-                    // Batch rendering with minimal variables
+            
+                    // Batch rendering
                     for (s32 x_pos = span_start; x_pos < span_end; x_pos += 512) {
-                        //const s32 batch_size = std::min(512, span_end - x_pos);
                         self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, std::min(512, span_end - x_pos));
                     }
                 }
