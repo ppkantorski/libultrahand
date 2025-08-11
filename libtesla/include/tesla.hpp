@@ -139,6 +139,9 @@ bool deactivateOriginalFooter = false;
 //bool fontCache = true;
 bool disableJumpTo = false;
 
+// Check for mini/micro mode flags
+bool isMiniOrMicroMode = false;
+
 #endif
 
 #if USING_FPS_INDICATOR_DIRECTIVE
@@ -2075,9 +2078,20 @@ namespace tsl {
 
             // Define processChunk as a static member function
             // Optimized processRoundedRectChunk - assumes bounds checking done by caller
-            static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 x_end, const s32 y_end, const s32 r2, const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
-                const s32 x_left = x + radius, x_right = x_end - radius;
-                const s32 y_top = y + radius, y_bottom = y_end - radius;
+            static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h, 
+                                               const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
+                // Original rectangle bounds
+                const s32 orig_x = x, orig_y = y;
+                const s32 orig_x_end = x + w, orig_y_end = y + h;
+                
+                // Calculate clipping bounds
+                const s32 clip_x = std::max(0, x);
+                const s32 clip_x_end = std::min(static_cast<s32>(cfg::FramebufferWidth), x + w);
+                
+                // Use ORIGINAL coordinates to determine corner regions
+                const s32 orig_x_left = orig_x + radius, orig_x_right = orig_x_end - radius;
+                const s32 orig_y_top = orig_y + radius, orig_y_bottom = orig_y_end - radius;
+                const s32 r2 = radius * radius;
                 const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
             
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
@@ -2091,21 +2105,26 @@ namespace tsl {
                     alphaArray[i] = alphaArray[i+1] = alphaArray[i+2] = alphaArray[i+3] = 
                     alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
                 }
-            
-                s32 span_start, span_end;
+                
+                s32 orig_span_start, orig_span_end;
                 s32 dx;
                 for (s32 y_current = startRow; y_current < endRow; ++y_current) {
-                    if (y_current >= y_top && y_current < y_bottom) {
-                        // Middle section
-                        span_start = x;
-                        span_end = x_end;
+                    // Skip if outside original rectangle bounds
+                    if (y_current < orig_y || y_current >= orig_y_end) continue;
+                    
+                    
+                    
+                    if (y_current >= orig_y_top && y_current < orig_y_bottom) {
+                        // Middle section - full width
+                        orig_span_start = orig_x;
+                        orig_span_end = orig_x_end;
                     } else {
                         // Corner section
-                        const s32 dy_abs = (y_current < y_top) ? (y_top - y_current) : (y_current - y_bottom);
+                        const s32 dy_abs = (y_current < orig_y_top) ? (orig_y_top - y_current) : (y_current - orig_y_bottom);
                         const s32 dy2 = dy_abs * dy_abs;
                         if (dy2 > r2) continue;
             
-                        // Compute dx using integer square root approximation for symmetry
+                        // Compute dx using integer square root approximation
                         dx = 0;
                         const s32 t = r2 - dy2;
                         while (dx * dx <= t) {
@@ -2113,10 +2132,14 @@ namespace tsl {
                         }
                         dx--; // Get the largest dx where dx^2 + dy2 <= r2
             
-                        // Ensure symmetry by centering spans around corner points
-                        span_start = std::max(x_left - dx, x);
-                        span_end = std::min(x_right + dx, x_end);
+                        // Calculate the span for this row in the original rectangle
+                        orig_span_start = std::max(orig_x_left - dx, orig_x);
+                        orig_span_end = std::min(orig_x_right + dx, orig_x_end);
                     }
+            
+                    // Clip the original span to visible bounds
+                    const s32 span_start = std::max(orig_span_start, clip_x);
+                    const s32 span_end = std::min(orig_span_end, clip_x_end);
             
                     if (span_start >= span_end) continue;
             
@@ -2142,11 +2165,11 @@ namespace tsl {
             inline void drawRoundedRectMultiThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
                 if (w <= 0 || h <= 0) return;
                 
-                // Get framebuffer bounds
-                const s32 fb_width = cfg::FramebufferWidth;
-                const s32 fb_height = cfg::FramebufferHeight;
+                // Get framebuffer bounds for early exit check
+                const s32 fb_width = static_cast<s32>(cfg::FramebufferWidth);
+                const s32 fb_height = static_cast<s32>(cfg::FramebufferHeight);
                 
-                // Calculate and clamp rectangle bounds to framebuffer
+                // Calculate clipped bounds for early exit check
                 const s32 clampedX = std::max(0, x);
                 const s32 clampedY = std::max(0, y);
                 const s32 clampedXEnd = std::min(fb_width, x + w);
@@ -2156,17 +2179,7 @@ namespace tsl {
                 if (clampedX >= clampedXEnd || clampedY >= clampedYEnd) return;
                 
                 // Calculate visible dimensions
-                //const s32 visibleWidth = clampedXEnd - clampedX;
                 const s32 visibleHeight = clampedYEnd - clampedY;
-                
-                // For small rectangles, use single-threaded version
-                //if (visibleWidth * visibleHeight < 1000) {
-                //    drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
-                //    return;
-                //}
-                
-                // Pre-calculate values for processRoundedRectChunk
-                const s32 r2 = radius * radius;
                 
                 // Dynamic chunk size based on visible rectangle height
                 const s32 chunkSize = std::max(1, visibleHeight / (static_cast<s32>(ult::numThreads) * 2));
@@ -2176,12 +2189,11 @@ namespace tsl {
                     s32 startRow, endRow;
                     while ((startRow = currentRow.fetch_add(chunkSize)) < clampedYEnd) {
                         endRow = std::min(startRow + chunkSize, clampedYEnd);
-                        // Pass clamped coordinates to processRoundedRectChunk
-                        processRoundedRectChunk(this, clampedX, clampedY, clampedXEnd, clampedYEnd, r2, radius, color, startRow, endRow);
+                        processRoundedRectChunk(this, x, y, w, h, radius, color, startRow, endRow);
                     }
                 };
                 
-                // Launch threads using ult::renderThreads array (same pattern as drawBitmapRGBA4444)
+                // Launch threads using ult::renderThreads array
                 for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
                     ult::renderThreads[i] = std::thread(threadTask);
                 }
@@ -2205,11 +2217,11 @@ namespace tsl {
             inline void drawRoundedRectSingleThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
                 if (w <= 0 || h <= 0) return;
                 
-                // Get framebuffer bounds
-                const s32 fb_width = cfg::FramebufferWidth;
-                const s32 fb_height = cfg::FramebufferHeight;
+                // Get framebuffer bounds for early exit check
+                const s32 fb_width = static_cast<s32>(cfg::FramebufferWidth);
+                const s32 fb_height = static_cast<s32>(cfg::FramebufferHeight);
                 
-                // Calculate and clamp rectangle bounds to framebuffer
+                // Calculate clipped bounds for early exit check
                 const s32 clampedX = std::max(0, x);
                 const s32 clampedY = std::max(0, y);
                 const s32 clampedXEnd = std::min(fb_width, x + w);
@@ -2218,11 +2230,7 @@ namespace tsl {
                 // Early exit if nothing to draw after clamping
                 if (clampedX >= clampedXEnd || clampedY >= clampedYEnd) return;
                 
-                // Pre-calculate values for processRoundedRectChunk
-                const s32 r2 = radius * radius;
-                
-                // Pass clamped coordinates to processRoundedRectChunk
-                processRoundedRectChunk(this, clampedX, clampedY, clampedXEnd, clampedYEnd, r2, radius, color, clampedY, clampedYEnd);
+                processRoundedRectChunk(this, x, y, w, h, radius, color, clampedY, clampedYEnd);
             }
             
             std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
@@ -11406,12 +11414,32 @@ namespace tsl {
                 //s32 idx = 0;
                 rc = waitObjects(&idx, objects, WaiterObject_Count, 20'000'000ul);
                 if (R_SUCCEEDED(rc)) {
+
+#if IS_STATUS_MONITOR_DIRECTIVE
+                    if (idx == WaiterObject_HomeButton) { // Changed condition to exclude capture button
+                        if (shData->overlayOpen && !isMiniOrMicroMode) {
+                            tsl::Overlay::get()->hide();
+                            shData->overlayOpen = false;
+                        }
+                    }
+                    else if (idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
+                        if (shData->overlayOpen && !isMiniOrMicroMode) {
+                            tsl::Overlay::get()->hide();
+                            shData->overlayOpen = false;
+                        }
+                        else if (shData->overlayOpen && isMiniOrMicroMode) {
+                            tsl::Overlay::get()->close();
+                            shData->overlayOpen = false;
+                        }
+                    }
+#else
                     if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
                         }
                     }
+#endif
                     
                     switch (idx) {
                         case WaiterObject_HomeButton:
@@ -11618,10 +11646,10 @@ namespace tsl {
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
         }
 
-#if IS_STATUS_MONITOR_DIRECTIVE
-        // Check for mini/micro mode flags
-        bool isMiniOrMicroMode = false;
-#endif
+//#if IS_STATUS_MONITOR_DIRECTIVE
+//        // Check for mini/micro mode flags
+//        bool isMiniOrMicroMode = false;
+//#endif
 
 
         // CUSTOM SECTION START
@@ -11642,8 +11670,18 @@ namespace tsl {
 
 #if IS_STATUS_MONITOR_DIRECTIVE
                 // Check for mini/micro mode flags
-                if (s[0] == '-' && (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0)) {
-                    isMiniOrMicroMode = true;
+                if (s[0] == '-') {
+                    if (s[1] == 'm') {
+                        // Single targeted comparison for "-mini" or "-micro"
+                        if (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0) {
+                            isMiniOrMicroMode = true;
+                        }
+                    } else if (s[1] == '-' && s[2] == 'm') {
+                        // Single targeted comparison for "--miniOverlay" or "--microOverlay"
+                        if (strcasecmp(s, "--miniOverlay") == 0 || strcasecmp(s, "--microOverlay") == 0) {
+                            isMiniOrMicroMode = true;
+                        }
+                    }
                 }
 #endif
 
