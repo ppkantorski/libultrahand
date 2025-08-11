@@ -349,6 +349,7 @@ namespace tsl {
 
     static size_t separatorAlpha = 15;
     static Color separatorColor = RGB888("404040", separatorAlpha);
+    static Color edgeSeparatorColor = RGB888("303030");
 
     static Color textSeparatorColor = RGB888("404040");
 
@@ -4478,6 +4479,13 @@ namespace tsl {
                 
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
+
+                if (FullMode) {
+                    if (!ult::useRightAlignment)
+                        renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
+                    else
+                        renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
+                }
             }
             
 
@@ -4950,7 +4958,7 @@ namespace tsl {
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
                                                         buttonStartX, 693, 23, 
                                                         (bottomTextColor), (buttonColor));
-            
+
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -4971,6 +4979,11 @@ namespace tsl {
             
                 if (m_contentElement != nullptr)
                     m_contentElement->frame(renderer);
+
+                if (!ult::useRightAlignment)
+                    renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
+                else
+                    renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
             }
             // CUSTOM SECTION END
         
@@ -5066,7 +5079,7 @@ namespace tsl {
             
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
-                renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
+                //renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
                 
                 #if USING_WIDGET_DIRECTIVE
@@ -5120,6 +5133,11 @@ namespace tsl {
             
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
+
+                if (!ult::useRightAlignment)
+                    renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
+                else
+                    renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
             }
             
             virtual inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
