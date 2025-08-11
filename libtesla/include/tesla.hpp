@@ -11416,19 +11416,9 @@ namespace tsl {
                 if (R_SUCCEEDED(rc)) {
 
 #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (idx == WaiterObject_HomeButton) { // Changed condition to exclude capture button
+                    if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
                         if (shData->overlayOpen && !isMiniOrMicroMode) {
                             tsl::Overlay::get()->hide();
-                            shData->overlayOpen = false;
-                        }
-                    }
-                    else if (idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
-                        if (shData->overlayOpen && !isMiniOrMicroMode) {
-                            tsl::Overlay::get()->hide();
-                            shData->overlayOpen = false;
-                        }
-                        else if (shData->overlayOpen && isMiniOrMicroMode) {
-                            tsl::Overlay::get()->close();
                             shData->overlayOpen = false;
                         }
                     }
@@ -11457,6 +11447,32 @@ namespace tsl {
                             hidInitializeTouchScreen();
                             padUpdate(&pad);
                             
+                            if (isMiniOrMicroMode) {
+                                isRendering = false;
+                                leventSignal(&renderingStopEvent);
+                                
+                                ult::setIniFileValue(
+                                    ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME,
+                                    ult::IN_OVERLAY_STR,
+                                    ult::FALSE_STR
+                                );
+                                tsl::setNextOverlay(
+                                    ult::OVERLAY_PATH + "ovlmenu.ovl"
+                                );
+                                tsl::Overlay::get()->close();
+                                
+                                // Perform any necessary cleanup
+                                hidExit();
+                                
+                                // Reinitialize resources
+                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+                                padInitializeAny(&pad);
+                                hidInitializeTouchScreen();
+                                padUpdate(&pad);
+                            }
+
+
                             break;
                         case WaiterObject_CaptureButton:
                             ult::disableTransparency = true;
