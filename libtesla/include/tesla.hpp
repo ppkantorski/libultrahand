@@ -11441,6 +11441,7 @@ namespace tsl {
                             if (isMiniOrMicroMode) {
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
+                                svcSleepThread(200'000);
 
                                 ult::setIniFileValue(
                                     ult::ULTRAHAND_CONFIG_INI_PATH,
@@ -11451,15 +11452,16 @@ namespace tsl {
                                 tsl::setNextOverlay(
                                     ult::OVERLAY_PATH + "ovlmenu.ovl"
                                 );
-                                // Perform any necessary cleanup
-                                hidExit();
-
-                                // Reinitialize resources
-                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                                padInitializeAny(&pad);
-                                hidInitializeTouchScreen();
-                                padUpdate(&pad);
                                 tsl::Overlay::get()->close();
+                                eventFire(&shData->comboEvent);
+                                // Perform any necessary cleanup
+                                //hidExit();
+                                //
+                                //// Reinitialize resources
+                                //ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+                                //padInitializeAny(&pad);
+                                //hidInitializeTouchScreen();
+                                //padUpdate(&pad);
                             } else {
                                 eventClear(&powerButtonPressEvent);
     
