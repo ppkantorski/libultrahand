@@ -11439,9 +11439,10 @@ namespace tsl {
 
 #if IS_STATUS_MONITOR_DIRECTIVE
                             if (isMiniOrMicroMode) {
+                                eventClear(&powerButtonPressEvent);
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
-                                svcSleepThread(200'000);
+                                svcSleepThread(100'000'000);
 
                                 ult::setIniFileValue(
                                     ult::ULTRAHAND_CONFIG_INI_PATH,
@@ -11453,15 +11454,18 @@ namespace tsl {
                                     ult::OVERLAY_PATH + "ovlmenu.ovl"
                                 );
                                 tsl::Overlay::get()->close();
+                                //eventClear(&powerButtonPressEvent);
                                 eventFire(&shData->comboEvent);
+
                                 // Perform any necessary cleanup
-                                //hidExit();
-                                //
-                                //// Reinitialize resources
-                                //ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                                //padInitializeAny(&pad);
-                                //hidInitializeTouchScreen();
-                                //padUpdate(&pad);
+                                hidExit();
+                                
+                                // Reinitialize resources
+                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+                                padInitializeAny(&pad);
+                                hidInitializeTouchScreen();
+                                padUpdate(&pad);
+                                break;
                             } else {
                                 eventClear(&powerButtonPressEvent);
     
@@ -11473,6 +11477,7 @@ namespace tsl {
                                 padInitializeAny(&pad);
                                 hidInitializeTouchScreen();
                                 padUpdate(&pad);
+                                break;
                             }
 #else
                             eventClear(&powerButtonPressEvent);
@@ -11485,9 +11490,10 @@ namespace tsl {
                             padInitializeAny(&pad);
                             hidInitializeTouchScreen();
                             padUpdate(&pad);
+                            break;
 #endif
 
-                            break;
+                            
                         case WaiterObject_CaptureButton:
                             ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
@@ -11498,6 +11504,10 @@ namespace tsl {
                 } else if (rc != KERNELRESULT(TimedOut)) {
                     ASSERT_FATAL(rc);
                 }
+//#if IS_STATUS_MONITOR_DIRECTIVE
+//                if (isMiniOrMicroMode)
+//                    eventClear(&powerButtonPressEvent);
+//#endif
             }
         }
     }
