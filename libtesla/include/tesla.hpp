@@ -133,6 +133,7 @@ struct KeyPairEqual {
 u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
 volatile bool isRendering = false;
+volatile bool delayUpdate = false;
 LEvent renderingStopEvent = {0};
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
@@ -4391,7 +4392,7 @@ namespace tsl {
                 if (FullMode)
                     ult::loadWallpaperFileWhenSafe();
                 else
-                    svcSleepThread(150'000); // sleep thread for initial values to auto-load
+                    svcSleepThread(180'000); // sleep thread for initial values to auto-load
 
                 m_isItem = false;
             }
@@ -11513,19 +11514,32 @@ namespace tsl {
 
                             
                         case WaiterObject_CaptureButton:
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            if (isMiniOrMicroMode) {
+                                delayUpdate = true;
+                                isRendering = false;
+                                leventSignal(&renderingStopEvent);
+                            }
+                            #endif
+
                             ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
                             svcSleepThread(1'500'000'000);
                             ult::disableTransparency = false;
+
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            if (isMiniOrMicroMode) {
+                                isRendering = true;
+                                leventClear(&renderingStopEvent);
+                                delayUpdate = false;
+                            }
+                            #endif
+
                             break;
                     }
                 } else if (rc != KERNELRESULT(TimedOut)) {
                     ASSERT_FATAL(rc);
                 }
-//#if IS_STATUS_MONITOR_DIRECTIVE
-//                if (isMiniOrMicroMode)
-//                    eventClear(&powerButtonPressEvent);
-//#endif
             }
         }
     }
