@@ -11437,49 +11437,49 @@ namespace tsl {
                             break;
                         case WaiterObject_PowerButton:
 
-#if IS_STATUS_MONITOR_DIRECTIVE
-                            if (isMiniOrMicroMode) {
-                                eventClear(&powerButtonPressEvent);
-                                isRendering = false;
-                                leventSignal(&renderingStopEvent);
-                                svcSleepThread(100'000'000);
-
-                                ult::setIniFileValue(
-                                    ult::ULTRAHAND_CONFIG_INI_PATH,
-                                    ult::ULTRAHAND_PROJECT_NAME,
-                                    ult::IN_OVERLAY_STR,
-                                    ult::FALSE_STR
-                                );
-                                tsl::setNextOverlay(
-                                    ult::OVERLAY_PATH + "ovlmenu.ovl"
-                                );
-                                tsl::Overlay::get()->close();
-                                //eventClear(&powerButtonPressEvent);
-                                eventFire(&shData->comboEvent);
-
-                                // Perform any necessary cleanup
-                                hidExit();
-                                
-                                // Reinitialize resources
-                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                                padInitializeAny(&pad);
-                                hidInitializeTouchScreen();
-                                padUpdate(&pad);
-                                break;
-                            } else {
-                                eventClear(&powerButtonPressEvent);
-    
-                                // Perform any necessary cleanup
-                                hidExit();
-    
-                                // Reinitialize resources
-                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                                padInitializeAny(&pad);
-                                hidInitializeTouchScreen();
-                                padUpdate(&pad);
-                                break;
-                            }
-#else
+//#if IS_STATUS_MONITOR_DIRECTIVE
+//                            if (isMiniOrMicroMode) {
+//                                eventClear(&powerButtonPressEvent);
+//                                isRendering = false;
+//                                leventSignal(&renderingStopEvent);
+//                                svcSleepThread(100'000'000);
+//
+//                                ult::setIniFileValue(
+//                                    ult::ULTRAHAND_CONFIG_INI_PATH,
+//                                    ult::ULTRAHAND_PROJECT_NAME,
+//                                    ult::IN_OVERLAY_STR,
+//                                    ult::FALSE_STR
+//                                );
+//                                tsl::setNextOverlay(
+//                                    ult::OVERLAY_PATH + "ovlmenu.ovl"
+//                                );
+//                                tsl::Overlay::get()->close();
+//                                //eventClear(&powerButtonPressEvent);
+//                                eventFire(&shData->comboEvent);
+//
+//                                // Perform any necessary cleanup
+//                                hidExit();
+//                                
+//                                // Reinitialize resources
+//                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+//                                padInitializeAny(&pad);
+//                                hidInitializeTouchScreen();
+//                                padUpdate(&pad);
+//                                break;
+//                            } else {
+//                                eventClear(&powerButtonPressEvent);
+//    
+//                                // Perform any necessary cleanup
+//                                hidExit();
+//    
+//                                // Reinitialize resources
+//                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+//                                padInitializeAny(&pad);
+//                                hidInitializeTouchScreen();
+//                                padUpdate(&pad);
+//                                break;
+//                            }
+//#else
                             eventClear(&powerButtonPressEvent);
     
                             // Perform any necessary cleanup
@@ -11491,7 +11491,7 @@ namespace tsl {
                             hidInitializeTouchScreen();
                             padUpdate(&pad);
                             break;
-#endif
+//#endif
 
                             
                         case WaiterObject_CaptureButton:
