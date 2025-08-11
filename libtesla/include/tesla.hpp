@@ -11436,21 +11436,12 @@ namespace tsl {
                             eventClear(&homeButtonPressEvent);
                             break;
                         case WaiterObject_PowerButton:
-                            eventClear(&powerButtonPressEvent);
 
-                            // Perform any necessary cleanup
-                            hidExit();
-
-                            // Reinitialize resources
-                            ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                            padInitializeAny(&pad);
-                            hidInitializeTouchScreen();
-                            padUpdate(&pad);
-                            
+#if IS_STATUS_MONITOR_DIRECTIVE
                             if (isMiniOrMicroMode) {
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
-                                
+
                                 ult::setIniFileValue(
                                     ult::ULTRAHAND_CONFIG_INI_PATH,
                                     ult::ULTRAHAND_PROJECT_NAME,
@@ -11460,18 +11451,39 @@ namespace tsl {
                                 tsl::setNextOverlay(
                                     ult::OVERLAY_PATH + "ovlmenu.ovl"
                                 );
-                                tsl::Overlay::get()->close();
-                                
                                 // Perform any necessary cleanup
                                 hidExit();
-                                
+
+                                // Reinitialize resources
+                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+                                padInitializeAny(&pad);
+                                hidInitializeTouchScreen();
+                                padUpdate(&pad);
+                                tsl::Overlay::get()->close();
+                            } else {
+                                eventClear(&powerButtonPressEvent);
+    
+                                // Perform any necessary cleanup
+                                hidExit();
+    
                                 // Reinitialize resources
                                 ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
                                 padInitializeAny(&pad);
                                 hidInitializeTouchScreen();
                                 padUpdate(&pad);
                             }
-
+#else
+                            eventClear(&powerButtonPressEvent);
+    
+                            // Perform any necessary cleanup
+                            hidExit();
+    
+                            // Reinitialize resources
+                            ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
+                            padInitializeAny(&pad);
+                            hidInitializeTouchScreen();
+                            padUpdate(&pad);
+#endif
 
                             break;
                         case WaiterObject_CaptureButton:
