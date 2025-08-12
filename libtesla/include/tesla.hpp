@@ -11207,21 +11207,21 @@ namespace tsl {
                     std::scoped_lock lock(shData->dataMutex);
                     
                     // Combine inputs from both controllers
-                    u64 kDown_p1 = padGetButtonsDown(&pad_p1);
-                    u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
-                    u64 kHeld_p1 = padGetButtons(&pad_p1);
-                    u64 kHeld_handheld = padGetButtons(&pad_handheld);
+                    const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
+                    const u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
+                    const u64 kHeld_p1 = padGetButtons(&pad_p1);
+                    const u64 kHeld_handheld = padGetButtons(&pad_handheld);
                     
                     shData->keysDown = kDown_p1 | kDown_handheld;
                     shData->keysHeld = kHeld_p1 | kHeld_handheld;
                     
                     // For joysticks, prioritize handheld if available, otherwise use P1
-                    HidAnalogStickState leftStick_handheld = padGetStickPos(&pad_handheld, 0);
-                    HidAnalogStickState rightStick_handheld = padGetStickPos(&pad_handheld, 1);
+                    const HidAnalogStickState leftStick_handheld = padGetStickPos(&pad_handheld, 0);
+                    const HidAnalogStickState rightStick_handheld = padGetStickPos(&pad_handheld, 1);
                     
                     // Check if handheld has any stick input (not at center position)
-                    bool handheldHasInput = (leftStick_handheld.x != 0 || leftStick_handheld.y != 0 || 
-                                           rightStick_handheld.x != 0 || rightStick_handheld.y != 0);
+                    const bool handheldHasInput = (leftStick_handheld.x != 0 || leftStick_handheld.y != 0 || 
+                                                  rightStick_handheld.x != 0 || rightStick_handheld.y != 0);
                     
                     if (handheldHasInput) {
                         shData->joyStickPosLeft = leftStick_handheld;
@@ -11239,7 +11239,7 @@ namespace tsl {
                             ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
         
-                        HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
+                        const HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
                         
                         
                         const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
