@@ -11038,10 +11038,10 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
-
+        
             tsl::hlp::loadEntryKeyCombos();
             ult::launchingOverlay.store(false, std::memory_order_release);
-
+        
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
             
             // To prevent focus glitchout, close the overlay immediately when the home button gets pressed
@@ -11056,7 +11056,7 @@ namespace tsl {
             eventClear(&powerButtonPressEvent);
             tsl::hlp::ScopeGuard powerButtonEventGuard([&] { eventClose(&powerButtonPressEvent); });
             
-
+        
             // For handling screenshots color alpha
             Event captureButtonPressEvent = {};
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
@@ -11064,7 +11064,7 @@ namespace tsl {
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
             eventClear(&captureButtonPressEvent);
             tsl::hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
-
+        
             // Parse Tesla settings
             impl::parseOverlaySettings();
             
@@ -11074,17 +11074,40 @@ namespace tsl {
         //#endif
             
             // Configure input to take all controllers and up to 8
-            padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+            //padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+            //
+            //// Initialize pad
+            //PadState pad;
+            //padInitializeAny(&pad);
+            //
+            //// Initialize touch screen
+            //hidInitializeTouchScreen();
+            //
+            //// Drop all inputs from the previous overlay
+            //padUpdate(&pad);
+        
+        
+            // Allow only Player 1 and handheld mode
+            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
             
-            // Initialize pad
-            PadState pad;
-            padInitializeAny(&pad);
+            // Configure HID system to only listen to these IDs
+            hidSetSupportedNpadIdType(id_list, 2);
             
-            // Initialize touch screen
+            // Configure input for up to 2 supported controllers (P1 + Handheld)
+            padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+            
+            // Initialize separate pad states for both controllers
+            PadState pad_p1;
+            PadState pad_handheld;
+            padInitialize(&pad_p1, HidNpadIdType_No1);
+            padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+            
+            // Touch screen init
             hidInitializeTouchScreen();
             
-            // Drop all inputs from the previous overlay
-            padUpdate(&pad);
+            // Clear any stale input from both controllers
+            padUpdate(&pad_p1);
+            padUpdate(&pad_handheld);
             
             enum WaiterObject {
                 WaiterObject_HomeButton,
@@ -11103,16 +11126,16 @@ namespace tsl {
             u64 currentTouchTick = 0;
             auto lastTouchX = 0;
             auto lastTouchY = 0;
-
+        
             // Preset touch boundaries
             static constexpr int SWIPE_RIGHT_BOUND = 16;  // 16 + 80
             static constexpr int SWIPE_LEFT_BOUND = (1280 - 16);
             static constexpr u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
             static constexpr u64 FAST_SWAP_THRESHOLD_NS = 150'000'000ULL;
-
+        
             s32 idx;
             Result rc;
-
+        
         //#if IS_LAUNCHER_DIRECTIVE
             
             //bool isMainComboMatch;
@@ -11124,18 +11147,18 @@ namespace tsl {
             //u64 resetElapsedNs;
             //u64 nowTick;
             //u64 elapsedNs;
-
+        
             u64 lastPollTick = 0;
             u64 resetStartTick = armGetSystemTick();
             const u64 startNs = armTicksToNs(resetStartTick);
             //static bool runOnce = true;
-
+        
             //if (runOnce) {
             //    ult::lastTitleID = ult::getTitleIdAsString();
             //    runOnce = false;
             //}
             ult::lastTitleID = ult::getTitleIdAsString();
-
+        
             //u64 elapsedTime_ns;
             
             while (shData->running) {
@@ -11143,7 +11166,7 @@ namespace tsl {
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
                 const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
-
+        
                 // Poll Title ID every 1 seconds
                 if (!ult::resetForegroundCheck.load(std::memory_order_acquire) && elapsedNs >= 1'000'000'000ULL) {
                     lastPollTick = nowTick;
@@ -11155,7 +11178,7 @@ namespace tsl {
                         resetStartTick = nowTick;
                     }
                 }
-
+        
                 //currentTitleID = ult::getTitleIdAsString();
                 //if (currentTitleID != ult::lastTitleID) {
                 //    ult::lastTitleID = currentTitleID;
@@ -11173,19 +11196,40 @@ namespace tsl {
                         ult::resetForegroundCheck.store(false, std::memory_order_release);
                     }
                 }
-
-
-                // Scan for input changes
-                padUpdate(&pad);
+        
+        
+                // Scan for input changes from both controllers
+                padUpdate(&pad_p1);
+                padUpdate(&pad_handheld);
                 
                 // Read in HID values
                 {
                     std::scoped_lock lock(shData->dataMutex);
                     
-                    shData->keysDown = padGetButtonsDown(&pad);
-                    shData->keysHeld = padGetButtons(&pad);
-                    shData->joyStickPosLeft  = padGetStickPos(&pad, 0);
-                    shData->joyStickPosRight = padGetStickPos(&pad, 1);
+                    // Combine inputs from both controllers
+                    u64 kDown_p1 = padGetButtonsDown(&pad_p1);
+                    u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
+                    u64 kHeld_p1 = padGetButtons(&pad_p1);
+                    u64 kHeld_handheld = padGetButtons(&pad_handheld);
+                    
+                    shData->keysDown = kDown_p1 | kDown_handheld;
+                    shData->keysHeld = kHeld_p1 | kHeld_handheld;
+                    
+                    // For joysticks, prioritize handheld if available, otherwise use P1
+                    HidAnalogStickState leftStick_handheld = padGetStickPos(&pad_handheld, 0);
+                    HidAnalogStickState rightStick_handheld = padGetStickPos(&pad_handheld, 1);
+                    
+                    // Check if handheld has any stick input (not at center position)
+                    bool handheldHasInput = (leftStick_handheld.x != 0 || leftStick_handheld.y != 0 || 
+                                           rightStick_handheld.x != 0 || rightStick_handheld.y != 0);
+                    
+                    if (handheldHasInput) {
+                        shData->joyStickPosLeft = leftStick_handheld;
+                        shData->joyStickPosRight = rightStick_handheld;
+                    } else {
+                        shData->joyStickPosLeft = padGetStickPos(&pad_p1, 0);
+                        shData->joyStickPosRight = padGetStickPos(&pad_p1, 1);
+                    }
                     
                     
                     // Read in touch positions
@@ -11194,7 +11238,7 @@ namespace tsl {
                             //ult::internalTouchReleased = false;
                             ult::internalTouchReleased.store(false, std::memory_order_release);
                         }
-
+        
                         HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
                         
                         
@@ -11221,14 +11265,14 @@ namespace tsl {
                             lastTouchX = 0;
                             lastTouchY = 0;
                         }
-
+        
                         // If this is the first touch of a gesture, store lastTouchX
                         else if ((lastTouchX == 0 && lastTouchY == 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
                             currentTouchTick = nowTick;
                             lastTouchX = currentTouch.x;
                             lastTouchY = currentTouch.y;
                         }
-
+        
                     } else {
                         // Reset touch state if no touch is present
                         shData->touchState = { 0 };
@@ -11243,7 +11287,7 @@ namespace tsl {
                         // Reset time tracking
                         //currentTouchTick = nowTick;
                     }
-
+        
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                     #if IS_LAUNCHER_DIRECTIVE
@@ -11258,7 +11302,7 @@ namespace tsl {
                         isRendering = false;
                         leventSignal(&renderingStopEvent);
                         #endif
-
+        
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
@@ -11290,7 +11334,7 @@ namespace tsl {
                             const std::string overlayFileName = ult::getNameFromPath(requestedPath);
                             
                             // Set overlay state for ovlmenu.ovl
-
+        
                             // OPTIMIZED: Batch INI file writes
                             {
                                 auto iniData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
@@ -11299,7 +11343,7 @@ namespace tsl {
                                 section["to_packages"] = ult::TRUE_STR;
                                 ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, iniData);
                             }
-
+        
                             // Reset navigation state variables (these control slide navigation)
                             ult::allowSlide.store(false, std::memory_order_release);
                             ult::unlockedSlide.store(false, std::memory_order_release);
@@ -11340,7 +11384,7 @@ namespace tsl {
                                         continue;
                                     }
                                 }
-
+        
                                 #if IS_STATUS_MONITOR_DIRECTIVE
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
@@ -11405,7 +11449,7 @@ namespace tsl {
                                 } else {
                                     finalArgs += " --direct";
                                 }
-
+        
                                 if (overlayFileName == "ovlmenu.ovl") {
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
@@ -11433,85 +11477,46 @@ namespace tsl {
                 //s32 idx = 0;
                 rc = waitObjects(&idx, objects, WaiterObject_Count, 20'000'000ul);
                 if (R_SUCCEEDED(rc)) {
-
-#if IS_STATUS_MONITOR_DIRECTIVE
+        
+        #if IS_STATUS_MONITOR_DIRECTIVE
                     if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
                         if (shData->overlayOpen && !isMiniOrMicroMode) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
                         }
                     }
-#else
+        #else
                     if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
                         }
                     }
-#endif
+        #endif
                     
                     switch (idx) {
                         case WaiterObject_HomeButton:
                             eventClear(&homeButtonPressEvent);
                             break;
                         case WaiterObject_PowerButton:
-
-//#if IS_STATUS_MONITOR_DIRECTIVE
-//                            if (isMiniOrMicroMode) {
-//                                eventClear(&powerButtonPressEvent);
-//                                isRendering = false;
-//                                leventSignal(&renderingStopEvent);
-//                                svcSleepThread(100'000'000);
-//
-//                                ult::setIniFileValue(
-//                                    ult::ULTRAHAND_CONFIG_INI_PATH,
-//                                    ult::ULTRAHAND_PROJECT_NAME,
-//                                    ult::IN_OVERLAY_STR,
-//                                    ult::FALSE_STR
-//                                );
-//                                tsl::setNextOverlay(
-//                                    ult::OVERLAY_PATH + "ovlmenu.ovl"
-//                                );
-//                                tsl::Overlay::get()->close();
-//                                //eventClear(&powerButtonPressEvent);
-//                                eventFire(&shData->comboEvent);
-//
-//                                // Perform any necessary cleanup
-//                                hidExit();
-//                                
-//                                // Reinitialize resources
-//                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-//                                padInitializeAny(&pad);
-//                                hidInitializeTouchScreen();
-//                                padUpdate(&pad);
-//                                break;
-//                            } else {
-//                                eventClear(&powerButtonPressEvent);
-//    
-//                                // Perform any necessary cleanup
-//                                hidExit();
-//    
-//                                // Reinitialize resources
-//                                ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-//                                padInitializeAny(&pad);
-//                                hidInitializeTouchScreen();
-//                                padUpdate(&pad);
-//                                break;
-//                            }
-//#else
                             eventClear(&powerButtonPressEvent);
-    
+        
                             // Perform any necessary cleanup
                             hidExit();
-    
+        
                             // Reinitialize resources
                             ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                            padInitializeAny(&pad);
+                            
+                            // Reinitialize both controllers
+                            padInitialize(&pad_p1, HidNpadIdType_No1);
+                            padInitialize(&pad_handheld, HidNpadIdType_Handheld);
                             hidInitializeTouchScreen();
-                            padUpdate(&pad);
+                            
+                            // Update both controllers
+                            padUpdate(&pad_p1);
+                            padUpdate(&pad_handheld);
                             break;
-//#endif
-
+        
                             
                         case WaiterObject_CaptureButton:
                             #if IS_STATUS_MONITOR_DIRECTIVE
@@ -11521,12 +11526,12 @@ namespace tsl {
                                 leventSignal(&renderingStopEvent);
                             }
                             #endif
-
+        
                             ult::disableTransparency = true;
                             eventClear(&captureButtonPressEvent);
                             svcSleepThread(1'500'000'000);
                             ult::disableTransparency = false;
-
+        
                             #if IS_STATUS_MONITOR_DIRECTIVE
                             if (isMiniOrMicroMode) {
                                 isRendering = true;
@@ -11534,7 +11539,7 @@ namespace tsl {
                                 delayUpdate = false;
                             }
                             #endif
-
+        
                             break;
                     }
                 } else if (rc != KERNELRESULT(TimedOut)) {
