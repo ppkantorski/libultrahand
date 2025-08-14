@@ -132,6 +132,7 @@ struct KeyPairEqual {
 
 u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
+volatile bool triggerExitNow = false;
 volatile bool isRendering = false;
 volatile bool delayUpdate = false;
 LEvent renderingStopEvent = {0};
@@ -3015,30 +3016,79 @@ namespace tsl {
                 setLayerPosImpl(x, y);
             }
 
+            void updateLayerSize() {
+                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
+                
+                // Recalculate layer dimensions with new underscan values
+                cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
+                cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
+                
+                // Apply underscan adjustments
+                if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) {
+                    cfg::LayerHeight += 1.99*verticalUnderscanPixels;
+                } else if (ult::correctFrameSize) {
+                    cfg::LayerWidth += horizontalUnderscanPixels;
+                }
+                
+                // Update position if using right alignment
+                if (ult::useRightAlignment && ult::correctFrameSize) {
+                    ult::layerEdge = (1280 - 448);
+                }
+                
+                // Update the existing layer with new dimensions
+                viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
+                
+                // Update position if using right alignment
+                if (ult::useRightAlignment && ult::correctFrameSize) {
+                    viSetLayerPosition(&this->m_layer, 1280-32 - horizontalUnderscanPixels, 0);
+                    viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
+                    viSetLayerPosition(&this->m_layer, 1280-32 - horizontalUnderscanPixels, 0);
+                }
+                // ADD THIS: Update position for micro mode bottom positioning
+                else if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28 && cfg::LayerPosY > 500) {
+                    // Only adjust if already positioned at bottom (LayerPosY > 500 indicates bottom positioning)
+                    const u32 targetY = !verticalUnderscanPixels ? 1038 : 1038-verticalUnderscanPixels*1.98;
+                    viSetLayerPosition(&this->m_layer, 0, targetY);
+                    viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
+                    viSetLayerPosition(&this->m_layer, 0, targetY);
+                }
+            }
+
             static Renderer& getRenderer() {
                 return get();
             }
 
+            //inline void setLayerPosImpl(u32 x, u32 y) {
+            //    // Get the underscan pixel values for both horizontal and vertical borders
+            //    const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
+            //    //int horizontalUnderscanPixels = 0;
+            //    
+            //    //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
+            //    //cfg::LayerPosX = 1280-32;
+            //    cfg::LayerPosX = 0;
+            //    cfg::LayerPosY = 0;
+            //    cfg::FramebufferWidth  = ult::DefaultFramebufferWidth;
+            //    cfg::FramebufferHeight = ult::DefaultFramebufferHeight;
+            //    
+            //    //ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
+            //    if (ult::useRightAlignment && ult::correctFrameSize) {
+            //        cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
+            //        ult::layerEdge = (1280-448);
+            //    }
+            //    
+            //    cfg::LayerPosX += x;
+            //    cfg::LayerPosY += y;
+            //    ASSERT_FATAL(viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY));
+            //}
+
             inline void setLayerPosImpl(u32 x, u32 y) {
                 // Get the underscan pixel values for both horizontal and vertical borders
-                auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
-                //int horizontalUnderscanPixels = 0;
-
-                //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
-                //cfg::LayerPosX = 1280-32;
-                cfg::LayerPosX = 0;
-                cfg::LayerPosY = 0;
-                cfg::FramebufferWidth  = ult::DefaultFramebufferWidth;
-                cfg::FramebufferHeight = ult::DefaultFramebufferHeight;
-
-                //ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
-                if (ult::useRightAlignment && ult::correctFrameSize) {
-                    cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
-                    ult::layerEdge = (1280-448);
-                }
-
-                cfg::LayerPosX += x;
-                cfg::LayerPosY += y;
+                //const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
+                
+                // Simply set the position to what was requested - no automatic right alignment
+                cfg::LayerPosX = x;
+                cfg::LayerPosY = y;
+                
                 ASSERT_FATAL(viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY));
             }
 
@@ -3499,7 +3549,7 @@ namespace tsl {
                 // Apply underscanning offset
                 if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) // for status monitor micro mode
                     cfg::LayerHeight += 1.99*verticalUnderscanPixels;
-                else
+                else if (ult::correctFrameSize)
                     cfg::LayerWidth += horizontalUnderscanPixels;
 
                 
@@ -4363,201 +4413,6 @@ namespace tsl {
             bool isScrollable = false;
         };
 
-    #if IS_STATUS_MONITOR_DIRECTIVE
-
-        /**
-         * @brief The base frame which can contain another view
-         *
-         */
-        class OverlayFrame : public Element {
-        public:
-            /**
-             * @brief Constructor
-             *
-             * @param title Name of the Overlay drawn bolt at the top
-             * @param subtitle Subtitle drawn bellow the title e.g version number
-             */
-            std::string m_title;
-            std::string m_subtitle;
-            bool m_noClickableItems;
-
-            float x, y;
-            int offset, y_offset;
-            int fontSize;
-            
-        OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
-            : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
-                ult::activeHeaderHeight = 97;
-
-                if (FullMode)
-                    ult::loadWallpaperFileWhenSafe();
-                else
-                    svcSleepThread(180'000); // sleep thread for initial values to auto-load
-
-                m_isItem = false;
-            }
-
-            virtual ~OverlayFrame() {
-                if (this->m_contentElement != nullptr)
-                    delete this->m_contentElement;
-            }
-
-            
-            virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire) && FullMode) {
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
-                    tsl::initializeThemeVars();
-                }
-
-                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
-                    ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
-                }
-                
-                
-                if (FullMode == true) {
-                    renderer->fillScreen(a(defaultBackgroundColor));
-                    renderer->drawWallpaper();
-                } else {
-                    renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
-                }
-                
-                y = 50;
-                offset = 0;
-                
-                renderer->drawString(this->m_title, false, 20, 50+2, 32, (defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
-                
-                if (FullMode == true)
-                    renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
-                
-                // Set initial button position
-                static constexpr float buttonStartX = 30;
-                
-                if (FullMode && !deactivateOriginalFooter) {
-                    // Get the exact gap width from ult::GAP_1
-                    static const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    static const float _halfGap = gapWidth / 2.0f;
-                    if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
-                        ult::halfGap.store(_halfGap, std::memory_order_release);
-                
-                    // Calculate text dimensions for buttons without gaps
-                    static const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    static const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-                
-                    // Update widths to include the half-gap padding on each side
-                    static const float _backWidth = backTextWidth + gapWidth;
-                    if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
-                        ult::backWidth.store(_backWidth, std::memory_order_release);
-                    static const float _selectWidth = selectTextWidth + gapWidth;
-                    if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
-                        ult::selectWidth.store(_selectWidth, std::memory_order_release);
-                
-                    static const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
-                
-                    // Draw back button rectangle
-                    if (ult::touchingBack.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
-                    }
-                
-                    // Draw select button rectangle (starts right after back button)
-                    if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                                  _selectWidth-2, 73.0f, 10.0f, a(clickColor));
-                    }
-                }
-                
-                // Render the text with special character handling
-                if (!deactivateOriginalFooter)  {
-                    const std::string menuBottomLine = 
-                        "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
-                        (!m_noClickableItems 
-                            ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
-                            : "");
-                    static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
-                }
-                
-                
-                if (this->m_contentElement != nullptr)
-                    this->m_contentElement->frame(renderer);
-
-                if (FullMode) {
-                    if (!ult::useRightAlignment)
-                        renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
-                    else
-                        renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
-                }
-            }
-            
-
-            
-            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
-        
-                if (this->m_contentElement != nullptr) {
-                    this->m_contentElement->setBoundaries(parentX + 35, parentY + 140, parentWidth - 85, parentHeight - 73 - 105); // CUSTOM MODIFICATION
-                    this->m_contentElement->invalidate();
-                }
-            }
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->requestFocus(oldFocus, direction);
-                else
-                    return nullptr;
-            }
-            
-            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY))
-                    return false;
-                
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
-                else return false;
-            }
-            
-            /**
-             * @brief Sets the content of the frame
-             *
-             * @param content Element
-             */
-            inline void setContent(Element *content) {
-                if (this->m_contentElement != nullptr)
-                    delete this->m_contentElement;
-                
-                this->m_contentElement = content;
-                
-                if (content != nullptr) {
-                    this->m_contentElement->setParent(this);
-                    this->invalidate();
-                }
-            }
-            
-            /**
-             * @brief Changes the title of the menu
-             *
-             * @param title Title to change to
-             */
-            inline void setTitle(const std::string &title) {
-                this->m_title = title;
-            }
-            
-            /**
-             * @brief Changes the subtitle of the menu
-             *
-             * @param title Subtitle to change to
-             */
-            inline void setSubtitle(const std::string &subtitle) {
-                this->m_subtitle = subtitle;
-            }
-            
-        protected:
-            Element *m_contentElement = nullptr;
-            
-            //std::string m_title, m_subtitle;
-        };
-    #else
-
                 
         /**
          * @brief The base frame which can contain another view
@@ -5045,8 +4900,202 @@ namespace tsl {
         protected:
             Element *m_contentElement = nullptr;
         };
-    #endif
         
+    #if IS_STATUS_MONITOR_DIRECTIVE
+
+        /**
+         * @brief The base frame which can contain another view
+         *
+         */
+        class HeaderOverlayFrame : public Element {
+        public:
+            /**
+             * @brief Constructor
+             *
+             * @param title Name of the Overlay drawn bolt at the top
+             * @param subtitle Subtitle drawn bellow the title e.g version number
+             */
+            std::string m_title;
+            std::string m_subtitle;
+            bool m_noClickableItems;
+
+            float x, y;
+            int offset, y_offset;
+            int fontSize;
+            
+        HeaderOverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
+            : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
+                ult::activeHeaderHeight = 97;
+
+                if (FullMode)
+                    ult::loadWallpaperFileWhenSafe();
+                else
+                    svcSleepThread(180'000); // sleep thread for initial values to auto-load
+
+                m_isItem = false;
+            }
+
+            virtual ~HeaderOverlayFrame() {
+                if (this->m_contentElement != nullptr)
+                    delete this->m_contentElement;
+            }
+
+            
+            virtual void draw(gfx::Renderer *renderer) override {
+                if (!ult::themeIsInitialized.load(std::memory_order_acquire) && FullMode) {
+                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                    tsl::initializeThemeVars();
+                }
+
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                    ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
+                }
+                
+                
+                if (FullMode == true) {
+                    renderer->fillScreen(a(defaultBackgroundColor));
+                    renderer->drawWallpaper();
+                } else {
+                    renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
+                }
+                
+                y = 50;
+                offset = 0;
+                
+                renderer->drawString(this->m_title, false, 20, 50+2, 32, (defaultOverlayColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
+                
+                if (FullMode == true)
+                    renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
+                
+                // Set initial button position
+                static constexpr float buttonStartX = 30;
+                
+                if (FullMode && !deactivateOriginalFooter) {
+                    // Get the exact gap width from ult::GAP_1
+                    static const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                    static const float _halfGap = gapWidth / 2.0f;
+                    if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
+                        ult::halfGap.store(_halfGap, std::memory_order_release);
+                
+                    // Calculate text dimensions for buttons without gaps
+                    static const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    static const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                
+                    // Update widths to include the half-gap padding on each side
+                    static const float _backWidth = backTextWidth + gapWidth;
+                    if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
+                        ult::backWidth.store(_backWidth, std::memory_order_release);
+                    static const float _selectWidth = selectTextWidth + gapWidth;
+                    if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
+                        ult::selectWidth.store(_selectWidth, std::memory_order_release);
+                
+                    static const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
+                
+                    // Draw back button rectangle
+                    if (ult::touchingBack.load(std::memory_order_acquire)) {
+                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
+                    }
+                
+                    // Draw select button rectangle (starts right after back button)
+                    if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
+                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
+                                                  _selectWidth-2, 73.0f, 10.0f, a(clickColor));
+                    }
+                }
+                
+                // Render the text with special character handling
+                if (!deactivateOriginalFooter)  {
+                    const std::string menuBottomLine = 
+                        "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                        (!m_noClickableItems 
+                            ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
+                            : "");
+                    static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
+                }
+                
+                
+                if (this->m_contentElement != nullptr)
+                    this->m_contentElement->frame(renderer);
+
+                if (FullMode) {
+                    if (!ult::useRightAlignment)
+                        renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
+                    else
+                        renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
+                }
+            }
+            
+
+            
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+                this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
+        
+                if (this->m_contentElement != nullptr) {
+                    //this->m_contentElement->setBoundaries(parentX + 35, parentY + 140, parentWidth - 85, parentHeight - 73 - 105); // CUSTOM MODIFICATION
+                    this->m_contentElement->setBoundaries(parentX + 35, parentY + ult::activeHeaderHeight, parentWidth - 85, parentHeight - 73 - 105);
+                    this->m_contentElement->invalidate();
+                }
+            }
+            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+                if (this->m_contentElement != nullptr)
+                    return this->m_contentElement->requestFocus(oldFocus, direction);
+                else
+                    return nullptr;
+            }
+            
+            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+                // Discard touches outside bounds
+                if (!this->m_contentElement->inBounds(currX, currY))
+                    return false;
+                
+                if (this->m_contentElement != nullptr)
+                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
+                else return false;
+            }
+            
+            /**
+             * @brief Sets the content of the frame
+             *
+             * @param content Element
+             */
+            inline void setContent(Element *content) {
+                if (this->m_contentElement != nullptr)
+                    delete this->m_contentElement;
+                
+                this->m_contentElement = content;
+                
+                if (content != nullptr) {
+                    this->m_contentElement->setParent(this);
+                    this->invalidate();
+                }
+            }
+            
+            /**
+             * @brief Changes the title of the menu
+             *
+             * @param title Title to change to
+             */
+            inline void setTitle(const std::string &title) {
+                this->m_title = title;
+            }
+            
+            /**
+             * @brief Changes the subtitle of the menu
+             *
+             * @param title Subtitle to change to
+             */
+            inline void setSubtitle(const std::string &subtitle) {
+                this->m_subtitle = subtitle;
+            }
+            
+        protected:
+            Element *m_contentElement = nullptr;
+            
+            //std::string m_title, m_subtitle;
+        };
+    #else
         /**
          * @brief The base frame which can contain another view with a customizable header
          *
@@ -5212,6 +5261,7 @@ namespace tsl {
             
             u16 m_headerHeight;
         };
+    #endif
         
         /**
          * @brief Single color rectangle element mainly used for debugging to visualize boundaries
@@ -7080,7 +7130,8 @@ namespace tsl {
                         const s64 keyToUse = determineKeyOnTouchRelease(m_useScriptKey);
                         const bool handled = onClick(keyToUse);
         #else
-                        const bool handled = onClick(KEY_A);
+                        const s64 keyToUse = determineKeyOnTouchRelease(false);
+                        const bool handled = onClick(keyToUse);
         #endif
                         m_clickAnimationProgress = 0;
                         return handled;
@@ -7470,23 +7521,25 @@ namespace tsl {
                 renderer->drawString(throbberSymbol, false, xPosition, yPosition, fontSize, textColor);
             }
         
-        #if IS_LAUNCHER_DIRECTIVE
+            
             s64 determineKeyOnTouchRelease(bool useScriptKey) const {
                 const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f; // More efficient than division
                 
+                #if IS_LAUNCHER_DIRECTIVE
                 if (touchDurationInSeconds >= 0.7f) [[unlikely]] {
                     ult::longTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : STAR_KEY;
                 }
+                #endif
                 if (touchDurationInSeconds >= 0.3f) [[unlikely]] {
-                    if (useScriptKey)
-                        ult::shortTouchAndRelease.store(true, std::memory_order_release);
+                    //if (useScriptKey)
+                    ult::shortTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : SETTINGS_KEY;
                 }
                 return KEY_A;
             }
-        #endif
+        
         
             void resetTextProperties() {
                 m_scrollText.clear();
@@ -11178,6 +11231,20 @@ namespace tsl {
                         resetStartTick = nowTick;
                     }
                 }
+
+                // Global underscan monitoring - ADD THIS COMPLETE SECTION
+                static auto lastUnderscanPixels = std::make_pair(0, 0);
+                static bool firstUnderscanCheck = true;
+                
+                const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
+                
+                if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
+                    // Update layer dimensions without destroying state
+                    tsl::gfx::Renderer::get().updateLayerSize();
+                    
+                    lastUnderscanPixels = currentUnderscanPixels;
+                    firstUnderscanCheck = false;
+                }
         
                 //currentTitleID = ult::getTitleIdAsString();
                 //if (currentTitleID != ult::lastTitleID) {
@@ -11287,6 +11354,25 @@ namespace tsl {
                         // Reset time tracking
                         //currentTouchTick = nowTick;
                     }
+
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (triggerExitNow) {
+                        
+                        ult::setIniFileValue(
+                            ult::ULTRAHAND_CONFIG_INI_PATH,
+                            ult::ULTRAHAND_PROJECT_NAME,
+                            ult::IN_OVERLAY_STR,
+                            ult::FALSE_STR
+                        );
+                        tsl::setNextOverlay(
+                            ult::OVERLAY_PATH + "ovlmenu.ovl"
+                        );
+                        tsl::Overlay::get()->close();
+                        triggerExitNow = false;
+                        break;
+                    }
+                    #endif
+
         
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
