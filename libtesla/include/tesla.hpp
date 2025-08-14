@@ -3025,7 +3025,7 @@ namespace tsl {
                 
                 // Apply underscan adjustments
                 if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) {
-                    cfg::LayerHeight += 1.99*verticalUnderscanPixels;
+                    cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
                 } else if (ult::correctFrameSize) {
                     cfg::LayerWidth += horizontalUnderscanPixels;
                 }
@@ -3047,7 +3047,7 @@ namespace tsl {
                 // ADD THIS: Update position for micro mode bottom positioning
                 else if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28 && cfg::LayerPosY > 500) {
                     // Only adjust if already positioned at bottom (LayerPosY > 500 indicates bottom positioning)
-                    const u32 targetY = !verticalUnderscanPixels ? 1038 : 1038-verticalUnderscanPixels*1.98;
+                    const u32 targetY = !verticalUnderscanPixels ? 1038 : 1038- (cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5;
                     viSetLayerPosition(&this->m_layer, 0, targetY);
                     viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
                     viSetLayerPosition(&this->m_layer, 0, targetY);
@@ -3548,7 +3548,7 @@ namespace tsl {
 
                 // Apply underscanning offset
                 if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) // for status monitor micro mode
-                    cfg::LayerHeight += 1.99*verticalUnderscanPixels;
+                    cfg::LayerHeight += cfg::ScreenHeight/720. *verticalUnderscanPixels;
                 else if (ult::correctFrameSize)
                     cfg::LayerWidth += horizontalUnderscanPixels;
 
@@ -3742,16 +3742,16 @@ namespace tsl {
             const float underscanPercentage = 1.0f - (underscanValue / 100.0f);
             
             // Original dimensions of the full 720p image (1280x720)
-            const float originalWidth = cfg::ScreenWidth;
-            const float originalHeight = cfg::ScreenHeight;
+            const float originalWidth = 1280;
+            const float originalHeight = 720;
             
             // Adjust the width and height based on the underscan percentage
             const float adjustedWidth = (originalWidth * underscanPercentage);
             const float adjustedHeight = (originalHeight * underscanPercentage);
             
             // Calculate the underscan in pixels (left/right and top/bottom)
-            const int horizontalUnderscanPixels = ((originalWidth - adjustedWidth) / 2.);
-            const int verticalUnderscanPixels = ((originalHeight - adjustedHeight) / 2.);
+            const int horizontalUnderscanPixels = (originalWidth - adjustedWidth);
+            const int verticalUnderscanPixels = (originalHeight - adjustedHeight);
             
             return {horizontalUnderscanPixels, verticalUnderscanPixels};
         }
