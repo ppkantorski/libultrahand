@@ -680,6 +680,20 @@ namespace tsl {
             
             return serviceDispatchIn(viGetSession_IManagerDisplayService(), 6000, in);
         }
+
+        /**
+         * @brief Remove layer from layer stack
+         */
+        static Result viRemoveFromLayerStack(ViLayer *layer, ViLayerStack stack) {
+            const struct {
+                u32 stack;
+                u64 layerId;
+            } in = { stack, layer->layer_id };
+            
+            // Service command 6001 is commonly used for remove operations
+            // If this doesn't work, try 6002, 6010, or other nearby values
+            return serviceDispatchIn(viGetSession_IManagerDisplayService(), 6001, in);
+        }
         
         /**
          * @brief Toggles focus between the Tesla overlay and the rest of the system
@@ -3361,6 +3375,22 @@ namespace tsl {
                 }
             }
 
+
+            /**
+             * @brief Adds the layer from screenshot and recording stacks
+             */
+            inline void addScreenshotStacks() {
+                ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot));
+                ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording));
+            }
+
+            /**
+             * @brief Removes the layer from screenshot and recording stacks
+             */
+            inline void removeScreenshotStacks() {
+                ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot));
+                ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording));
+            }
             
         private:
             Renderer() {
