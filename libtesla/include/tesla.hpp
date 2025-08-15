@@ -171,7 +171,7 @@ inline std::atomic<bool> jumpItemExactMatch{true};
 
 inline std::atomic<bool> s_onLeftPage{false};
 inline std::atomic<bool> s_onRightPage{false};
-
+inline bool screenshotsAreDisabled = false;
 
 //#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
@@ -3382,6 +3382,7 @@ namespace tsl {
             inline void addScreenshotStacks() {
                 ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot));
                 ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording));
+                screenshotsAreDisabled = false;
             }
 
             /**
@@ -3390,6 +3391,7 @@ namespace tsl {
             inline void removeScreenshotStacks() {
                 ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot));
                 ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording));
+                screenshotsAreDisabled = true;
             }
             
         private:
@@ -11632,9 +11634,14 @@ namespace tsl {
                             padUpdate(&pad_p1);
                             padUpdate(&pad_handheld);
                             break;
-        
+                            
                             
                         case WaiterObject_CaptureButton:
+                            if (screenshotsAreDisabled) {
+                                eventClear(&captureButtonPressEvent);
+                                break;
+                            }
+
                             #if IS_STATUS_MONITOR_DIRECTIVE
                             if (isMiniOrMicroMode) {
                                 delayUpdate = true;
