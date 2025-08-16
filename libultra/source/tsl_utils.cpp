@@ -437,6 +437,7 @@ namespace ult {
     //std::string VERSION_LABELS = "Version Labels";
     std::string KEY_COMBO = "Key Combo";
     std::string MODE = "Mode";
+    std::string MODES = "Modes";
     std::string LANGUAGE = "Language";
     std::string OVERLAY_INFO = "Overlay Info";
     std::string SOFTWARE_UPDATE = "Software Update";
@@ -631,6 +632,7 @@ namespace ult {
         //VERSION_LABELS = "Version Labels";
         KEY_COMBO = "Key Combo";
         MODE = "Mode";
+        MODES = "Modes";
         LANGUAGE = "Language";
         OVERLAY_INFO = "Overlay Info";
         SOFTWARE_UPDATE = "Software Update";
@@ -829,6 +831,7 @@ namespace ult {
             //{"VERSION_LABELS", &VERSION_LABELS},
             {"KEY_COMBO", &KEY_COMBO},
             {"MODE", &MODE},
+            {"MODES", &MODES},
             {"LANGUAGE", &LANGUAGE},
             {"OVERLAY_INFO", &OVERLAY_INFO},
             {"SOFTWARE_UPDATE", &SOFTWARE_UPDATE},

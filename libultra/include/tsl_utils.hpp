@@ -371,6 +371,7 @@ namespace ult {
     //extern std::string VERSION_LABELS;
     extern std::string KEY_COMBO;
     extern std::string MODE;
+    extern std::string MODES;
     extern std::string LANGUAGE;
     extern std::string OVERLAY_INFO;
     extern std::string SOFTWARE_UPDATE;

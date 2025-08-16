@@ -6255,14 +6255,20 @@ namespace tsl {
                 
                 // At absolute bottom - check for wrapping
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
-                    if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
-                        s_directionalKeyReleased.store(false, std::memory_order_release);
-                        m_hasWrappedInCurrentSequence = true;
-                        m_lastNavigationResult = NavigationResult::Wrapped;
-                        triggerShakeOnce = true;  // Reset when wrapping
-                        return handleJumpToTop(oldFocus);
-                    } else
-                        s_directionalKeyReleased.store(false, std::memory_order_release);
+                    //if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                    //    s_directionalKeyReleased.store(false, std::memory_order_release);
+                    //    m_hasWrappedInCurrentSequence = true;
+                    //    m_lastNavigationResult = NavigationResult::Wrapped;
+                    //    triggerShakeOnce = true;  // Reset when wrapping
+                    //    return handleJumpToTop(oldFocus);
+                    //} else
+                    //    s_directionalKeyReleased.store(false, std::memory_order_release);
+
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
+                    m_hasWrappedInCurrentSequence = true;
+                    m_lastNavigationResult = NavigationResult::Wrapped;
+                    triggerShakeOnce = true;  // Reset when wrapping
+                    return handleJumpToTop(oldFocus);
                 }
                 
                 // Set boundary flag
@@ -6321,14 +6327,20 @@ namespace tsl {
                 
                 // At absolute top - check for wrapping
                 if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
-                    if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
-                        s_directionalKeyReleased.store(false, std::memory_order_release);
-                        m_hasWrappedInCurrentSequence = true;
-                        m_lastNavigationResult = NavigationResult::Wrapped;
-                        triggerShakeOnce = true;  // Reset when wrapping
-                        return handleJumpToBottom(oldFocus);
-                    } else
-                        s_directionalKeyReleased.store(false, std::memory_order_release);
+                    //if (s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                    //    s_directionalKeyReleased.store(false, std::memory_order_release);
+                    //    m_hasWrappedInCurrentSequence = true;
+                    //    m_lastNavigationResult = NavigationResult::Wrapped;
+                    //    triggerShakeOnce = true;  // Reset when wrapping
+                    //    return handleJumpToBottom(oldFocus);
+                    //} else
+                    //    s_directionalKeyReleased.store(false, std::memory_order_release);
+
+                    s_directionalKeyReleased.store(false, std::memory_order_release);
+                    m_hasWrappedInCurrentSequence = true;
+                    m_lastNavigationResult = NavigationResult::Wrapped;
+                    triggerShakeOnce = true;  // Reset when wrapping
+                    return handleJumpToBottom(oldFocus);
                 }
                 
                 // Set boundary flag
@@ -6609,7 +6621,7 @@ namespace tsl {
 
             // Enhanced scroll methods that snap to exact boundaries
             inline void scrollDown() {
-                u64 currentTime = armTicksToNs(armGetSystemTick());
+                const u64 currentTime = armTicksToNs(armGetSystemTick());
                 
                 // Calculate frame time
                 float frameTimeMs = 0.0f;
@@ -6623,7 +6635,7 @@ namespace tsl {
                 
                 // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
                 if (frameTimeMs > 33.0f) {
-                    float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
+                    const float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
                     scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
                 }
                 
@@ -6632,7 +6644,7 @@ namespace tsl {
             }
             
             inline void scrollUp() {
-                u64 currentTime = armTicksToNs(armGetSystemTick());
+                const u64 currentTime = armTicksToNs(armGetSystemTick());
                 
                 // Calculate frame time
                 float frameTimeMs = 0.0f;
