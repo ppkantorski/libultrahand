@@ -7493,7 +7493,8 @@ namespace tsl {
                 const auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
         
                 if (m_value != ult::INPROGRESS_SYMBOL) [[likely]] {
-                    renderer->drawString(m_value, false, xPosition, yPosition, fontSize, textColor);
+                    static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
+                    renderer->drawStringWithColoredSections(m_value, false, specialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
                 } else {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
