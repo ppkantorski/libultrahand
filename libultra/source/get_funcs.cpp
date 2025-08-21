@@ -457,22 +457,24 @@ namespace ult {
         std::vector<std::string> results;
         
         if (pathPattern.empty()) return results;
-        
+    
+        // Disallow any `/**/` or ending with `/**`
+        if (pathPattern.find("**") != std::string::npos) {
+            return results; // Exclude invalid patterns
+        }
+    
         const bool directoryOnly = pathPattern.back() == '/';
         const size_t prefixEnd = pathPattern.find(":/");
         
         if (prefixEnd == std::string::npos) return results;
         
-        // More efficient basePath extraction
         const std::string basePath = pathPattern.substr(0, prefixEnd + 2);
         std::vector<std::string> parts;
         
-        // Optimize string parsing to reduce temporary string creation
         size_t start = prefixEnd + 2;
         size_t pos = start;
         const size_t pathLen = pathPattern.length();
         
-        // Single pass parsing with minimal string creation
         while (pos <= pathLen) {
             if (pos == pathLen || pathPattern[pos] == '/') {
                 if (pos > start) {
@@ -483,9 +485,15 @@ namespace ult {
             ++pos;
         }
         
-        // Handle final part for non-directory patterns
         if (start < pathLen && !directoryOnly) {
             parts.emplace_back(pathPattern.data() + start, pathLen - start);
+        }
+    
+        // Extra: check parsed parts to disallow "**"
+        for (size_t i = 0; i + 1 < parts.size(); ++i) {
+            if (parts[i] == "**" && parts[i + 1] == "**") {
+                return results; // invalid, exclude
+            }
         }
         
         if (!parts.empty()) {
