@@ -3584,6 +3584,10 @@ namespace tsl {
                 else if (ult::correctFrameSize)
                     cfg::LayerWidth += horizontalUnderscanPixels;
 
+                // NEW: Scale down to 1/4 size (0.5x in each dimension)
+                //static constexpr float scaleFactor = 0.5f;
+                //cfg::LayerWidth *= scaleFactor;
+                //cfg::LayerHeight *= scaleFactor;
                 
                 if (this->m_initialized)
                     return;
@@ -7074,6 +7078,8 @@ namespace tsl {
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey) {
                 m_isItem = true;
+                m_text_clean = m_text;
+                ult::removeTag(m_text_clean);
                 applyInitialTranslations();
                 if (!value.empty()) applyInitialTranslations(true);
             }
@@ -7081,6 +7087,8 @@ namespace tsl {
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
                 m_isItem = true;
+                m_text_clean = m_text;
+                ult::removeTag(m_text_clean);
                 applyInitialTranslations();
                 if (!value.empty()) applyInitialTranslations(true);
             }
@@ -7133,8 +7141,8 @@ namespace tsl {
                             : (useClickTextColor
                                 ? clickTextColor
                                 : defaultTextColor));
-                    
-                    renderer->drawStringWithColoredSections(m_text, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+
+                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         textColor, (m_focused ? starColor : selectionStarColor));
                 } else {
                     drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
@@ -7200,6 +7208,8 @@ namespace tsl {
             inline void setText(const std::string& text) {
                 if (m_text != text) [[likely]] {
                     m_text = text;
+                    m_text_clean = m_text;
+                    ult::removeTag(m_text_clean);
                     resetTextProperties();
                     applyInitialTranslations();
                 }
@@ -7273,6 +7283,7 @@ namespace tsl {
         protected:
             u64 timeIn_ns;
             std::string m_text;
+            std::string m_text_clean;
             std::string m_value;
             std::string m_scrollText;
             std::string m_ellipsisText;
@@ -7342,21 +7353,21 @@ namespace tsl {
                 }
             
                 //auto textWidth = renderer->getTextDimensions(m_text, false, 23).first;
-                const u32 width = renderer->getTextDimensions(m_text, false, 23).first;
+                const u32 width = renderer->getTextDimensions(m_text_clean, false, 23).first;
                 m_truncated = width > m_maxWidth + 20;
             
                 if (m_truncated) [[unlikely]] {
                     // Optimized string building for scroll text
                     m_scrollText.clear();
-                    m_scrollText.reserve(m_text.size() * 2 + 8); // Pre-allocate for text + spaces + text
+                    m_scrollText.reserve(m_text_clean.size() * 2 + 8); // Pre-allocate for text + spaces + text
                     
                     // Build scroll text efficiently: "text        text"
-                    m_scrollText.append(m_text).append("        ");
+                    m_scrollText.append(m_text_clean).append("        ");
                     //auto scrollWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
                     m_textWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
-                    m_scrollText.append(m_text);
+                    m_scrollText.append(m_text_clean);
                     
-                    m_ellipsisText = renderer->limitStringLength(m_text, false, 23, m_maxWidth);
+                    m_ellipsisText = renderer->limitStringLength(m_text_clean, false, 23, m_maxWidth);
                 } else {
                     m_textWidth = width;
                 }

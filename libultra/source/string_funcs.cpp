@@ -250,9 +250,11 @@ namespace ult {
      * @brief Preprocesses a path string by replacing multiple slashes and adding "sdmc:" prefix.
      *
      * This function preprocesses a path string by removing multiple consecutive slashes,
-     * adding the "sdmc:" prefix if not present, and modifying the input string in place.
+     * resolving relative path components (. and ..), adding the "sdmc:" prefix if not present,
+     * and modifying the input string in place.
      *
      * @param path The input path string to preprocess, passed by reference.
+     * @param packagePath The base package path to resolve relative paths against.
      */
     void preprocessPath(std::string& path, const std::string& packagePath) {
         removeQuotes(path);
@@ -276,17 +278,47 @@ namespace ult {
             path.resize(writePos);
         }
     
-        // Direct character comparison instead of substr()
+        // First handle "./" replacement if present
         if (!packagePath.empty() && path.length() >= 2 && path[0] == '.' && path[1] == '/') {
+            // Handle "./" - replace with packagePath
             path.replace(0, 2, packagePath);
         }
+        
+        // Then handle any "../" sequences that may exist anywhere in the path
+        while (!path.empty()) {
+            size_t dotDotPos = path.find("../");
+            if (dotDotPos == std::string::npos) {
+                break; // No more "../" sequences found
+            }
+            
+            // Found "../" sequence at dotDotPos
+            std::string beforeDotDot = path.substr(0, dotDotPos);
+            
+            // Remove trailing slash from the part before "../"
+            if (!beforeDotDot.empty() && beforeDotDot.back() == '/') {
+                beforeDotDot.pop_back();
+            }
+            
+            // Go up one level
+            size_t lastSlash = beforeDotDot.find_last_of('/');
+            if (lastSlash != std::string::npos) {
+                beforeDotDot = beforeDotDot.substr(0, lastSlash + 1);
+            } else {
+                // No slash found, we're at root level
+                beforeDotDot = "/";
+            }
+            
+            // Replace the path up to and including this "../" with the resolved path
+            path = beforeDotDot + path.substr(dotDotPos + 3);
+        }
     
-        // Direct character comparison instead of substr()
+        // Direct character comparison instead of substr() for sdmc: prefix
         if (path.length() < 5 || 
             path[0] != 's' || path[1] != 'd' || path[2] != 'm' || path[3] != 'c' || path[4] != ':') {
             path.insert(0, "sdmc:");
         }
     }
+    
     
     /**
      * @brief Preprocesses a URL string by adding "https://" prefix.
