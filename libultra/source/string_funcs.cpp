@@ -284,15 +284,18 @@ namespace ult {
             path.replace(0, 2, packagePath);
         }
         
+        size_t dotDotPos, lastSlash;
+        std::string beforeDotDot;
+
         // Then handle any "../" sequences that may exist anywhere in the path
         while (!path.empty()) {
-            size_t dotDotPos = path.find("../");
+            dotDotPos = path.find("../");
             if (dotDotPos == std::string::npos) {
                 break; // No more "../" sequences found
             }
             
             // Found "../" sequence at dotDotPos
-            std::string beforeDotDot = path.substr(0, dotDotPos);
+            beforeDotDot = path.substr(0, dotDotPos);
             
             // Remove trailing slash from the part before "../"
             if (!beforeDotDot.empty() && beforeDotDot.back() == '/') {
@@ -300,7 +303,7 @@ namespace ult {
             }
             
             // Go up one level
-            size_t lastSlash = beforeDotDot.find_last_of('/');
+            lastSlash = beforeDotDot.find_last_of('/');
             if (lastSlash != std::string::npos) {
                 beforeDotDot = beforeDotDot.substr(0, lastSlash + 1);
             } else {
@@ -318,7 +321,7 @@ namespace ult {
             path.insert(0, "sdmc:");
         }
     }
-    
+
     
     /**
      * @brief Preprocesses a URL string by adding "https://" prefix.
