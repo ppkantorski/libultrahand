@@ -8134,31 +8134,60 @@ namespace tsl {
         };
 
 
-
         class CategoryHeader : public Element {
         public:
-            
-            
-            CategoryHeader(const std::string &title, bool hasSeparator = true) : m_text(title), m_hasSeparator(hasSeparator) {
+            CategoryHeader(const std::string &title, bool hasSeparator = true) 
+                : m_text(title), m_hasSeparator(hasSeparator), timeIn_ns(0),
+                  m_scroll(false), m_truncated(false), m_scrollOffset(0.0f), 
+                  m_maxWidth(0), m_textWidth(0) {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
                 m_isItem = false;
-                //m_isTable = true;
             }
+            
             virtual ~CategoryHeader() {}
             
             virtual void draw(gfx::Renderer *renderer) override {
                 static const std::vector<std::string> specialChars = {""};
+                
+                // Calculate widths if not done yet
+                if (!m_maxWidth) {
+                    calculateWidths(renderer);
+                }
+                
+                // Draw separator if needed
                 if (this->m_hasSeparator) {
                     renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, (headerSeparatorColor));
-                    //renderer->drawString(this->m_text, false, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor));
-                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 15+1, this->getBottomBound() - 12-4, 16, a(headerTextColor), textSeparatorColor);
-                } else {
-                    //renderer->drawString(this->m_text, false, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor));
-                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX(), this->getBottomBound() - 12-4, 16, a(headerTextColor), textSeparatorColor);
                 }
-                //if (this->m_hasSeparator)
-                //    renderer->drawRect(this->getX(), this->getBottomBound(), this->getWidth(), 1, tsl::style::color::ColorFrame); // CUSTOM MODIFICATION
+                
+                // Determine text position
+                int textX = m_hasSeparator ? (this->getX() + 15+1) : this->getX();
+                int textY = this->getBottomBound() - 12-4;
+                
+                // Handle scrolling text if truncated
+                if (m_truncated) {
+                    if (!m_scroll) {
+                        // Start scrolling automatically for truncated text
+                        m_scroll = true;
+                        timeIn_ns = armTicksToNs(armGetSystemTick());
+                    }
+                    
+                    // Enable scissoring to clip text
+                    renderer->enableScissoring(textX, textY - 16, m_maxWidth, 24);
+                    
+                    // Draw scrolling text
+                    renderer->drawStringWithColoredSections(m_scrollText, false, specialChars, 
+                        textX - static_cast<s32>(m_scrollOffset), textY, 16, 
+                        a(headerTextColor), textSeparatorColor);
+                    
+                    renderer->disableScissoring();
+                    handleScrolling();
+                } else {
+                    // Draw normal or ellipsis text
+                    const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
+                    renderer->drawStringWithColoredSections(displayText, false, specialChars, 
+                        textX, textY, 16, a(headerTextColor), textSeparatorColor);
+                }
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -8170,11 +8199,6 @@ namespace tsl {
                     }
                 }
                 this->setBoundaries(this->getX(), this->getY(), this->getWidth(), tsl::style::ListItemDefaultHeight *0.90);
-                //if (m_hasSeparator) { // CUSTOM MODIFICATION
-                //    this->setBoundaries(this->getX(), this->getY()-4, this->getWidth(), tsl::style::ListItemDefaultHeight *0.90); // CUSTOM MODIFICATION
-                //} else {
-                //    this->setBoundaries(this->getX(), this->getY()-4, this->getWidth(), tsl::style::ListItemDefaultHeight / 2); // CUSTOM MODIFICATION
-                //}
             }
             
             virtual bool onClick(u64 keys) {
@@ -8185,18 +8209,164 @@ namespace tsl {
                 return nullptr;
             }
             
+            virtual void setFocused(bool state) override {}
+            
             inline void setText(const std::string &text) {
-                this->m_text = text;
-                ult::applyLangReplacements(m_text);
+                if (this->m_text != text) {
+                    this->m_text = text;
+                    ult::applyLangReplacements(m_text);
+                    ult::convertComboToUnicode(m_text);
+                    resetTextProperties();
+                }
             }
             
             inline const std::string& getText() const {
                 return this->m_text;
             }
-            
+        
         private:
             std::string m_text;
             bool m_hasSeparator;
+            
+            // Scrolling properties (matching ListItem)
+            u64 timeIn_ns;
+            std::string m_scrollText;
+            std::string m_ellipsisText;
+            bool m_scroll;
+            bool m_truncated;
+            float m_scrollOffset;
+            u32 m_maxWidth;
+            u32 m_textWidth;
+            
+            void calculateWidths(gfx::Renderer* renderer) {
+                // Available width (accounting for separator and margins)
+                m_maxWidth = getWidth() - (m_hasSeparator ? 20-4 : 4);
+                
+                // Get actual text width
+                const u32 width = renderer->getTextDimensions(m_text, false, 16).first;
+                m_truncated = width > m_maxWidth;
+                
+                if (m_truncated) {
+                    // Build scroll text: "text        text"
+                    m_scrollText.clear();
+                    m_scrollText.reserve(m_text.size() * 2 + 8);
+                    m_scrollText.append(m_text).append("        ");
+                    m_textWidth = renderer->getTextDimensions(m_scrollText, false, 16).first;
+                    m_scrollText.append(m_text);
+                    
+                    // Create ellipsis text
+                    m_ellipsisText = renderer->limitStringLength(m_text, false, 16, m_maxWidth);
+                } else {
+                    m_textWidth = width;
+                }
+            }
+            
+            void handleScrolling() {
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 elapsed_ns = currentTime_ns - timeIn_ns;
+                
+                // Frame rate compensation - cache calculations to reduce stutter
+                static u64 lastUpdateTime = 0;
+                static float cachedScrollOffset = 0.0f;
+                
+                // Pre-compute constants as statics to avoid recalculation
+                static bool constantsInitialized = false;
+                static double totalCycleDuration;
+                static double delayDuration;
+                static double scrollDuration;
+                static double accelTime;
+                static double constantVelocityTime;
+                static double maxVelocity;
+                static double accelDistance;
+                static double constantVelocityDistance;
+                static double minScrollDistance;
+                static double invAccelTime;
+                static double invDecelTime;
+                static double invBillion;
+                
+                if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
+                    // Constants for velocity-based scrolling (3 second pauses as requested)
+                    delayDuration = 3.0;  // 3 second pause at start
+                    static constexpr double pauseDuration = 2.0;  // 3 second pause at end
+                    maxVelocity = 100.0;  // Adjust for desired scroll speed
+                    accelTime = 0.5;
+                    static constexpr double decelTime = 0.5;
+                    
+                    // Pre-calculate derived constants
+                    minScrollDistance = static_cast<double>(m_textWidth);
+                    accelDistance = 0.5 * maxVelocity * accelTime;
+                    const double decelDistance = 0.5 * maxVelocity * decelTime;
+                    constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
+                    constantVelocityTime = constantVelocityDistance / maxVelocity;
+                    scrollDuration = accelTime + constantVelocityTime + decelTime;
+                    totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
+                    
+                    // Pre-calculate reciprocals for faster division
+                    invAccelTime = 1.0 / accelTime;
+                    invDecelTime = 1.0 / decelTime;
+                    invBillion = 1.0 / 1000000000.0;
+                    
+                    constantsInitialized = true;
+                }
+                
+                // Fast ns to seconds conversion
+                const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
+                
+                // Update at consistent intervals regardless of frame rate
+                if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
+                    // Use std::fmod for modulo - it's optimized and faster than loops
+                    const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
+                    
+                    if (cyclePosition < delayDuration) {
+                        // Delay phase - no scrolling (3 second pause)
+                        cachedScrollOffset = 0.0f;
+                    } else if (cyclePosition < delayDuration + scrollDuration) {
+                        // Scrolling phase - velocity-based movement
+                        const double scrollTime = cyclePosition - delayDuration;
+                        double distance;
+                        
+                        if (scrollTime <= accelTime) {
+                            // Acceleration phase - quadratic ease-in
+                            const double t = scrollTime * invAccelTime;
+                            const double smoothT = t * t;
+                            distance = smoothT * accelDistance;
+                        } else if (scrollTime <= accelTime + constantVelocityTime) {
+                            // Constant velocity phase
+                            const double constantTime = scrollTime - accelTime;
+                            distance = accelDistance + (constantTime * maxVelocity);
+                        } else {
+                            // Deceleration phase - quadratic ease-out
+                            const double decelStartTime = accelTime + constantVelocityTime;
+                            const double t = (scrollTime - decelStartTime) * invDecelTime;
+                            const double oneMinusT = 1.0 - t;
+                            const double smoothT = 1.0 - oneMinusT * oneMinusT;
+                            distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
+                        }
+                        
+                        // Use branchless min
+                        cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
+                    } else {
+                        // Pause phase - stay at end (3 second pause)
+                        cachedScrollOffset = static_cast<float>(m_textWidth);
+                    }
+                    
+                    lastUpdateTime = currentTime_ns;
+                }
+                
+                // Use cached value for consistent display
+                m_scrollOffset = cachedScrollOffset;
+                
+                // Reset timer when cycle completes
+                if (elapsed_seconds >= totalCycleDuration) {
+                    timeIn_ns = currentTime_ns;
+                }
+            }
+            
+            void resetTextProperties() {
+                m_scrollText.clear();
+                m_ellipsisText.clear();
+                m_maxWidth = 0;
+            }
         };
         
 

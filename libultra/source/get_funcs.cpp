@@ -459,7 +459,7 @@ namespace ult {
         if (pathPattern.empty()) return results;
     
         // Disallow any `/**/` or ending with `/**`
-        if (pathPattern.find("**") != std::string::npos) {
+        if (pathPattern.find("**") != std::string::npos || pathPattern.find("*null") != std::string::npos || pathPattern.find("null*") != std::string::npos) {
             return results; // Exclude invalid patterns
         }
     
