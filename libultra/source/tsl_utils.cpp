@@ -523,7 +523,8 @@ namespace ult {
     std::atomic<float> halfGap = 0.0f;
     
 
-    std::string EMPTY = "Empty";
+    //std::string EMPTY = "Empty";
+    std::string SELECTION_IS_EMPTY = "Selection is empty!";
     
     #if USING_WIDGET_DIRECTIVE
     std::string SUNDAY = "Sunday";
@@ -705,7 +706,8 @@ namespace ult {
         //PACKAGE_VERSIONS = "Package Versions";
 
 
-        EMPTY = "Empty";
+        //EMPTY = "Empty";
+        SELECTION_IS_EMPTY = "Selection is empty!";
     
         SUNDAY = "Sunday";
         MONDAY = "Monday";
@@ -913,7 +915,8 @@ namespace ult {
             {"GAP_1", &GAP_1},
             {"GAP_2", &GAP_2},
 
-            {"EMPTY", &EMPTY},
+            //{"EMPTY", &EMPTY},
+            {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
 
             #if USING_WIDGET_DIRECTIVE
             {"SUNDAY", &SUNDAY},

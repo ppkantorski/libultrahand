@@ -8161,32 +8161,67 @@ namespace tsl {
                 }
                 
                 // Determine text position
-                int textX = m_hasSeparator ? (this->getX() + 15+1) : this->getX();
-                int textY = this->getBottomBound() - 12-4;
+                const int textX = m_hasSeparator ? (this->getX() + 15+1) : this->getX();
+                const int textY = this->getBottomBound() - 12-4;
                 
                 // Handle scrolling text if truncated
                 if (m_truncated) {
                     if (!m_scroll) {
-                        // Start scrolling automatically for truncated text
                         m_scroll = true;
                         timeIn_ns = armTicksToNs(armGetSystemTick());
                     }
                     
-                    // Enable scissoring to clip text
-                    renderer->enableScissoring(textX, textY - 16, m_maxWidth, 24);
+                    // Calculate scissoring bounds that respect parent clipping
+                    const int scissorX = textX;
+                    const int scissorY = textY - 16;
+                    const int scissorWidth = m_maxWidth;
+                    const int scissorHeight = 24;
                     
-                    // Draw scrolling text
-                    renderer->drawStringWithColoredSections(m_scrollText, false, specialChars, 
-                        textX - static_cast<s32>(m_scrollOffset), textY, 16, 
-                        a(headerTextColor), textSeparatorColor);
+                    // Get parent bounds (you'll need to implement this based on your parent system)
+                    // This assumes your parent has some way to get its visible bounds
+                    if (Element* parent = this->getParent()) {
+                        const int parentTop = parent->getY()-8; // or whatever method gets the top bound
+                        const int parentBottom = parent->getBottomBound(); // or equivalent
+                        const int parentLeft = parent->getX();
+                        const int parentRight = parent->getX() + parent->getWidth();
+                        
+                        // Clip scissor rectangle to parent bounds
+                        const int clipLeft = std::max(scissorX, parentLeft);
+                        const int clipRight = std::min(scissorX + scissorWidth, parentRight);
+                        const int clipTop = std::max(scissorY, parentTop);
+                        const int clipBottom = std::min(scissorY + scissorHeight, parentBottom);
+                        
+                        // Only enable scissoring if there's a visible area
+                        if (clipLeft < clipRight && clipTop < clipBottom) {
+                            renderer->enableScissoring(clipLeft, clipTop, 
+                                                     clipRight - clipLeft, 
+                                                     clipBottom - clipTop);
+                            
+                            renderer->drawStringWithColoredSections(m_scrollText, false, specialChars, 
+                                textX - static_cast<s32>(m_scrollOffset), textY, 16, 
+                                (headerTextColor), textSeparatorColor);
+                            
+                            renderer->disableScissoring();
+                        } else {
+                            // Draw normal or ellipsis text
+                            //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
+                            renderer->drawStringWithColoredSections(m_text, false, specialChars, 
+                                textX, textY, 16, (headerTextColor), textSeparatorColor);
+                        }
+                        // If completely clipped, don't draw anything
+                    } else {
+                        // Draw normal or ellipsis text
+                        //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
+                        renderer->drawStringWithColoredSections(m_text, false, specialChars, 
+                            textX, textY, 16, (headerTextColor), textSeparatorColor);
+                    }
                     
-                    renderer->disableScissoring();
                     handleScrolling();
                 } else {
                     // Draw normal or ellipsis text
-                    const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
-                    renderer->drawStringWithColoredSections(displayText, false, specialChars, 
-                        textX, textY, 16, a(headerTextColor), textSeparatorColor);
+                    //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
+                    renderer->drawStringWithColoredSections(m_text, false, specialChars, 
+                        textX, textY, 16, (headerTextColor), textSeparatorColor);
                 }
             }
             
@@ -8216,7 +8251,7 @@ namespace tsl {
                     this->m_text = text;
                     ult::applyLangReplacements(m_text);
                     ult::convertComboToUnicode(m_text);
-                    resetTextProperties();
+                    //resetTextProperties();
                 }
             }
             
@@ -8231,13 +8266,33 @@ namespace tsl {
             // Scrolling properties (matching ListItem)
             u64 timeIn_ns;
             std::string m_scrollText;
-            std::string m_ellipsisText;
+            //std::string m_ellipsisText;
             bool m_scroll;
             bool m_truncated;
             float m_scrollOffset;
             u32 m_maxWidth;
             u32 m_textWidth;
             
+
+            // Frame rate compensation - cache calculations to reduce stutter
+            u64 lastUpdateTime = 0;
+            float cachedScrollOffset = 0.0f;
+            
+            // Pre-compute constants as statics to avoid recalculation
+            bool constantsInitialized = false;
+            double totalCycleDuration;
+            double delayDuration;
+            double scrollDuration;
+            double accelTime;
+            double constantVelocityTime;
+            double maxVelocity;
+            double accelDistance;
+            double constantVelocityDistance;
+            double minScrollDistance;
+            double invAccelTime;
+            double invDecelTime;
+            double invBillion;
+
             void calculateWidths(gfx::Renderer* renderer) {
                 // Available width (accounting for separator and margins)
                 m_maxWidth = getWidth() - (m_hasSeparator ? 20-4 : 4);
@@ -8255,7 +8310,7 @@ namespace tsl {
                     m_scrollText.append(m_text);
                     
                     // Create ellipsis text
-                    m_ellipsisText = renderer->limitStringLength(m_text, false, 16, m_maxWidth);
+                    //m_ellipsisText = renderer->limitStringLength(m_text, false, 16, m_maxWidth);
                 } else {
                     m_textWidth = width;
                 }
@@ -8265,24 +8320,6 @@ namespace tsl {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const u64 elapsed_ns = currentTime_ns - timeIn_ns;
                 
-                // Frame rate compensation - cache calculations to reduce stutter
-                static u64 lastUpdateTime = 0;
-                static float cachedScrollOffset = 0.0f;
-                
-                // Pre-compute constants as statics to avoid recalculation
-                static bool constantsInitialized = false;
-                static double totalCycleDuration;
-                static double delayDuration;
-                static double scrollDuration;
-                static double accelTime;
-                static double constantVelocityTime;
-                static double maxVelocity;
-                static double accelDistance;
-                static double constantVelocityDistance;
-                static double minScrollDistance;
-                static double invAccelTime;
-                static double invDecelTime;
-                static double invBillion;
                 
                 if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
                     // Constants for velocity-based scrolling (3 second pauses as requested)
@@ -8362,11 +8399,11 @@ namespace tsl {
                 }
             }
             
-            void resetTextProperties() {
-                m_scrollText.clear();
-                m_ellipsisText.clear();
-                m_maxWidth = 0;
-            }
+            //void resetTextProperties() {
+            //    m_scrollText.clear();
+            //    m_ellipsisText.clear();
+            //    m_maxWidth = 0;
+            //}
         };
         
 

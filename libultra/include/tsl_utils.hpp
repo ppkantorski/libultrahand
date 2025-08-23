@@ -454,8 +454,9 @@ namespace ult {
     extern std::string GAP_2;
     extern std::atomic<float> halfGap;
 
-    extern std::string EMPTY;
-    
+    //extern std::string EMPTY;
+    extern std::string SELECTION_IS_EMPTY;
+
     #if USING_WIDGET_DIRECTIVE
     extern std::string SUNDAY;
     extern std::string MONDAY;
