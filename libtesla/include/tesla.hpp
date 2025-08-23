@@ -4421,14 +4421,14 @@ namespace tsl {
 
             virtual void draw(gfx::Renderer* renderer) override {
 
-                //renderer->enableScissoring(0, 97, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 - 4);
+                renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground)
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2, this->getHeight() + 20 - endGap+2, 10.0, aWithOpacity(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2 + 1, this->getHeight() + 20 - endGap+2, 10.0, aWithOpacity(tableBGColor));
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
-                //renderer->disableScissoring();
+                renderer->disableScissoring();
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {}
@@ -8295,7 +8295,7 @@ namespace tsl {
 
             void calculateWidths(gfx::Renderer* renderer) {
                 // Available width (accounting for separator and margins)
-                m_maxWidth = getWidth() - (m_hasSeparator ? 20-4 : 4);
+                m_maxWidth = getWidth() - (m_hasSeparator ? 20-3 : 4);
                 
                 // Get actual text width
                 const u32 width = renderer->getTextDimensions(m_text, false, 16).first;
