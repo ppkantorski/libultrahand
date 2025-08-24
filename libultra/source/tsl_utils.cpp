@@ -410,6 +410,7 @@ namespace ult {
     std::string ERROR_LOGGING = "Error Logging";
     std::string COMMANDS = "Commands";
     std::string SETTINGS = "Settings";
+    std::string FAVORITE = "Favorite";
     std::string MAIN_SETTINGS = "Main Settings";
     std::string UI_SETTINGS = "UI Settings";
 
@@ -429,6 +430,7 @@ namespace ult {
     std::string MENU_SETTINGS = "Menu Settings";
     std::string USER_GUIDE = "User Guide";
     std::string SHOW_HIDDEN = "Show Hidden";
+    std::string SHOW_DELETE = "Show Delete";
     std::string PAGE_SWAP = "Page Swap";
     std::string RIGHT_SIDE_MODE = "Right-side Mode";
     std::string OVERLAY_VERSIONS = "Overlay Versions";
@@ -463,6 +465,7 @@ namespace ult {
     std::string DEFAULT = "default";
     std::string ROOT_PACKAGE = "Root Package";
     std::string SORT_PRIORITY = "Sort Priority";
+    std::string OPTIONS = "Options";
     std::string FAILED_TO_OPEN = "Failed to open file";
     std::string LAUNCH_COMBOS = "Launch Combos";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
@@ -524,6 +527,7 @@ namespace ult {
     
 
     //std::string EMPTY = "Empty";
+    std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     
     #if USING_WIDGET_DIRECTIVE
@@ -607,6 +611,7 @@ namespace ult {
         ERROR_LOGGING = "Error Logging";
         COMMANDS = "Commands";
         SETTINGS = "Settings";
+        FAVORITE = "Favorite";
         MAIN_SETTINGS = "Main Settings";
         UI_SETTINGS = "UI Settings";
         WIDGET = "Widget";
@@ -625,6 +630,7 @@ namespace ult {
         MENU_SETTINGS = "Menu Settings";
         USER_GUIDE = "User Guide";
         SHOW_HIDDEN = "Show Hidden";
+        SHOW_DELETE = "Show Delete";
         PAGE_SWAP = "Page Swap";
         RIGHT_SIDE_MODE = "Right-side Mode";
         OVERLAY_VERSIONS = "Overlay Versions";
@@ -659,6 +665,7 @@ namespace ult {
         DEFAULT = "default";
         ROOT_PACKAGE = "Root Package";
         SORT_PRIORITY = "Sort Priority";
+        OPTIONS = "Options";
         FAILED_TO_OPEN = "Failed to open file";
 
         LAUNCH_COMBOS = "Launch Combos";
@@ -707,6 +714,7 @@ namespace ult {
 
 
         //EMPTY = "Empty";
+        HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
     
         SUNDAY = "Sunday";
@@ -806,6 +814,7 @@ namespace ult {
             {"ERROR_LOGGING", &ERROR_LOGGING},
             {"COMMANDS", &COMMANDS},
             {"SETTINGS", &SETTINGS},
+            {"FAVORITE", &FAVORITE},
             {"MAIN_SETTINGS", &MAIN_SETTINGS},
             {"UI_SETTINGS", &UI_SETTINGS},
 
@@ -825,6 +834,7 @@ namespace ult {
             {"MENU_SETTINGS", &MENU_SETTINGS},
             {"USER_GUIDE", &USER_GUIDE},
             {"SHOW_HIDDEN", &SHOW_HIDDEN},
+            {"SHOW_DELETE", &SHOW_DELETE},
             {"PAGE_SWAP", &PAGE_SWAP},
             {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
@@ -859,6 +869,7 @@ namespace ult {
             {"DEFAULT", &DEFAULT},
             {"ROOT_PACKAGE", &ROOT_PACKAGE},
             {"SORT_PRIORITY", &SORT_PRIORITY},
+            {"OPTIONS", &OPTIONS},
             {"FAILED_TO_OPEN", &FAILED_TO_OPEN},
 
             {"LAUNCH_COMBOS", &LAUNCH_COMBOS},
@@ -916,6 +927,7 @@ namespace ult {
             {"GAP_2", &GAP_2},
 
             //{"EMPTY", &EMPTY},
+            {"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
 
             #if USING_WIDGET_DIRECTIVE

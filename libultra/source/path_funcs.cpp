@@ -1356,28 +1356,29 @@ namespace ult {
      * @param sourcePath The path of the directory to clean.
      */
     void dotCleanDirectory(const std::string& sourcePath) {
-        if (!isDirectory(sourcePath)) {
+        DIR* rootDir = opendir(sourcePath.c_str());
+        if (!rootDir) {
             #if USING_LOGGING_DIRECTIVE
             if (!disableLogging)
-                logMessage("Path is not a directory: " + sourcePath);
+                logMessage("Path is not a directory or cannot open: " + sourcePath);
             #endif
             return;
         }
+        closedir(rootDir);
     
         std::vector<std::string> stack;
         stack.push_back(sourcePath);
-        
-        std::string currentPath, filePath;
-        std::string fileName;
-        struct stat pathStat;
-        DIR* directory;
-        dirent* entry;
+    
+        struct dirent* entry;
+        struct stat pathStat{};
+        std::string subDirPath; // reuse for directories
+        std::string filePath;   // reuse for dot-underscore files
     
         while (!stack.empty()) {
-            currentPath = stack.back();
+            const std::string currentPath = std::move(stack.back());
             stack.pop_back();
     
-            directory = opendir(currentPath.c_str());
+            DIR* directory = opendir(currentPath.c_str());
             if (!directory) {
                 #if USING_LOGGING_DIRECTIVE
                 if (!disableLogging)
@@ -1387,40 +1388,58 @@ namespace ult {
             }
     
             while ((entry = readdir(directory)) != nullptr) {
-                fileName = entry->d_name;
-                if (fileName == "." || fileName == "..") continue;
+                const char* fileName = entry->d_name;
     
-                // Build full file path
-                filePath = currentPath;
-                if (!filePath.empty() && filePath.back() != '/') {
-                    filePath += '/';
+                // Skip "." and ".."
+                if (fileName[0] == '.' &&
+                    (fileName[1] == '\0' || (fileName[1] == '.' && fileName[2] == '\0'))) {
+                    continue;
                 }
+    
+                // Handle directories first
+                if (entry->d_type == DT_DIR) {
+                    subDirPath.clear();
+                    subDirPath = currentPath;
+                    if (!subDirPath.empty() && subDirPath.back() != '/')
+                        subDirPath += '/';
+                    subDirPath += fileName;
+                    stack.push_back(std::move(subDirPath));
+                    continue;
+                }
+    
+                // Only care about "._" files
+                if (!(fileName[0] == '.' && fileName[1] == '_'))
+                    continue;
+    
+                // Only process files or unknown types
+                if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN)
+                    continue;
+    
+                filePath.clear();
+                filePath = currentPath;
+                if (!filePath.empty() && filePath.back() != '/')
+                    filePath += '/';
                 filePath += fileName;
     
-                if (stat(filePath.c_str(), &pathStat) != 0) {
-                    continue; // Skip if can't stat
+                // If type unknown, verify with stat
+                if (entry->d_type == DT_UNKNOWN) {
+                    if (stat(filePath.c_str(), &pathStat) != 0 || !S_ISREG(pathStat.st_mode))
+                        continue;
                 }
     
-                if (S_ISDIR(pathStat.st_mode)) {
-                    // Add subdirectory to stack for processing
-                    stack.push_back(filePath);
-                } else if (S_ISREG(pathStat.st_mode)) {
-                    // Check if filename starts with "._"
-                    if (fileName.length() >= 2 && fileName.substr(0, 2) == "._") {
-                        if (remove(filePath.c_str()) == 0) {
-                            #if USING_LOGGING_DIRECTIVE
-                            if (!disableLogging)
-                                logMessage("Removed dot-underscore file: " + filePath);
-                            #endif
-                        } else {
-                            #if USING_LOGGING_DIRECTIVE
-                            if (!disableLogging)
-                                logMessage("Failed to remove dot-underscore file: " + filePath);
-                            #endif
-                        }
-                    }
+                if (remove(filePath.c_str()) == 0) {
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("Removed dot-underscore file: " + filePath);
+                    #endif
+                } else {
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("Failed to remove dot-underscore file: " + filePath);
+                    #endif
                 }
             }
+    
             closedir(directory);
         }
     }

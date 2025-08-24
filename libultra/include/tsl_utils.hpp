@@ -344,6 +344,7 @@ namespace ult {
     extern std::string ERROR_LOGGING;
     extern std::string COMMANDS;
     extern std::string SETTINGS;
+    extern std::string FAVORITE;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
 
@@ -363,6 +364,7 @@ namespace ult {
     extern std::string MENU_SETTINGS;
     extern std::string USER_GUIDE;
     extern std::string SHOW_HIDDEN;
+    extern std::string SHOW_DELETE;
     extern std::string PAGE_SWAP;
     extern std::string RIGHT_SIDE_MODE;
     extern std::string OVERLAY_VERSIONS;
@@ -397,6 +399,7 @@ namespace ult {
     extern std::string DEFAULT;
     extern std::string ROOT_PACKAGE;
     extern std::string SORT_PRIORITY;
+    extern std::string OPTIONS;
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
@@ -455,6 +458,7 @@ namespace ult {
     extern std::atomic<float> halfGap;
 
     //extern std::string EMPTY;
+    extern std::string HOLD_A_TO_DELETE;
     extern std::string SELECTION_IS_EMPTY;
 
     #if USING_WIDGET_DIRECTIVE
