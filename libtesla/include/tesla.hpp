@@ -7247,7 +7247,11 @@ namespace tsl {
                 m_useClickAnimation = false;
             }
 
-        
+            inline void enableClickAnimation() {
+                m_useClickAnimation = true;
+            }
+
+            
             inline const std::string& getText() const noexcept {
                 return m_text;
             }
