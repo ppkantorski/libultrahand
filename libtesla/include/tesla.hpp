@@ -4832,9 +4832,9 @@ namespace tsl {
                                     ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES
                                     : ""))
                         : "") +
-                    (!m_pageLeftName.empty()
+                    (!interpreterIsRunningNow && !m_pageLeftName.empty()
                         ? "\uE0ED" + ult::GAP_2 + m_pageLeftName
-                        : !m_pageRightName.empty()
+                        : !interpreterIsRunningNow && !m_pageRightName.empty()
                             ? "\uE0EE" + ult::GAP_2 + m_pageRightName
                             : "");
                 #else
