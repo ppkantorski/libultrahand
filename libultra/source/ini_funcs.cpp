@@ -2187,7 +2187,7 @@ namespace ult {
                 argEnd = pos;
             }
             
-            if (argEnd > argStart) {
+            if (argEnd >= argStart) {
                 commandParts.emplace_back(argStart, argEnd - argStart);
             }
         }
