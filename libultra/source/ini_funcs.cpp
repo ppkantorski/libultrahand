@@ -2148,30 +2148,53 @@ namespace ult {
      */
     std::vector<std::string> parseCommandLine(const std::string& line) {
         std::vector<std::string> commandParts;
-        bool inQuotes = false;
-        std::string part;
-        //part.reserve(64);  // Reserve space to avoid reallocations
-    
-        StringStream iss(line);
         
-        std::string arg;
-        //arg.reserve(32);   // Reserve space for args too
+        const char* const data = line.data();
+        const char* const end = data + line.length();
+        const char* pos = data;
         
-        while (iss.getline(part, '\'')) {
-            if (inQuotes) {
-                commandParts.push_back(std::move(part));  // Use move instead of copy
-            } else {
-                StringStream argIss(part);
-                while (argIss >> arg) {
-                    commandParts.push_back(std::move(arg));  // Use move instead of copy
-                }
+        //commandParts.reserve(8);
+        
+        while (pos < end) {
+            // Skip leading whitespace
+            while (pos < end && (*pos == ' ' || *pos == '\t')) {
+                ++pos;
             }
-            inQuotes = !inQuotes;
+            
+            if (pos >= end) break;
+            
+            const char* argStart = pos;
+            const char* argEnd = pos;
+            
+            if (*pos == '\'' || *pos == '"') {
+                // Quoted argument
+                const char quoteChar = *pos;
+                ++pos; // Skip opening quote
+                argStart = pos;
+                
+                // Find closing quote
+                while (pos < end && *pos != quoteChar) {
+                    ++pos;
+                }
+                
+                argEnd = pos;
+                if (pos < end) ++pos; // Skip closing quote
+            } else {
+                // Unquoted argument
+                while (pos < end && *pos != ' ' && *pos != '\t' && *pos != '\'' && *pos != '"') {
+                    ++pos;
+                }
+                argEnd = pos;
+            }
+            
+            if (argEnd > argStart) {
+                commandParts.emplace_back(argStart, argEnd - argStart);
+            }
         }
-    
+        
         return commandParts;
     }
-    
+        
     
     /**
      * @brief Loads and parses options from an INI file.
