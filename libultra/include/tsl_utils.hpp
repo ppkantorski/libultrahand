@@ -137,6 +137,7 @@ namespace ult {
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool useLaunchCombos;
+    extern bool useNotifications;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
 

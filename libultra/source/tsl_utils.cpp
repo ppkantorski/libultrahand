@@ -213,7 +213,8 @@ namespace ult {
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
-    bool useLaunchCombos = false;
+    bool useLaunchCombos = true;
+    bool useNotifications = true;
     bool usePageSwap = false;
     bool useDynamicLogo = true;
     bool useSelectionBG = true;

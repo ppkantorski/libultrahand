@@ -56,6 +56,8 @@ namespace ult {
     const std::string OVERLAYS_INI_FILEPATH = "sdmc:/config/ultrahand/overlays.ini";
     const std::string PACKAGES_INI_FILEPATH = "sdmc:/config/ultrahand/packages.ini";
 
+    const std::string NOTIFICATIONS_FLAG_FILEPATH = "sdmc:/config/ultrahand/flags/USING_NOTIFICATIONS.flag";
+
     const std::set<std::string> PROTECTED_FILES = {"sdmc:/atmosphere/package3", "sdmc:/atmosphere/stratosphere.romfs"};
     
     const std::string ULTRAHAND_REPO_URL = "https://github.com/ppkantorski/Ultrahand-Overlay/";

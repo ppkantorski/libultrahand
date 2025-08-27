@@ -68,6 +68,8 @@ namespace ult {
     extern const std::string OVERLAYS_INI_FILEPATH;
     extern const std::string PACKAGES_INI_FILEPATH;
 
+    extern const std::string NOTIFICATIONS_FLAG_FILEPATH;
+
     extern const std::set<std::string> PROTECTED_FILES;
 
     extern const std::string ULTRAHAND_REPO_URL;

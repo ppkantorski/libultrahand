@@ -501,8 +501,7 @@ namespace tsl {
         }
     }
     
-    #if IS_LAUNCHER_DIRECTIVE
-    #else
+    #if !IS_LAUNCHER_DIRECTIVE
     static void initializeUltrahandSettings() { // only needed for regular overlays
         // Load INI data once instead of 4 separate file reads
         auto ultrahandSection = ult::getKeyValuePairsFromSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
@@ -546,9 +545,19 @@ namespace tsl {
         #endif
         
         // Set Ultrahand Globals using loaded section (defaults match initialization function)
+        ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
+        ult::useNotifications = getBoolValue("launch_combos", true);       // TRUE_STR default
+        if (ult::useNotifications && !ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
+            FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
+            if (file) {
+                std::fclose(file);
+            }
+        } else {
+            ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
+        }
+
         ult::useSwipeToOpen = getBoolValue("swipe_to_open", true);        // TRUE_STR default
         ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true); // TRUE_STR default
-        ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
         
         ultrahandSection.clear();
 
@@ -9955,7 +9964,7 @@ namespace tsl {
         
     }
     
-    bool firePromptEvent = false;
+    bool fireNotificationEvent = false;
     
     enum class PromptState {
         Inactive,
@@ -9964,7 +9973,7 @@ namespace tsl {
         SlidingOut
     };
     
-    struct GlobalPrompt {
+    struct NotificationPrompt {
         std::string text;
         size_t fontSize;
         u64 expireNs = 0;   // expiration time for "visible" state
@@ -9983,6 +9992,9 @@ namespace tsl {
         #endif
     
         void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 3000) {
+            if (!ult::useNotifications)
+                return;
+
             #if IS_STATUS_MONITOR_DIRECTIVE
             lastRenderingState = isRendering;
             if (lastRenderingState) {
@@ -9999,7 +10011,7 @@ namespace tsl {
             state = PromptState::SlidingIn;
             stateStartNs = armTicksToNs(armGetSystemTick());
             expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + (static_cast<u64>(durationMs) * 1'000'000ULL);
-            firePromptEvent = true;
+            fireNotificationEvent = true;
         }
     
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
@@ -10099,6 +10111,8 @@ namespace tsl {
         }
     
         bool isActive() {
+            if (!ult::useNotifications)
+                return false;
             #if IS_STATUS_MONITOR_DIRECTIVE
             const bool activeState = state != PromptState::Inactive;
     
@@ -10125,7 +10139,7 @@ namespace tsl {
     };
 
 
-    //struct GlobalPrompt {
+    //struct NotificationPrompt {
     //    std::string text;
     //    u64 expireNs = 0;
     //    u64 startNs = 0;               // track when show() was called
@@ -10212,7 +10226,7 @@ namespace tsl {
     //    }
     //};
     
-    inline GlobalPrompt gPrompt;
+    inline NotificationPrompt notification;
 
 
     // GUI
@@ -10685,9 +10699,9 @@ namespace tsl {
             }
             
             // Global prompt
-            //gPrompt.update(deltaTime);
-            if (gPrompt.isActive())
-                gPrompt.draw(&renderer, promptOnly);
+            //notification.update(deltaTime);
+            if (notification.isActive())
+                notification.draw(&renderer, promptOnly);
 
             renderer.endFrame();
         }
@@ -11667,7 +11681,7 @@ namespace tsl {
             bool running = false;
             
             Event comboEvent = { 0 };
-            Event promptEvent = { 0 };
+            Event notificationEvent = { 0 };
             
             bool overlayOpen = false;
             
@@ -11959,9 +11973,9 @@ namespace tsl {
                     }
                 }
 
-                if (firePromptEvent) {
-                    firePromptEvent = false;
-                    eventFire(&shData->promptEvent);  // wake the loop
+                if (fireNotificationEvent) {
+                    fireNotificationEvent = false;
+                    eventFire(&shData->notificationEvent);  // wake the loop
                 }
         
         
@@ -12075,8 +12089,8 @@ namespace tsl {
                     }
                     #endif
                     //if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) || (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
-                    //    gPrompt.show("Hello world! ¯\\_(ツ)_/¯");
-                    //    eventFire(&shData->promptEvent);  // wake the loop
+                    //    notification.show("Hello world! ¯\\_(ツ)_/¯");
+                    //    eventFire(&shData->notificationEvent);  // wake the loop
                     //}
                     if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) ||
                         (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
@@ -12105,7 +12119,7 @@ namespace tsl {
                         std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
                         const std::string& chosenMessage = messages[dist(rng)];
                     
-                        gPrompt.show(chosenMessage);
+                        notification.show(chosenMessage);
                     }
         
                     // Check main launch combo first (highest priority)
@@ -12503,7 +12517,7 @@ namespace tsl {
 
         // Add prompt duration
         //{
-        //    const s64 duration = gPrompt.remainingTime(); // nanoseconds left
+        //    const s64 duration = notification.remainingTime(); // nanoseconds left
         //    if (duration > 0) {
         //        const std::string promptArg = " --promptDuration " + std::to_string(duration);
         //        if ((p + promptArg.size()) < bufferEnd) {
@@ -12729,7 +12743,7 @@ namespace tsl {
         threadStart(&backgroundThread);
         
         eventCreate(&shData.comboEvent, false);
-        eventCreate(&shData.promptEvent, false);
+        eventCreate(&shData.notificationEvent, false);
         
         auto& overlay = tsl::Overlay::s_overlayInstance;
         overlay = new TOverlay();
@@ -12797,31 +12811,31 @@ namespace tsl {
         overlay->disableNextAnimation();
 
         //if (promptDuration > 1) {
-        //    gPrompt.show("Hello world!", promptDuration-1);
+        //    notification.show("Hello world!", promptDuration-1);
         //}
 
 
-        Handle handles[2] = { shData.comboEvent.revent, shData.promptEvent.revent };
+        Handle handles[2] = { shData.comboEvent.revent, shData.notificationEvent.revent };
         s32 index = -1;
 
         bool exitAfterPrompt = false;
         bool comboBreakout = false;
         while (shData.running) {
 
-            if (!gPrompt.isActive()){
+            if (!notification.isActive()){
                 //overlay->clearScreen();
                 Result rc = svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
                 if (R_FAILED(rc)) continue;
             }
 
-            if ((index == 1 || gPrompt.isActive())) {
+            if ((index == 1 || notification.isActive())) {
                 comboBreakout = false;
-                eventClear(&shData.promptEvent);
+                eventClear(&shData.notificationEvent);
                 eventClear(&shData.comboEvent);
 
                 //overlay->clearScreen();
                 
-                while (gPrompt.isActive()) {
+                while (notification.isActive()) {
                     overlay->loop(true);   // draw prompts while hidden
 
                     // Check if combo occurs while prompt is active
@@ -12849,7 +12863,7 @@ namespace tsl {
                 }
             }
             
-            eventClear(&shData.promptEvent);
+            eventClear(&shData.notificationEvent);
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
 
@@ -12862,7 +12876,7 @@ namespace tsl {
 #endif
             
             overlay->show();
-            if (!comboBreakout && !gPrompt.isActive())
+            if (!comboBreakout && !notification.isActive())
                 overlay->clearScreen();
             
             while (shData.running) {
@@ -12887,7 +12901,7 @@ namespace tsl {
             //comboBreakout = false;
 
             //bool launchComboBreakout = false;
-            //while (gPrompt.isActive() && shData.running) {
+            //while (notification.isActive() && shData.running) {
             //    overlay->loop(true);   // draw prompts while hidden
             //    shData.keysDownPending = 0;
             //    // Check if combo occurs while prompt is active
@@ -12907,7 +12921,7 @@ namespace tsl {
             //    }
             //}
 
-            if (gPrompt.isActive()){
+            if (notification.isActive()){
                 if (!shData.running && !launchComboHasTriggered.load(std::memory_order_acquire)) {
                     shData.running = true;
                     exitAfterPrompt = true;
@@ -12917,7 +12931,7 @@ namespace tsl {
             //if (comboBreakout)
             //    continue;
 
-            if (!gPrompt.isActive())
+            if (!notification.isActive())
                 overlay->clearScreen();
 
             overlay->resetFlags();
@@ -12929,9 +12943,9 @@ namespace tsl {
             mainComboHasTriggered.store(false, std::memory_order_acquire);
             launchComboHasTriggered.store(false, std::memory_order_acquire);
             eventClear(&shData.comboEvent);
-            eventClear(&shData.promptEvent);
+            eventClear(&shData.notificationEvent);
 
-            //eventClear(&shData.promptEvent); // only after loop
+            //eventClear(&shData.notificationEvent); // only after loop
             //eventClear(&shData.comboEvent);
 
             //overlay->clearScreen();
