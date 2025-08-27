@@ -63,7 +63,6 @@
 #include <stack>
 #include <map>
 //#include <barrier>
-#include <random>
 
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
@@ -9982,7 +9981,7 @@ namespace tsl {
         tsl::gfx::FontManager::FontMetrics fontMetrics;
 
         // Animation parameters
-        const u32 slideDurationMs = 300;   // duration of slide in/out (ms)
+        const u32 slideDurationMs = 200;   // duration of slide in/out (ms)
         s32 promptWidth = 448;
         s32 promptHeight = 82;
         u64 stateStartNs = 0; // when current state started
@@ -9991,7 +9990,7 @@ namespace tsl {
         bool lastRenderingState;
         #endif
     
-        void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 3000) {
+        void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 2500) {
             if (!ult::useNotifications)
                 return;
 
@@ -10025,14 +10024,14 @@ namespace tsl {
                 #endif
                 return;
             }
-    
+        
             const u64 nowNs = armTicksToNs(armGetSystemTick());
             const u64 elapsedMs = (nowNs - stateStartNs) / 1'000'000ULL;
-    
+        
             s32 baseY = 0;
             s32 x = 0;
             s32 y = baseY;
-    
+        
             // --- Handle sliding animation ---
             if (state == PromptState::SlidingIn) {
                 const s32 slidePx = promptWidth;
@@ -10042,7 +10041,7 @@ namespace tsl {
                 } else {
                     x = -promptWidth + t * slidePx;
                 }
-    
+        
                 if (elapsedMs >= slideDurationMs) {
                     state = PromptState::Visible;
                     stateStartNs = nowNs;
@@ -10072,10 +10071,8 @@ namespace tsl {
                     return;
                 }
             }
-    
+        
             // --- Render background + text ---
-            //renderer->drawRect(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
-
             #if !IS_STATUS_MONITOR_DIRECTIVE
             if (!promptOnly && ult::expandedMemory)
                 renderer->drawRectMultiThreaded(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
@@ -10085,16 +10082,44 @@ namespace tsl {
             renderer->drawRect(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
             #endif
             
-
-            // --- Center the text ---
-            const auto [textWidth, textHeight] = renderer->getTextDimensions(text, false, fontSize);
+            // --- Split text into lines and render each one ---
+            std::vector<std::string> lines;
+            std::string currentLine;
             
-            const s32 textX = x + (promptWidth - textWidth) / 2;
+            // Split text by \n characters
+            for (size_t i = 0; i < text.length(); ++i) {
+                if (text[i] == '\\' && i + 1 < text.length() && text[i + 1] == 'n') {
+                    lines.push_back(currentLine);
+                    currentLine.clear();
+                    i++; // Skip the 'n' character
+                } else {
+                    currentLine += text[i];
+                }
+            }
+            // Add the last line if it's not empty
+            if (!currentLine.empty()) {
+                lines.push_back(currentLine);
+            }
             
-            // Center using lineHeight and ascent
-            const s32 textY = y + (promptHeight - fontMetrics.lineHeight) / 2 + fontMetrics.ascent;
+            // Calculate total text height for centering
+            const s32 totalTextHeight = lines.size() * fontMetrics.lineHeight;
             
-            renderer->drawString(text, false, textX, textY, fontSize, defaultTextColor);
+            // Starting Y position to center all lines vertically
+            s32 startY = y + (promptHeight - totalTextHeight) / 2 + fontMetrics.ascent;
+            
+            // Render each line
+            for (size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
+                const std::string& line = lines[lineIndex];
+                
+                // Get dimensions for this line
+                const auto [lineWidth, lineHeight] = renderer->getTextDimensions(line, false, fontSize);
+                
+                // Center horizontally
+                const s32 textX = x + (promptWidth - lineWidth) / 2;
+                const s32 textY = startY + lineIndex * fontMetrics.lineHeight;
+                
+                renderer->drawString(line, false, textX, textY, fontSize, defaultTextColor);
+            }
                 
             // --- Borders ---
             if (!ult::useRightAlignment) {
@@ -10683,6 +10708,8 @@ namespace tsl {
         void loop(bool promptOnly = false) {
             if (ult::launchingOverlay.load(std::memory_order_acquire))
                 return;
+            static bool runAddOnce = false;
+            static bool runRemoveOnce = true;
 
             auto& renderer = gfx::Renderer::get();
             
@@ -10691,10 +10718,21 @@ namespace tsl {
             renderer.startFrame();
             
             if (!promptOnly) {
+                if (runAddOnce) {
+                    renderer.addScreenshotStacks();
+                    runAddOnce = false;
+                    runRemoveOnce = true;
+                }
+
                 this->animationLoop();
                 this->getCurrentGui()->update();
                 this->getCurrentGui()->draw(&renderer);
             } else {
+                if (runRemoveOnce && !screenshotsAreDisabled) {
+                    renderer.removeScreenshotStacks();
+                    runRemoveOnce = false;
+                    runAddOnce = true;
+                }
                 renderer.clearScreen();
             }
             
@@ -12092,36 +12130,109 @@ namespace tsl {
                     //    notification.show("Hello world! ¯\\_(ツ)_/¯");
                     //    eventFire(&shData->notificationEvent);  // wake the loop
                     //}
-                    if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) ||
-                        (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
-                    
-                        // List of fun random phrases
-                        static const std::vector<std::string> messages = {
-                            "Loading fun...",
-                            "Oops! Something broke.",
-                            "Wow, such overlay!",
-                            "Beep boop beep.",
-                            "Hello, world! ¯\\_(ツ)_/¯",
-                            "Chasing pixels...",
-                            "Randomness engaged!",
-                            "Are you having fun yet?",
-                            "Hold onto your spanners!",
-                            "Magic is real!",
-                            "Press all the buttons!",
-                            "Time flies like an arrow...",
-                            "Ultrahand activated!",
-                            "Testing, 1, 2, 3...",
-                            "I like turtles."
-                        };
-                    
-                        // Generate a random index
-                        static std::mt19937 rng(std::random_device{}());
-                        std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
-                        const std::string& chosenMessage = messages[dist(rng)];
-                    
-                        notification.show(chosenMessage);
+                                        
+                    // Process notification files every 100ms
+                    {
+                        static u64 lastNotifCheck = 0;
+                        //const u64 currentTick = armGetSystemTick();
+                        
+                        if (armTicksToNs(nowTick - lastNotifCheck) >= 100'000'000ULL) {
+                            lastNotifCheck = nowTick;
+                            
+                            DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
+                            if (!dir) return; // Early exit if can't open directory
+                            
+                            // Pre-allocate strings and variables outside loop
+                            std::string filename, fullPath, prioStr;
+                            std::string bestFile;
+                            bestFile.reserve(256); // Reserve space to avoid reallocations
+                            
+                            int highestPriority = INT_MAX;
+                            time_t oldestTime = 0;
+                            struct stat fileStat{};
+                            struct dirent* entry;
+                            
+                            // Cache the notifications path length to avoid repeated string operations
+                            const std::string& notifPath = ult::NOTIFICATIONS_PATH;
+                            const size_t notifPathLen = notifPath.length();
+                            
+                            // Process all notification files
+                            while ((entry = readdir(dir)) != nullptr) {
+                                // Skip non-regular files immediately
+                                if (entry->d_type != DT_REG) continue;
+                                
+                                filename = entry->d_name;
+                                const size_t filenameLen = filename.size();
+                                
+                                // Quick length check and suffix validation
+                                if (filenameLen <= 7) continue;
+                                
+                                // More efficient suffix check using string comparison from end
+                                if (filename.compare(filenameLen - 7, 7, ".notify") != 0) continue;
+                                
+                                // Parse priority more efficiently
+                                int priority = 0;
+                                const size_t dashPos = filename.find('-');
+                                if (dashPos != std::string::npos && dashPos > 0) {
+                                    prioStr.assign(filename, 0, dashPos); // Use assign instead of substr
+                                    
+                                    // Check if all characters are digits
+                                    if (!prioStr.empty() && 
+                                        std::all_of(prioStr.begin(), prioStr.end(), 
+                                                   [](unsigned char c) { return std::isdigit(c); })) {
+                                        priority = std::stoi(prioStr);
+                                    }
+                                }
+                                
+                                // Build full path more efficiently
+                                fullPath.clear();
+                                fullPath.reserve(notifPathLen + filenameLen);
+                                fullPath = notifPath;
+                                fullPath += filename;
+                                
+                                // Get file stats
+                                if (stat(fullPath.c_str(), &fileStat) != 0) continue;
+                                
+                                // Select best file: highest priority (lowest number), then oldest
+                                if (priority < highestPriority ||
+                                    (priority == highestPriority && 
+                                     (oldestTime == 0 || fileStat.st_mtime < oldestTime))) {
+                                    highestPriority = priority;
+                                    oldestTime = fileStat.st_mtime;
+                                    bestFile = std::move(fullPath); // Move instead of copy
+                                }
+                            }
+                            
+                            closedir(dir);
+                            
+                            // Process the selected notification file
+                            if (!bestFile.empty()) {
+                                std::string text = ult::getStringFromJsonFile(bestFile, "text");
+                                if (!text.empty()) {
+                                    // Get fontSize with default and clamping
+                                    int fontSize = 28; // Default value
+                                    
+                                    std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                        ult::readJsonFromFile(bestFile), ult::JsonDeleter());
+                                    
+                                    if (root) {
+                                        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                        cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "fontSize");
+                                        if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
+                                            fontSize = static_cast<int>(fontSizeObj->valuedouble);
+                                            fontSize = std::clamp(fontSize, 1, 34); // More concise clamping
+                                        }
+                                    }
+                                    
+                                    notification.show(text, fontSize);
+                                }
+                                
+                                // Clean up the processed file
+                                remove(bestFile.c_str());
+                            }
+                        }
                     }
-        
+                    
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                     #if IS_LAUNCHER_DIRECTIVE
@@ -12136,7 +12247,7 @@ namespace tsl {
                         isRendering = false;
                         leventSignal(&renderingStopEvent);
                         #endif
-        
+                        
                         if (shData->overlayOpen) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
@@ -12834,7 +12945,7 @@ namespace tsl {
                 eventClear(&shData.comboEvent);
 
                 //overlay->clearScreen();
-                
+
                 while (notification.isActive()) {
                     overlay->loop(true);   // draw prompts while hidden
 
