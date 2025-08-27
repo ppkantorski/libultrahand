@@ -9972,6 +9972,17 @@ namespace tsl {
         SlidingOut
     };
     
+    struct NotificationData {
+        std::string text;
+        size_t fontSize;
+        s32 promptWidth;
+        s32 promptHeight;
+        u32 durationMs;
+        
+        NotificationData(const std::string& _text, size_t _fontSize, s32 _promptWidth, s32 _promptHeight, u32 _durationMs)
+            : text(_text), fontSize(_fontSize), promptWidth(_promptWidth), promptHeight(_promptHeight), durationMs(_durationMs) {}
+    };
+    
     struct NotificationPrompt {
         std::string text;
         size_t fontSize;
@@ -9979,12 +9990,15 @@ namespace tsl {
         PromptState state = PromptState::Inactive;
         
         tsl::gfx::FontManager::FontMetrics fontMetrics;
-
+    
         // Animation parameters
         const u32 slideDurationMs = 200;   // duration of slide in/out (ms)
         s32 promptWidth = 448;
         s32 promptHeight = 82;
         u64 stateStartNs = 0; // when current state started
+    
+        // Queue for pending notifications
+        std::queue<NotificationData> notificationQueue;
     
         #if IS_STATUS_MONITOR_DIRECTIVE
         bool lastRenderingState;
@@ -9993,7 +10007,25 @@ namespace tsl {
         void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 2500) {
             if (!ult::useNotifications)
                 return;
-
+    
+            // Add to queue instead of immediately displaying
+            notificationQueue.emplace(msg, _fontSize, _promptWidth, _promptHeight, durationMs);
+            
+            // If not currently active, start the next notification
+            if (state == PromptState::Inactive) {
+                processNextNotification();
+            }
+        }
+    
+    private:
+        void processNextNotification() {
+            if (notificationQueue.empty()) {
+                return;
+            }
+    
+            // Get next notification from queue
+            const NotificationData& nextNotif = notificationQueue.front();
+            
             #if IS_STATUS_MONITOR_DIRECTIVE
             lastRenderingState = isRendering;
             if (lastRenderingState) {
@@ -10001,18 +10033,24 @@ namespace tsl {
                 leventSignal(&renderingStopEvent);
             }
             #endif
-            text = msg;
-            fontSize = _fontSize;
-            promptWidth = _promptWidth;
-            promptHeight = _promptHeight;
-            fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize); // or a representative char
-
+    
+            // Set up current notification
+            text = nextNotif.text;
+            fontSize = nextNotif.fontSize;
+            promptWidth = nextNotif.promptWidth;
+            promptHeight = nextNotif.promptHeight;
+            fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
+    
             state = PromptState::SlidingIn;
             stateStartNs = armTicksToNs(armGetSystemTick());
-            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + (static_cast<u64>(durationMs) * 1'000'000ULL);
+            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + (static_cast<u64>(nextNotif.durationMs) * 1'000'000ULL);
             fireNotificationEvent = true;
+    
+            // Remove processed notification from queue
+            notificationQueue.pop();
         }
     
+    public:
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
             if (state == PromptState::Inactive || text.empty()) {
                 #if IS_STATUS_MONITOR_DIRECTIVE
@@ -10068,6 +10106,9 @@ namespace tsl {
                 if (elapsedMs >= slideDurationMs) {
                     state = PromptState::Inactive;
                     text.clear();
+                    
+                    // Process next notification in queue
+                    processNextNotification();
                     return;
                 }
             }
@@ -10161,98 +10202,29 @@ namespace tsl {
             const s64 remaining = static_cast<s64>(expireNs) - static_cast<s64>(nowNs);
             return remaining > 0 ? remaining : 0;
         }
+    
+        // Additional utility methods for queue management
+        size_t queueSize() const {
+            return notificationQueue.size();
+        }
+    
+        void clearQueue() {
+            while (!notificationQueue.empty()) {
+                notificationQueue.pop();
+            }
+        }
+    
+        // Force skip current notification and move to next
+        void skipCurrent() {
+            if (state != PromptState::Inactive) {
+                state = PromptState::Inactive;
+                text.clear();
+                processNextNotification();
+            }
+        }
     };
-
-
-    //struct NotificationPrompt {
-    //    std::string text;
-    //    u64 expireNs = 0;
-    //    u64 startNs = 0;               // track when show() was called
-    //    bool slideFromRight = true;
-    //    bool enableFade = true;
-    //    u64 fadeDurationNs = 500'000'000ULL;
-    //    u64 slideDurationNs = 500'000'000ULL;
-    //    PromptState state = PromptState::Inactive;
-    //
-    //    void show(const std::string& msg, u64 durationNs = 3ULL * 1'000'000'000ULL) {
-    //        text = msg;
-    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
-    //        startNs = nowNs;
-    //        expireNs = nowNs + durationNs;
-    //        state = PromptState::SlidingIn;
-    //    }
-    //
-    //    void draw(gfx::Renderer* renderer) {
-    //        if (text.empty()) return;
-    //
-    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
-    //
-    //        // Determine state
-    //        if (state == PromptState::SlidingIn && nowNs >= startNs + slideDurationNs) {
-    //            state = PromptState::Visible;
-    //        } else if (state == PromptState::Visible && nowNs >= expireNs - slideDurationNs) {
-    //            state = PromptState::SlidingOut;
-    //        } else if (state == PromptState::SlidingOut && nowNs >= expireNs) {
-    //            state = PromptState::Inactive;
-    //            text.clear();
-    //            return;
-    //        }
-    //
-    //        float slideProgress = 1.0f;
-    //        float alphaProgress = 1.0f;
-    //
-    //        if (state == PromptState::SlidingIn) {
-    //            slideProgress = float(nowNs - startNs) / float(slideDurationNs);
-    //            alphaProgress = enableFade ? slideProgress : 1.0f;
-    //        } else if (state == PromptState::SlidingOut) {
-    //            slideProgress = float(expireNs - nowNs) / float(slideDurationNs);
-    //            alphaProgress = enableFade ? slideProgress : 1.0f;
-    //        }
-    //
-    //        slideProgress = std::clamp(slideProgress, 0.0f, 1.0f);
-    //        alphaProgress = std::clamp(alphaProgress, 0.0f, 1.0f);
-    //
-    //        const s32 baseX = 0;
-    //        const s32 baseY = 0;
-    //        const s32 w = 448;
-    //        const s32 h = 82;
-    //
-    //        s32 offsetX = s32((ult::useRightAlignment ? (1.0f - slideProgress) : -(1.0f - slideProgress)) * w);
-    //
-    //        auto fadeColor = [&](tsl::Color color) {
-    //            if (!enableFade) return color;
-    //            tsl::Color faded = color;
-    //            faded.a = static_cast<u8>(color.a * alphaProgress);
-    //            return faded;
-    //        };
-    //
-    //        // Draw
-    //        renderer->drawRect(baseX + offsetX, baseY, w, h, fadeColor(defaultBackgroundColor));
-    //        renderer->drawString(text, false, baseX + offsetX + 50, baseY + 50, 32, fadeColor(defaultTextColor));
-    //
-    //        if (!ult::useRightAlignment) {
-    //            renderer->drawRect(baseX + offsetX + w - 1, baseY, 1, h, fadeColor(edgeSeparatorColor));
-    //            renderer->drawRect(baseX + offsetX, baseY + h - 1, w, 1, fadeColor(edgeSeparatorColor));
-    //        } else {
-    //            renderer->drawRect(baseX + offsetX, baseY, 1, h, fadeColor(edgeSeparatorColor));
-    //            renderer->drawRect(baseX + offsetX, baseY + h - 1, w, 1, fadeColor(edgeSeparatorColor));
-    //        }
-    //    }
-    //
-    //    bool isActive() const {
-    //        return !text.empty() && (armTicksToNs(armGetSystemTick()) < expireNs);
-    //    }
-    //
-    //    u64 remainingTime() const {
-    //        if (text.empty()) return 0;
-    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
-    //        const s64 remaining = static_cast<s64>(expireNs) - static_cast<s64>(nowNs);
-    //        return remaining > 0 ? remaining : 0;
-    //    }
-    //};
     
     inline NotificationPrompt notification;
-
 
     // GUI
     
@@ -12136,99 +12108,132 @@ namespace tsl {
                         static u64 lastNotifCheck = 0;
                         //const u64 currentTick = armGetSystemTick();
                         
-                        if (armTicksToNs(nowTick - lastNotifCheck) >= 100'000'000ULL) {
+                        if (armTicksToNs(nowTick - lastNotifCheck) >= 200'000'000ULL && !notification.isActive()) {
                             lastNotifCheck = nowTick;
                             
                             DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
                             if (!dir) return; // Early exit if can't open directory
                             
-                            // Pre-allocate strings and variables outside loop
-                            std::string filename, fullPath, prioStr;
-                            std::string bestFile;
-                            bestFile.reserve(256); // Reserve space to avoid reallocations
-                            
-                            int highestPriority = INT_MAX;
-                            time_t oldestTime = 0;
-                            struct stat fileStat{};
-                            struct dirent* entry;
-                            
-                            // Cache the notifications path length to avoid repeated string operations
-                            const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                            const size_t notifPathLen = notifPath.length();
-                            
-                            // Process all notification files
-                            while ((entry = readdir(dir)) != nullptr) {
-                                // Skip non-regular files immediately
-                                if (entry->d_type != DT_REG) continue;
+                            if (ult::useNotifications) {
+                                // Pre-allocate strings and variables outside loop
+                                std::string filename, fullPath, prioStr;
+                                std::string bestFile;
+                                //bestFile.reserve(256); // Reserve space to avoid reallocations
                                 
-                                filename = entry->d_name;
-                                const size_t filenameLen = filename.size();
+                                int highestPriority = INT_MAX;
+                                time_t oldestTime = 0;
+                                struct stat fileStat{};
+                                struct dirent* entry;
                                 
-                                // Quick length check and suffix validation
-                                if (filenameLen <= 7) continue;
+                                // Cache the notifications path length to avoid repeated string operations
+                                const std::string& notifPath = ult::NOTIFICATIONS_PATH;
+                                const size_t notifPathLen = notifPath.length();
                                 
-                                // More efficient suffix check using string comparison from end
-                                if (filename.compare(filenameLen - 7, 7, ".notify") != 0) continue;
-                                
-                                // Parse priority more efficiently
-                                int priority = 0;
-                                const size_t dashPos = filename.find('-');
-                                if (dashPos != std::string::npos && dashPos > 0) {
-                                    prioStr.assign(filename, 0, dashPos); // Use assign instead of substr
+                                int priority;
+
+                                // Process all notification files
+                                while ((entry = readdir(dir)) != nullptr) {
+                                    // Skip non-regular files immediately
+                                    if (entry->d_type != DT_REG) continue;
                                     
-                                    // Check if all characters are digits
-                                    if (!prioStr.empty() && 
-                                        std::all_of(prioStr.begin(), prioStr.end(), 
-                                                   [](unsigned char c) { return std::isdigit(c); })) {
-                                        priority = std::stoi(prioStr);
-                                    }
-                                }
-                                
-                                // Build full path more efficiently
-                                fullPath.clear();
-                                fullPath.reserve(notifPathLen + filenameLen);
-                                fullPath = notifPath;
-                                fullPath += filename;
-                                
-                                // Get file stats
-                                if (stat(fullPath.c_str(), &fileStat) != 0) continue;
-                                
-                                // Select best file: highest priority (lowest number), then oldest
-                                if (priority < highestPriority ||
-                                    (priority == highestPriority && 
-                                     (oldestTime == 0 || fileStat.st_mtime < oldestTime))) {
-                                    highestPriority = priority;
-                                    oldestTime = fileStat.st_mtime;
-                                    bestFile = std::move(fullPath); // Move instead of copy
-                                }
-                            }
-                            
-                            closedir(dir);
-                            
-                            // Process the selected notification file
-                            if (!bestFile.empty()) {
-                                std::string text = ult::getStringFromJsonFile(bestFile, "text");
-                                if (!text.empty()) {
-                                    // Get fontSize with default and clamping
-                                    int fontSize = 28; // Default value
+                                    filename = entry->d_name;
+                                    const size_t filenameLen = filename.size();
                                     
-                                    std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                        ult::readJsonFromFile(bestFile), ult::JsonDeleter());
+                                    // Quick length check and suffix validation
+                                    if (filenameLen <= 7) continue;
                                     
-                                    if (root) {
-                                        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                        cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "fontSize");
-                                        if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
-                                            fontSize = static_cast<int>(fontSizeObj->valuedouble);
-                                            fontSize = std::clamp(fontSize, 1, 34); // More concise clamping
+                                    // More efficient suffix check using string comparison from end
+                                    if (filename.compare(filenameLen - 7, 7, ".notify") != 0) continue;
+                                    
+                                    // Parse priority more efficiently
+                                    priority = 0;
+                                    const size_t dashPos = filename.find('-');
+                                    if (dashPos != std::string::npos && dashPos > 0) {
+                                        prioStr.assign(filename, 0, dashPos); // Use assign instead of substr
+                                        
+                                        // Check if all characters are digits
+                                        if (!prioStr.empty() && 
+                                            std::all_of(prioStr.begin(), prioStr.end(), 
+                                                       [](unsigned char c) { return std::isdigit(c); })) {
+                                            priority = std::stoi(prioStr);
                                         }
                                     }
                                     
-                                    notification.show(text, fontSize);
+                                    // Build full path more efficiently
+                                    fullPath.clear();
+                                    fullPath.reserve(notifPathLen + filenameLen);
+                                    fullPath = notifPath;
+                                    fullPath += filename;
+                                    
+                                    // Get file stats
+                                    if (stat(fullPath.c_str(), &fileStat) != 0) continue;
+                                    
+                                    // Select best file: highest priority (lowest number), then oldest
+                                    if (priority < highestPriority ||
+                                        (priority == highestPriority && 
+                                         (oldestTime == 0 || fileStat.st_mtime < oldestTime))) {
+                                        highestPriority = priority;
+                                        oldestTime = fileStat.st_mtime;
+                                        bestFile = std::move(fullPath); // Move instead of copy
+                                    }
                                 }
                                 
-                                // Clean up the processed file
-                                remove(bestFile.c_str());
+                                closedir(dir);
+                                
+                                // Process the selected notification file
+                                if (!bestFile.empty()) {
+                                    std::string text = ult::getStringFromJsonFile(bestFile, "text");
+                                    if (!text.empty()) {
+                                        // Get fontSize with default and clamping
+                                        int fontSize = 28; // Default value
+                                        
+                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                            ult::readJsonFromFile(bestFile), ult::JsonDeleter());
+                                        
+                                        if (root) {
+                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                            cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "fontSize");
+                                            if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
+                                                fontSize = static_cast<int>(fontSizeObj->valuedouble);
+                                                fontSize = std::clamp(fontSize, 1, 34); // More concise clamping
+                                            }
+                                        }
+                                        
+                                        notification.show(text, fontSize);
+                                    }
+                                    
+                                    // Clean up the processed file
+                                    remove(bestFile.c_str());
+                                }
+                            } else {
+                                // Delete all .notify files in folder - optimized version
+                                struct dirent* entry;
+                                std::string fullPath;
+                                const std::string& notifPath = ult::NOTIFICATIONS_PATH;
+                                const size_t notifPathLen = notifPath.length();
+                                
+                                // Pre-allocate string to avoid repeated allocations
+                                fullPath.reserve(notifPathLen + 64); // Reserve space for typical filename
+                                
+                                while ((entry = readdir(dir)) != nullptr) {
+                                    if (entry->d_type != DT_REG) continue;
+                                    
+                                    const char* filename = entry->d_name;
+                                    const size_t filenameLen = strlen(filename);
+                                    
+                                    // Quick length check and direct C-string suffix comparison
+                                    if (filenameLen > 7 && 
+                                        strcmp(filename + filenameLen - 7, ".notify") == 0) {
+                                        
+                                        // Build path efficiently without temporary string objects
+                                        fullPath.clear();
+                                        fullPath.append(notifPath);
+                                        fullPath.append(filename, filenameLen);
+                                        
+                                        remove(fullPath.c_str());
+                                    }
+                                }
+                                closedir(dir);
                             }
                         }
                     }
