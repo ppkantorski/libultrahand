@@ -58,6 +58,7 @@ namespace ult {
      */
     struct PackageHeader {
         std::string title;
+        std::string display_title;
         std::string version;
         std::string creator;
         std::string about;
@@ -68,6 +69,7 @@ namespace ult {
         
         void clear() {
             title.clear();
+            display_title.clear();
             version.clear();
             creator.clear();
             about.clear();

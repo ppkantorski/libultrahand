@@ -63,7 +63,7 @@
 #include <stack>
 #include <map>
 //#include <barrier>
-
+#include <random>
 
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
@@ -176,6 +176,10 @@ inline bool screenshotsAreDisabled = false;
 //#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
 //#endif
+
+inline std::atomic<bool> isLaunchingNextOverlay{false};
+inline std::atomic<bool> mainComboHasTriggered{false};
+inline std::atomic<bool> launchComboHasTriggered{false};
 
 namespace tsl {
 
@@ -1550,6 +1554,17 @@ namespace tsl {
                         : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
                 ) << 12);
             }
+
+            static inline Color a2(const Color& c) {
+                const u8 opacity_limit = static_cast<u8>(0xF);
+                return (c.rgba & 0x0FFF) | (static_cast<u16>(
+                    ult::disableTransparency
+                        ? (ult::useOpaqueScreenshots
+                               ? 0xF                       // fully opaque when both flags on
+                               : (c.a > 0xE ? c.a : 0xE)) // clamp to 14, keep lower values
+                        : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
+                ) << 12);
+            }
             
             /**
              * @brief Enables scissoring, discarding of any draw outside the given boundaries
@@ -2392,12 +2407,108 @@ namespace tsl {
                 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
             };
             
+//            inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
+//                                       const s32 startRow, const s32 endRow) {
+//                const s32 bytesPerRow = screenW * 2;
+//                const s32 endX16 = screenW & ~15;
+//                
+//                // Pre-declare all variables outside loops to avoid repeated allocations
+//                const u8 *rowPtr;
+//                s32 baseY;
+//                s32 x1;
+//                const u8* ptr;
+//                uint8x16x2_t packed;
+//                uint8x16_t high1, low1, high2, low2;
+//                uint8x16_t red, green, blue, alpha;
+//                alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
+//                s32 baseX;
+//                s32 pixelX;
+//                u32 offset;
+//                Color color = {0}, src = {0}, end = {0};
+//                const u16* framebuffer;
+//                u8 p1, p2;
+//                
+//                for (s32 y1 = startRow; y1 < endRow; ++y1) {
+//                    rowPtr = preprocessedData + (y1 * bytesPerRow);
+//                    baseY = y + y1;
+//                    
+//                    x1 = 0;
+//                    
+//                    // SIMD processing for 16 pixels at once
+//                    for (; x1 < endX16; x1 += 16) {
+//                        ptr = rowPtr + (x1 << 1);
+//                        packed = vld2q_u8(ptr);
+//                        
+//                        // Expand 4-bit to 8-bit values
+//                        high1 = vshrq_n_u8(packed.val[0], 4);
+//                        low1  = vandq_u8(packed.val[0], mask_low);
+//                        high2 = vshrq_n_u8(packed.val[1], 4);
+//                        low2  = vandq_u8(packed.val[1], mask_low);
+//                        
+//                        red   = vqtbl1q_u8(lut, high1);
+//                        green = vqtbl1q_u8(lut, low1);
+//                        blue  = vqtbl1q_u8(lut, high2);
+//                        alpha = vqtbl1q_u8(lut, low2);
+//                        
+//                        // Store to arrays and process individually
+//                        vst1q_u8(red_vals, red);
+//                        vst1q_u8(green_vals, green); 
+//                        vst1q_u8(blue_vals, blue);
+//                        vst1q_u8(alpha_vals, alpha);
+//                        
+//                        baseX = x + x1;
+//                        
+//                        // Process 16 pixels with minimal function call overhead
+//                        for (int i = 0; i < 16; ++i) {
+//                            // Skip transparent pixels
+//                            if (alpha_vals[i] == 0) continue;
+//                            
+//                            pixelX = baseX + i;
+//                            offset = this->getPixelOffset(pixelX, baseY);
+//                            
+//                            if (offset != UINT32_MAX) {
+//                                color = {red_vals[i], green_vals[i], blue_vals[i], alpha_vals[i]};
+//                                
+//                                framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
+//                                src = Color(framebuffer[offset]);
+//                                
+//                                end = {
+//                                    blendColor(src.r, color.r, color.a),
+//                                    blendColor(src.g, color.g, color.a), 
+//                                    blendColor(src.b, color.b, color.a),
+//                                    src.a
+//                                };
+//                            
+//                                this->setPixelAtOffset(offset, end);
+//                            }
+//                        }
+//                    }
+//                    
+//                    // Handle remaining pixels (less than 16)
+//                    for (; x1 < screenW; ++x1) {
+//                        p1 = rowPtr[x1 << 1];
+//                        p2 = rowPtr[(x1 << 1) + 1];
+//                        
+//                        setPixelBlendSrc(x + x1, baseY, {
+//                            expand4to8[p1 >> 4], expand4to8[p1 & 0x0F],
+//                            expand4to8[p2 >> 4], expand4to8[p2 & 0x0F]
+//                        });
+//                    }
+//                }
+//                
+//                ult::inPlotBarrier.arrive_and_wait();
+//            }
+            
+
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
-                                       const s32 startRow, const s32 endRow) {
+                                           const s32 startRow, const s32 endRow, const u8 globalAlphaLimit) {
                 const s32 bytesPerRow = screenW * 2;
                 const s32 endX16 = screenW & ~15;
                 
-                // Pre-declare all variables outside loops to avoid repeated allocations
+                // Create SIMD vector for alpha limit
+                const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
+                
+                // Pre-declare all variables outside loops
                 const u8 *rowPtr;
                 s32 baseY;
                 s32 x1;
@@ -2435,6 +2546,9 @@ namespace tsl {
                         blue  = vqtbl1q_u8(lut, high2);
                         alpha = vqtbl1q_u8(lut, low2);
                         
+                        // Apply alpha limit using SIMD min operation
+                        alpha = vminq_u8(alpha, alpha_limit_vec);
+                        
                         // Store to arrays and process individually
                         vst1q_u8(red_vals, red);
                         vst1q_u8(green_vals, green); 
@@ -2469,22 +2583,23 @@ namespace tsl {
                         }
                     }
                     
-                    // Handle remaining pixels (less than 16)
+                    // Handle remaining pixels (less than 16) with pre-computed alpha limit
                     for (; x1 < screenW; ++x1) {
                         p1 = rowPtr[x1 << 1];
                         p2 = rowPtr[(x1 << 1) + 1];
                         
+                        u8 alpha = expand4to8[p2 & 0x0F];
+                        alpha = (alpha < globalAlphaLimit) ? alpha : globalAlphaLimit;
+                        
                         setPixelBlendSrc(x + x1, baseY, {
                             expand4to8[p1 >> 4], expand4to8[p1 & 0x0F],
-                            expand4to8[p2 >> 4], expand4to8[p2 & 0x0F]
+                            expand4to8[p2 >> 4], alpha
                         });
                     }
                 }
                 
                 ult::inPlotBarrier.arrive_and_wait();
             }
-            
-
 
 
             /**
@@ -2499,25 +2614,64 @@ namespace tsl {
              * @param screenH Target screen height
              */
 
-            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
-                s32 startRow;
+            //inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
+            //    s32 startRow;
+            //    
+            //    // Divide rows among ult::renderThreads
+            //    //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
+            //    for (unsigned i = 0; i < ult::numThreads; ++i) {
+            //        startRow = i * ult::bmpChunkSize;
+            //        //s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
+            //        
+            //        // Bind the member function and create the thread
+            //        ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
+            //    }
+            //    
+            //    // Join all ult::renderThreads
+            //    for (auto& t : ult::renderThreads) {
+            //        t.join();
+            //    }
+            //}
 
-                // Divide rows among ult::renderThreads
-                //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
+            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, 
+                                           const u8 *preprocessedData, float opacity = 1.0f) {
+                // Pre-compute alpha limit once
+                const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
+                
+                s32 startRow;
+                
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
                     startRow = i * ult::bmpChunkSize;
-                    //s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
                     
-                    // Bind the member function and create the thread
-                    ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
+                    // Pass the alpha limit to each thread
+                    ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, 
+                        this, x, y, screenW, preprocessedData, startRow, 
+                        std::min(startRow + ult::bmpChunkSize, screenH), globalAlphaLimit));
                 }
             
-                // Join all ult::renderThreads
+                // Join all threads
                 for (auto& t : ult::renderThreads) {
                     t.join();
                 }
             }
 
+
+
+            //inline void drawWallpaper() {
+            //    if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
+            //        return;
+            //    }
+            //    
+            //    ult::inPlot.store(true, std::memory_order_release);
+            //    
+            //    if (!ult::wallpaperData.empty() && 
+            //        !ult::refreshWallpaper.load(std::memory_order_acquire) && 
+            //        ult::correctFrameSize) {
+            //        drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
+            //    }
+            //    
+            //    ult::inPlot.store(false, std::memory_order_release);
+            //}
 
             inline void drawWallpaper() {
                 if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
@@ -2529,7 +2683,9 @@ namespace tsl {
                 if (!ult::wallpaperData.empty() && 
                     !ult::refreshWallpaper.load(std::memory_order_acquire) && 
                     ult::correctFrameSize) {
-                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
+                    // Use the renderer's opacity directly
+                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, 
+                                      ult::wallpaperData.data(), Renderer::s_opacity);
                 }
                 
                 ult::inPlot.store(false, std::memory_order_release);
@@ -3207,10 +3363,10 @@ namespace tsl {
                     int socWidth = 0, pcbWidth = 0, chargeWidth = 0;
                     bool hasMultiple = false;
                     
-                    float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
-                    float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
-                    uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
-                    bool charging = ult::isCharging.load(std::memory_order_acquire);
+                    const float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
+                    const float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
+                    const uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
+                    const bool charging = ult::isCharging.load(std::memory_order_acquire);
                     
                     if (!ult::hideSOCTemp && socTemp > 0.0f) {
                         socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
@@ -3258,10 +3414,10 @@ namespace tsl {
                 } else {
                     // RIGHT ALIGNMENT
                     int chargeWidth = 0, pcbWidth = 0, socWidth = 0;
-                    float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
-                    float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
-                    uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
-                    bool charging = ult::isCharging.load(std::memory_order_acquire);
+                    const float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
+                    const float socTemp = ult::SOC_temperature.load(std::memory_order_acquire);
+                    const uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
+                    const bool charging = ult::isCharging.load(std::memory_order_acquire);
                     
                     if (!ult::hideBattery && batteryCharge > 0) {
                         const Color batteryColorToUse = charging
@@ -4619,7 +4775,7 @@ namespace tsl {
                         renderer->drawWidget();
 
                     x = 20;
-                    y = 52;
+                    y = 52 -2;
                     fontSize = 32;
             
                     if (m_subtitle.find("Ultrahand Script") != std::string::npos) {
@@ -4685,7 +4841,7 @@ namespace tsl {
                                             
                                             const std::string letterStr(1, letter);
                                             renderer->drawString(letterStr.c_str(), false, x, y, fontSize, (highlightColor));
-                                            auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
+                                            const auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
                                             x += letterWidth;
                                             counter -= 0.00004F;
                                         }
@@ -4701,6 +4857,7 @@ namespace tsl {
                         }
                         
                         renderer->drawString(m_title, false, x, y, fontSize, (titleColor));
+                        y += 2;
                         skip_normal_draw:;
                     }
                 }
@@ -4725,8 +4882,8 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
                 
-                renderer->drawString(m_title, false, 20, 52, 32, (defaultOverlayColor));
-                renderer->drawString(m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
+                renderer->drawString(m_title, false, 20, 52-2, 32, (defaultOverlayColor));
+                renderer->drawString(m_subtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -4998,8 +5155,8 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
-                renderer->drawString(this->m_title, false, 20, 50+2, 32, (defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
+                renderer->drawString(this->m_title, false, 20, 50, 32, (defaultOverlayColor));
+                renderer->drawString(this->m_subtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -9798,6 +9955,266 @@ namespace tsl {
         
     }
     
+    bool firePromptEvent = false;
+    
+    enum class PromptState {
+        Inactive,
+        SlidingIn,
+        Visible,
+        SlidingOut
+    };
+    
+    struct GlobalPrompt {
+        std::string text;
+        size_t fontSize;
+        u64 expireNs = 0;   // expiration time for "visible" state
+        PromptState state = PromptState::Inactive;
+        
+        tsl::gfx::FontManager::FontMetrics fontMetrics;
+
+        // Animation parameters
+        const u32 slideDurationMs = 300;   // duration of slide in/out (ms)
+        s32 promptWidth = 448;
+        s32 promptHeight = 82;
+        u64 stateStartNs = 0; // when current state started
+    
+        #if IS_STATUS_MONITOR_DIRECTIVE
+        bool lastRenderingState;
+        #endif
+    
+        void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 3000) {
+            #if IS_STATUS_MONITOR_DIRECTIVE
+            lastRenderingState = isRendering;
+            if (lastRenderingState) {
+                isRendering = false;
+                leventSignal(&renderingStopEvent);
+            }
+            #endif
+            text = msg;
+            fontSize = _fontSize;
+            promptWidth = _promptWidth;
+            promptHeight = _promptHeight;
+            fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize); // or a representative char
+
+            state = PromptState::SlidingIn;
+            stateStartNs = armTicksToNs(armGetSystemTick());
+            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + (static_cast<u64>(durationMs) * 1'000'000ULL);
+            firePromptEvent = true;
+        }
+    
+        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
+            if (state == PromptState::Inactive || text.empty()) {
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                if (lastRenderingState) {
+                    lastRenderingState = false;
+                    isRendering = true;
+                    leventClear(&renderingStopEvent);
+                }
+                #endif
+                return;
+            }
+    
+            const u64 nowNs = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (nowNs - stateStartNs) / 1'000'000ULL;
+    
+            s32 baseY = 0;
+            s32 x = 0;
+            s32 y = baseY;
+    
+            // --- Handle sliding animation ---
+            if (state == PromptState::SlidingIn) {
+                const s32 slidePx = promptWidth;
+                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
+                if (ult::useRightAlignment) {
+                    x = tsl::cfg::FramebufferWidth - promptWidth + (1.0f - t) * slidePx;
+                } else {
+                    x = -promptWidth + t * slidePx;
+                }
+    
+                if (elapsedMs >= slideDurationMs) {
+                    state = PromptState::Visible;
+                    stateStartNs = nowNs;
+                }
+            }
+            else if (state == PromptState::Visible) {
+                if (nowNs >= expireNs) {
+                    state = PromptState::SlidingOut;
+                    stateStartNs = nowNs;
+                }
+                if (ult::useRightAlignment) {
+                    x = tsl::cfg::FramebufferWidth - promptWidth;
+                } else {
+                    x = 0;
+                }
+            }
+            else if (state == PromptState::SlidingOut) {
+                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
+                if (ult::useRightAlignment) {
+                    x = tsl::cfg::FramebufferWidth - promptWidth + t * promptWidth;
+                } else {
+                    x = -t * promptWidth;
+                }
+                if (elapsedMs >= slideDurationMs) {
+                    state = PromptState::Inactive;
+                    text.clear();
+                    return;
+                }
+            }
+    
+            // --- Render background + text ---
+            //renderer->drawRect(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
+
+            #if !IS_STATUS_MONITOR_DIRECTIVE
+            if (!promptOnly && ult::expandedMemory)
+                renderer->drawRectMultiThreaded(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
+            else
+                renderer->drawRect(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
+            #else
+            renderer->drawRect(x, y, promptWidth, promptHeight, (defaultBackgroundColor));
+            #endif
+            
+
+            // --- Center the text ---
+            const auto [textWidth, textHeight] = renderer->getTextDimensions(text, false, fontSize);
+            
+            const s32 textX = x + (promptWidth - textWidth) / 2;
+            
+            // Center using lineHeight and ascent
+            const s32 textY = y + (promptHeight - fontMetrics.lineHeight) / 2 + fontMetrics.ascent;
+            
+            renderer->drawString(text, false, textX, textY, fontSize, defaultTextColor);
+                
+            // --- Borders ---
+            if (!ult::useRightAlignment) {
+                // right edge
+                renderer->drawRect(x + promptWidth - 1, y, 1, promptHeight, (edgeSeparatorColor));
+                // bottom edge
+                renderer->drawRect(x, y + promptHeight - 1, promptWidth, 1, (edgeSeparatorColor));
+            } else {
+                // left edge
+                renderer->drawRect(x, y, 1, promptHeight, (edgeSeparatorColor));
+                // bottom edge
+                renderer->drawRect(x, y + promptHeight - 1, promptWidth, 1, (edgeSeparatorColor));
+            }
+        }
+    
+        bool isActive() {
+            #if IS_STATUS_MONITOR_DIRECTIVE
+            const bool activeState = state != PromptState::Inactive;
+    
+            
+            if (!activeState && lastRenderingState) {
+                lastRenderingState = false;
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+            }
+            
+    
+            return activeState;
+            #else
+            return state != PromptState::Inactive;
+            #endif
+        }
+    
+        u64 remainingTime() const {
+            if (text.empty()) return 0;
+            const u64 nowNs = armTicksToNs(armGetSystemTick());
+            const s64 remaining = static_cast<s64>(expireNs) - static_cast<s64>(nowNs);
+            return remaining > 0 ? remaining : 0;
+        }
+    };
+
+
+    //struct GlobalPrompt {
+    //    std::string text;
+    //    u64 expireNs = 0;
+    //    u64 startNs = 0;               // track when show() was called
+    //    bool slideFromRight = true;
+    //    bool enableFade = true;
+    //    u64 fadeDurationNs = 500'000'000ULL;
+    //    u64 slideDurationNs = 500'000'000ULL;
+    //    PromptState state = PromptState::Inactive;
+    //
+    //    void show(const std::string& msg, u64 durationNs = 3ULL * 1'000'000'000ULL) {
+    //        text = msg;
+    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
+    //        startNs = nowNs;
+    //        expireNs = nowNs + durationNs;
+    //        state = PromptState::SlidingIn;
+    //    }
+    //
+    //    void draw(gfx::Renderer* renderer) {
+    //        if (text.empty()) return;
+    //
+    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
+    //
+    //        // Determine state
+    //        if (state == PromptState::SlidingIn && nowNs >= startNs + slideDurationNs) {
+    //            state = PromptState::Visible;
+    //        } else if (state == PromptState::Visible && nowNs >= expireNs - slideDurationNs) {
+    //            state = PromptState::SlidingOut;
+    //        } else if (state == PromptState::SlidingOut && nowNs >= expireNs) {
+    //            state = PromptState::Inactive;
+    //            text.clear();
+    //            return;
+    //        }
+    //
+    //        float slideProgress = 1.0f;
+    //        float alphaProgress = 1.0f;
+    //
+    //        if (state == PromptState::SlidingIn) {
+    //            slideProgress = float(nowNs - startNs) / float(slideDurationNs);
+    //            alphaProgress = enableFade ? slideProgress : 1.0f;
+    //        } else if (state == PromptState::SlidingOut) {
+    //            slideProgress = float(expireNs - nowNs) / float(slideDurationNs);
+    //            alphaProgress = enableFade ? slideProgress : 1.0f;
+    //        }
+    //
+    //        slideProgress = std::clamp(slideProgress, 0.0f, 1.0f);
+    //        alphaProgress = std::clamp(alphaProgress, 0.0f, 1.0f);
+    //
+    //        const s32 baseX = 0;
+    //        const s32 baseY = 0;
+    //        const s32 w = 448;
+    //        const s32 h = 82;
+    //
+    //        s32 offsetX = s32((ult::useRightAlignment ? (1.0f - slideProgress) : -(1.0f - slideProgress)) * w);
+    //
+    //        auto fadeColor = [&](tsl::Color color) {
+    //            if (!enableFade) return color;
+    //            tsl::Color faded = color;
+    //            faded.a = static_cast<u8>(color.a * alphaProgress);
+    //            return faded;
+    //        };
+    //
+    //        // Draw
+    //        renderer->drawRect(baseX + offsetX, baseY, w, h, fadeColor(defaultBackgroundColor));
+    //        renderer->drawString(text, false, baseX + offsetX + 50, baseY + 50, 32, fadeColor(defaultTextColor));
+    //
+    //        if (!ult::useRightAlignment) {
+    //            renderer->drawRect(baseX + offsetX + w - 1, baseY, 1, h, fadeColor(edgeSeparatorColor));
+    //            renderer->drawRect(baseX + offsetX, baseY + h - 1, w, 1, fadeColor(edgeSeparatorColor));
+    //        } else {
+    //            renderer->drawRect(baseX + offsetX, baseY, 1, h, fadeColor(edgeSeparatorColor));
+    //            renderer->drawRect(baseX + offsetX, baseY + h - 1, w, 1, fadeColor(edgeSeparatorColor));
+    //        }
+    //    }
+    //
+    //    bool isActive() const {
+    //        return !text.empty() && (armTicksToNs(armGetSystemTick()) < expireNs);
+    //    }
+    //
+    //    u64 remainingTime() const {
+    //        if (text.empty()) return 0;
+    //        const u64 nowNs = armTicksToNs(armGetSystemTick());
+    //        const s64 remaining = static_cast<s64>(expireNs) - static_cast<s64>(nowNs);
+    //        return remaining > 0 ? remaining : 0;
+    //    }
+    //};
+    
+    inline GlobalPrompt gPrompt;
+
+
     // GUI
     
     /**
@@ -10249,7 +10666,7 @@ namespace tsl {
          * @brief Main loop
          *
          */
-        void loop() {
+        void loop(bool promptOnly = false) {
             if (ult::launchingOverlay.load(std::memory_order_acquire))
                 return;
 
@@ -10259,10 +10676,19 @@ namespace tsl {
         //#endif
             renderer.startFrame();
             
-            this->animationLoop();
-            this->getCurrentGui()->update();
-            this->getCurrentGui()->draw(&renderer);
+            if (!promptOnly) {
+                this->animationLoop();
+                this->getCurrentGui()->update();
+                this->getCurrentGui()->draw(&renderer);
+            } else {
+                renderer.clearScreen();
+            }
             
+            // Global prompt
+            //gPrompt.update(deltaTime);
+            if (gPrompt.isActive())
+                gPrompt.draw(&renderer, promptOnly);
+
             renderer.endFrame();
         }
         
@@ -10626,6 +11052,7 @@ namespace tsl {
                     static u64 lButtonPressStart_ns = 0;
                     
                     if (lKeyPressed) {
+                        
                         if (!lKeyWasPressed) {
                             // L key physically pressed for the first time (start timer)
                             lButtonPressStart_ns = currentTime_ns;
@@ -11240,6 +11667,7 @@ namespace tsl {
             bool running = false;
             
             Event comboEvent = { 0 };
+            Event promptEvent = { 0 };
             
             bool overlayOpen = false;
             
@@ -11530,6 +11958,11 @@ namespace tsl {
                         ult::resetForegroundCheck.store(false, std::memory_order_release);
                     }
                 }
+
+                if (firePromptEvent) {
+                    firePromptEvent = false;
+                    eventFire(&shData->promptEvent);  // wake the loop
+                }
         
         
                 // Scan for input changes from both controllers
@@ -11583,10 +12016,12 @@ namespace tsl {
                             if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
                                 if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
                                     eventFire(&shData->comboEvent);
+                                    mainComboHasTriggered.store(true, std::memory_order_release);
                                 }
                                 // Check if the touch is within bounds for right-to-left swipe within the time window
                                 else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
                                     eventFire(&shData->comboEvent);
+                                    mainComboHasTriggered.store(true, std::memory_order_release);
                                 }
                             }
                         }
@@ -11639,7 +12074,39 @@ namespace tsl {
                         break;
                     }
                     #endif
-
+                    //if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) || (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
+                    //    gPrompt.show("Hello world! ¯\\_(ツ)_/¯");
+                    //    eventFire(&shData->promptEvent);  // wake the loop
+                    //}
+                    if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) ||
+                        (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
+                    
+                        // List of fun random phrases
+                        static const std::vector<std::string> messages = {
+                            "Loading fun...",
+                            "Oops! Something broke.",
+                            "Wow, such overlay!",
+                            "Beep boop beep.",
+                            "Hello, world! ¯\\_(ツ)_/¯",
+                            "Chasing pixels...",
+                            "Randomness engaged!",
+                            "Are you having fun yet?",
+                            "Hold onto your spanners!",
+                            "Magic is real!",
+                            "Press all the buttons!",
+                            "Time flies like an arrow...",
+                            "Ultrahand activated!",
+                            "Testing, 1, 2, 3...",
+                            "I like turtles."
+                        };
+                    
+                        // Generate a random index
+                        static std::mt19937 rng(std::random_device{}());
+                        std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
+                        const std::string& chosenMessage = messages[dist(rng)];
+                    
+                        gPrompt.show(chosenMessage);
+                    }
         
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
@@ -11662,6 +12129,7 @@ namespace tsl {
                         }
                         else {
                             eventFire(&shData->comboEvent);
+                            mainComboHasTriggered.store(true, std::memory_order_release);
                         }
                     }
                 #if IS_LAUNCHER_DIRECTIVE
@@ -11670,6 +12138,7 @@ namespace tsl {
                         ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
                         ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR , ult::TESLA_COMBO_STR);
                         eventFire(&shData->comboEvent);
+                        mainComboHasTriggered.store(true, std::memory_order_release);
                         ult::updateMenuCombos = false;
                     }
                     else if (ult::overlayLaunchRequested.load(std::memory_order_acquire) && !ult::runningInterpreter.load(std::memory_order_acquire) && ult::settingsInitialized.load(std::memory_order_acquire) && (nowNs - startNs) >= FAST_SWAP_THRESHOLD_NS) {
@@ -11707,6 +12176,7 @@ namespace tsl {
                             tsl::setNextOverlay(requestedPath, requestedArgs);
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
+                            launchComboHasTriggered.store(true, std::memory_order_release);
                             break;
                         }
                     }
@@ -11763,6 +12233,7 @@ namespace tsl {
                                     );
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
+                                    launchComboHasTriggered.store(true, std::memory_order_release);
                                     break;
                                 }
                                 
@@ -11817,6 +12288,7 @@ namespace tsl {
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 tsl::Overlay::get()->close();
                                 eventFire(&shData->comboEvent);
+                                launchComboHasTriggered.store(true, std::memory_order_release);
                                 break;
                             }
                         }
@@ -11989,6 +12461,12 @@ namespace tsl {
                     while (src < end && *src == ' ') src++; // Skip spaces
                     while (src < end && *src != ' ' && *src != '\0') src++; // Skip title ID
                 }
+                //else if (strncmp(src, "--promptDuration", 16) == 0) {
+                //    // skip any existing --promptDuration (we’ll re-add it)
+                //    src += 16;
+                //    while (src < end && *src == ' ') src++;
+                //    while (src < end && *src != ' ' && *src != '\0') src++;
+                //}
                 else {
                     // Copy unknown flag
                     while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
@@ -12022,6 +12500,18 @@ namespace tsl {
             const char* titleId = ult::lastTitleID.c_str();
             while (*titleId && p < bufferEnd) *p++ = *titleId++;
         }
+
+        // Add prompt duration
+        //{
+        //    const s64 duration = gPrompt.remainingTime(); // nanoseconds left
+        //    if (duration > 0) {
+        //        const std::string promptArg = " --promptDuration " + std::to_string(duration);
+        //        if ((p + promptArg.size()) < bufferEnd) {
+        //            memcpy(p, promptArg.c_str(), promptArg.size());
+        //            p += promptArg.size();
+        //        }
+        //    }
+        //}
         
         // Safety check - if we're at the end, we might have truncated
         if (p >= bufferEnd) {
@@ -12030,6 +12520,7 @@ namespace tsl {
         
         *p = '\0';
         
+        isLaunchingNextOverlay.store(true, std::memory_order_release);
         envSetNextLoad(ovlPath.c_str(), buffer);
     }
     
@@ -12171,12 +12662,20 @@ namespace tsl {
 
         bool skipCombo = false;
         
+        //u64 promptDuration = 0;
         for (u8 arg = 0; arg < argc; arg++) {
             const char* s = argv[arg];
             
             if (s[0] != '-' || s[1] != '-') continue;
             
             const char* opt = s + 2;
+
+            //if (strcmp(opt, "promptDuration") == 0) {
+            //    if (++arg < argc) {
+            //        promptDuration = strtoull(argv[arg], nullptr, 10); // ns value
+            //    }
+            //    continue;
+            //}
             
             // Check each option directly - memcmp handles both length and content
             for (u8 i = 0; i < 4; i++) {
@@ -12230,6 +12729,7 @@ namespace tsl {
         threadStart(&backgroundThread);
         
         eventCreate(&shData.comboEvent, false);
+        eventCreate(&shData.promptEvent, false);
         
         auto& overlay = tsl::Overlay::s_overlayInstance;
         overlay = new TOverlay();
@@ -12296,11 +12796,63 @@ namespace tsl {
 
         overlay->disableNextAnimation();
 
+        //if (promptDuration > 1) {
+        //    gPrompt.show("Hello world!", promptDuration-1);
+        //}
 
+
+        Handle handles[2] = { shData.comboEvent.revent, shData.promptEvent.revent };
+        s32 index = -1;
+
+        bool exitAfterPrompt = false;
+        bool comboBreakout = false;
         while (shData.running) {
-            eventWait(&shData.comboEvent, UINT64_MAX);
+
+            if (!gPrompt.isActive()){
+                //overlay->clearScreen();
+                Result rc = svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
+                if (R_FAILED(rc)) continue;
+            }
+
+            if ((index == 1 || gPrompt.isActive())) {
+                comboBreakout = false;
+                eventClear(&shData.promptEvent);
+                eventClear(&shData.comboEvent);
+
+                //overlay->clearScreen();
+                
+                while (gPrompt.isActive()) {
+                    overlay->loop(true);   // draw prompts while hidden
+
+                    // Check if combo occurs while prompt is active
+                    if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
+                        mainComboHasTriggered.store(false, std::memory_order_acquire);
+                        comboBreakout = true;
+                        break;
+                    }
+
+                    // Also check for other configured launch combos (if enabled)
+                    if (launchComboHasTriggered.load(std::memory_order_acquire)) {
+                        launchComboHasTriggered.store(false, std::memory_order_acquire);
+                        exitAfterPrompt = true;
+                        break;
+                    }
+                }
+                if (!comboBreakout) {
+                    overlay->clearScreen();
+                    if (exitAfterPrompt) {
+                        exitAfterPrompt = false;
+                        shData.running = false;
+                    }
+
+                    continue;
+                }
+            }
+            
+            eventClear(&shData.promptEvent);
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
+
             
 #if IS_STATUS_MONITOR_DIRECTIVE
             if (!isMiniOrMicroMode)
@@ -12310,7 +12862,8 @@ namespace tsl {
 #endif
             
             overlay->show();
-            overlay->clearScreen();
+            if (!comboBreakout && !gPrompt.isActive())
+                overlay->clearScreen();
             
             while (shData.running) {
                 overlay->loop();
@@ -12327,19 +12880,71 @@ namespace tsl {
                 }
                 
                 if (overlay->shouldClose()) {
-
                     shData.running = false;
                 }
             }
             
-            overlay->clearScreen();
+            //comboBreakout = false;
+
+            //bool launchComboBreakout = false;
+            //while (gPrompt.isActive() && shData.running) {
+            //    overlay->loop(true);   // draw prompts while hidden
+            //    shData.keysDownPending = 0;
+            //    // Check if combo occurs while prompt is active
+            //    if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
+            //        mainComboHasTriggered.store(false, std::memory_order_acquire);
+            //        comboBreakout = true;
+            //        shData.running = true;
+            //        break;
+            //    }
+            //    
+            //    // Check if combo occurs while prompt is active
+            //    if (launchComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
+            //        launchComboHasTriggered.store(false, std::memory_order_acquire);
+            //        shData.running = false;
+            //        launchComboBreakout = true;
+            //        break;
+            //    }
+            //}
+
+            if (gPrompt.isActive()){
+                if (!shData.running && !launchComboHasTriggered.load(std::memory_order_acquire)) {
+                    shData.running = true;
+                    exitAfterPrompt = true;
+                }
+            }
+
+            //if (comboBreakout)
+            //    continue;
+
+            if (!gPrompt.isActive())
+                overlay->clearScreen();
+
             overlay->resetFlags();
             
             hlp::requestForeground(false);
             
             shData.overlayOpen = false;
 
+            mainComboHasTriggered.store(false, std::memory_order_acquire);
+            launchComboHasTriggered.store(false, std::memory_order_acquire);
             eventClear(&shData.comboEvent);
+            eventClear(&shData.promptEvent);
+
+            //eventClear(&shData.promptEvent); // only after loop
+            //eventClear(&shData.comboEvent);
+
+            //overlay->clearScreen();
+            //// Draw prompts while hidden - use timeout to check for combo event
+            //while (!shData.overlayOpen && shData.running) {
+            //    overlay->promptLoop();   // draw prompts while hidden
+            //    
+            //    // Wait for combo event with short timeout (non-blocking)
+            //    if (eventWait(&shData.comboEvent, 16666667ULL)) { // ~16.67ms timeout
+            //        //eventClear(&shData.comboEvent);
+            //        break; // Break out to show overlay again
+            //    }
+            //}
         }
         
         eventClose(&shData.comboEvent);

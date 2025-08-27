@@ -82,6 +82,7 @@ namespace ult {
         // Create field map once outside the loop
         const std::map<std::string_view, std::string*> fieldMap = {
             {";title=", &packageHeader.title},
+            {";display_title=", &packageHeader.display_title},
             {";version=", &packageHeader.version},
             {";creator=", &packageHeader.creator},
             {";about=", &packageHeader.about},
