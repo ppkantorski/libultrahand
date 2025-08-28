@@ -10072,6 +10072,14 @@ namespace tsl {
         void startNextNotification() {
             if (queueCount == 0) return;
     
+            #if IS_STATUS_MONITOR_DIRECTIVE
+            if (isRendering) {
+                lastRenderingState = true;
+                isRendering = false;
+                leventSignal(&renderingStopEvent);
+            }
+            #endif
+
             const NotificationData& next = queue[queueHead];
     
             // copy into active buffer and ensure null termination
@@ -10119,8 +10127,27 @@ namespace tsl {
                 // Advance state machine first (same logic as update)
                 advanceStateMachineLocked();
         
+                //if (state == PromptState::Inactive || activeText[0] == '\0') {
+                //    return;
+                //}
+
                 if (state == PromptState::Inactive || activeText[0] == '\0') {
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (lastRenderingState) {
+                        lastRenderingState = false;
+                        isRendering = true;
+                        leventClear(&renderingStopEvent);
+                    }
+                    #endif
                     return;
+                } else {
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (isRendering) {
+                        lastRenderingState = true;
+                        isRendering = false;
+                        leventSignal(&renderingStopEvent);
+                    }
+                    #endif
                 }
         
                 // Copy everything we need for rendering
@@ -10203,9 +10230,24 @@ namespace tsl {
             }
         }
     
-        bool isActive() const {
-            std::lock_guard<std::mutex> lk(mtx);
+        bool isActive() {
+            if (!ult::useNotifications)
+                return false;
+            #if IS_STATUS_MONITOR_DIRECTIVE
+            const bool activeState = state != PromptState::Inactive;
+    
+            
+            if (!activeState && lastRenderingState) {
+                lastRenderingState = false;
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+            }
+            
+    
+            return activeState;
+            #else
             return state != PromptState::Inactive;
+            #endif
         }
     
         void clearQueue() {
@@ -11969,30 +12011,21 @@ namespace tsl {
             static constexpr u64 TOUCH_THRESHOLD_NS = 150'000'000ULL; // 150ms in nanoseconds
             static constexpr u64 FAST_SWAP_THRESHOLD_NS = 150'000'000ULL;
         
+            // Global underscan monitoring - run at most once every 300ms
+            static auto lastUnderscanPixels = std::make_pair(0, 0);
+            static bool firstUnderscanCheck = true;
+            static u64 lastUnderscanCheckNs = 0;  // store last execution in nanoseconds
+            static constexpr u64 UNDERSCAN_INTERVAL_NS = 300'000'000ULL; // 300ms in ns
+
             s32 idx;
             Result rc;
-        
-        //#if IS_LAUNCHER_DIRECTIVE
             
-            //bool isMainComboMatch;
-            //std::string overlayPath;
-            //std::string overlayFileName;
-            //std::string overlayLaunchArgs;
-        //#endif
             std::string currentTitleID;
-            //u64 resetElapsedNs;
-            //u64 nowTick;
-            //u64 elapsedNs;
         
             u64 lastPollTick = 0;
             u64 resetStartTick = armGetSystemTick();
             const u64 startNs = armTicksToNs(resetStartTick);
-            //static bool runOnce = true;
-        
-            //if (runOnce) {
-            //    ult::lastTitleID = ult::getTitleIdAsString();
-            //    runOnce = false;
-            //}
+
             ult::lastTitleID = ult::getTitleIdAsString();
         
             //u64 elapsedTime_ns;
@@ -12001,41 +12034,37 @@ namespace tsl {
             
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
-                const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
+                
         
                 // Poll Title ID every 1 seconds
-                if (!ult::resetForegroundCheck.load(std::memory_order_acquire) && elapsedNs >= 1'000'000'000ULL) {
-                    lastPollTick = nowTick;
-                
-                    currentTitleID = ult::getTitleIdAsString();
-                    if (currentTitleID != ult::lastTitleID) {
-                        ult::lastTitleID = currentTitleID;
-                        ult::resetForegroundCheck.store(true, std::memory_order_release);
-                        resetStartTick = nowTick;
+                if (!ult::resetForegroundCheck.load(std::memory_order_acquire)) {
+                    const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
+                    if (elapsedNs >= 1'000'000'000ULL) {
+                        lastPollTick = nowTick;
+                        
+                        currentTitleID = ult::getTitleIdAsString();
+                        if (currentTitleID != ult::lastTitleID) {
+                            ult::lastTitleID = currentTitleID;
+                            ult::resetForegroundCheck.store(true, std::memory_order_release);
+                            resetStartTick = nowTick;
+                        }
                     }
                 }
-
-                // Global underscan monitoring - ADD THIS COMPLETE SECTION
-                static auto lastUnderscanPixels = std::make_pair(0, 0);
-                static bool firstUnderscanCheck = true;
                 
-                const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
+                if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
+                    const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
                 
-                if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
-                    // Update layer dimensions without destroying state
-                    tsl::gfx::Renderer::get().updateLayerSize();
-                    
-                    lastUnderscanPixels = currentUnderscanPixels;
-                    firstUnderscanCheck = false;
+                    if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
+                        // Update layer dimensions without destroying state
+                        tsl::gfx::Renderer::get().updateLayerSize();
+                
+                        lastUnderscanPixels = currentUnderscanPixels;
+                        firstUnderscanCheck = false;
+                    }
+                
+                    lastUnderscanCheckNs = nowNs;
                 }
-        
-                //currentTitleID = ult::getTitleIdAsString();
-                //if (currentTitleID != ult::lastTitleID) {
-                //    ult::lastTitleID = currentTitleID;
-                //    ult::resetForegroundCheck.store(true, std::memory_order_release);
-                //    resetStartTick = nowTick;
-                //}
-            
+
                 // If a reset is scheduled, trigger after 3.5s delay
                 if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
                     const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
@@ -12051,132 +12080,17 @@ namespace tsl {
                     fireNotificationEvent.store(false, std::memory_order_release);
                     eventFire(&shData->notificationEvent);  // wake the loop
                 }
-        
-        
-                // Scan for input changes from both controllers
-                padUpdate(&pad_p1);
-                padUpdate(&pad_handheld);
-                
-                // Read in HID values
-                {
-                    std::scoped_lock lock(shData->dataMutex);
-                    
-                    // Combine inputs from both controllers
-                    const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
-                    const u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
-                    const u64 kHeld_p1 = padGetButtons(&pad_p1);
-                    const u64 kHeld_handheld = padGetButtons(&pad_handheld);
-                    
-                    shData->keysDown = kDown_p1 | kDown_handheld;
-                    shData->keysHeld = kHeld_p1 | kHeld_handheld;
-                    
-                    // For joysticks, prioritize handheld if available, otherwise use P1
-                    const HidAnalogStickState leftStick_handheld = padGetStickPos(&pad_handheld, 0);
-                    const HidAnalogStickState rightStick_handheld = padGetStickPos(&pad_handheld, 1);
-                    
-                    // Check if handheld has any stick input (not at center position)
-                    const bool handheldHasInput = (leftStick_handheld.x != 0 || leftStick_handheld.y != 0 || 
-                                                  rightStick_handheld.x != 0 || rightStick_handheld.y != 0);
-                    
-                    if (handheldHasInput) {
-                        shData->joyStickPosLeft = leftStick_handheld;
-                        shData->joyStickPosRight = rightStick_handheld;
-                    } else {
-                        shData->joyStickPosLeft = padGetStickPos(&pad_p1, 0);
-                        shData->joyStickPosRight = padGetStickPos(&pad_p1, 1);
-                    }
-                    
-                    
-                    // Read in touch positions
-                    if (hidGetTouchScreenStates(&shData->touchState, 1) > 0) { // Check if any touch event is present
-                        if (!shData->overlayOpen) {
-                            //ult::internalTouchReleased = false;
-                            ult::internalTouchReleased.store(false, std::memory_order_release);
-                        }
-        
-                        const HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
-                        
-                        
-                        const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
-                        
-                        // Check if the touch is within bounds for left-to-right swipe within the time window
-                        if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
-                            if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
-                                if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
-                                    eventFire(&shData->comboEvent);
-                                    mainComboHasTriggered.store(true, std::memory_order_release);
-                                }
-                                // Check if the touch is within bounds for right-to-left swipe within the time window
-                                else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
-                                    eventFire(&shData->comboEvent);
-                                    mainComboHasTriggered.store(true, std::memory_order_release);
-                                }
-                            }
-                        }
-                    
-                        // Handle touch release state
-                        if (currentTouch.x == 0 && currentTouch.y == 0) {
-                            ult::internalTouchReleased.store(true, std::memory_order_release);
-                            //ult::internalTouchReleased = true;  // Indicate that the touch has been released
-                            //ult::internalTouchReleased.store(true, std::memory_order_release);
-                            lastTouchX = 0;
-                            lastTouchY = 0;
-                        }
-        
-                        // If this is the first touch of a gesture, store lastTouchX
-                        else if ((lastTouchX == 0 && lastTouchY == 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
-                            currentTouchTick = nowTick;
-                            lastTouchX = currentTouch.x;
-                            lastTouchY = currentTouch.y;
-                        }
-        
-                    } else {
-                        // Reset touch state if no touch is present
-                        shData->touchState = { 0 };
-                        //ult::internalTouchReleased = true;
-                        ult::internalTouchReleased.store(true, std::memory_order_release);
-                        //ult::internalTouchReleased.store(true, std::memory_order_release);
-                    
-                        // Reset touch history to invalid state
-                        lastTouchX = 0;
-                        lastTouchY = 0;
-                    
-                        // Reset time tracking
-                        //currentTouchTick = nowTick;
-                    }
 
-                    #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (triggerExitNow) {
+                // Process notification files every 100ms
+                {
+                    static u64 lastNotifCheck = 0;
+                    //const u64 currentTick = armGetSystemTick();
+                    
+                    if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL && !notification.isActive()) {
+                        lastNotifCheck = nowTick;
                         
-                        ult::setIniFileValue(
-                            ult::ULTRAHAND_CONFIG_INI_PATH,
-                            ult::ULTRAHAND_PROJECT_NAME,
-                            ult::IN_OVERLAY_STR,
-                            ult::FALSE_STR
-                        );
-                        tsl::setNextOverlay(
-                            ult::OVERLAY_PATH + "ovlmenu.ovl"
-                        );
-                        tsl::Overlay::get()->close();
-                        triggerExitNow = false;
-                        break;
-                    }
-                    #endif
-                    //if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) || (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
-                    //    notification.show("Hello world! ¯\\_(ツ)_/¯");
-                    //    eventFire(&shData->notificationEvent);  // wake the loop
-                    //}
-                                        
-                    // Process notification files every 100ms
-                    {
-                        static u64 lastNotifCheck = 0;
-                        //const u64 currentTick = armGetSystemTick();
-                        
-                        if (armTicksToNs(nowTick - lastNotifCheck) >= 200'000'000ULL && !notification.isActive()) {
-                            lastNotifCheck = nowTick;
-                            
-                            DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
-                            if (!dir) return; // Early exit if can't open directory
+                        DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
+                        if (dir) {
                             
                             if (ult::useNotifications) {
                                 // Pre-allocate strings and variables outside loop
@@ -12301,6 +12215,123 @@ namespace tsl {
                             }
                         }
                     }
+                }
+        
+        
+                // Scan for input changes from both controllers
+                padUpdate(&pad_p1);
+                padUpdate(&pad_handheld);
+                
+                // Read in HID values
+                {
+                    std::scoped_lock lock(shData->dataMutex);
+                    
+                    // Combine inputs from both controllers
+                    const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
+                    const u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
+                    const u64 kHeld_p1 = padGetButtons(&pad_p1);
+                    const u64 kHeld_handheld = padGetButtons(&pad_handheld);
+                    
+                    shData->keysDown = kDown_p1 | kDown_handheld;
+                    shData->keysHeld = kHeld_p1 | kHeld_handheld;
+                    
+                    // For joysticks, prioritize handheld if available, otherwise use P1
+                    const HidAnalogStickState leftStick_handheld = padGetStickPos(&pad_handheld, 0);
+                    const HidAnalogStickState rightStick_handheld = padGetStickPos(&pad_handheld, 1);
+                    
+                    // Check if handheld has any stick input (not at center position)
+                    const bool handheldHasInput = (leftStick_handheld.x != 0 || leftStick_handheld.y != 0 || 
+                                                  rightStick_handheld.x != 0 || rightStick_handheld.y != 0);
+                    
+                    if (handheldHasInput) {
+                        shData->joyStickPosLeft = leftStick_handheld;
+                        shData->joyStickPosRight = rightStick_handheld;
+                    } else {
+                        shData->joyStickPosLeft = padGetStickPos(&pad_p1, 0);
+                        shData->joyStickPosRight = padGetStickPos(&pad_p1, 1);
+                    }
+                    
+                    
+                    // Read in touch positions
+                    if (hidGetTouchScreenStates(&shData->touchState, 1) > 0) { // Check if any touch event is present
+                        if (!shData->overlayOpen) {
+                            //ult::internalTouchReleased = false;
+                            ult::internalTouchReleased.store(false, std::memory_order_release);
+                        }
+        
+                        const HidTouchState& currentTouch = shData->touchState.touches[0];  // Correct type is HidTouchPoint
+                        
+                        
+                        const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
+                        
+                        // Check if the touch is within bounds for left-to-right swipe within the time window
+                        if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
+                            if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
+                                if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
+                                    eventFire(&shData->comboEvent);
+                                    mainComboHasTriggered.store(true, std::memory_order_release);
+                                }
+                                // Check if the touch is within bounds for right-to-left swipe within the time window
+                                else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
+                                    eventFire(&shData->comboEvent);
+                                    mainComboHasTriggered.store(true, std::memory_order_release);
+                                }
+                            }
+                        }
+                    
+                        // Handle touch release state
+                        if (currentTouch.x == 0 && currentTouch.y == 0) {
+                            ult::internalTouchReleased.store(true, std::memory_order_release);
+                            //ult::internalTouchReleased = true;  // Indicate that the touch has been released
+                            //ult::internalTouchReleased.store(true, std::memory_order_release);
+                            lastTouchX = 0;
+                            lastTouchY = 0;
+                        }
+        
+                        // If this is the first touch of a gesture, store lastTouchX
+                        else if ((lastTouchX == 0 && lastTouchY == 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
+                            currentTouchTick = nowTick;
+                            lastTouchX = currentTouch.x;
+                            lastTouchY = currentTouch.y;
+                        }
+        
+                    } else {
+                        // Reset touch state if no touch is present
+                        shData->touchState = { 0 };
+                        //ult::internalTouchReleased = true;
+                        ult::internalTouchReleased.store(true, std::memory_order_release);
+                        //ult::internalTouchReleased.store(true, std::memory_order_release);
+                    
+                        // Reset touch history to invalid state
+                        lastTouchX = 0;
+                        lastTouchY = 0;
+                    
+                        // Reset time tracking
+                        //currentTouchTick = nowTick;
+                    }
+
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (triggerExitNow) {
+                        
+                        ult::setIniFileValue(
+                            ult::ULTRAHAND_CONFIG_INI_PATH,
+                            ult::ULTRAHAND_PROJECT_NAME,
+                            ult::IN_OVERLAY_STR,
+                            ult::FALSE_STR
+                        );
+                        tsl::setNextOverlay(
+                            ult::OVERLAY_PATH + "ovlmenu.ovl"
+                        );
+                        tsl::Overlay::get()->close();
+                        triggerExitNow = false;
+                        break;
+                    }
+                    #endif
+                    //if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) || (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
+                    //    notification.show("Hello world! ¯\\_(ツ)_/¯");
+                    //    eventFire(&shData->notificationEvent);  // wake the loop
+                    //}
+                    
                     
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
@@ -13019,7 +13050,7 @@ namespace tsl {
 
             // wake any threads waiting on these events so they can exit promptly
             eventFire(&shData.notificationEvent);
-            eventFire(&shData.comboEvent);
+            //eventFire(&shData.comboEvent);
 
             // optionally set the next overlay (keep existing behavior)
             if (setNextOverlayFlag) {
