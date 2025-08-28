@@ -545,7 +545,7 @@ namespace tsl {
         
         // Set Ultrahand Globals using loaded section (defaults match initialization function)
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
-        ult::useNotifications = getBoolValue("launch_combos", true);       // TRUE_STR default
+        ult::useNotifications = getBoolValue("notifications", true);       // TRUE_STR default
         if (ult::useNotifications && !ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
             FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
             if (file) {
@@ -9963,7 +9963,8 @@ namespace tsl {
         
     }
     
-    bool fireNotificationEvent = false;
+    //bool fireNotificationEvent = false;
+    std::atomic<bool> fireNotificationEvent{false};
     
     enum class PromptState {
         Inactive,
@@ -9984,6 +9985,7 @@ namespace tsl {
     };
     
     struct NotificationPrompt {
+        std::mutex mtx;
         std::string text;
         size_t fontSize;
         u64 expireNs = 0;   // expiration time for "visible" state
@@ -10007,6 +10009,8 @@ namespace tsl {
         void show(const std::string& msg, const size_t _fontSize = 28, const s32 _promptWidth = 448, const s32 _promptHeight = 82+6, u32 durationMs = 2500) {
             if (!ult::useNotifications)
                 return;
+
+            std::lock_guard<std::mutex> lk(mtx);
     
             // Add to queue instead of immediately displaying
             notificationQueue.emplace(msg, _fontSize, _promptWidth, _promptHeight, durationMs);
@@ -10019,16 +10023,13 @@ namespace tsl {
     
     private:
         void processNextNotification() {
-            if (notificationQueue.empty()) {
-                return;
-            }
-    
-            // Get next notification from queue
-            const NotificationData& nextNotif = notificationQueue.front();
+            if (notificationQueue.empty()) return;
+            NotificationData nextNotif = std::move(notificationQueue.front());
+            notificationQueue.pop();
             
             #if IS_STATUS_MONITOR_DIRECTIVE
-            lastRenderingState = isRendering;
-            if (lastRenderingState) {
+            if (isRendering) {
+                lastRenderingState = true;
                 isRendering = false;
                 leventSignal(&renderingStopEvent);
             }
@@ -10044,14 +10045,17 @@ namespace tsl {
             state = PromptState::SlidingIn;
             stateStartNs = armTicksToNs(armGetSystemTick());
             expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + (static_cast<u64>(nextNotif.durationMs) * 1'000'000ULL);
-            fireNotificationEvent = true;
+            //fireNotificationEvent = true;
+            fireNotificationEvent.store(true, std::memory_order_release);
     
             // Remove processed notification from queue
-            notificationQueue.pop();
+            //notificationQueue.pop();
         }
     
     public:
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
+            std::lock_guard<std::mutex> lk(mtx);
+
             if (state == PromptState::Inactive || text.empty()) {
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (lastRenderingState) {
@@ -10061,6 +10065,14 @@ namespace tsl {
                 }
                 #endif
                 return;
+            } else {
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                if (isRendering) {
+                    lastRenderingState = true;
+                    isRendering = false;
+                    leventSignal(&renderingStopEvent);
+                }
+                #endif
             }
         
             const u64 nowNs = armTicksToNs(armGetSystemTick());
@@ -10500,9 +10512,17 @@ namespace tsl {
          * @brief Hides the Gui
          *
          */
-        void hide() {
+        void hide(bool useNoFade = false) {
+            if (useNoFade) {
+                // Immediately hide overlay
+                ult::isHidden.store(true);
+                this->m_shouldHide = true;
+                return;
+            }
+
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
+                
                 if (this->m_disableNextAnimation) {
                     this->m_animationCounter = 0;
                     this->m_disableNextAnimation = false;
@@ -10515,6 +10535,7 @@ namespace tsl {
                 this->onHide();
             }
         #else
+
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = 0;
                 this->m_disableNextAnimation = false;
@@ -10542,9 +10563,25 @@ namespace tsl {
          * @note This makes the Tesla overlay exit and return back to the Tesla-Menu
          *
          */
-        void close() {
+        void close(bool forceClose = false) {
+            if (!forceClose && tsl::notification.isActive()) {
+                this->closeAfter();
+                this->hide(true);
+                return;
+            }
+
             tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
             this->m_shouldClose = true;
+
+        }
+
+        /**
+         * @brief Closes the Gui
+         * @note This makes the Tesla overlay exit and return back to the Tesla-Menu
+         *
+         */
+        void closeAfter() {
+            this->m_shouldCloseAfter = true;
 
         }
         
@@ -10581,6 +10618,7 @@ namespace tsl {
 
         bool m_shouldHide = false;
         bool m_shouldClose = false;
+        bool m_shouldCloseAfter = false;
         
         bool m_disableNextAnimation = false;
         
@@ -10621,6 +10659,15 @@ namespace tsl {
          */
         bool shouldClose() {
             return this->m_shouldClose;
+        }
+        
+        /**
+         * @brief Weather or not hte Gui should get closed after
+         *
+         * @return should close after
+         */
+        bool shouldCloseAfter() {
+            return this->m_shouldCloseAfter;
         }
         
 
@@ -11491,6 +11538,7 @@ namespace tsl {
         void resetFlags() {
             this->m_shouldHide = false;
             this->m_shouldClose = false;
+            this->m_shouldCloseAfter = false;
         }
         
         /**
@@ -11613,13 +11661,21 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
-            isNavigatingBackwards.store(true, std::memory_order_release);
             
+            if (this->m_guiStack.size() == 1 && notification.isActive()) {
+                //this->hide();
+                this->close();
+                return;
+            }
+
+
+            isNavigatingBackwards.store(true, std::memory_order_release);
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
             
             // Special case: if we don't close on exit and popping everything would leave us with 0 or 1 GUI
             if (!this->m_closeOnExit && this->m_guiStack.size() <= actualCount) {
+                
                 this->hide();
                 return;
             }
@@ -11646,7 +11702,7 @@ namespace tsl {
             
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
-            
+
             if (actualCount > 1) {
                 tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
                 // Pop the specified number of GUIs
@@ -11983,8 +12039,8 @@ namespace tsl {
                     }
                 }
 
-                if (fireNotificationEvent) {
-                    fireNotificationEvent = false;
+                if (fireNotificationEvent.load(std::memory_order_acquire)) {
+                    fireNotificationEvent.store(false, std::memory_order_release);
                     eventFire(&shData->notificationEvent);  // wake the loop
                 }
         
@@ -12303,7 +12359,7 @@ namespace tsl {
                             // Launch the overlay using the same mechanism as key combos
                             //shData->overlayOpen = false;
                             ult::launchingOverlay.store(true, std::memory_order_release);
-                            tsl::setNextOverlay(requestedPath, requestedArgs);
+                            tsl::setNextOverlay(requestedPath, requestedArgs+" --direct");
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
                             launchComboHasTriggered.store(true, std::memory_order_release);
@@ -12357,10 +12413,7 @@ namespace tsl {
                                 
                                     //shData->overlayOpen = false;
                                     ult::launchingOverlay.store(true, std::memory_order_release);
-                                    tsl::setNextOverlay(
-                                        ult::OVERLAY_PATH + "ovlmenu.ovl",
-                                        "--direct"
-                                    );
+                                    tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct");
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
                                     launchComboHasTriggered.store(true, std::memory_order_release);
@@ -12666,7 +12719,8 @@ namespace tsl {
         {"direct", 6, 1},
         {"skipCombo", 9, 2},
         {"lastTitleID", 11, 3}, 
-        {"foregroundFix", 13, 4}
+        {"foregroundFix", 13, 4},
+        {"package", 7, 5}
     };
 
 
@@ -12791,6 +12845,13 @@ namespace tsl {
         }
 
         bool skipCombo = false;
+
+        #if IS_LAUNCHER_DIRECTIVE
+        bool directMode = true;
+        #else
+        bool directMode = false;
+        #endif
+        bool usingPackageLauncher = false;
         
         //u64 promptDuration = 0;
         for (u8 arg = 0; arg < argc; arg++) {
@@ -12816,17 +12877,18 @@ namespace tsl {
                         case 1: // direct
                             {
                                 //std::lock_guard<std::mutex> lock(jumpItemMutex);
+                                directMode = true;
                                 g_overlayFilename = "";
                                 jumpItemName = "";
                                 jumpItemValue = "";
                                 jumpItemExactMatch.store(true, std::memory_order_release);
                             }
-                            break;
+                            //break;
                             
                         case 2: // skipCombo  
                             skipCombo = true;
                             ult::firstBoot = false;
-                            break;
+                            //break;
                             
                         case 3: // lastTitleID
                             if (++arg < argc) {
@@ -12835,7 +12897,7 @@ namespace tsl {
                                     ult::resetForegroundCheck.store(true, std::memory_order_release);
                                 }
                             }
-                            break;
+                            //break;
                             
                             
                         case 4: // foregroundFix
@@ -12843,9 +12905,12 @@ namespace tsl {
                                 ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) || 
                                                            (argv[arg][0] == '1'), std::memory_order_release);
                             }
-                            break;
+                            //break;
+                        case 5: // foregroundFix
+                            usingPackageLauncher = true;
+                            //break;
                     }
-                    break; // Exit loop once found
+                    //break; // Exit loop once found
                 }
             }
         }
@@ -12926,38 +12991,42 @@ namespace tsl {
 
         overlay->disableNextAnimation();
 
-        //if (promptDuration > 1) {
-        //    notification.show("Hello world!", promptDuration-1);
-        //}
-
-
         Handle handles[2] = { shData.comboEvent.revent, shData.notificationEvent.revent };
         s32 index = -1;
 
         bool exitAfterPrompt = false;
         bool comboBreakout = false;
+        bool firstLoop = true;
+        if (ult::firstBoot)
+            firstLoop = false;
         while (shData.running) {
 
             if (!notification.isActive()){
+
                 //overlay->clearScreen();
                 Result rc = svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
                 if (R_FAILED(rc)) continue;
             }
 
-            if ((index == 1 || notification.isActive())) {
+            if (index == 1 || (notification.isActive() && !firstLoop)) {
+                
                 comboBreakout = false;
                 eventClear(&shData.notificationEvent);
                 eventClear(&shData.comboEvent);
 
                 //overlay->clearScreen();
 
-                while (notification.isActive()) {
+                while (shData.running) {
+                    if (!notification.isActive())
+                        break;
+
                     overlay->loop(true);   // draw prompts while hidden
 
                     // Check if combo occurs while prompt is active
                     if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
                         mainComboHasTriggered.store(false, std::memory_order_acquire);
                         comboBreakout = true;
+                        exitAfterPrompt = false;
                         break;
                     }
 
@@ -12973,12 +13042,26 @@ namespace tsl {
                     if (exitAfterPrompt) {
                         exitAfterPrompt = false;
                         shData.running = false;
+                        overlay->resetFlags();
+                        
+                        hlp::requestForeground(false);
+                        
+                        shData.overlayOpen = false;
+                        
+                        mainComboHasTriggered.store(false, std::memory_order_acquire);
+                        launchComboHasTriggered.store(false, std::memory_order_acquire);
+                        eventClear(&shData.notificationEvent);
+                        eventClear(&shData.comboEvent);
+                        if (usingPackageLauncher || directMode) {
+                            tsl::setNextOverlay(ult::OVERLAY_PATH+"ovlmenu.ovl");
+                        }
                     }
 
                     continue;
                 }
             }
             
+            firstLoop = false;
             eventClear(&shData.notificationEvent);
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
@@ -13006,46 +13089,25 @@ namespace tsl {
                 }
                 
                 if (overlay->shouldHide()) {
+                    if (overlay->shouldCloseAfter()) {
+                        if (!directMode) shData.running = false;
+                        else exitAfterPrompt = true;
+                    }
                     break;
                 }
                 
                 if (overlay->shouldClose()) {
                     shData.running = false;
+                    break;
                 }
             }
             
-            //comboBreakout = false;
-
-            //bool launchComboBreakout = false;
-            //while (notification.isActive() && shData.running) {
-            //    overlay->loop(true);   // draw prompts while hidden
-            //    shData.keysDownPending = 0;
-            //    // Check if combo occurs while prompt is active
-            //    if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
-            //        mainComboHasTriggered.store(false, std::memory_order_acquire);
-            //        comboBreakout = true;
-            //        shData.running = true;
-            //        break;
-            //    }
-            //    
-            //    // Check if combo occurs while prompt is active
-            //    if (launchComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
-            //        launchComboHasTriggered.store(false, std::memory_order_acquire);
-            //        shData.running = false;
-            //        launchComboBreakout = true;
-            //        break;
-            //    }
-            //}
 
             if (notification.isActive()){
-                if (!shData.running && !launchComboHasTriggered.load(std::memory_order_acquire)) {
-                    shData.running = true;
-                    exitAfterPrompt = true;
+                if (launchComboHasTriggered.load(std::memory_order_acquire)) {
+                    shData.running = false;
                 }
             }
-
-            //if (comboBreakout)
-            //    continue;
 
             if (!notification.isActive())
                 overlay->clearScreen();
@@ -13058,25 +13120,11 @@ namespace tsl {
 
             mainComboHasTriggered.store(false, std::memory_order_acquire);
             launchComboHasTriggered.store(false, std::memory_order_acquire);
-            eventClear(&shData.comboEvent);
             eventClear(&shData.notificationEvent);
-
-            //eventClear(&shData.notificationEvent); // only after loop
-            //eventClear(&shData.comboEvent);
-
-            //overlay->clearScreen();
-            //// Draw prompts while hidden - use timeout to check for combo event
-            //while (!shData.overlayOpen && shData.running) {
-            //    overlay->promptLoop();   // draw prompts while hidden
-            //    
-            //    // Wait for combo event with short timeout (non-blocking)
-            //    if (eventWait(&shData.comboEvent, 16666667ULL)) { // ~16.67ms timeout
-            //        //eventClear(&shData.comboEvent);
-            //        break; // Break out to show overlay again
-            //    }
-            //}
+            eventClear(&shData.comboEvent);
         }
         
+        eventClose(&shData.notificationEvent);
         eventClose(&shData.comboEvent);
         
         threadWaitForExit(&backgroundThread);
