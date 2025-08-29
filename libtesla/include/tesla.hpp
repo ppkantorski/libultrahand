@@ -134,6 +134,9 @@ u8 TeslaFPS = 60;
 volatile bool triggerExitNow = false;
 volatile bool isRendering = false;
 volatile bool delayUpdate = false;
+volatile bool pendingExit = false;
+volatile bool wasRendering = false;
+
 LEvent renderingStopEvent = {0};
 bool FullMode = true;
 bool deactivateOriginalFooter = false;
@@ -9992,7 +9995,7 @@ namespace tsl {
         tsl::gfx::FontManager::FontMetrics fontMetrics{};
         const u32 slideDurationMs = 200;
         u64 stateStartNs = 0;
-    
+        
         // Ring buffer queue
         static constexpr size_t QUEUE_MAX = 16;
         NotificationData queue[QUEUE_MAX]{};
@@ -10002,23 +10005,23 @@ namespace tsl {
 
         // Shutdown guard: set to false during teardown so show()/draw()/update() early-out
         std::atomic<bool> enabled{true};
-    
-        #if IS_STATUS_MONITOR_DIRECTIVE
-        bool lastRenderingState;
-        #endif
-    
+        
+        //#if IS_STATUS_MONITOR_DIRECTIVE
+        //bool wasRendering;
+        //#endif
+        
         // show: accepts std::string for compatibility
         void show(const std::string& msg, size_t _fontSize = 28, s32 _promptWidth = 448, s32 _promptHeight = 88, u32 durationMs = 2500) {
             if (!ult::useNotifications) return;
-    
+            
             // If notifications disabled (shutdown in progress), ignore
             if (!enabled.load(std::memory_order_acquire)) return;
-    
+            
             std::lock_guard<std::mutex> lk(mtx);
-    
+            
             // If notifications disabled after locking, abort
             if (!enabled.load(std::memory_order_acquire)) return;
-    
+            
             // If queue is full, advance head to drop the oldest (overwrite)
             if (queueCount == QUEUE_MAX) {
                 queueHead = (queueHead + 1) % QUEUE_MAX;
@@ -10074,7 +10077,7 @@ namespace tsl {
     
             #if IS_STATUS_MONITOR_DIRECTIVE
             if (isRendering) {
-                lastRenderingState = true;
+                wasRendering = true;
                 isRendering = false;
                 leventSignal(&renderingStopEvent);
             }
@@ -10090,13 +10093,13 @@ namespace tsl {
             promptWidth = next.promptWidth;
             promptHeight = next.promptHeight;
             fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
-    
+            
             state = PromptState::SlidingIn;
             stateStartNs = armTicksToNs(armGetSystemTick());
             expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + static_cast<u64>(next.durationMs) * 1'000'000ULL;
-    
+            
             fireNotificationEvent.store(true, std::memory_order_release);
-    
+            
             // Pop the notification from queue
             queueHead = (queueHead + 1) % QUEUE_MAX;
             queueCount--;
@@ -10133,8 +10136,8 @@ namespace tsl {
 
                 if (state == PromptState::Inactive || activeText[0] == '\0') {
                     #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (lastRenderingState) {
-                        lastRenderingState = false;
+                    if (!pendingExit && wasRendering) {
+                        wasRendering = false;
                         isRendering = true;
                         leventClear(&renderingStopEvent);
                     }
@@ -10143,7 +10146,7 @@ namespace tsl {
                 } else {
                     #if IS_STATUS_MONITOR_DIRECTIVE
                     if (isRendering) {
-                        lastRenderingState = true;
+                        wasRendering = true;
                         isRendering = false;
                         leventSignal(&renderingStopEvent);
                     }
@@ -10237,8 +10240,8 @@ namespace tsl {
             const bool activeState = state != PromptState::Inactive;
     
             
-            if (!activeState && lastRenderingState) {
-                lastRenderingState = false;
+            if (!pendingExit && !activeState && wasRendering) {
+                wasRendering = false;
                 isRendering = true;
                 leventClear(&renderingStopEvent);
             }
@@ -13097,6 +13100,7 @@ namespace tsl {
                         break;
                     }
                 }
+
                 if (!comboBreakout) {
                     overlay->clearScreen();
                     if (exitAfterPrompt) {
@@ -13117,7 +13121,7 @@ namespace tsl {
                     continue;
                 }
             }
-            
+
             firstLoop = false;
             eventClear(&shData.notificationEvent);
             eventClear(&shData.comboEvent);
@@ -13145,6 +13149,16 @@ namespace tsl {
                     shData.keysDownPending = 0;
                 }
                 
+
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                if (pendingExit && wasRendering) {
+                    pendingExit = false;
+                    wasRendering = false;
+                    isRendering = true;
+                    leventClear(&renderingStopEvent);
+                }
+                #endif
+
                 if (overlay->shouldHide()) {
                     if (overlay->shouldCloseAfter()) {
                         if (!directMode) {
@@ -13152,6 +13166,9 @@ namespace tsl {
                             beginShutdown(/*setNextOverlayFlag=*/false);
                         } else {
                             exitAfterPrompt = true;
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            pendingExit = true;
+                            #endif
                         }
                     }
                     break;
