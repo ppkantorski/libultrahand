@@ -12173,7 +12173,7 @@ namespace tsl {
                                         
                                         if (root) {
                                             cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                            cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "fontSize");
+                                            cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
                                             if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
                                                 fontSize = static_cast<int>(fontSizeObj->valuedouble);
                                                 fontSize = std::clamp(fontSize, 1, 34); // More concise clamping
