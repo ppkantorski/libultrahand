@@ -1083,24 +1083,31 @@ namespace tsl {
                     }
                 }
             };
+
+            enum class CacheType {
+                Regular,
+                Notification,
+                Persistent
+            };
             
         private:
             inline static std::shared_mutex s_cacheMutex;
             inline static std::mutex s_initMutex;
             
-            // Changed from unique_ptr to shared_ptr
+            // Existing caches
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_persistentGlyphCache;
+            
+            // NEW: Notification-specific cache
+            inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_notificationGlyphCache;
             
             // Font metrics cache
             inline static std::unordered_map<u64, FontMetrics> s_fontMetricsCache;
             
-            //inline static u64 s_lastClearTimeNs = 0;
-            //inline static constexpr u64 CLEAR_COOLDOWN_NS = 500000000; // 500ms in nanosecond
-        
             // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 600;
             static constexpr size_t CLEANUP_THRESHOLD = 500;
+            static constexpr size_t MAX_NOTIFICATION_CACHE_SIZE = 200; // Separate limit for notifications
             
             // font handles & state
             inline static stbtt_fontinfo* s_stdFont     = nullptr;
@@ -1140,7 +1147,109 @@ namespace tsl {
                 }
             }
 
+            // NEW: Cleanup notification cache when it gets too large
+            static void cleanupNotificationCache() {
+                if (s_notificationGlyphCache.size() <= MAX_NOTIFICATION_CACHE_SIZE) return;
+                
+                const size_t toRemove = s_notificationGlyphCache.size() - (MAX_NOTIFICATION_CACHE_SIZE / 2);
+                auto it = s_notificationGlyphCache.begin();
+                for (size_t i = 0; i < toRemove && it != s_notificationGlyphCache.end(); ++i) {
+                    it = s_notificationGlyphCache.erase(it);
+                }
+            }
 
+            // NEW: Internal unified glyph creation method
+            static std::shared_ptr<Glyph> getOrCreateGlyphInternal(u32 character, bool monospace, u32 fontSize, CacheType cacheType) {
+                const u64 key = generateCacheKey(character, monospace, fontSize);
+                
+                // Select target cache based on type
+                std::unordered_map<u64, std::shared_ptr<Glyph>>* targetCache;
+                switch (cacheType) {
+                    case CacheType::Notification:
+                        targetCache = &s_notificationGlyphCache;
+                        break;
+                    case CacheType::Persistent:
+                        targetCache = &s_persistentGlyphCache;
+                        break;
+                    default:
+                        targetCache = &s_sharedGlyphCache;
+                        break;
+                }
+                
+                // First, try to find in target cache with shared lock
+                {
+                    std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
+                    
+                    if (!s_initialized) return nullptr;
+                    
+                    // Check target cache first
+                    auto it = targetCache->find(key);
+                    if (it != targetCache->end()) {
+                        return it->second;
+                    }
+                    
+                    // For notification cache, also check persistent cache (but not regular cache)
+                    // For regular cache, also check persistent cache (existing behavior)
+                    if (cacheType != CacheType::Persistent) {
+                        auto persistentIt = s_persistentGlyphCache.find(key);
+                        if (persistentIt != s_persistentGlyphCache.end()) {
+                            return persistentIt->second;
+                        }
+                    }
+                }
+                
+                // Glyph not found, need to create it with exclusive lock
+                std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
+                
+                if (!s_initialized) return nullptr;
+                
+                // Double-check pattern for target cache
+                auto it = targetCache->find(key);
+                if (it != targetCache->end()) {
+                    return it->second;
+                }
+                
+                // Double-check persistent cache
+                if (cacheType != CacheType::Persistent) {
+                    auto persistentIt = s_persistentGlyphCache.find(key);
+                    if (persistentIt != s_persistentGlyphCache.end()) {
+                        return persistentIt->second;
+                    }
+                }
+                
+                // Check cache size and cleanup if needed
+                if (cacheType == CacheType::Regular && s_sharedGlyphCache.size() >= MAX_CACHE_SIZE) {
+                    cleanupOldEntries();
+                } else if (cacheType == CacheType::Notification && s_notificationGlyphCache.size() >= MAX_NOTIFICATION_CACHE_SIZE) {
+                    cleanupNotificationCache();
+                }
+                
+                // Create new glyph
+                auto glyph = std::make_shared<Glyph>();
+                glyph->currFont = selectFontForCharacterUnsafe(character);
+                if (!glyph->currFont) {
+                    return nullptr;
+                }
+                
+                glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
+                
+                stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character, 
+                    glyph->currFontSize, glyph->currFontSize, 0, 0, 
+                    &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
+                
+                s32 yAdvance = 0;
+                stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character, 
+                                          &glyph->xAdvance, &yAdvance);
+                
+                glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, 
+                    glyph->currFontSize, glyph->currFontSize, character, 
+                    &glyph->width, &glyph->height, nullptr, nullptr);
+                
+                // Store in target cache
+                (*targetCache)[key] = glyph;
+                
+                return glyph;
+            }
             
         public:
             // NEW: Preload and persist specific characters
@@ -1251,75 +1360,21 @@ namespace tsl {
                 return getFontMetrics(font, fontSize);
             }
             
-            // Now returns shared_ptr instead of raw pointer
+            // UPDATED: Regular glyph method - now uses internal method
             static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
-                const u64 key = generateCacheKey(character, monospace, fontSize);
-                
-                // First, try to find in both caches with shared lock
-                {
-                    std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
-                    
-                    if (!s_initialized) return nullptr;
-                    
-                    // Check persistent cache first
-                    auto persistentIt = s_persistentGlyphCache.find(key);
-                    if (persistentIt != s_persistentGlyphCache.end()) {
-                        return persistentIt->second;
-                    }
-                    
-                    // Check regular cache
-                    auto it = s_sharedGlyphCache.find(key);
-                    if (it != s_sharedGlyphCache.end()) {
-                        return it->second;
-                    }
-                }
-                
-                // Glyph not found, need to create it with exclusive lock
-                std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
-                
-                if (!s_initialized) return nullptr;
-                
-                // Double-check pattern for both caches
-                auto persistentIt = s_persistentGlyphCache.find(key);
-                if (persistentIt != s_persistentGlyphCache.end()) {
-                    return persistentIt->second;
-                }
-                
-                auto it = s_sharedGlyphCache.find(key);
-                if (it != s_sharedGlyphCache.end()) {
-                    return it->second;
-                }
-                
-                // Check cache size and cleanup if needed
-                if (s_sharedGlyphCache.size() >= MAX_CACHE_SIZE) {
-                    cleanupOldEntries();
-                }
-                
-                // Create new glyph
-                auto glyph = std::make_shared<Glyph>();
-                glyph->currFont = selectFontForCharacterUnsafe(character);
-                if (!glyph->currFont) {
-                    return nullptr;
-                }
-                
-                glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                
-                stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character, 
-                    glyph->currFontSize, glyph->currFontSize, 0, 0, 
-                    &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-                
-                s32 yAdvance = 0;
-                stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character, 
-                                          &glyph->xAdvance, &yAdvance);
-                
-                glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, 
-                    glyph->currFontSize, glyph->currFontSize, character, 
-                    &glyph->width, &glyph->height, nullptr, nullptr);
-                
-                // Store in regular cache (not persistent)
-                s_sharedGlyphCache[key] = glyph;
-                
-                return glyph;
+                return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Regular);
+            }
+
+            // NEW: Notification-specific glyph method
+            static std::shared_ptr<Glyph> getOrCreateNotificationGlyph(u32 character, bool monospace, u32 fontSize) {
+                return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Notification);
+            }
+
+            // NEW: Clear only the notification cache
+            static void clearNotificationCache() {
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                s_notificationGlyphCache.clear();
+                s_notificationGlyphCache.rehash(0);
             }
             
             static void clearCache() {
@@ -1330,7 +1385,6 @@ namespace tsl {
                 s_sharedGlyphCache.rehash(0);
                 s_fontMetricsCache.clear(); // Also clear font metrics cache
                 s_fontMetricsCache.rehash(0);
-
             }
 
             static void clearAllCaches() {
@@ -1339,6 +1393,8 @@ namespace tsl {
                 s_sharedGlyphCache.rehash(0);
                 s_persistentGlyphCache.clear();
                 s_persistentGlyphCache.rehash(0);
+                s_notificationGlyphCache.clear();
+                s_notificationGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
                 s_fontMetricsCache.rehash(0);
             }
@@ -1351,6 +1407,8 @@ namespace tsl {
                 s_sharedGlyphCache.rehash(0);
                 s_persistentGlyphCache.clear();
                 s_persistentGlyphCache.rehash(0);
+                s_notificationGlyphCache.clear();
+                s_notificationGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
                 s_initialized = false;
                 s_stdFont = nullptr;
@@ -1378,6 +1436,12 @@ namespace tsl {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_persistentGlyphCache.size();
             }
+
+            // NEW: Get notification cache size
+            static size_t getNotificationCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_notificationGlyphCache.size();
+            }
             
             // Add memory usage monitoring
             static size_t getMemoryUsage() {
@@ -1394,6 +1458,14 @@ namespace tsl {
                 
                 // Persistent cache
                 for (const auto& pair : s_persistentGlyphCache) {
+                    const auto& glyph = pair.second;
+                    if (glyph && glyph->glyphBmp) {
+                        totalMemory += glyph->width * glyph->height;
+                    }
+                }
+
+                // Notification cache
+                for (const auto& pair : s_notificationGlyphCache) {
                     const auto& glyph = pair.second;
                     if (glyph && glyph->glyphBmp) {
                         totalMemory += glyph->width * glyph->height;
@@ -2854,7 +2926,8 @@ namespace tsl {
                                                   const Color* highlightColor = nullptr,
                                                   const std::vector<std::string>* specialSymbols = nullptr,
                                                   const u32 highlightStartChar = 0,
-                                                  const u32 highlightEndChar = 0) {
+                                                  const u32 highlightEndChar = 0,
+                                                  const bool useNotificationCache = false) { // NEW parameter
                 
                 // Thread-safe translation cache access
                 std::string text;
@@ -2948,7 +3021,12 @@ namespace tsl {
                         }
                         
                         // Get glyph (now thread-safe)
-                        glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        // Get glyph - UPDATED to use notification cache when requested
+                        if (useNotificationCache) {
+                            glyph = FontManager::getOrCreateNotificationGlyph(currCharacter, monospace, fontSize);
+                        } else {
+                            glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        }
                         if (!glyph) continue;
                         
                         // Track maximum Y position reached using consistent line height
@@ -3060,6 +3138,18 @@ namespace tsl {
                 // Return consistent height based on proper font metrics
                 return {maxX - x, maxY - y};
             }
+
+            inline std::pair<s32, s32> drawNotificationString(const std::string& text, bool monospace, 
+                                                              const s32 x, const s32 y, const u32 fontSize, 
+                                                              const Color& defaultColor, const ssize_t maxWidth = 0, 
+                                                              bool draw = true,
+                                                              const Color* highlightColor = nullptr,
+                                                              const std::vector<std::string>* specialSymbols = nullptr,
+                                                              const u32 highlightStartChar = 0,
+                                                              const u32 highlightEndChar = 0) {
+                return drawString(text, monospace, x, y, fontSize, defaultColor, maxWidth, draw, 
+                                 highlightColor, specialSymbols, highlightStartChar, highlightEndChar, true);
+            }
             
             // Convenience wrappers for backward compatibility
             inline std::pair<s32, s32> drawStringWithHighlight(const std::string& text, bool monospace, 
@@ -3084,6 +3174,12 @@ namespace tsl {
             inline std::pair<s32, s32> getTextDimensions(const std::string& text, bool monospace, 
                                                          const u32 fontSize, const ssize_t maxWidth = 0) {
                 return drawString(text, monospace, 0, 0, fontSize, Color{0,0,0,0}, maxWidth, false);
+            }
+
+            inline std::pair<s32, s32> getNotificationTextDimensions(const std::string& text, bool monospace, 
+                                                                     const u32 fontSize, const ssize_t maxWidth = 0) {
+                return drawString(text, monospace, 0, 0, fontSize, Color{0,0,0,0}, maxWidth, false, 
+                                 nullptr, nullptr, 0, 0, true);
             }
             
             // Thread-safe limitStringLength using the unified cache
@@ -9966,15 +10062,10 @@ namespace tsl {
         
     }
     
-    
+    // Notification structures and settings
     std::atomic<bool> fireNotificationEvent{false};
     
-    enum class PromptState {
-        Inactive,
-        SlidingIn,
-        Visible,
-        SlidingOut
-    };
+    static constexpr size_t MAX_NOTIFS = 40;
     
     struct NotificationData {
         char text[128];   // fixed-size buffer
@@ -9982,6 +10073,64 @@ namespace tsl {
         s32 promptWidth;
         s32 promptHeight;
         u32 durationMs;
+        u32 priority = 20;      // lower = higher priority
+        u64 arrivalNs = 0;      // tie-breaker
+        char fileName[64];
+    };
+
+
+    struct FixedPQ {
+        NotificationData data[MAX_NOTIFS];
+        size_t size = 0;
+    
+        void push(const NotificationData& nd) {
+            if (size >= MAX_NOTIFS) return; // drop or ignore extra notifications
+            data[size] = nd;
+            std::push_heap(data, data + (++size), cmp);
+        }
+    
+        NotificationData top() const {
+            return (size > 0) ? data[0] : NotificationData{}; // default-initialized if empty
+        }
+    
+        void pop() {
+            if (size == 0) return;
+            std::pop_heap(data, data + size, cmp);
+            --size;
+        }
+    
+        bool empty() const { return size == 0; }
+    
+        void clear() {
+            size = 0;                   // reset size so queue is truly empty
+            // optional: zero out data for safety
+            for (size_t i = 0; i < MAX_NOTIFS; ++i)
+                data[i] = NotificationData{};
+        }
+
+    private:
+        static bool cmp(const NotificationData& a, const NotificationData& b) {
+            if (a.priority == b.priority) return a.arrivalNs > b.arrivalNs; // earlier first
+            return a.priority > b.priority; // lower number = higher priority
+        }
+    };
+
+
+    enum class PromptState {
+        Inactive,
+        SlidingIn,
+        Visible,
+        SlidingOut
+    };
+
+    // Comparator for priority queue
+    struct NotificationCompare {
+        bool operator()(const NotificationData& a, const NotificationData& b) const {
+            if (a.priority == b.priority) {
+                return a.arrivalNs > b.arrivalNs; // earlier first
+            }
+            return a.priority > b.priority; // smaller number first
+        }
     };
     
     struct NotificationPrompt {
@@ -9991,17 +10140,18 @@ namespace tsl {
         s32 promptWidth = 448;
         s32 promptHeight = 88;
         u64 expireNs = 0;
+        char currentFileName[64]{0};
         PromptState state = PromptState::Inactive;
-        tsl::gfx::FontManager::FontMetrics fontMetrics{};
+        //tsl::gfx::FontManager::FontMetrics fontMetrics{};
         const u32 slideDurationMs = 200;
         u64 stateStartNs = 0;
         
-        // Ring buffer queue
-        static constexpr size_t QUEUE_MAX = 16;
-        NotificationData queue[QUEUE_MAX]{};
-        size_t queueHead = 0;
-        size_t queueTail = 0;
-        size_t queueCount = 0;
+        //std::priority_queue<
+        //    NotificationData,
+        //    std::vector<NotificationData>,
+        //    NotificationCompare
+        //> queue;
+        FixedPQ queue;
 
         // Shutdown guard: set to false during teardown so show()/draw()/update() early-out
         std::atomic<bool> enabled{true};
@@ -10011,7 +10161,7 @@ namespace tsl {
         //#endif
         
         // show: accepts std::string for compatibility
-        void show(const std::string& msg, size_t _fontSize = 28, s32 _promptWidth = 448, s32 _promptHeight = 88, u32 durationMs = 2500) {
+        void show(const std::string& msg, size_t _fontSize = 26, int priority = 20, const std::string& fileName = "", u32 durationMs = 2500, s32 _promptWidth = 448, s32 _promptHeight = 88) {
             if (!ult::useNotifications) return;
             
             // If notifications disabled (shutdown in progress), ignore
@@ -10022,24 +10172,19 @@ namespace tsl {
             // If notifications disabled after locking, abort
             if (!enabled.load(std::memory_order_acquire)) return;
             
-            // If queue is full, advance head to drop the oldest (overwrite)
-            if (queueCount == QUEUE_MAX) {
-                queueHead = (queueHead + 1) % QUEUE_MAX;
-                // queueCount stays QUEUE_MAX
-            } else {
-                queueCount++;
-            }
-    
-            // Fill the tail slot safely
-            NotificationData &slot = queue[queueTail];
+            NotificationData slot{};
             strncpy(slot.text, msg.c_str(), sizeof(slot.text) - 1);
             slot.text[sizeof(slot.text) - 1] = '\0';
             slot.fontSize = _fontSize;
             slot.promptWidth = _promptWidth;
             slot.promptHeight = _promptHeight;
             slot.durationMs = durationMs;
-    
-            queueTail = (queueTail + 1) % QUEUE_MAX;
+            slot.priority = priority;
+            slot.arrivalNs = armTicksToNs(armGetSystemTick());
+            strncpy(slot.fileName, fileName.c_str(), sizeof(slot.fileName) - 1);
+            slot.fileName[sizeof(slot.fileName) - 1] = '\0';
+
+            queue.push(slot);
     
             // If nothing is active, start next immediately
             if (state == PromptState::Inactive) {
@@ -10054,12 +10199,16 @@ namespace tsl {
             if (!enabled.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
                 return; // already disabled
             }
+
+            // Clear notification cache now that this notification is done
+            tsl::gfx::FontManager::clearNotificationCache();
     
             // Acquire lock and clear internal state / queue
             std::lock_guard<std::mutex> lk(mtx);
     
             // Clear pending queue
-            queueHead = queueTail = queueCount = 0;
+            //queue = {};
+            queue.clear();
     
             // Clear any active prompt
             activeText[0] = '\0';
@@ -10073,7 +10222,7 @@ namespace tsl {
     private:
         // must be called while holding mtx
         void startNextNotification() {
-            if (queueCount == 0) return;
+            if (queue.empty()) return;
     
             #if IS_STATUS_MONITOR_DIRECTIVE
             if (isRendering) {
@@ -10083,26 +10232,25 @@ namespace tsl {
             }
             #endif
 
-            const NotificationData& next = queue[queueHead];
-    
-            // copy into active buffer and ensure null termination
+            const NotificationData next = queue.top();
+            queue.pop();
+        
             strncpy(activeText, next.text, sizeof(activeText) - 1);
             activeText[sizeof(activeText) - 1] = '\0';
-    
             fontSize = next.fontSize;
             promptWidth = next.promptWidth;
             promptHeight = next.promptHeight;
-            fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
             
+        
             state = PromptState::SlidingIn;
             stateStartNs = armTicksToNs(armGetSystemTick());
-            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL + static_cast<u64>(next.durationMs) * 1'000'000ULL;
+            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL +
+                       static_cast<u64>(next.durationMs) * 1'000'000ULL;
             
+            strncpy(currentFileName, next.fileName, sizeof(currentFileName) - 1);
+            currentFileName[sizeof(currentFileName) - 1] = '\0';
+
             fireNotificationEvent.store(true, std::memory_order_release);
-            
-            // Pop the notification from queue
-            queueHead = (queueHead + 1) % QUEUE_MAX;
-            queueCount--;
         }
     
     public:
@@ -10119,7 +10267,7 @@ namespace tsl {
             size_t localFontSize = 0;
             s32 localPromptWidth = 0;
             s32 localPromptHeight = 0;
-            tsl::gfx::FontManager::FontMetrics localFontMetrics{};
+            //tsl::gfx::FontManager::FontMetrics localFontMetrics{};
             PromptState localState;
             u64 localStateStartNs = 0;
             // expire time not needed for rendering but keep if desired
@@ -10160,7 +10308,7 @@ namespace tsl {
                 localFontSize = fontSize;
                 localPromptWidth = promptWidth;
                 localPromptHeight = promptHeight;
-                localFontMetrics = fontMetrics;
+                //localFontMetrics = fontMetrics;
                 localState = state;
                 localStateStartNs = stateStartNs;
                 // unlock by leaving scope
@@ -10173,13 +10321,13 @@ namespace tsl {
         
             s32 x = 0, y = 0;
             if (localState == PromptState::SlidingIn) {
-                float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
+                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
                 x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth + (1.0f - t) * localPromptWidth
                                            : -localPromptWidth + t * localPromptWidth;
             } else if (localState == PromptState::Visible) {
                 x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth : 0;
             } else if (localState == PromptState::SlidingOut) {
-                float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
+                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
                 x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth + t * localPromptWidth
                                            : -t * localPromptWidth;
             }
@@ -10212,15 +10360,16 @@ namespace tsl {
                 lines[lineCount][charIndex] = '\0';
                 ++lineCount;
             }
-        
-            const s32 totalTextHeight = static_cast<s32>(lineCount) * localFontMetrics.lineHeight;
-            s32 startY = y + (localPromptHeight - totalTextHeight) / 2 + localFontMetrics.ascent;
+            
+            const auto fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
+            const s32 totalTextHeight = static_cast<s32>(lineCount) * fontMetrics.lineHeight;
+            const s32 startY = y + (localPromptHeight - totalTextHeight) / 2 + fontMetrics.ascent;
         
             for (size_t l = 0; l < lineCount; ++l) {
-                auto [lineWidth, lineHeight] = renderer->getTextDimensions(lines[l], false, localFontSize);
-                s32 textX = x + (localPromptWidth - lineWidth) / 2;
-                s32 textY = startY + static_cast<s32>(l) * localFontMetrics.lineHeight;
-                renderer->drawString(lines[l], false, textX, textY, localFontSize, defaultTextColor);
+                const auto [lineWidth, lineHeight] = renderer->getNotificationTextDimensions(lines[l], false, localFontSize);
+                const s32 textX = x + (localPromptWidth - lineWidth) / 2;
+                const s32 textY = startY + static_cast<s32>(l) * fontMetrics.lineHeight;
+                renderer->drawNotificationString(lines[l], false, textX, textY, localFontSize, defaultTextColor);
             }
         
             // --- Borders ---
@@ -10238,7 +10387,6 @@ namespace tsl {
                 return false;
             #if IS_STATUS_MONITOR_DIRECTIVE
             const bool activeState = state != PromptState::Inactive;
-    
             
             if (!pendingExit && !activeState && wasRendering) {
                 wasRendering = false;
@@ -10246,7 +10394,6 @@ namespace tsl {
                 leventClear(&renderingStopEvent);
             }
             
-    
             return activeState;
             #else
             return state != PromptState::Inactive;
@@ -10255,13 +10402,23 @@ namespace tsl {
     
         void clearQueue() {
             std::lock_guard<std::mutex> lk(mtx);
-            queueHead = queueTail = queueCount = 0;
+            //queue = {}; // reset to empty
+            queue.clear();
         }
     
         void skipCurrent() {
             std::lock_guard<std::mutex> lk(mtx);
             state = PromptState::Inactive;
             activeText[0] = '\0';
+
+            if (currentFileName[0] != '\0') {
+                ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentFileName));
+                currentFileName[0] = '\0';
+            }
+
+            // Clear notification cache now that this notification is done
+            tsl::gfx::FontManager::clearNotificationCache();
+
             startNextNotification();
         }
     
@@ -10284,6 +10441,17 @@ namespace tsl {
             } else if (state == PromptState::SlidingOut && elapsedMs >= slideDurationMs) {
                 state = PromptState::Inactive;
                 activeText[0] = '\0';
+                
+                // --- DELETE FILE HERE safely ---
+                if (currentFileName[0] != '\0') {
+                    ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentFileName));
+                    currentFileName[0] = '\0';
+                }
+                
+
+                // Clear notification cache now that this notification is done
+                tsl::gfx::FontManager::clearNotificationCache();
+
                 startNextNotification(); // may set up a new active
             }
         }
@@ -12089,7 +12257,7 @@ namespace tsl {
                     static u64 lastNotifCheck = 0;
                     //const u64 currentTick = armGetSystemTick();
                     
-                    if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL && !notification.isActive()) {
+                    if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
                         lastNotifCheck = nowTick;
                         
                         DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
@@ -12101,9 +12269,9 @@ namespace tsl {
                                 std::string bestFile;
                                 //bestFile.reserve(256); // Reserve space to avoid reallocations
                                 
-                                int highestPriority = INT_MAX;
-                                time_t oldestTime = 0;
-                                struct stat fileStat{};
+                                //int highestPriority = INT_MAX;
+                                //time_t oldestTime = 0;
+                                //struct stat fileStat{};
                                 struct dirent* entry;
                                 
                                 // Cache the notifications path length to avoid repeated string operations
@@ -12112,80 +12280,82 @@ namespace tsl {
                                 
                                 int priority;
 
+                                //static std::unordered_set<std::string> shownFiles;
+                                static std::vector<std::string> shownFiles;
+
+                                // --- Prune missing files from shownFiles ---
+                                for (auto it = shownFiles.begin(); it != shownFiles.end(); ) {
+                                    const std::string fullPath = ult::NOTIFICATIONS_PATH + *it;
+                                    if (access(fullPath.c_str(), F_OK) != 0) { // file no longer exists
+                                        it = shownFiles.erase(it);
+                                    } else {
+                                        ++it;
+                                    }
+                                }
+
                                 // Process all notification files
+                                std::string text;
+                                int fontSize;
                                 while ((entry = readdir(dir)) != nullptr) {
-                                    // Skip non-regular files immediately
                                     if (entry->d_type != DT_REG) continue;
-                                    
+                                
                                     filename = entry->d_name;
                                     const size_t filenameLen = filename.size();
-                                    
-                                    // Quick length check and suffix validation
+                                
                                     if (filenameLen <= 7) continue;
-                                    
-                                    // More efficient suffix check using string comparison from end
                                     if (filename.compare(filenameLen - 7, 7, ".notify") != 0) continue;
-                                    
-                                    // Parse priority more efficiently
-                                    priority = 0;
+                                    // Skip if we've already shown this file
+                                    //if (shownFiles.find(filename) != shownFiles.end())
+                                    //    continue;
+                                    if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end()) {
+                                        continue; // already in vector
+                                    }
+                                
+                                    // --- Parse priority from filename ---
+                                    priority = 20; // default if not present
                                     const size_t dashPos = filename.find('-');
                                     if (dashPos != std::string::npos && dashPos > 0) {
-                                        prioStr.assign(filename, 0, dashPos); // Use assign instead of substr
-                                        
-                                        // Check if all characters are digits
-                                        if (!prioStr.empty() && 
-                                            std::all_of(prioStr.begin(), prioStr.end(), 
-                                                       [](unsigned char c) { return std::isdigit(c); })) {
+                                        prioStr.assign(filename, 0, dashPos);
+                                        if (!prioStr.empty() &&
+                                            std::all_of(prioStr.begin(), prioStr.end(),
+                                                        [](unsigned char c) { return std::isdigit(c); })) {
                                             priority = std::stoi(prioStr);
                                         }
                                     }
-                                    
-                                    // Build full path more efficiently
+                                
+                                    // --- Build path & load JSON ---
                                     fullPath.clear();
                                     fullPath.reserve(notifPathLen + filenameLen);
                                     fullPath = notifPath;
                                     fullPath += filename;
-                                    
-                                    // Get file stats
-                                    if (stat(fullPath.c_str(), &fileStat) != 0) continue;
-                                    
-                                    // Select best file: highest priority (lowest number), then oldest
-                                    if (priority < highestPriority ||
-                                        (priority == highestPriority && 
-                                         (oldestTime == 0 || fileStat.st_mtime < oldestTime))) {
-                                        highestPriority = priority;
-                                        oldestTime = fileStat.st_mtime;
-                                        bestFile = std::move(fullPath); // Move instead of copy
-                                    }
-                                }
                                 
-                                closedir(dir);
-                                
-                                // Process the selected notification file
-                                if (!bestFile.empty()) {
-                                    std::string text = ult::getStringFromJsonFile(bestFile, "text");
+                                    text = ult::getStringFromJsonFile(fullPath, "text");
                                     if (!text.empty()) {
-                                        // Get fontSize with default and clamping
-                                        int fontSize = 28; // Default value
-                                        
+                                        fontSize = 28; // default
+                                
                                         std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                            ult::readJsonFromFile(bestFile), ult::JsonDeleter());
-                                        
+                                            ult::readJsonFromFile(fullPath), ult::JsonDeleter());
                                         if (root) {
                                             cJSON* croot = reinterpret_cast<cJSON*>(root.get());
                                             cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
                                             if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
                                                 fontSize = static_cast<int>(fontSizeObj->valuedouble);
-                                                fontSize = std::clamp(fontSize, 1, 34); // More concise clamping
+                                                fontSize = std::clamp(fontSize, 1, 34);
                                             }
                                         }
-                                        
-                                        notification.show(text, fontSize);
+                                
+                                        // Push directly into notification queue
+                                        notification.show(text, fontSize, priority, filename);
+                                        // Mark as shown so we don't show it again
+                                        //shownFiles.insert(filename);
+                                        shownFiles.push_back(filename);
                                     }
-                                    
-                                    // Clean up the processed file
-                                    remove(bestFile.c_str());
+                                
+                                    // --- Clean up processed file ---
+                                   // remove(fullPath.c_str());
                                 }
+                                
+                                closedir(dir);
                             } else {
                                 // Delete all .notify files in folder - optimized version
                                 struct dirent* entry;
@@ -12925,12 +13095,12 @@ namespace tsl {
                                 jumpItemValue = "";
                                 jumpItemExactMatch.store(true, std::memory_order_release);
                             }
-                            //break;
+                            break;
                             
                         case 2: // skipCombo  
                             skipCombo = true;
                             ult::firstBoot = false;
-                            //break;
+                            break;
                             
                         case 3: // lastTitleID
                             if (++arg < argc) {
@@ -12939,7 +13109,7 @@ namespace tsl {
                                     ult::resetForegroundCheck.store(true, std::memory_order_release);
                                 }
                             }
-                            //break;
+                            break;
                             
                             
                         case 4: // foregroundFix
@@ -12947,10 +13117,10 @@ namespace tsl {
                                 ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) || 
                                                            (argv[arg][0] == '1'), std::memory_order_release);
                             }
-                            //break;
+                            break;
                         case 5: // foregroundFix
                             usingPackageLauncher = true;
-                            //break;
+                            break;
                     }
                     //break; // Exit loop once found
                 }
@@ -13097,6 +13267,8 @@ namespace tsl {
                     if (launchComboHasTriggered.load(std::memory_order_acquire)) {
                         launchComboHasTriggered.store(false, std::memory_order_acquire);
                         exitAfterPrompt = true;
+                        usingPackageLauncher = false;
+                        directMode = false;
                         break;
                     }
                 }
