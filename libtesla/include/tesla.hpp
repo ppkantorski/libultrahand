@@ -10062,402 +10062,628 @@ namespace tsl {
         
     }
     
+    
     // Notification structures and settings
-    std::atomic<bool> fireNotificationEvent{false};
+    static inline Event notificationEvent = { 0 };    
     
-    static constexpr size_t MAX_NOTIFS = 40;
-    
-    struct NotificationData {
-        char text[128];   // fixed-size buffer
-        size_t fontSize;
-        s32 promptWidth;
-        s32 promptHeight;
-        u32 durationMs;
-        u32 priority = 20;      // lower = higher priority
-        u64 arrivalNs = 0;      // tie-breaker
-        char fileName[64];
-    };
-
-
-    struct FixedPQ {
-        NotificationData data[MAX_NOTIFS];
-        size_t size = 0;
-    
-        void push(const NotificationData& nd) {
-            if (size >= MAX_NOTIFS) return; // drop or ignore extra notifications
-            data[size] = nd;
-            std::push_heap(data, data + (++size), cmp);
-        }
-    
-        NotificationData top() const {
-            return (size > 0) ? data[0] : NotificationData{}; // default-initialized if empty
-        }
-    
-        void pop() {
-            if (size == 0) return;
-            std::pop_heap(data, data + size, cmp);
-            --size;
-        }
-    
-        bool empty() const { return size == 0; }
-    
-        void clear() {
-            size = 0;                   // reset size so queue is truly empty
-            // optional: zero out data for safety
-            for (size_t i = 0; i < MAX_NOTIFS; ++i)
-                data[i] = NotificationData{};
-        }
-
-    private:
-        static bool cmp(const NotificationData& a, const NotificationData& b) {
-            if (a.priority == b.priority) return a.arrivalNs > b.arrivalNs; // earlier first
-            return a.priority > b.priority; // lower number = higher priority
-        }
-    };
-
-
-    enum class PromptState {
-        Inactive,
-        SlidingIn,
-        Visible,
-        SlidingOut
-    };
-
-    // Comparator for priority queue
-    struct NotificationCompare {
-        bool operator()(const NotificationData& a, const NotificationData& b) const {
-            if (a.priority == b.priority) {
-                return a.arrivalNs > b.arrivalNs; // earlier first
-            }
-            return a.priority > b.priority; // smaller number first
-        }
-    };
-    
-    struct NotificationPrompt {
-        mutable std::mutex mtx;
-        char activeText[128]{0};
-        size_t fontSize = 28;
-        s32 promptWidth = 448;
-        s32 promptHeight = 88;
-        u64 expireNs = 0;
-        char currentFileName[64]{0};
-        PromptState state = PromptState::Inactive;
-        //tsl::gfx::FontManager::FontMetrics fontMetrics{};
-        const u32 slideDurationMs = 200;
-        u64 stateStartNs = 0;
-        
-        //std::priority_queue<
-        //    NotificationData,
-        //    std::vector<NotificationData>,
-        //    NotificationCompare
-        //> queue;
-        FixedPQ queue;
-
-        // Shutdown guard: set to false during teardown so show()/draw()/update() early-out
-        std::atomic<bool> enabled{true};
-        
-        //#if IS_STATUS_MONITOR_DIRECTIVE
-        //bool wasRendering;
-        //#endif
-        
-        // show: accepts std::string for compatibility
-        void show(const std::string& msg, size_t _fontSize = 26, int priority = 20, const std::string& fileName = "", u32 durationMs = 2500, s32 _promptWidth = 448, s32 _promptHeight = 88) {
-            if (!ult::useNotifications) return;
-            
-            // If notifications disabled (shutdown in progress), ignore
-            if (!enabled.load(std::memory_order_acquire)) return;
-            
-            std::lock_guard<std::mutex> lk(mtx);
-            
-            // If notifications disabled after locking, abort
-            if (!enabled.load(std::memory_order_acquire)) return;
-            
-            NotificationData slot{};
-            strncpy(slot.text, msg.c_str(), sizeof(slot.text) - 1);
-            slot.text[sizeof(slot.text) - 1] = '\0';
-            slot.fontSize = _fontSize;
-            slot.promptWidth = _promptWidth;
-            slot.promptHeight = _promptHeight;
-            slot.durationMs = durationMs;
-            slot.priority = priority;
-            slot.arrivalNs = armTicksToNs(armGetSystemTick());
-            strncpy(slot.fileName, fileName.c_str(), sizeof(slot.fileName) - 1);
-            slot.fileName[sizeof(slot.fileName) - 1] = '\0';
-
-            queue.push(slot);
-    
-            // If nothing is active, start next immediately
-            if (state == PromptState::Inactive) {
-                startNextNotification(); // called with lock held
-            }
-        }
-
-        // Disable notifications and clear state. Safe to call during teardown.
-        void shutdown() {
-            bool expected = true;
-            // Only run shutdown once
-            if (!enabled.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
-                return; // already disabled
-            }
-
-            // Clear notification cache now that this notification is done
-            tsl::gfx::FontManager::clearNotificationCache();
-    
-            // Acquire lock and clear internal state / queue
-            std::lock_guard<std::mutex> lk(mtx);
-    
-            // Clear pending queue
-            //queue = {};
-            queue.clear();
-    
-            // Clear any active prompt
-            activeText[0] = '\0';
-            state = PromptState::Inactive;
-            fontSize = 0;
-            expireNs = 0;
-    
-            // Note: we don't call startNextNotification() here since enabled==false
-        }
-    
-    private:
-        // must be called while holding mtx
-        void startNextNotification() {
-            if (queue.empty()) return;
-    
-            #if IS_STATUS_MONITOR_DIRECTIVE
-            if (isRendering) {
-                wasRendering = true;
-                isRendering = false;
-                leventSignal(&renderingStopEvent);
-            }
-            #endif
-
-            const NotificationData next = queue.top();
-            queue.pop();
-        
-            strncpy(activeText, next.text, sizeof(activeText) - 1);
-            activeText[sizeof(activeText) - 1] = '\0';
-            fontSize = next.fontSize;
-            promptWidth = next.promptWidth;
-            promptHeight = next.promptHeight;
-            
-        
-            state = PromptState::SlidingIn;
-            stateStartNs = armTicksToNs(armGetSystemTick());
-            expireNs = stateStartNs + slideDurationMs * 1'000'000ULL +
-                       static_cast<u64>(next.durationMs) * 1'000'000ULL;
-            
-            strncpy(currentFileName, next.fileName, sizeof(currentFileName) - 1);
-            currentFileName[sizeof(currentFileName) - 1] = '\0';
-
-            fireNotificationEvent.store(true, std::memory_order_release);
-        }
-    
+    class NotificationPrompt {
     public:
-        // update(): minimal lock, advances state machine only
-        void update() {
-            std::lock_guard<std::mutex> lk(mtx);
-            advanceStateMachineLocked();
-        }
+        // ADD THIS DESTRUCTOR
+        ~NotificationPrompt() {
+            std::lock_guard lk(mtx);
+            // Step 1: disable new notifications and prevent all operations
+            enabled.store(false, std::memory_order_seq_cst);
+            
+            // Step 3: Force clear rendering flag if still set (safety)
+            //isRenderingNow.store(false, std::memory_order_seq_cst);
         
-        // draw(): copy needed data under lock, release, then render (no renderer calls under mtx)
-        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
-            // Local copies for rendering (stack-allocated)
-            char localActiveText[sizeof(activeText)] = {0};
-            size_t localFontSize = 0;
-            s32 localPromptWidth = 0;
-            s32 localPromptHeight = 0;
-            //tsl::gfx::FontManager::FontMetrics localFontMetrics{};
-            PromptState localState;
-            u64 localStateStartNs = 0;
-            // expire time not needed for rendering but keep if desired
-            // copy a small snapshot under lock
+            // Step 4: cleanup safely under lock with additional safety checks
             {
-                std::lock_guard<std::mutex> lk(mtx);
+                
+                
+                // Clear pending queue safely
+                while (!pendingQueue.empty()) {
+                    pendingQueue.pop();
+                }
         
-                // Advance state machine first (same logic as update)
-                advanceStateMachineLocked();
-        
-                //if (state == PromptState::Inactive || activeText[0] == '\0') {
-                //    return;
-                //}
+                // Clear current state safely - do this manually to avoid potential issues
+                delete[] currentState.activeText;
+                delete[] currentState.fileName;
+                currentState.activeText = nullptr;
+                currentState.fileName = nullptr;
+                currentState.state = PromptState::Inactive;
+                currentState.fontSize = 28;
+                currentState.promptWidth = 448;
+                currentState.promptHeight = 88;
+                currentState.expireNs = 0;
+                currentState.stateStartNs = 0;
+                
+                activeFlag = false;
+            }
+        }
 
-                if (state == PromptState::Inactive || activeText[0] == '\0') {
-                    #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (!pendingExit && wasRendering) {
-                        wasRendering = false;
-                        isRendering = true;
-                        leventClear(&renderingStopEvent);
-                    }
-                    #endif
-                    return;
-                } else {
-                    #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (isRendering) {
-                        wasRendering = true;
-                        isRendering = false;
-                        leventSignal(&renderingStopEvent);
-                    }
-                    #endif
+        // Public types - these need to remain accessible
+        enum class PromptState { Inactive, SlidingIn, Visible, SlidingOut };
+        
+        struct NotificationData {
+            char* text = nullptr;
+            char* fileName = nullptr;
+            size_t fontSize = 28;
+            s32 promptWidth = 448, promptHeight = 88;
+            u32 durationMs = 2500, priority = 20;
+            u64 arrivalNs = 0;
+            
+            // Constructor
+            NotificationData() = default;
+            
+            // Copy constructor
+            NotificationData(const NotificationData& other) 
+                : fontSize(other.fontSize), promptWidth(other.promptWidth), promptHeight(other.promptHeight),
+                  durationMs(other.durationMs), priority(other.priority), arrivalNs(other.arrivalNs) {
+                if (other.text) {
+                    size_t len = strlen(other.text);
+                    text = new char[len + 1];
+                    strcpy(text, other.text);
                 }
-        
-                // Copy everything we need for rendering
-                strncpy(localActiveText, activeText, sizeof(localActiveText) - 1);
-                localActiveText[sizeof(localActiveText) - 1] = '\0';
-        
-                localFontSize = fontSize;
-                localPromptWidth = promptWidth;
-                localPromptHeight = promptHeight;
-                //localFontMetrics = fontMetrics;
-                localState = state;
-                localStateStartNs = stateStartNs;
-                // unlock by leaving scope
-            }
-        
-            // --- Do rendering WITHOUT holding the NotificationPrompt lock ---
-        
-            const u64 nowNs = armTicksToNs(armGetSystemTick());
-            const u64 elapsedMs = (nowNs - localStateStartNs) / 1'000'000ULL;
-        
-            s32 x = 0, y = 0;
-            if (localState == PromptState::SlidingIn) {
-                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
-                x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth + (1.0f - t) * localPromptWidth
-                                           : -localPromptWidth + t * localPromptWidth;
-            } else if (localState == PromptState::Visible) {
-                x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth : 0;
-            } else if (localState == PromptState::SlidingOut) {
-                const float t = std::min(1.0f, elapsedMs / float(slideDurationMs));
-                x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - localPromptWidth + t * localPromptWidth
-                                           : -t * localPromptWidth;
-            }
-        
-            // --- Render background ---
-            #if !IS_STATUS_MONITOR_DIRECTIVE
-            if (!promptOnly && ult::expandedMemory)
-                renderer->drawRectMultiThreaded(x, y, localPromptWidth, localPromptHeight, defaultBackgroundColor);
-            else
-                renderer->drawRect(x, y, localPromptWidth, localPromptHeight, defaultBackgroundColor);
-            #else
-            renderer->drawRect(x, y, localPromptWidth, localPromptHeight, defaultBackgroundColor);
-            #endif
-        
-            // --- Render text lines (fixed buffer, max 8 lines) ---
-            char lines[8][128] = {0};
-            size_t lineCount = 0;
-            size_t charIndex = 0;
-            for (size_t i = 0; localActiveText[i] != '\0' && lineCount < 8; ++i) {
-                if (localActiveText[i] == '\\' && localActiveText[i + 1] == 'n') {
-                    lines[lineCount][charIndex] = '\0';
-                    ++lineCount;
-                    charIndex = 0;
-                    ++i;
-                } else {
-                    if (charIndex < (sizeof(lines[0]) - 1)) lines[lineCount][charIndex++] = localActiveText[i];
+                if (other.fileName) {
+                    size_t len = strlen(other.fileName);
+                    fileName = new char[len + 1];
+                    strcpy(fileName, other.fileName);
                 }
-            }
-            if (charIndex > 0 && lineCount < 8) {
-                lines[lineCount][charIndex] = '\0';
-                ++lineCount;
             }
             
-            const auto fontMetrics = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
-            const s32 totalTextHeight = static_cast<s32>(lineCount) * fontMetrics.lineHeight;
-            const s32 startY = y + (localPromptHeight - totalTextHeight) / 2 + fontMetrics.ascent;
-        
-            for (size_t l = 0; l < lineCount; ++l) {
-                const auto [lineWidth, lineHeight] = renderer->getNotificationTextDimensions(lines[l], false, localFontSize);
-                const s32 textX = x + (localPromptWidth - lineWidth) / 2;
-                const s32 textY = startY + static_cast<s32>(l) * fontMetrics.lineHeight;
-                renderer->drawNotificationString(lines[l], false, textX, textY, localFontSize, defaultTextColor);
+            // Move constructor
+            NotificationData(NotificationData&& other) noexcept
+                : text(other.text), fileName(other.fileName), fontSize(other.fontSize), 
+                  promptWidth(other.promptWidth), promptHeight(other.promptHeight),
+                  durationMs(other.durationMs), priority(other.priority), arrivalNs(other.arrivalNs) {
+                other.text = nullptr;
+                other.fileName = nullptr;
             }
-        
-            // --- Borders ---
-            if (!ult::useRightAlignment) {
-                renderer->drawRect(x + localPromptWidth - 1, y, 1, localPromptHeight, edgeSeparatorColor);
-                renderer->drawRect(x, y + localPromptHeight - 1, localPromptWidth, 1, edgeSeparatorColor);
-            } else {
-                renderer->drawRect(x, y, 1, localPromptHeight, edgeSeparatorColor);
-                renderer->drawRect(x, y + localPromptHeight - 1, localPromptWidth, 1, edgeSeparatorColor);
+            
+            // Copy assignment
+            NotificationData& operator=(const NotificationData& other) {
+                if (this != &other) {
+                    // Clean up existing strings
+                    delete[] text;
+                    delete[] fileName;
+                    text = nullptr;
+                    fileName = nullptr;
+                    
+                    // Copy other members
+                    fontSize = other.fontSize;
+                    promptWidth = other.promptWidth;
+                    promptHeight = other.promptHeight;
+                    durationMs = other.durationMs;
+                    priority = other.priority;
+                    arrivalNs = other.arrivalNs;
+                    
+                    // Copy strings
+                    if (other.text) {
+                        size_t len = strlen(other.text);
+                        text = new char[len + 1];
+                        strcpy(text, other.text);
+                    }
+                    if (other.fileName) {
+                        size_t len = strlen(other.fileName);
+                        fileName = new char[len + 1];
+                        strcpy(fileName, other.fileName);
+                    }
+                }
+                return *this;
+            }
+            
+            // Move assignment
+            NotificationData& operator=(NotificationData&& other) noexcept {
+                if (this != &other) {
+                    delete[] text;
+                    delete[] fileName;
+                    
+                    text = other.text;
+                    fileName = other.fileName;
+                    fontSize = other.fontSize;
+                    promptWidth = other.promptWidth;
+                    promptHeight = other.promptHeight;
+                    durationMs = other.durationMs;
+                    priority = other.priority;
+                    arrivalNs = other.arrivalNs;
+                    
+                    other.text = nullptr;
+                    other.fileName = nullptr;
+                }
+                return *this;
+            }
+            
+            // Destructor
+            ~NotificationData() {
+                delete[] text;
+                delete[] fileName;
+            }
+        };
+    
+        struct NotificationCompare {
+            bool operator()(const NotificationData& a, const NotificationData& b) const {
+                return (a.priority == b.priority) ? a.arrivalNs > b.arrivalNs : a.priority > b.priority;
+            }
+        };
+    
+        struct NotificationState {
+            char* activeText = nullptr;
+            char* fileName = nullptr;
+            size_t fontSize = 28;
+            s32 promptWidth = 448, promptHeight = 88;
+            PromptState state = PromptState::Inactive;
+            u64 expireNs = 0, stateStartNs = 0;
+            
+            // Constructor
+            NotificationState() = default;
+            
+            // Copy constructor
+            NotificationState(const NotificationState& other) 
+                : fontSize(other.fontSize), promptWidth(other.promptWidth), promptHeight(other.promptHeight),
+                  state(other.state), expireNs(other.expireNs), stateStartNs(other.stateStartNs) {
+                if (other.activeText) {
+                    size_t len = strlen(other.activeText);
+                    activeText = new char[len + 1];
+                    strcpy(activeText, other.activeText);
+                }
+                if (other.fileName) {
+                    size_t len = strlen(other.fileName);
+                    fileName = new char[len + 1];
+                    strcpy(fileName, other.fileName);
+                }
+            }
+            
+            // Move constructor
+            NotificationState(NotificationState&& other) noexcept
+                : activeText(other.activeText), fileName(other.fileName), fontSize(other.fontSize), 
+                  promptWidth(other.promptWidth), promptHeight(other.promptHeight), state(other.state),
+                  expireNs(other.expireNs), stateStartNs(other.stateStartNs) {
+                other.activeText = nullptr;
+                other.fileName = nullptr;
+            }
+            
+            // Copy assignment
+            NotificationState& operator=(const NotificationState& other) {
+                if (this != &other) {
+                    // Clean up existing strings
+                    delete[] activeText;
+                    delete[] fileName;
+                    activeText = nullptr;
+                    fileName = nullptr;
+                    
+                    // Copy other members
+                    fontSize = other.fontSize;
+                    promptWidth = other.promptWidth;
+                    promptHeight = other.promptHeight;
+                    state = other.state;
+                    expireNs = other.expireNs;
+                    stateStartNs = other.stateStartNs;
+                    
+                    // Copy strings
+                    if (other.activeText) {
+                        size_t len = strlen(other.activeText);
+                        activeText = new char[len + 1];
+                        strcpy(activeText, other.activeText);
+                    }
+                    if (other.fileName) {
+                        size_t len = strlen(other.fileName);
+                        fileName = new char[len + 1];
+                        strcpy(fileName, other.fileName);
+                    }
+                }
+                return *this;
+            }
+            
+            // Move assignment
+            NotificationState& operator=(NotificationState&& other) noexcept {
+                if (this != &other) {
+                    delete[] activeText;
+                    delete[] fileName;
+                    
+                    activeText = other.activeText;
+                    fileName = other.fileName;
+                    fontSize = other.fontSize;
+                    promptWidth = other.promptWidth;
+                    promptHeight = other.promptHeight;
+                    state = other.state;
+                    expireNs = other.expireNs;
+                    stateStartNs = other.stateStartNs;
+                    
+                    other.activeText = nullptr;
+                    other.fileName = nullptr;
+                }
+                return *this;
+            }
+            
+            // Destructor
+            ~NotificationState() {
+                delete[] activeText;
+                delete[] fileName;
+            }
+            
+            // Helper method to check if activeText is empty
+            bool isTextEmpty() const {
+                return !activeText || activeText[0] == '\0';
+            }
+        };
+    
+        // Public constants
+        static constexpr size_t MAX_NOTIFS = 30;
+    
+        // Public interface methods
+        void show(const std::string& msg, size_t fontSize = 26, int priority = 20,
+                  const std::string& fileName = "", u32 durationMs = 2500,
+                  s32 promptWidth = 448, s32 promptHeight = 88)
+        {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
+            std::lock_guard lk(mtx);
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+                return;
+            if (msg.empty())
+                return;
+    
+            NotificationData notif{};
+            
+            // Copy text
+            size_t msgLen = msg.length();
+            notif.text = new char[msgLen + 1];
+            strcpy(notif.text, msg.c_str());
+            
+            // Copy fileName if provided
+            if (!fileName.empty()) {
+                size_t fileLen = fileName.length();
+                notif.fileName = new char[fileLen + 1];
+                strcpy(notif.fileName, fileName.c_str());
+            }
+            
+            notif.fontSize = std::clamp(fontSize, size_t(8), size_t(48));
+            notif.promptWidth = std::clamp(promptWidth, 100, 1280);
+            notif.promptHeight = std::clamp(promptHeight, 50, 720);
+            notif.durationMs = std::clamp(durationMs, 500u, 30000u);
+            notif.priority = priority;
+            notif.arrivalNs = armTicksToNs(armGetSystemTick());
+    
+            bool started = false;
+            if (pendingQueue.size() < MAX_NOTIFS) {
+                pendingQueue.push(std::move(notif));
+                if (currentState.state == PromptState::Inactive)
+                    started = startNext_Locked();
+            }
+    
+            // Fire event outside the main lock but still check enabled state
+            if (started && enabled.load(std::memory_order_acquire) && !ult::launchingOverlay.load(std::memory_order_acquire))
+                eventFire(&notificationEvent);
+        }
+    
+        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
+            // Early atomic check without lock for performance
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
+            
+            std::lock_guard lk(mtx);
+            
+            // Double-check under lock - return immediately if disabled
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
+    
+            // Set rendering flag with sequential consistency for shutdown safety
+            isRenderingNow.store(true, std::memory_order_seq_cst);
+            
+            // Use RAII to ensure flag is always cleared
+            struct RenderingGuard {
+                std::atomic<bool>& flag;
+                RenderingGuard(std::atomic<bool>& f) : flag(f) {}
+                ~RenderingGuard() { flag.store(false, std::memory_order_seq_cst); }
+            } guard(isRenderingNow);
+    
+            NotificationState stateCopy;
+            bool shouldRender = false;
+            {
+                // Triple-check enabled state under lock
+                if (!enabled.load(std::memory_order_acquire)) return;
+                
+                if (!isActive_Locked()) return;
+    
+    #if IS_STATUS_MONITOR_DIRECTIVE
+                if (!pendingExit && currentState.state == PromptState::Inactive && wasRendering) {
+                    wasRendering = false; isRendering = true;
+                }
+    #endif
+    
+                advanceState_Locked();
+
+                // Check again after state advance
+                if (!enabled.load(std::memory_order_acquire)) return;
+                if (!isActive_Locked()) return;
+    
+    #if IS_STATUS_MONITOR_DIRECTIVE
+                if (isRendering) { wasRendering = true; isRendering = false; }
+    #endif
+    
+                stateCopy = currentState;  // This will use copy constructor
+                shouldRender = true;
+            }
+    
+            if (shouldRender && enabled.load(std::memory_order_acquire)) {
+                renderNotification(renderer, stateCopy, promptOnly);
             }
         }
     
-        bool isActive() {
-            if (!ult::useNotifications)
+        void update() {
+            std::lock_guard lk(mtx);
+            if (enabled.load(std::memory_order_acquire)) {
+                advanceState_Locked();
+            }
+        }
+    
+        bool isActive() const {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
                 return false;
-            #if IS_STATUS_MONITOR_DIRECTIVE
-            const bool activeState = state != PromptState::Inactive;
-            
-            if (!pendingExit && !activeState && wasRendering) {
-                wasRendering = false;
-                isRendering = true;
-                leventClear(&renderingStopEvent);
-            }
-            
-            return activeState;
-            #else
-            return state != PromptState::Inactive;
-            #endif
+            std::lock_guard lk(mtx);
+    
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+                return false;
+    
+    #if IS_STATUS_MONITOR_DIRECTIVE
+            const bool active = currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
+            if (!pendingExit && !active && wasRendering) { wasRendering=false; isRendering=true; }
+            return active;
+    #else
+            return currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
+    #endif
         }
     
-        void clearQueue() {
-            std::lock_guard<std::mutex> lk(mtx);
-            //queue = {}; // reset to empty
-            queue.clear();
-        }
-    
-        void skipCurrent() {
-            std::lock_guard<std::mutex> lk(mtx);
-            state = PromptState::Inactive;
-            activeText[0] = '\0';
+        void shutdown() {
+            static bool runOnce = false;
+            if (runOnce)
+                return;
 
-            if (currentFileName[0] != '\0') {
-                ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentFileName));
-                currentFileName[0] = '\0';
+            // Step 1: disable new notifications and prevent all operations
+            enabled.store(false, std::memory_order_seq_cst);
+            
+            // Step 2: wait for any ongoing rendering to complete
+            while (isRenderingNow.load(std::memory_order_acquire)) {
+                svcSleepThread(10'000'000); // 10ms
+            }
+            
+            // Step 3: Force clear rendering flag if still set (safety)
+            //isRenderingNow.store(false, std::memory_order_seq_cst);
+        
+            // Step 4: cleanup safely under lock with additional safety checks
+            {
+                std::lock_guard lk(mtx);
+                
+                // Clear pending queue safely
+                while (!pendingQueue.empty()) {
+                    pendingQueue.pop();
+                }
+        
+                // Clear current state safely - do this manually to avoid potential issues
+                delete[] currentState.activeText;
+                delete[] currentState.fileName;
+                currentState.activeText = nullptr;
+                currentState.fileName = nullptr;
+                currentState.state = PromptState::Inactive;
+                currentState.fontSize = 28;
+                currentState.promptWidth = 448;
+                currentState.promptHeight = 88;
+                currentState.expireNs = 0;
+                currentState.stateStartNs = 0;
+                
+                activeFlag = false;
             }
 
-            // Clear notification cache now that this notification is done
-            tsl::gfx::FontManager::clearNotificationCache();
-
-            startNextNotification();
+            while (isRenderingNow.load(std::memory_order_acquire)) {
+                svcSleepThread(10'000'000); // 10ms
+            }
+            
+            // Step 5: Final safety sleep to ensure any lingering operations complete
+            //svcSleepThread(50'000'000); // 50ms
+            runOnce = true;
         }
     
     private:
-        // helper used by update() too (keeps single logic location if you later need it)
-        void advanceStateMachineLocked() {
-            // NOTE: this function assumes the caller holds `mtx`.
-            if (state == PromptState::Inactive || activeText[0] == '\0') return;
+        // Private member variables
+        mutable std::mutex mtx;
+        std::atomic<bool> enabled{true};
+        std::atomic<bool> isRenderingNow{false};
+        std::atomic<bool> activeFlag{false};
+        
+        NotificationState currentState;
+        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pendingQueue;
+        const u32 slideDurationMs = 200;
     
-            const u64 nowNs = armTicksToNs(armGetSystemTick());
-            const u64 elapsedMs = (nowNs - stateStartNs) / 1'000'000ULL;
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        bool wasRendering = false, isRendering = false;
+    #endif
+
+        // Helper that assumes lock is already held
+        bool isActive_Locked() const {
+            if (!ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+                return false;
+                
+    #if IS_STATUS_MONITOR_DIRECTIVE
+            const bool active = currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
+            if (!pendingExit && !active && wasRendering) { 
+                wasRendering = false; 
+                isRendering = true; 
+            }
+            return active;
+    #else
+            return currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
+    #endif
+        }
     
-            if (state == PromptState::SlidingIn && elapsedMs >= slideDurationMs) {
-                state = PromptState::Visible;
-                stateStartNs = nowNs;
-                // expireNs already set as: start + slide + duration => now + duration
-            } else if (state == PromptState::Visible && nowNs >= expireNs) {
-                state = PromptState::SlidingOut;
-                stateStartNs = nowNs;
-            } else if (state == PromptState::SlidingOut && elapsedMs >= slideDurationMs) {
-                state = PromptState::Inactive;
-                activeText[0] = '\0';
-                
-                // --- DELETE FILE HERE safely ---
-                if (currentFileName[0] != '\0') {
-                    ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentFileName));
-                    currentFileName[0] = '\0';
-                }
-                
+        // Private helper methods
+        bool startNext_Locked() {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+                return false;
 
-                // Clear notification cache now that this notification is done
-                tsl::gfx::FontManager::clearNotificationCache();
-
-                startNextNotification(); // may set up a new active
+            if (pendingQueue.empty())
+                return false;
+    
+            auto next = std::move(const_cast<NotificationData&>(pendingQueue.top())); 
+            pendingQueue.pop();
+            if (!next.text || next.text[0] == '\0')
+                return false;
+    
+            // Move the strings to currentState
+            delete[] currentState.activeText;
+            delete[] currentState.fileName;
+            
+            currentState.activeText = next.text;
+            currentState.fileName = next.fileName;
+            next.text = nullptr;  // Prevent destruction
+            next.fileName = nullptr;  // Prevent destruction
+            
+            currentState.fontSize = next.fontSize;
+            currentState.promptWidth = next.promptWidth;
+            currentState.promptHeight = next.promptHeight;
+            currentState.state = PromptState::SlidingIn;
+            currentState.stateStartNs = armTicksToNs(armGetSystemTick());
+            currentState.expireNs = currentState.stateStartNs + slideDurationMs*1'000'000ULL + next.durationMs*1'000'000ULL;
+    
+            activeFlag = true;
+            return true;
+        }
+    
+        void advanceState_Locked() {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+                return;
+    
+            const u64 now = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (now - currentState.stateStartNs)/1'000'000ULL;
+    
+            switch(currentState.state) {
+                case PromptState::SlidingIn:
+                    if (elapsedMs >= slideDurationMs) {
+                        currentState.state = PromptState::Visible;
+                        currentState.stateStartNs = now;
+                    }
+                    break;
+                case PromptState::Visible:
+                    if (now >= currentState.expireNs) {
+                        currentState.state = PromptState::SlidingOut;
+                        currentState.stateStartNs = now;
+                    }
+                    break;
+                case PromptState::SlidingOut:
+                    if (elapsedMs >= slideDurationMs) {
+                        if (currentState.fileName && currentState.fileName[0] != '\0')
+                            ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentState.fileName));
+                        currentState = NotificationState{};
+                        activeFlag = false;
+                        startNext_Locked();
+                    }
+                    break;
+                default: break;
             }
         }
-    };
     
-    inline NotificationPrompt notification;
+        void renderNotification(gfx::Renderer* renderer, const NotificationState& state, bool promptOnly) {
+            // Safety check - if disabled during rendering, exit immediately
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
+
+            if (state.isTextEmpty()) return;
+        
+            const u64 now = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (now - state.stateStartNs) / 1'000'000ULL;
+            s32 x = 0, y = 0;
+        
+            switch(state.state) {
+                case PromptState::SlidingIn: {
+                    const float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
+                    x = ult::useRightAlignment 
+                        ? tsl::cfg::FramebufferWidth - state.promptWidth + (1.0f - t) * state.promptWidth
+                        : -state.promptWidth + t * state.promptWidth;
+                    break;
+                }
+                case PromptState::Visible:
+                    x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - state.promptWidth : 0;
+                    break;
+                case PromptState::SlidingOut: {
+                    const float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
+                    x = ult::useRightAlignment 
+                        ? tsl::cfg::FramebufferWidth - state.promptWidth + t * state.promptWidth
+                        : -t * state.promptWidth;
+                    break;
+                }
+                default: return;
+            }
+        
+            // Ensure scissoring region stays within framebuffer bounds
+            const s32 scissorX = std::max(0, x);
+            const s32 scissorW = std::min(state.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
+            renderer->enableScissoring(scissorX, y, scissorW, state.promptHeight);
+        
+            // Draw background
+            renderer->drawRect(x, y, state.promptWidth, state.promptHeight, defaultBackgroundColor);
+        
+            // Split text into lines using C-string operations
+            std::vector<const char*> lines;
+            std::vector<char*> lineBuffers;  // To store allocated line strings
+            
+            const char* text = state.activeText;
+            const char* start = text;
+            const char* current = text;
+            
+            while (*current && lines.size() < 8) {
+                if (*current == '\\' && *(current + 1) == 'n') {
+                    // Found \n sequence
+                    size_t len = current - start;
+                    char* line = new char[len + 1];
+                    strncpy(line, start, len);
+                    line[len] = '\0';
+                    lineBuffers.push_back(line);
+                    lines.push_back(line);
+                    current += 2;  // Skip \n
+                    start = current;
+                } else {
+                    current++;
+                }
+            }
+            
+            // Add the last line if there's remaining text
+            if (*start && lines.size() < 8) {
+                size_t len = strlen(start);
+                char* line = new char[len + 1];
+                strcpy(line, start);
+                lineBuffers.push_back(line);
+                lines.push_back(line);
+            }
+        
+            // Draw text
+            const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', state.fontSize);
+            const s32 startY = y + (state.promptHeight - int(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
+            for (size_t l = 0; l < lines.size(); ++l) {
+                const auto [lw, lh] = renderer->getNotificationTextDimensions(std::string(lines[l]), false, state.fontSize);
+                renderer->drawNotificationString(
+                    std::string(lines[l]), false,
+                    x + (state.promptWidth - lw) / 2,
+                    startY + int(l) * fm.lineHeight,
+                    state.fontSize, defaultTextColor
+                );
+            }
+            
+            // Clean up line buffers
+            for (char* line : lineBuffers) {
+                delete[] line;
+            }
+        
+            // Draw edges
+            if (!ult::useRightAlignment) {
+                renderer->drawRect(x + state.promptWidth - 1, y, 1, state.promptHeight, edgeSeparatorColor);
+                renderer->drawRect(x, y + state.promptHeight - 1, state.promptWidth, 1, edgeSeparatorColor);
+            } else {
+                renderer->drawRect(x, y, 1, state.promptHeight, edgeSeparatorColor);
+                renderer->drawRect(x, y + state.promptHeight - 1, state.promptWidth, 1, edgeSeparatorColor);
+            }
+        
+            renderer->disableScissoring();
+        }
+    };
+
+    
+    static inline NotificationPrompt* notification = nullptr;
 
     // GUI
     
@@ -10664,6 +10890,9 @@ namespace tsl {
          */
         virtual ~Overlay() {}
         
+        // Add NotificationPrompt as a member
+        //NotificationPrompt notification;
+
 
         /**
          * @brief Initializes services
@@ -10785,7 +11014,7 @@ namespace tsl {
          *
          */
         void close(bool forceClose = false) {
-            if (!forceClose && tsl::notification.isActive()) {
+            if (!forceClose && tsl::notification->isActive()) {
                 this->closeAfter();
                 this->hide(true);
                 return;
@@ -10950,7 +11179,8 @@ namespace tsl {
                 return;
             static bool runAddOnce = false;
             static bool runRemoveOnce = true;
-        
+            static bool clearNotificationCacheOnce = false;
+            
             auto& renderer = gfx::Renderer::get();
             renderer.startFrame();
         
@@ -10974,11 +11204,17 @@ namespace tsl {
             }
         
             // Always update the notification state machine each frame (before draw)
-            notification.update();
+            //notification->update();
         
             // Global prompt: draw if active (draw() now won't hold the lock while calling renderer)
-            if (notification.isActive()) {
-                notification.draw(&renderer, promptOnly);
+            if (!ult::launchingOverlay.load(std::memory_order_acquire) && notification->isActive()) {
+                notification->draw(&renderer, promptOnly);
+                clearNotificationCacheOnce = true;
+            } else {
+                if (!ult::launchingOverlay.load(std::memory_order_acquire) && clearNotificationCacheOnce) {
+                    tsl::gfx::FontManager::clearNotificationCache();
+                    clearNotificationCacheOnce = false;
+                }
             }
         
             renderer.endFrame();
@@ -10992,7 +11228,7 @@ namespace tsl {
         
 
         void handleInput(u64 keysDown, u64 keysHeld, bool touchDetected, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
-            if (!ult::internalTouchReleased.load(std::memory_order_acquire))
+            if (!ult::internalTouchReleased.load(std::memory_order_acquire) || ult::launchingOverlay.load(std::memory_order_acquire))
                 return;
 
             // Static variables to maintain state between function calls
@@ -11883,7 +12119,7 @@ namespace tsl {
          */
         void goBack(u32 count = 1) {
             
-            if (this->m_guiStack.size() == 1 && notification.isActive()) {
+            if (this->m_guiStack.size() == 1 && notification->isActive()) {
                 //this->hide();
                 this->close();
                 return;
@@ -11965,12 +12201,11 @@ namespace tsl {
          *
          */
         struct SharedThreadData {
-            bool running = false;
+            std::atomic<bool> running = false;
             
             Event comboEvent = { 0 };
-            Event notificationEvent = { 0 };
             
-            bool overlayOpen = false;
+            std::atomic<bool> overlayOpen = false;
             
             std::mutex dataMutex;
             u64 keysDown = 0;
@@ -12202,7 +12437,6 @@ namespace tsl {
             //u64 elapsedTime_ns;
             
             while (shData->running) {
-            
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
                 
@@ -12247,10 +12481,12 @@ namespace tsl {
                     }
                 }
 
-                if (fireNotificationEvent.load(std::memory_order_acquire)) {
-                    fireNotificationEvent.store(false, std::memory_order_release);
-                    eventFire(&shData->notificationEvent);  // wake the loop
-                }
+                //bool expected = true;
+                //if (fireNotificationEvent.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
+                //    if (ult::launchingOverlay.load(std::memory_order_acquire))
+                //        return;
+                //    eventFire(&shData->notificationEvent);  // wake the loop
+                //}
 
                 // Process notification files every 100ms
                 {
@@ -12278,11 +12514,11 @@ namespace tsl {
                                 const std::string& notifPath = ult::NOTIFICATIONS_PATH;
                                 const size_t notifPathLen = notifPath.length();
                                 
-                                int priority;
-
+                                static int priority;
+                                
                                 //static std::unordered_set<std::string> shownFiles;
                                 static std::vector<std::string> shownFiles;
-
+                                
                                 // --- Prune missing files from shownFiles ---
                                 for (auto it = shownFiles.begin(); it != shownFiles.end(); ) {
                                     const std::string fullPath = ult::NOTIFICATIONS_PATH + *it;
@@ -12292,10 +12528,10 @@ namespace tsl {
                                         ++it;
                                     }
                                 }
-
+                                
                                 // Process all notification files
-                                std::string text;
-                                int fontSize;
+                                static std::string text;
+                                static int fontSize;
                                 while ((entry = readdir(dir)) != nullptr) {
                                     if (entry->d_type != DT_REG) continue;
                                 
@@ -12345,7 +12581,7 @@ namespace tsl {
                                         }
                                 
                                         // Push directly into notification queue
-                                        notification.show(text, fontSize, priority, filename);
+                                        notification->show(text, fontSize, priority, filename);
                                         // Mark as shown so we don't show it again
                                         //shownFiles.insert(filename);
                                         shownFiles.push_back(filename);
@@ -12397,7 +12633,11 @@ namespace tsl {
                 
                 // Read in HID values
                 {
+                    if (ult::launchingOverlay.load(std::memory_order_acquire))
+                        return;
                     std::scoped_lock lock(shData->dataMutex);
+                    if (ult::launchingOverlay.load(std::memory_order_acquire))
+                        return;
                     
                     // Combine inputs from both controllers
                     const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
@@ -12501,7 +12741,7 @@ namespace tsl {
                     }
                     #endif
                     //if ((shData->keysDown & KEY_ZL && shData->keysHeld & KEY_L) || (shData->keysDown & KEY_L && shData->keysHeld & KEY_ZL)) {
-                    //    notification.show("Hello world! ¯\\_(ツ)_/¯");
+                    //    notification->show("Hello world! ¯\\_(ツ)_/¯");
                     //    eventFire(&shData->notificationEvent);  // wake the loop
                     //}
                     
@@ -12575,7 +12815,7 @@ namespace tsl {
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
                             launchComboHasTriggered.store(true, std::memory_order_release);
-                            break;
+                            return;
                         }
                     }
                 #endif
@@ -12629,7 +12869,7 @@ namespace tsl {
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
                                     launchComboHasTriggered.store(true, std::memory_order_release);
-                                    break;
+                                    return;
                                 }
                                 
                                 // Compose launch args
@@ -12684,7 +12924,7 @@ namespace tsl {
                                 tsl::Overlay::get()->close();
                                 eventFire(&shData->comboEvent);
                                 launchComboHasTriggered.store(true, std::memory_order_release);
-                                break;
+                                return;
                             }
                         }
                     }
@@ -12693,6 +12933,8 @@ namespace tsl {
                     shData->keysDownPending |= shData->keysDown;
                 }
                 
+                if (!shData->running) break;
+
                 //20 ms
                 //s32 idx = 0;
                 rc = waitObjects(&idx, objects, WaiterObject_Count, 20'000'000ul);
@@ -12810,8 +13052,10 @@ namespace tsl {
         Overlay::get()->pop(count);
     }
         
-        
+    
+    std::mutex setNextOverlayMutex;
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
+        std::lock_guard lk(setNextOverlayMutex);
         char buffer[512];
         char* p = buffer;
         char* bufferEnd = buffer + sizeof(buffer) - 1; // Leave room for null terminator
@@ -12898,7 +13142,7 @@ namespace tsl {
 
         // Add prompt duration
         //{
-        //    const s64 duration = notification.remainingTime(); // nanoseconds left
+        //    const s64 duration = notification->remainingTime(); // nanoseconds left
         //    if (duration > 0) {
         //        const std::string promptArg = " --promptDuration " + std::to_string(duration);
         //        if ((p + promptArg.size()) < bufferEnd) {
@@ -12949,14 +13193,15 @@ namespace tsl {
     template<typename TOverlay, impl::LaunchFlags launchFlags>
     static inline int loop(int argc, char** argv) {
         static_assert(std::is_base_of_v<tsl::Overlay, TOverlay>, "tsl::loop expects a type derived from tsl::Overlay");
+        notification = new NotificationPrompt();
 
         // cleanup any lingering items (if they exist)
-        if (!tsl::elm::s_lastFrameItems.empty()) {
-            for (auto* el : tsl::elm::s_lastFrameItems) {
-                delete el;
-            }
-            tsl::elm::s_lastFrameItems = {};
-        }
+        //if (!tsl::elm::s_lastFrameItems.empty()) {
+        //    for (auto* el : tsl::elm::s_lastFrameItems) {
+        //        delete el;
+        //    }
+        //    tsl::elm::s_lastFrameItems = {};
+        //}
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
@@ -13136,7 +13381,7 @@ namespace tsl {
         threadStart(&backgroundThread);
         
         eventCreate(&shData.comboEvent, false);
-        eventCreate(&shData.notificationEvent, false);
+        eventCreate(&notificationEvent, false);
         
         auto& overlay = tsl::Overlay::s_overlayInstance;
         overlay = new TOverlay();
@@ -13202,7 +13447,8 @@ namespace tsl {
 
         overlay->disableNextAnimation();
 
-        Handle handles[2] = { shData.comboEvent.revent, shData.notificationEvent.revent };
+
+        Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
         s32 index = -1;
 
         bool exitAfterPrompt = false;
@@ -13214,47 +13460,55 @@ namespace tsl {
 
         // Call this instead of assigning shData.running = false directly.
         // setNextOverlayFlag -> if true, set next overlay to ovlmenu.ovl
-        auto beginShutdown = [&](bool setNextOverlayFlag = false) {
-            // set the running flag
-            shData.running = false;
-
-            // disable notifications immediately so show()/draw()/update() will early-out
-            notification.shutdown();
-
-            // wake any threads waiting on these events so they can exit promptly
-            eventFire(&shData.notificationEvent);
-            //eventFire(&shData.comboEvent);
-
-            // optionally set the next overlay (keep existing behavior)
-            if (setNextOverlayFlag) {
-                tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
-            }
-        };
-
+        //auto beginShutdown = [&](bool setNextOverlayFlag = false) {
+        //    ult::launchingOverlay.store(true, std::memory_order_release);
+        //    
+        //    shData.running = false;
+        //    shData.overlayOpen = false;
+        //
+        //    // 7) Optionally set next overlay
+        //    if (setNextOverlayFlag) {
+        //        tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
+        //    }
+        //    notification->shutdown();
+        //};
+                
 
         while (shData.running) {
-
-            if (!notification.isActive()){
-
-                //overlay->clearScreen();
-                Result rc = svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
-                if (R_FAILED(rc)) continue;
+            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                shData.running = false;
+                shData.overlayOpen = false;
+                
+                notification->shutdown();
+                break;
             }
 
-            if (index == 1 || (notification.isActive() && !firstLoop)) {
+            if (!notification->isActive()){
+                svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
+            }
+
+            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                shData.running = false;
+                shData.overlayOpen = false;
+                notification->shutdown();
+                break;
+            }
+
+            if ((notification->isActive() && !firstLoop) || (index == 1)) {
                 
                 comboBreakout = false;
-                eventClear(&shData.notificationEvent);
+                eventClear(&notificationEvent);
                 eventClear(&shData.comboEvent);
 
                 //overlay->clearScreen();
 
                 while (shData.running) {
-                    if (!notification.isActive())
-                        break;
 
                     overlay->loop(true);   // draw prompts while hidden
 
+                    
                     // Check if combo occurs while prompt is active
                     if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
                         mainComboHasTriggered.store(false, std::memory_order_acquire);
@@ -13265,29 +13519,42 @@ namespace tsl {
 
                     // Also check for other configured launch combos (if enabled)
                     if (launchComboHasTriggered.load(std::memory_order_acquire)) {
-                        launchComboHasTriggered.store(false, std::memory_order_acquire);
+                        //launchComboHasTriggered.store(false, std::memory_order_acquire);
                         exitAfterPrompt = true;
                         usingPackageLauncher = false;
                         directMode = false;
                         break;
                     }
+
+                    if (!notification->isActive()) {
+                        break;
+                    }
                 }
 
-                if (!comboBreakout) {
+                if (!comboBreakout || !shData.running) {
                     overlay->clearScreen();
                     if (exitAfterPrompt) {
                         exitAfterPrompt = false;
-                        // perform safe shutdown; ask beginShutdown to set next overlay if needed
-                        beginShutdown(/*setNextOverlayFlag=*/(usingPackageLauncher || directMode));
+                        tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                        ult::launchingOverlay.store(true, std::memory_order_release);
+                        
+                        shData.running = false;
+                        shData.overlayOpen = false;
+                    
+                        // 7) Optionally set next overlay
+                        if (usingPackageLauncher || directMode) {
+                            tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
+                        }
+                        notification->shutdown();
+
                         overlay->resetFlags();
                         
                         hlp::requestForeground(false);
                         
-                        shData.overlayOpen = false;
-                        
-                        mainComboHasTriggered.store(false, std::memory_order_acquire);
-                        launchComboHasTriggered.store(false, std::memory_order_acquire);
+                        //mainComboHasTriggered.store(false, std::memory_order_acquire);
+                        //launchComboHasTriggered.store(false, std::memory_order_acquire);
                         // events already fired inside beginShutdown(); no need to eventClear here
+                        break;
                     }
 
                     continue;
@@ -13295,7 +13562,7 @@ namespace tsl {
             }
 
             firstLoop = false;
-            eventClear(&shData.notificationEvent);
+            eventClear(&notificationEvent);
             eventClear(&shData.comboEvent);
             shData.overlayOpen = true;
 
@@ -13308,11 +13575,12 @@ namespace tsl {
 #endif
             
             overlay->show();
-            if (!comboBreakout && !notification.isActive())
+            if (!comboBreakout && !notification->isActive())
                 overlay->clearScreen();
             
             while (shData.running) {
                 overlay->loop();
+                
                 {
                     std::scoped_lock lock(shData.dataMutex);
                     if (!overlay->fadeAnimationPlaying()) {
@@ -13335,7 +13603,13 @@ namespace tsl {
                     if (overlay->shouldCloseAfter()) {
                         if (!directMode) {
                             // safe shutdown
-                            beginShutdown(/*setNextOverlayFlag=*/false);
+                            tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                            ult::launchingOverlay.store(true, std::memory_order_release);
+                            
+                            shData.running = false;
+                            shData.overlayOpen = false;
+                            notification->shutdown();
+                            break;  // Exit immediately, don't clear events
                         } else {
                             exitAfterPrompt = true;
                             #if IS_STATUS_MONITOR_DIRECTIVE
@@ -13347,56 +13621,98 @@ namespace tsl {
                 }
                 
                 if (overlay->shouldClose()) {
-                    // safe shutdown
-                    beginShutdown(/*setNextOverlayFlag=*/false);
+                    tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    
+                    shData.running = false;
+                    shData.overlayOpen = false;
+                    notification->shutdown();
                     break;
                 }
             }
             
 
-            if (notification.isActive()){
-                if (launchComboHasTriggered.load(std::memory_order_acquire)) {
-                    // safe shutdown
-                    beginShutdown(/*setNextOverlayFlag=*/false);
-                }
+            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                shData.running = false;
+                shData.overlayOpen = false;
+                notification->shutdown();
+                break;
             }
 
-            if (!notification.isActive())
-                overlay->clearScreen();
+            if (!notification->isActive())
+               overlay->clearScreen();
 
-            overlay->resetFlags();
-            
-            hlp::requestForeground(false);
-            
-            shData.overlayOpen = false;
-
-            mainComboHasTriggered.store(false, std::memory_order_acquire);
-            launchComboHasTriggered.store(false, std::memory_order_acquire);
-            eventClear(&shData.notificationEvent);
-            eventClear(&shData.comboEvent);
+            if (shData.running) {
+                overlay->resetFlags();
+                hlp::requestForeground(false);
+                shData.overlayOpen = false;
+                mainComboHasTriggered.store(false, std::memory_order_acquire);
+                
+                // Safe to clear events only if shutdown hasn't been called
+                eventClear(&notificationEvent);
+                eventClear(&shData.comboEvent);
+            }
         }
 
+        tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
         // Ensure we've run shutdown steps (defensive: beginShutdown is idempotent-ish)
-        beginShutdown();
+        //beginShutdown();
 
-        // Wake threads if any and wait for them to exit
-        // (beginShutdown already fired events; we also defensively fire again)
-        eventFire(&shData.notificationEvent);
-        eventFire(&shData.comboEvent);
+        hlp::requestForeground(false);
+        shData.running = false;
+        shData.overlayOpen = false;
 
         // Wait & close background thread
         threadWaitForExit(&backgroundThread);
         threadClose(&backgroundThread);
 
-        // Now safe to close events
-        eventClose(&shData.notificationEvent);
-        eventClose(&shData.comboEvent);
+        overlay->clearScreen();
+        overlay->resetFlags();
+
         
+        //svcSleepThread(1'000'000'000);
         overlay->exitScreen();
         overlay->exitServices();
         
 
-        delete overlay;
+        // Safe to clear events only if shutdown hasn't been called
+        eventClear(&notificationEvent);
+        eventClear(&shData.comboEvent);
+
+        // Wake threads if any and wait for them to exit
+        // (beginShutdown already fired events; we also defensively fire again)
+        //eventFire(&notificationEvent);
+        //eventFire(&shData.comboEvent);
+
+        // Now safe to close events
+        eventClose(&notificationEvent);
+        eventClose(&shData.comboEvent);
+
+
+        //svcSleepThread(1'000'000'000);
+        
+        
+        
+
+        // FINAL element cleanup with proper locking
+        {
+            std::lock_guard<std::mutex> lock(tsl::elm::s_lastFrameItemsMutex);
+            overlay->s_overlayInstance = nullptr;
+            overlay = nullptr;
+            notification = nullptr;
+            for (auto* el : tsl::elm::s_lastFrameItems) {
+                delete el;
+            }
+            tsl::elm::s_lastFrameItems.clear();
+        }
+
+        //delete notification;
+        
+
+        tsl::gfx::FontManager::cleanup();
+
+        //tsl::gfx::FontManager::cleanup();
 
         return 0;
     }
