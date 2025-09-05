@@ -364,4 +364,37 @@ namespace ult {
         cJSON_free(jsonString);
         return success;
     }
+
+    void pushNotificationJson(const std::string& text, size_t fontSize) {
+        u64 tick = armGetSystemTick();
+        std::string filename = "20-" + std::to_string(tick) + ".notify"; // priority 20 default
+    
+        // Build full path
+        std::string fullPath = NOTIFICATIONS_PATH + filename;
+    
+        // Create JSON object
+        cJSON* notif = cJSON_CreateObject();
+        if (!notif) return;
+    
+        cJSON_AddStringToObject(notif, "text", text.c_str());
+        cJSON_AddNumberToObject(notif, "font_size", static_cast<double>(fontSize));
+        //cJSON_AddNumberToObject(notif, "arrival_ns", static_cast<double>(armTicksToNs(tick)));
+    
+        // Serialize JSON
+        char* rendered = cJSON_PrintUnformatted(notif);
+        if (!rendered) {
+            cJSON_Delete(notif);
+            return;
+        }
+    
+        // Write to file (C-style)
+        FILE* file = fopen(fullPath.c_str(), "wb");
+        if (file) {
+            fwrite(rendered, 1, strlen(rendered), file);
+            fclose(file);
+        }
+    
+        cJSON_free(rendered);
+        cJSON_Delete(notif);
+    }
 }

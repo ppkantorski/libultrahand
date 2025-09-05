@@ -25,6 +25,7 @@
 #include <string>
 #include <cJSON.h>
 #include "string_funcs.hpp"
+#include <switch.h>
 
 namespace ult {
     // Define json_t as an opaque type to maintain API compatibility
@@ -99,5 +100,8 @@ namespace ult {
      * @return true if successful, false otherwise.
      */
     bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey);
+
+
+    void pushNotificationJson(const std::string& text, size_t fontSize=28);
 }
 #endif

@@ -10063,497 +10063,341 @@ namespace tsl {
     }
     
     
-    // Notification structures and settings
-    static inline Event notificationEvent = { 0 };    
+    static inline Event notificationEvent = {0};
+    static inline std::mutex notificationJsonMutex;
     
     class NotificationPrompt {
     public:
-        // ADD THIS DESTRUCTOR
+        // Destructor ensures cleanup (calls shutdown)
         ~NotificationPrompt() {
-            std::lock_guard lk(mtx);
-            // Step 1: disable new notifications and prevent all operations
-            enabled.store(false, std::memory_order_seq_cst);
-            
-            // Step 3: Force clear rendering flag if still set (safety)
-            //isRenderingNow.store(false, std::memory_order_seq_cst);
-        
-            // Step 4: cleanup safely under lock with additional safety checks
-            {
-                
-                
-                // Clear pending queue safely
-                while (!pendingQueue.empty()) {
-                    pendingQueue.pop();
-                }
-        
-                // Clear current state safely - do this manually to avoid potential issues
-                delete[] currentState.activeText;
-                delete[] currentState.fileName;
-                currentState.activeText = nullptr;
-                currentState.fileName = nullptr;
-                currentState.state = PromptState::Inactive;
-                currentState.fontSize = 28;
-                currentState.promptWidth = 448;
-                currentState.promptHeight = 88;
-                currentState.expireNs = 0;
-                currentState.stateStartNs = 0;
-                
-                activeFlag = false;
-            }
+            shutdown();
         }
-
-        // Public types - these need to remain accessible
+    
         enum class PromptState { Inactive, SlidingIn, Visible, SlidingOut };
-        
+    
         struct NotificationData {
-            char* text = nullptr;
-            char* fileName = nullptr;
+            std::unique_ptr<char[]> text;
+            std::unique_ptr<char[]> fileName;
             size_t fontSize = 28;
             s32 promptWidth = 448, promptHeight = 88;
             u32 durationMs = 2500, priority = 20;
             u64 arrivalNs = 0;
-            
-            // Constructor
+    
             NotificationData() = default;
-            
-            // Copy constructor
-            NotificationData(const NotificationData& other) 
-                : fontSize(other.fontSize), promptWidth(other.promptWidth), promptHeight(other.promptHeight),
-                  durationMs(other.durationMs), priority(other.priority), arrivalNs(other.arrivalNs) {
+    
+            // Construct from strings
+            NotificationData(const std::string& t, const std::string& f = "",
+                             size_t fs = 28, s32 w = 448, s32 h = 88,
+                             u32 dur = 2500, int prio = 20)
+                : fontSize(fs), promptWidth(w), promptHeight(h),
+                  durationMs(dur), priority(prio), arrivalNs(0)
+            {
+                if (!t.empty()) {
+                    text = std::make_unique<char[]>(t.size()+1);
+                    std::strcpy(text.get(), t.c_str());
+                }
+                if (!f.empty()) {
+                    fileName = std::make_unique<char[]>(f.size()+1);
+                    std::strcpy(fileName.get(), f.c_str());
+                }
+            }
+    
+            // Copy constructor (deep-copy the strings)
+            NotificationData(const NotificationData& other)
+                : fontSize(other.fontSize), promptWidth(other.promptWidth),
+                  promptHeight(other.promptHeight), durationMs(other.durationMs),
+                  priority(other.priority), arrivalNs(other.arrivalNs)
+            {
                 if (other.text) {
-                    size_t len = strlen(other.text);
-                    text = new char[len + 1];
-                    strcpy(text, other.text);
+                    size_t len = std::strlen(other.text.get());
+                    text = std::make_unique<char[]>(len + 1);
+                    std::strcpy(text.get(), other.text.get());
                 }
                 if (other.fileName) {
-                    size_t len = strlen(other.fileName);
-                    fileName = new char[len + 1];
-                    strcpy(fileName, other.fileName);
+                    size_t len = std::strlen(other.fileName.get());
+                    fileName = std::make_unique<char[]>(len + 1);
+                    std::strcpy(fileName.get(), other.fileName.get());
                 }
             }
-            
-            // Move constructor
-            NotificationData(NotificationData&& other) noexcept
-                : text(other.text), fileName(other.fileName), fontSize(other.fontSize), 
-                  promptWidth(other.promptWidth), promptHeight(other.promptHeight),
-                  durationMs(other.durationMs), priority(other.priority), arrivalNs(other.arrivalNs) {
-                other.text = nullptr;
-                other.fileName = nullptr;
-            }
-            
-            // Copy assignment
+    
+            // Move operations (default is fine)
+            NotificationData(NotificationData&&) noexcept = default;
+            NotificationData& operator=(NotificationData&&) noexcept = default;
+    
+            // Copy assignment (explicit deep copy)
             NotificationData& operator=(const NotificationData& other) {
                 if (this != &other) {
-                    // Clean up existing strings
-                    delete[] text;
-                    delete[] fileName;
-                    text = nullptr;
-                    fileName = nullptr;
-                    
-                    // Copy other members
-                    fontSize = other.fontSize;
+                    fontSize    = other.fontSize;
                     promptWidth = other.promptWidth;
-                    promptHeight = other.promptHeight;
-                    durationMs = other.durationMs;
-                    priority = other.priority;
-                    arrivalNs = other.arrivalNs;
-                    
-                    // Copy strings
+                    promptHeight= other.promptHeight;
+                    durationMs  = other.durationMs;
+                    priority    = other.priority;
+                    arrivalNs   = other.arrivalNs;
                     if (other.text) {
-                        size_t len = strlen(other.text);
-                        text = new char[len + 1];
-                        strcpy(text, other.text);
+                        size_t len = std::strlen(other.text.get());
+                        text = std::make_unique<char[]>(len + 1);
+                        std::strcpy(text.get(), other.text.get());
+                    } else {
+                        text.reset();
                     }
                     if (other.fileName) {
-                        size_t len = strlen(other.fileName);
-                        fileName = new char[len + 1];
-                        strcpy(fileName, other.fileName);
+                        size_t len = std::strlen(other.fileName.get());
+                        fileName = std::make_unique<char[]>(len + 1);
+                        std::strcpy(fileName.get(), other.fileName.get());
+                    } else {
+                        fileName.reset();
                     }
                 }
                 return *this;
-            }
-            
-            // Move assignment
-            NotificationData& operator=(NotificationData&& other) noexcept {
-                if (this != &other) {
-                    delete[] text;
-                    delete[] fileName;
-                    
-                    text = other.text;
-                    fileName = other.fileName;
-                    fontSize = other.fontSize;
-                    promptWidth = other.promptWidth;
-                    promptHeight = other.promptHeight;
-                    durationMs = other.durationMs;
-                    priority = other.priority;
-                    arrivalNs = other.arrivalNs;
-                    
-                    other.text = nullptr;
-                    other.fileName = nullptr;
-                }
-                return *this;
-            }
-            
-            // Destructor
-            ~NotificationData() {
-                delete[] text;
-                delete[] fileName;
             }
         };
     
         struct NotificationCompare {
             bool operator()(const NotificationData& a, const NotificationData& b) const {
-                return (a.priority == b.priority) ? a.arrivalNs > b.arrivalNs : a.priority > b.priority;
+                // Lower priority value means higher priority; if equal, earlier arrival first.
+                if (a.priority == b.priority)
+                    return a.arrivalNs > b.arrivalNs; // earlier (smaller) arrival goes first
+                return a.priority > b.priority;       // smaller priority number goes first
             }
         };
     
         struct NotificationState {
-            char* activeText = nullptr;
-            char* fileName = nullptr;
+            std::unique_ptr<char[]> activeText;
+            std::unique_ptr<char[]> fileName;
             size_t fontSize = 28;
             s32 promptWidth = 448, promptHeight = 88;
             PromptState state = PromptState::Inactive;
             u64 expireNs = 0, stateStartNs = 0;
-            
-            // Constructor
+    
             NotificationState() = default;
-            
-            // Copy constructor
-            NotificationState(const NotificationState& other) 
-                : fontSize(other.fontSize), promptWidth(other.promptWidth), promptHeight(other.promptHeight),
-                  state(other.state), expireNs(other.expireNs), stateStartNs(other.stateStartNs) {
+    
+            // Copy constructor (deep-copy)
+            NotificationState(const NotificationState& other)
+                : fontSize(other.fontSize), promptWidth(other.promptWidth),
+                  promptHeight(other.promptHeight), state(other.state),
+                  expireNs(other.expireNs), stateStartNs(other.stateStartNs)
+            {
                 if (other.activeText) {
-                    size_t len = strlen(other.activeText);
-                    activeText = new char[len + 1];
-                    strcpy(activeText, other.activeText);
+                    size_t len = std::strlen(other.activeText.get());
+                    activeText = std::make_unique<char[]>(len + 1);
+                    std::strcpy(activeText.get(), other.activeText.get());
                 }
                 if (other.fileName) {
-                    size_t len = strlen(other.fileName);
-                    fileName = new char[len + 1];
-                    strcpy(fileName, other.fileName);
+                    size_t len = std::strlen(other.fileName.get());
+                    fileName = std::make_unique<char[]>(len + 1);
+                    std::strcpy(fileName.get(), other.fileName.get());
                 }
             }
-            
-            // Move constructor
-            NotificationState(NotificationState&& other) noexcept
-                : activeText(other.activeText), fileName(other.fileName), fontSize(other.fontSize), 
-                  promptWidth(other.promptWidth), promptHeight(other.promptHeight), state(other.state),
-                  expireNs(other.expireNs), stateStartNs(other.stateStartNs) {
-                other.activeText = nullptr;
-                other.fileName = nullptr;
-            }
-            
-            // Copy assignment
+    
+            // Move operations
+            NotificationState(NotificationState&&) noexcept = default;
+            NotificationState& operator=(NotificationState&&) noexcept = default;
+    
+            // Copy assignment (deep copy)
             NotificationState& operator=(const NotificationState& other) {
                 if (this != &other) {
-                    // Clean up existing strings
-                    delete[] activeText;
-                    delete[] fileName;
-                    activeText = nullptr;
-                    fileName = nullptr;
-                    
-                    // Copy other members
-                    fontSize = other.fontSize;
+                    fontSize    = other.fontSize;
                     promptWidth = other.promptWidth;
-                    promptHeight = other.promptHeight;
-                    state = other.state;
-                    expireNs = other.expireNs;
-                    stateStartNs = other.stateStartNs;
-                    
-                    // Copy strings
+                    promptHeight= other.promptHeight;
+                    state       = other.state;
+                    expireNs    = other.expireNs;
+                    stateStartNs= other.stateStartNs;
                     if (other.activeText) {
-                        size_t len = strlen(other.activeText);
-                        activeText = new char[len + 1];
-                        strcpy(activeText, other.activeText);
+                        size_t len = std::strlen(other.activeText.get());
+                        activeText = std::make_unique<char[]>(len + 1);
+                        std::strcpy(activeText.get(), other.activeText.get());
+                    } else {
+                        activeText.reset();
                     }
                     if (other.fileName) {
-                        size_t len = strlen(other.fileName);
-                        fileName = new char[len + 1];
-                        strcpy(fileName, other.fileName);
+                        size_t len = std::strlen(other.fileName.get());
+                        fileName = std::make_unique<char[]>(len + 1);
+                        std::strcpy(fileName.get(), other.fileName.get());
+                    } else {
+                        fileName.reset();
                     }
                 }
                 return *this;
             }
-            
-            // Move assignment
-            NotificationState& operator=(NotificationState&& other) noexcept {
-                if (this != &other) {
-                    delete[] activeText;
-                    delete[] fileName;
-                    
-                    activeText = other.activeText;
-                    fileName = other.fileName;
-                    fontSize = other.fontSize;
-                    promptWidth = other.promptWidth;
-                    promptHeight = other.promptHeight;
-                    state = other.state;
-                    expireNs = other.expireNs;
-                    stateStartNs = other.stateStartNs;
-                    
-                    other.activeText = nullptr;
-                    other.fileName = nullptr;
-                }
-                return *this;
-            }
-            
-            // Destructor
-            ~NotificationState() {
-                delete[] activeText;
-                delete[] fileName;
-            }
-            
-            // Helper method to check if activeText is empty
+    
             bool isTextEmpty() const {
                 return !activeText || activeText[0] == '\0';
             }
         };
     
-        // Public constants
         static constexpr size_t MAX_NOTIFS = 30;
     
-        // Public interface methods
         void show(const std::string& msg, size_t fontSize = 26, int priority = 20,
                   const std::string& fileName = "", u32 durationMs = 2500,
                   s32 promptWidth = 448, s32 promptHeight = 88)
         {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
-            std::lock_guard lk(mtx);
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+            // Quick early return checks
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || msg.empty()) {
                 return;
-            if (msg.empty())
-                return;
-    
-            NotificationData notif{};
-            
-            // Copy text
-            size_t msgLen = msg.length();
-            notif.text = new char[msgLen + 1];
-            strcpy(notif.text, msg.c_str());
-            
-            // Copy fileName if provided
-            if (!fileName.empty()) {
-                size_t fileLen = fileName.length();
-                notif.fileName = new char[fileLen + 1];
-                strcpy(notif.fileName, fileName.c_str());
             }
-            
-            notif.fontSize = std::clamp(fontSize, size_t(8), size_t(48));
-            notif.promptWidth = std::clamp(promptWidth, 100, 1280);
-            notif.promptHeight = std::clamp(promptHeight, 50, 720);
-            notif.durationMs = std::clamp(durationMs, 500u, 30000u);
-            notif.priority = priority;
+    
+            NotificationData notif(
+                msg, fileName,
+                std::clamp(fontSize, size_t(8), size_t(48)),
+                std::clamp(promptWidth, (s32)100, (s32)1280),
+                std::clamp(promptHeight, (s32)50, (s32)720),
+                std::clamp(durationMs, 500u, 30000u),
+                priority
+            );
             notif.arrivalNs = armTicksToNs(armGetSystemTick());
     
-            bool started = false;
-            if (pendingQueue.size() < MAX_NOTIFS) {
-                pendingQueue.push(std::move(notif));
-                if (currentState.state == PromptState::Inactive)
-                    started = startNext_Locked();
-            }
-    
-            // Fire event outside the main lock but still check enabled state
-            if (started && enabled.load(std::memory_order_acquire) && !ult::launchingOverlay.load(std::memory_order_acquire))
-                eventFire(&notificationEvent);
-        }
-    
-        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
-            // Early atomic check without lock for performance
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
-            
-            std::lock_guard lk(mtx);
-            
-            // Double-check under lock - return immediately if disabled
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
-    
-            // Set rendering flag with sequential consistency for shutdown safety
-            isRenderingNow.store(true, std::memory_order_seq_cst);
-            
-            // Use RAII to ensure flag is always cleared
-            struct RenderingGuard {
-                std::atomic<bool>& flag;
-                RenderingGuard(std::atomic<bool>& f) : flag(f) {}
-                ~RenderingGuard() { flag.store(false, std::memory_order_seq_cst); }
-            } guard(isRenderingNow);
-    
-            NotificationState stateCopy;
-            bool shouldRender = false;
+            bool shouldFireEvent = false;
             {
-                // Triple-check enabled state under lock
-                if (!enabled.load(std::memory_order_acquire)) return;
-                
-                if (!isActive_Locked()) return;
-    
-    #if IS_STATUS_MONITOR_DIRECTIVE
-                if (!pendingExit && currentState.state == PromptState::Inactive && wasRendering) {
-                    wasRendering = false; isRendering = true;
+                std::unique_lock<std::mutex> lock(mtx);
+                if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
+                    return;
                 }
-    #endif
-    
-                advanceState_Locked();
+                
+                if (pendingQueue.size() < MAX_NOTIFS) {
+                    pendingQueue.push(std::move(notif));
+                    
+                    if (!isActiveAtomic.load(std::memory_order_acquire)) {
+                        shouldFireEvent = startNext_NoLock();
+                    }
+                }
+            }
+            
+            if (shouldFireEvent) {
+                eventFire(&notificationEvent);
+            }
+        }
 
-                // Check again after state advance
-                if (!enabled.load(std::memory_order_acquire)) return;
-                if (!isActive_Locked()) return;
-    
-    #if IS_STATUS_MONITOR_DIRECTIVE
-                if (isRendering) { wasRendering = true; isRendering = false; }
-    #endif
-    
-                stateCopy = currentState;  // This will use copy constructor
-                shouldRender = true;
+        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || !renderer) {
+                return;
             }
     
-            if (shouldRender && enabled.load(std::memory_order_acquire)) {
-                renderNotification(renderer, stateCopy, promptOnly);
+            // Use condition variable to coordinate with other operations
+            std::unique_lock<std::mutex> lock(mtx);
+            renderingCV.wait(lock, [this] { 
+                return !isRendering.load(std::memory_order_acquire) || !enabled.load(std::memory_order_acquire);
+            });
+            
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
+                return;
             }
+            
+            if (!isActiveAtomic.load(std::memory_order_acquire) || currentState.isTextEmpty()) {
+                return;
+            }
+            
+            isRendering.store(true, std::memory_order_release);
+            NotificationState stateCopy = currentState;
+            lock.unlock();
+    
+            // Render with copied state (no locks held)
+            u64 now = armTicksToNs(armGetSystemTick());
+            u64 elapsedMs = (now - stateCopy.stateStartNs) / 1'000'000ULL;
+            
+            s32 x = 0, y = 0;
+            switch (stateCopy.state) {
+                case PromptState::SlidingIn: {
+                    float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
+                    if (ult::useRightAlignment) {
+                        x = tsl::cfg::FramebufferWidth - stateCopy.promptWidth +
+                            static_cast<s32>((1.0f - t) * stateCopy.promptWidth);
+                    } else {
+                        x = static_cast<s32>(-stateCopy.promptWidth + t * stateCopy.promptWidth);
+                    }
+                    break;
+                }
+                case PromptState::Visible:
+                    x = ult::useRightAlignment ? (tsl::cfg::FramebufferWidth - stateCopy.promptWidth) : 0;
+                    break;
+                case PromptState::SlidingOut: {
+                    float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
+                    if (ult::useRightAlignment) {
+                        x = tsl::cfg::FramebufferWidth - stateCopy.promptWidth +
+                            static_cast<s32>(t * stateCopy.promptWidth);
+                    } else {
+                        x = static_cast<s32>(-t * stateCopy.promptWidth);
+                    }
+                    break;
+                }
+                case PromptState::Inactive:
+                default:
+                    isRendering.store(false, std::memory_order_release);
+                    renderingCV.notify_all();
+                    return;
+            }
+        
+            s32 scissorX = std::max(0, x);
+            s32 scissorW = std::min(stateCopy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
+            
+            if (scissorX >= 0 && scissorW > 0 && stateCopy.promptHeight > 0) {
+                renderer->enableScissoring(scissorX, y, scissorW, stateCopy.promptHeight);
+                renderer->drawRect(x, y, stateCopy.promptWidth, stateCopy.promptHeight, defaultBackgroundColor);
+        
+                if (stateCopy.activeText && stateCopy.activeText[0] != '\0') {
+                    std::vector<std::string> lines;
+                    const char* ptr = stateCopy.activeText.get();
+                    const char* lineStart = ptr;
+                    
+                    while (*ptr && lines.size() < 8) {
+                        if (*ptr == '\\' && *(ptr + 1) == 'n') {
+                            lines.emplace_back(lineStart, ptr - lineStart);
+                            ptr += 2;
+                            lineStart = ptr;
+                        } else {
+                            ++ptr;
+                        }
+                    }
+                    if (*lineStart && lines.size() < 8) {
+                        lines.emplace_back(lineStart);
+                    }
+        
+                    auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', stateCopy.fontSize);
+                    s32 startY = y + (stateCopy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
+                    
+                    for (size_t i = 0; i < lines.size(); ++i) {
+                        auto [lw, lh] = renderer->getNotificationTextDimensions(lines[i], false, stateCopy.fontSize);
+                        renderer->drawNotificationString(
+                            lines[i], false,
+                            x + (stateCopy.promptWidth - lw) / 2,
+                            startY + static_cast<int>(i) * fm.lineHeight,
+                            stateCopy.fontSize, defaultTextColor
+                        );
+                    }
+                }
+        
+                if (!ult::useRightAlignment) {
+                    renderer->drawRect(x + stateCopy.promptWidth - 1, y, 1, stateCopy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, y + stateCopy.promptHeight - 1, stateCopy.promptWidth, 1, edgeSeparatorColor);
+                } else {
+                    renderer->drawRect(x, y, 1, stateCopy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, y + stateCopy.promptHeight - 1, stateCopy.promptWidth, 1, edgeSeparatorColor);
+                }
+                
+                renderer->disableScissoring();
+            }
+            
+            isRendering.store(false, std::memory_order_release);
+            renderingCV.notify_all();
         }
     
         void update() {
-            std::lock_guard lk(mtx);
-            if (enabled.load(std::memory_order_acquire)) {
-                advanceState_Locked();
-            }
-        }
-    
-        bool isActive() const {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
-                return false;
-            std::lock_guard lk(mtx);
-    
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
-                return false;
-    
-    #if IS_STATUS_MONITOR_DIRECTIVE
-            const bool active = currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
-            if (!pendingExit && !active && wasRendering) { wasRendering=false; isRendering=true; }
-            return active;
-    #else
-            return currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
-    #endif
-        }
-    
-        void shutdown() {
-            static bool runOnce = false;
-            if (runOnce)
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
                 return;
-
-            // Step 1: disable new notifications and prevent all operations
-            enabled.store(false, std::memory_order_seq_cst);
-            
-            // Step 2: wait for any ongoing rendering to complete
-            while (isRenderingNow.load(std::memory_order_acquire)) {
-                svcSleepThread(10'000'000); // 10ms
             }
             
-            // Step 3: Force clear rendering flag if still set (safety)
-            //isRenderingNow.store(false, std::memory_order_seq_cst);
-        
-            // Step 4: cleanup safely under lock with additional safety checks
-            {
-                std::lock_guard lk(mtx);
-                
-                // Clear pending queue safely
-                while (!pendingQueue.empty()) {
-                    pendingQueue.pop();
-                }
-        
-                // Clear current state safely - do this manually to avoid potential issues
-                delete[] currentState.activeText;
-                delete[] currentState.fileName;
-                currentState.activeText = nullptr;
-                currentState.fileName = nullptr;
-                currentState.state = PromptState::Inactive;
-                currentState.fontSize = 28;
-                currentState.promptWidth = 448;
-                currentState.promptHeight = 88;
-                currentState.expireNs = 0;
-                currentState.stateStartNs = 0;
-                
-                activeFlag = false;
-            }
-
-            while (isRenderingNow.load(std::memory_order_acquire)) {
-                svcSleepThread(10'000'000); // 10ms
-            }
-            
-            // Step 5: Final safety sleep to ensure any lingering operations complete
-            //svcSleepThread(50'000'000); // 50ms
-            runOnce = true;
-        }
-    
-    private:
-        // Private member variables
-        mutable std::mutex mtx;
-        std::atomic<bool> enabled{true};
-        std::atomic<bool> isRenderingNow{false};
-        std::atomic<bool> activeFlag{false};
-        
-        NotificationState currentState;
-        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pendingQueue;
-        const u32 slideDurationMs = 200;
-    
-    #if IS_STATUS_MONITOR_DIRECTIVE
-        bool wasRendering = false, isRendering = false;
-    #endif
-
-        // Helper that assumes lock is already held
-        bool isActive_Locked() const {
-            if (!ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
-                return false;
-                
-    #if IS_STATUS_MONITOR_DIRECTIVE
-            const bool active = currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
-            if (!pendingExit && !active && wasRendering) { 
-                wasRendering = false; 
-                isRendering = true; 
-            }
-            return active;
-    #else
-            return currentState.state != PromptState::Inactive && !currentState.isTextEmpty();
-    #endif
-        }
-    
-        // Private helper methods
-        bool startNext_Locked() {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
-                return false;
-
-            if (pendingQueue.empty())
-                return false;
-    
-            auto next = std::move(const_cast<NotificationData&>(pendingQueue.top())); 
-            pendingQueue.pop();
-            if (!next.text || next.text[0] == '\0')
-                return false;
-    
-            // Move the strings to currentState
-            delete[] currentState.activeText;
-            delete[] currentState.fileName;
-            
-            currentState.activeText = next.text;
-            currentState.fileName = next.fileName;
-            next.text = nullptr;  // Prevent destruction
-            next.fileName = nullptr;  // Prevent destruction
-            
-            currentState.fontSize = next.fontSize;
-            currentState.promptWidth = next.promptWidth;
-            currentState.promptHeight = next.promptHeight;
-            currentState.state = PromptState::SlidingIn;
-            currentState.stateStartNs = armTicksToNs(armGetSystemTick());
-            currentState.expireNs = currentState.stateStartNs + slideDurationMs*1'000'000ULL + next.durationMs*1'000'000ULL;
-    
-            activeFlag = true;
-            return true;
-        }
-    
-        void advanceState_Locked() {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire))
+            std::unique_lock<std::mutex> lock(mtx);
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
                 return;
+            }
+            
+            if (!isActiveAtomic.load(std::memory_order_acquire)) {
+                return;
+            }
+            
+            u64 now = armTicksToNs(armGetSystemTick());
+            u64 elapsedMs = (now - currentState.stateStartNs) / 1'000'000ULL;
     
-            const u64 now = armTicksToNs(armGetSystemTick());
-            const u64 elapsedMs = (now - currentState.stateStartNs)/1'000'000ULL;
-    
-            switch(currentState.state) {
+            switch (currentState.state) {
                 case PromptState::SlidingIn:
                     if (elapsedMs >= slideDurationMs) {
                         currentState.state = PromptState::Visible;
@@ -10568,122 +10412,104 @@ namespace tsl {
                     break;
                 case PromptState::SlidingOut:
                     if (elapsedMs >= slideDurationMs) {
-                        if (currentState.fileName && currentState.fileName[0] != '\0')
-                            ult::deleteFileOrDirectory(ult::NOTIFICATIONS_PATH + std::string(currentState.fileName));
+                        if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
+                            return;
+                        }
+                        
+                        std::string fileToDelete;
+                        if (currentState.fileName && currentState.fileName[0] != '\0') {
+                            fileToDelete = ult::NOTIFICATIONS_PATH + std::string(currentState.fileName.get());
+                        }
+                        
                         currentState = NotificationState{};
-                        activeFlag = false;
-                        startNext_Locked();
+                        isActiveAtomic.store(false, std::memory_order_release);
+                        
+                        bool hasNext = startNext_NoLock();
+                        lock.unlock();
+                        
+                        if (!fileToDelete.empty()) {
+                            ult::deleteFileOrDirectory(fileToDelete);
+                        }
+                        
+                        if (hasNext) {
+                            eventFire(&notificationEvent);
+                        }
+                        return;
                     }
                     break;
-                default: break;
+                default:
+                    break;
             }
         }
     
-        void renderNotification(gfx::Renderer* renderer, const NotificationState& state, bool promptOnly) {
-            // Safety check - if disabled during rendering, exit immediately
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || ult::launchingOverlay.load(std::memory_order_acquire)) return;
-
-            if (state.isTextEmpty()) return;
-        
-            const u64 now = armTicksToNs(armGetSystemTick());
-            const u64 elapsedMs = (now - state.stateStartNs) / 1'000'000ULL;
-            s32 x = 0, y = 0;
-        
-            switch(state.state) {
-                case PromptState::SlidingIn: {
-                    const float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
-                    x = ult::useRightAlignment 
-                        ? tsl::cfg::FramebufferWidth - state.promptWidth + (1.0f - t) * state.promptWidth
-                        : -state.promptWidth + t * state.promptWidth;
-                    break;
-                }
-                case PromptState::Visible:
-                    x = ult::useRightAlignment ? tsl::cfg::FramebufferWidth - state.promptWidth : 0;
-                    break;
-                case PromptState::SlidingOut: {
-                    const float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
-                    x = ult::useRightAlignment 
-                        ? tsl::cfg::FramebufferWidth - state.promptWidth + t * state.promptWidth
-                        : -t * state.promptWidth;
-                    break;
-                }
-                default: return;
-            }
-        
-            // Ensure scissoring region stays within framebuffer bounds
-            const s32 scissorX = std::max(0, x);
-            const s32 scissorW = std::min(state.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
-            renderer->enableScissoring(scissorX, y, scissorW, state.promptHeight);
-        
-            // Draw background
-            renderer->drawRect(x, y, state.promptWidth, state.promptHeight, defaultBackgroundColor);
-        
-            // Split text into lines using C-string operations
-            std::vector<const char*> lines;
-            std::vector<char*> lineBuffers;  // To store allocated line strings
-            
-            const char* text = state.activeText;
-            const char* start = text;
-            const char* current = text;
-            
-            while (*current && lines.size() < 8) {
-                if (*current == '\\' && *(current + 1) == 'n') {
-                    // Found \n sequence
-                    size_t len = current - start;
-                    char* line = new char[len + 1];
-                    strncpy(line, start, len);
-                    line[len] = '\0';
-                    lineBuffers.push_back(line);
-                    lines.push_back(line);
-                    current += 2;  // Skip \n
-                    start = current;
-                } else {
-                    current++;
-                }
+        bool isActive() const {
+            return enabled.load(std::memory_order_acquire) && 
+                   ult::useNotifications && 
+                   isActiveAtomic.load(std::memory_order_acquire);
+        }
+    
+        void shutdown() {
+            bool expected = true;
+            if (!enabled.compare_exchange_strong(expected, false, std::memory_order_seq_cst)) {
+                return;
             }
             
-            // Add the last line if there's remaining text
-            if (*start && lines.size() < 8) {
-                size_t len = strlen(start);
-                char* line = new char[len + 1];
-                strcpy(line, start);
-                lineBuffers.push_back(line);
-                lines.push_back(line);
-            }
-        
-            // Draw text
-            const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', state.fontSize);
-            const s32 startY = y + (state.promptHeight - int(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
-            for (size_t l = 0; l < lines.size(); ++l) {
-                const auto [lw, lh] = renderer->getNotificationTextDimensions(std::string(lines[l]), false, state.fontSize);
-                renderer->drawNotificationString(
-                    std::string(lines[l]), false,
-                    x + (state.promptWidth - lw) / 2,
-                    startY + int(l) * fm.lineHeight,
-                    state.fontSize, defaultTextColor
-                );
-            }
+            // Wait for rendering to complete
+            std::unique_lock<std::mutex> lock(mtx);
+            renderingCV.wait(lock, [this] { 
+                return !isRendering.load(std::memory_order_acquire); 
+            });
             
-            // Clean up line buffers
-            for (char* line : lineBuffers) {
-                delete[] line;
-            }
+            while (!pendingQueue.empty()) pendingQueue.pop();
+            currentState = NotificationState{};
+            isActiveAtomic.store(false, std::memory_order_release);
+            
+            lock.unlock();
+            eventClear(&notificationEvent);
+            //eventClose(&notificationEvent);
+        }
         
-            // Draw edges
-            if (!ult::useRightAlignment) {
-                renderer->drawRect(x + state.promptWidth - 1, y, 1, state.promptHeight, edgeSeparatorColor);
-                renderer->drawRect(x, y + state.promptHeight - 1, state.promptWidth, 1, edgeSeparatorColor);
-            } else {
-                renderer->drawRect(x, y, 1, state.promptHeight, edgeSeparatorColor);
-                renderer->drawRect(x, y + state.promptHeight - 1, state.promptWidth, 1, edgeSeparatorColor);
-            }
+        std::atomic<bool> enabled{true};
         
-            renderer->disableScissoring();
+    private:
+        mutable std::mutex mtx;
+        mutable std::condition_variable renderingCV;
+        
+        std::atomic<bool> isRendering{false};
+        std::atomic<bool> isActiveAtomic{false};
+    
+        NotificationState currentState;
+        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pendingQueue;
+        const u32 slideDurationMs = 200;
+        
+        bool startNext_NoLock() {
+            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || pendingQueue.empty()) {
+                return false;
+            }
+    
+            NotificationData next = pendingQueue.top();
+            pendingQueue.pop();
+            if (!next.text || next.text[0] == '\0') {
+                return false;
+            }
+    
+            currentState.activeText   = std::move(next.text);
+            currentState.fileName     = std::move(next.fileName);
+            currentState.fontSize     = next.fontSize;
+            currentState.promptWidth  = next.promptWidth;
+            currentState.promptHeight = next.promptHeight;
+            currentState.state        = PromptState::SlidingIn;
+            currentState.stateStartNs = armTicksToNs(armGetSystemTick());
+            currentState.expireNs     = currentState.stateStartNs +
+                                        slideDurationMs * 1'000'000ULL +
+                                        next.durationMs * 1'000'000ULL;
+            
+            isActiveAtomic.store(true, std::memory_order_release);
+            return true;
         }
     };
-
     
-    static inline NotificationPrompt* notification = nullptr;
+    inline static std::shared_ptr<NotificationPrompt> notification;
 
     // GUI
     
@@ -11014,15 +10840,13 @@ namespace tsl {
          *
          */
         void close(bool forceClose = false) {
-            if (!forceClose && tsl::notification->isActive()) {
+            if (!forceClose && notification->isActive()) {
                 this->closeAfter();
                 this->hide(true);
                 return;
             }
-
-            tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+        
             this->m_shouldClose = true;
-
         }
 
         /**
@@ -11175,45 +10999,55 @@ namespace tsl {
          *
          */
         void loop(bool promptOnly = false) {
-            if (ult::launchingOverlay.load(std::memory_order_acquire))
+            // Early exit check - avoid all work if shutting down
+            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
                 return;
-            static bool runAddOnce = false;
-            static bool runRemoveOnce = true;
-            static bool clearNotificationCacheOnce = false;
+            }
+            
+            // Static state management - made atomic for thread safety
+            static std::atomic<bool> screenshotStacksAdded{false};
+            static std::atomic<bool> notificationCacheNeedsClearing{false};
             
             auto& renderer = gfx::Renderer::get();
             renderer.startFrame();
         
+            // Handle main UI rendering
             if (!promptOnly) {
-                if (runAddOnce) {
+                // Screenshot management - thread-safe
+                if (!screenshotStacksAdded.load(std::memory_order_acquire)) {
                     renderer.addScreenshotStacks();
-                    runAddOnce = false;
-                    runRemoveOnce = true;
+                    screenshotStacksAdded.store(true, std::memory_order_release);
                 }
         
                 this->animationLoop();
                 this->getCurrentGui()->update();
                 this->getCurrentGui()->draw(&renderer);
+                
+                // Mark that we may need to clear notification cache later
+                notificationCacheNeedsClearing.store(true, std::memory_order_release);
             } else {
-                if (runRemoveOnce && !screenshotsAreDisabled) {
+                // Prompt-only mode - clean up screenshots
+                if (screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreDisabled) {
                     renderer.removeScreenshotStacks();
-                    runRemoveOnce = false;
-                    runAddOnce = true;
+                    screenshotStacksAdded.store(false, std::memory_order_release);
                 }
                 renderer.clearScreen();
             }
         
-            // Always update the notification state machine each frame (before draw)
-            //notification->update();
-        
-            // Global prompt: draw if active (draw() now won't hold the lock while calling renderer)
-            if (!ult::launchingOverlay.load(std::memory_order_acquire) && notification->isActive()) {
-                notification->draw(&renderer, promptOnly);
-                clearNotificationCacheOnce = true;
-            } else {
-                if (!ult::launchingOverlay.load(std::memory_order_acquire) && clearNotificationCacheOnce) {
-                    tsl::gfx::FontManager::clearNotificationCache();
-                    clearNotificationCacheOnce = false;
+            // Notification handling - safer approach with consistent ordering
+            {
+                if (notification->enabled.load(std::memory_order_acquire)) {
+                    // Snapshot pointer to avoid it becoming null mid-use
+                    notification->update();
+            
+                    if (notification->isActive()) {
+                        notification->draw(&renderer, promptOnly);
+                        notificationCacheNeedsClearing.store(true, std::memory_order_release);
+                    } else {
+                        if (notificationCacheNeedsClearing.exchange(false, std::memory_order_acq_rel)) {
+                            tsl::gfx::FontManager::clearNotificationCache();
+                        }
+                    }
                 }
             }
         
@@ -12118,36 +11952,34 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
-            
+            // If there is exactly one GUI and an active notification, handle that first
             if (this->m_guiStack.size() == 1 && notification->isActive()) {
-                //this->hide();
-                this->close();
+                this->close(); 
                 return;
             }
-
-
+        
             isNavigatingBackwards.store(true, std::memory_order_release);
+        
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
-            
+        
             // Special case: if we don't close on exit and popping everything would leave us with 0 or 1 GUI
             if (!this->m_closeOnExit && this->m_guiStack.size() <= actualCount) {
-                
                 this->hide();
                 return;
             }
-            
+        
             if (actualCount > 1)
                 tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-
+        
             // Pop the specified number of GUIs
             for (u32 i = 0; i < actualCount && !this->m_guiStack.empty(); ++i) {
                 this->m_guiStack.pop();
             }
-            
+        
             if (tsl::elm::skipDeconstruction.load(std::memory_order_acquire))
                 tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
-
+        
             // Close overlay if stack is empty
             if (this->m_guiStack.empty()) {
                 this->close();
@@ -12437,6 +12269,9 @@ namespace tsl {
             //u64 elapsedTime_ns;
             
             while (shData->running) {
+                if (ult::launchingOverlay.load(std::memory_order_acquire))
+                    return;
+
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
                 
@@ -12488,140 +12323,123 @@ namespace tsl {
                 //    eventFire(&shData->notificationEvent);  // wake the loop
                 //}
 
-                // Process notification files every 100ms
+                // Process notification files every 300ms
                 {
+                    std::lock_guard<std::mutex> jsonLock(notificationJsonMutex);
                     static u64 lastNotifCheck = 0;
-                    //const u64 currentTick = armGetSystemTick();
-                    
+                
                     if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
                         lastNotifCheck = nowTick;
-                        
+                
                         DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
-                        if (dir) {
-                            
-                            if (ult::useNotifications) {
-                                // Pre-allocate strings and variables outside loop
-                                std::string filename, fullPath, prioStr;
-                                std::string bestFile;
-                                //bestFile.reserve(256); // Reserve space to avoid reallocations
-                                
-                                //int highestPriority = INT_MAX;
-                                //time_t oldestTime = 0;
-                                //struct stat fileStat{};
-                                struct dirent* entry;
-                                
-                                // Cache the notifications path length to avoid repeated string operations
-                                const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                const size_t notifPathLen = notifPath.length();
-                                
-                                static int priority;
-                                
-                                //static std::unordered_set<std::string> shownFiles;
-                                static std::vector<std::string> shownFiles;
-                                
-                                // --- Prune missing files from shownFiles ---
-                                for (auto it = shownFiles.begin(); it != shownFiles.end(); ) {
-                                    const std::string fullPath = ult::NOTIFICATIONS_PATH + *it;
-                                    if (access(fullPath.c_str(), F_OK) != 0) { // file no longer exists
-                                        it = shownFiles.erase(it);
-                                    } else {
-                                        ++it;
-                                    }
+                        if (!dir) return;
+                
+                        if (ult::useNotifications) {
+                            std::string filename, fullPath, prioStr;
+                            std::string bestFile;
+                
+                            struct dirent* entry;
+                
+                            const std::string& notifPath = ult::NOTIFICATIONS_PATH;
+                            const size_t notifPathLen = notifPath.length();
+                
+                            static std::vector<std::string> shownFiles;
+                
+                            // --- Prune missing files from shownFiles ---
+                            for (auto it = shownFiles.begin(); it != shownFiles.end();) {
+                                const std::string fullPath = notifPath + *it;
+                                if (access(fullPath.c_str(), F_OK) != 0) {
+                                    it = shownFiles.erase(it);
+                                } else {
+                                    ++it;
                                 }
-                                
-                                // Process all notification files
-                                static std::string text;
-                                static int fontSize;
-                                while ((entry = readdir(dir)) != nullptr) {
-                                    if (entry->d_type != DT_REG) continue;
-                                
-                                    filename = entry->d_name;
-                                    const size_t filenameLen = filename.size();
-                                
-                                    if (filenameLen <= 7) continue;
-                                    if (filename.compare(filenameLen - 7, 7, ".notify") != 0) continue;
-                                    // Skip if we've already shown this file
-                                    //if (shownFiles.find(filename) != shownFiles.end())
-                                    //    continue;
-                                    if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end()) {
-                                        continue; // already in vector
-                                    }
-                                
-                                    // --- Parse priority from filename ---
-                                    priority = 20; // default if not present
-                                    const size_t dashPos = filename.find('-');
-                                    if (dashPos != std::string::npos && dashPos > 0) {
-                                        prioStr.assign(filename, 0, dashPos);
-                                        if (!prioStr.empty() &&
-                                            std::all_of(prioStr.begin(), prioStr.end(),
-                                                        [](unsigned char c) { return std::isdigit(c); })) {
-                                            priority = std::stoi(prioStr);
-                                        }
-                                    }
-                                
-                                    // --- Build path & load JSON ---
-                                    fullPath.clear();
-                                    fullPath.reserve(notifPathLen + filenameLen);
-                                    fullPath = notifPath;
-                                    fullPath += filename;
-                                
-                                    text = ult::getStringFromJsonFile(fullPath, "text");
-                                    if (!text.empty()) {
-                                        fontSize = 28; // default
-                                
-                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                            ult::readJsonFromFile(fullPath), ult::JsonDeleter());
-                                        if (root) {
-                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                            cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-                                            if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
-                                                fontSize = static_cast<int>(fontSizeObj->valuedouble);
-                                                fontSize = std::clamp(fontSize, 1, 34);
-                                            }
-                                        }
-                                
-                                        // Push directly into notification queue
-                                        notification->show(text, fontSize, priority, filename);
-                                        // Mark as shown so we don't show it again
-                                        //shownFiles.insert(filename);
-                                        shownFiles.push_back(filename);
-                                    }
-                                
-                                    // --- Clean up processed file ---
-                                   // remove(fullPath.c_str());
-                                }
-                                
-                                closedir(dir);
-                            } else {
-                                // Delete all .notify files in folder - optimized version
-                                struct dirent* entry;
-                                std::string fullPath;
-                                const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                const size_t notifPathLen = notifPath.length();
-                                
-                                // Pre-allocate string to avoid repeated allocations
-                                fullPath.reserve(notifPathLen + 64); // Reserve space for typical filename
-                                
-                                while ((entry = readdir(dir)) != nullptr) {
-                                    if (entry->d_type != DT_REG) continue;
-                                    
-                                    const char* filename = entry->d_name;
-                                    const size_t filenameLen = strlen(filename);
-                                    
-                                    // Quick length check and direct C-string suffix comparison
-                                    if (filenameLen > 7 && 
-                                        strcmp(filename + filenameLen - 7, ".notify") == 0) {
-                                        
-                                        // Build path efficiently without temporary string objects
-                                        fullPath.clear();
-                                        fullPath.append(notifPath);
-                                        fullPath.append(filename, filenameLen);
-                                        
-                                        remove(fullPath.c_str());
-                                    }
-                                }
-                                closedir(dir);
                             }
+                
+                            static std::string text;
+                            static int fontSize;
+                            static int priority;
+                
+                            // --- Scan notification files ---
+                            while ((entry = readdir(dir)) != nullptr) {
+                                if (entry->d_type != DT_REG) continue;
+                
+                                filename = entry->d_name;
+                                const size_t filenameLen = filename.size();
+                
+                                // Must end with ".notify"
+                                if (filenameLen <= 7 || filename.compare(filenameLen - 7, 7, ".notify") != 0)
+                                    continue;
+                
+                                // Skip if already shown
+                                if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end())
+                                    continue;
+                
+                                // --- Parse priority ---
+                                priority = 20; // default
+                                const size_t dashPos = filename.find('-');
+                                if (dashPos != std::string::npos && dashPos > 0) {
+                                    prioStr.assign(filename, 0, dashPos);
+                                    if (!prioStr.empty() &&
+                                        std::all_of(prioStr.begin(), prioStr.end(),
+                                                    [](unsigned char c) { return std::isdigit(c); })) {
+                                        priority = std::stoi(prioStr);
+                                    }
+                                }
+                
+                                // --- Build path ---
+                                fullPath.clear();
+                                //fullPath.reserve(notifPathLen + filenameLen);
+                                fullPath = notifPath;
+                                fullPath += filename;
+                
+                                // --- Load JSON (safe outside notification lock) ---
+                                text = ult::getStringFromJsonFile(fullPath, "text");
+                                if (!text.empty()) {
+                                    fontSize = 28; // default
+                
+                                    std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                        ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                    if (root) {
+                                        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                        cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
+                                        if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
+                                            fontSize = std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34);
+                                        }
+                                    }
+                
+                                    // --- Show notification safely ---
+                                    if (notification) {
+                                        notification->show(text, fontSize, priority, filename);
+                                    }
+                
+                                    // Mark file as shown
+                                    shownFiles.push_back(filename);
+                                }
+                            }
+                
+                            closedir(dir);
+                
+                        } else {
+                            // --- Notifications disabled: delete all files ---
+                            struct dirent* entry;
+                            std::string fullPath;
+                
+                            while ((entry = readdir(dir)) != nullptr) {
+                                if (entry->d_type != DT_REG) continue;
+                
+                                const char* fname = entry->d_name;
+                                const size_t len = strlen(fname);
+                
+                                if (len > 7 && strcmp(fname + len - 7, ".notify") == 0) {
+                                    fullPath.clear();
+                                    //fullPath.reserve(notifPathLen + len);
+                                    fullPath = ult::NOTIFICATIONS_PATH;
+                                    fullPath.append(fname, len);
+                
+                                    remove(fullPath.c_str());
+                                }
+                            }
+                            closedir(dir);
                         }
                     }
                 }
@@ -12737,6 +12555,7 @@ namespace tsl {
                         );
                         tsl::Overlay::get()->close();
                         triggerExitNow = false;
+                        ult::launchingOverlay.store(true, std::memory_order_release);
                         break;
                     }
                     #endif
@@ -12810,10 +12629,12 @@ namespace tsl {
                             
                             // Launch the overlay using the same mechanism as key combos
                             //shData->overlayOpen = false;
-                            ult::launchingOverlay.store(true, std::memory_order_release);
+                            
                             tsl::setNextOverlay(requestedPath, requestedArgs+" --direct");
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
+
+                            ult::launchingOverlay.store(true, std::memory_order_release);
                             launchComboHasTriggered.store(true, std::memory_order_release);
                             return;
                         }
@@ -12864,10 +12685,11 @@ namespace tsl {
                                     );
                                 
                                     //shData->overlayOpen = false;
-                                    ult::launchingOverlay.store(true, std::memory_order_release);
+                                    
                                     tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct");
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
+                                    ult::launchingOverlay.store(true, std::memory_order_release);
                                     launchComboHasTriggered.store(true, std::memory_order_release);
                                     return;
                                 }
@@ -12919,10 +12741,10 @@ namespace tsl {
                                 }
                     
                                 //shData->overlayOpen = false;
-                                ult::launchingOverlay.store(true, std::memory_order_release);
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 tsl::Overlay::get()->close();
                                 eventFire(&shData->comboEvent);
+                                ult::launchingOverlay.store(true, std::memory_order_release);
                                 launchComboHasTriggered.store(true, std::memory_order_release);
                                 return;
                             }
@@ -13193,7 +13015,8 @@ namespace tsl {
     template<typename TOverlay, impl::LaunchFlags launchFlags>
     static inline int loop(int argc, char** argv) {
         static_assert(std::is_base_of_v<tsl::Overlay, TOverlay>, "tsl::loop expects a type derived from tsl::Overlay");
-        notification = new NotificationPrompt();
+        //notification = new NotificationPrompt();
+        notification = std::make_shared<NotificationPrompt>();
 
         // cleanup any lingering items (if they exist)
         //if (!tsl::elm::s_lastFrameItems.empty()) {
@@ -13447,282 +13270,266 @@ namespace tsl {
 
         overlay->disableNextAnimation();
 
-
-        Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
-        s32 index = -1;
-
-        bool exitAfterPrompt = false;
-        bool comboBreakout = false;
-        bool firstLoop = true;
-        if (ult::firstBoot)
-            firstLoop = false;
-
-
-        // Call this instead of assigning shData.running = false directly.
-        // setNextOverlayFlag -> if true, set next overlay to ovlmenu.ovl
-        //auto beginShutdown = [&](bool setNextOverlayFlag = false) {
-        //    ult::launchingOverlay.store(true, std::memory_order_release);
-        //    
-        //    shData.running = false;
-        //    shData.overlayOpen = false;
-        //
-        //    // 7) Optionally set next overlay
-        //    if (setNextOverlayFlag) {
-        //        tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
-        //    }
-        //    notification->shutdown();
-        //};
-                
-
-        while (shData.running) {
-            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                shData.running = false;
-                shData.overlayOpen = false;
-                
-                notification->shutdown();
-                break;
-            }
-
-            if (!notification->isActive()){
-                svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
-            }
-
-            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                shData.running = false;
-                shData.overlayOpen = false;
-                notification->shutdown();
-                break;
-            }
-
-            if ((notification->isActive() && !firstLoop) || (index == 1)) {
-                
-                comboBreakout = false;
-                eventClear(&notificationEvent);
-                eventClear(&shData.comboEvent);
-
-                //overlay->clearScreen();
-
-                while (shData.running) {
-
-                    overlay->loop(true);   // draw prompts while hidden
-
+        {
+            Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
+            s32 index = -1;
+    
+            bool exitAfterPrompt = false;
+            bool comboBreakout = false;
+            bool firstLoop = true;
+            if (ult::firstBoot)
+                firstLoop = false;
+    
+    
+            // Call this instead of assigning shData.running = false directly.
+            // setNextOverlayFlag -> if true, set next overlay to ovlmenu.ovl
+            //auto beginShutdown = [&](bool setNextOverlayFlag = false) {
+            //    ult::launchingOverlay.store(true, std::memory_order_release);
+            //    
+            //    shData.running = false;
+            //    shData.overlayOpen = false;
+            //
+            //    // 7) Optionally set next overlay
+            //    if (setNextOverlayFlag) {
+            //        tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
+            //    }
+            //    notification->shutdown();
+            //};
                     
-                    // Check if combo occurs while prompt is active
-                    if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
-                        mainComboHasTriggered.store(false, std::memory_order_acquire);
-                        comboBreakout = true;
-                        exitAfterPrompt = false;
-                        break;
-                    }
-
-                    // Also check for other configured launch combos (if enabled)
-                    if (launchComboHasTriggered.load(std::memory_order_acquire)) {
-                        //launchComboHasTriggered.store(false, std::memory_order_acquire);
-                        exitAfterPrompt = true;
-                        usingPackageLauncher = false;
-                        directMode = false;
-                        break;
-                    }
-
-                    if (!notification->isActive()) {
-                        break;
-                    }
-                }
-
-                if (!comboBreakout || !shData.running) {
-                    overlay->clearScreen();
-                    if (exitAfterPrompt) {
-                        exitAfterPrompt = false;
-                        tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                        ult::launchingOverlay.store(true, std::memory_order_release);
-                        
-                        shData.running = false;
-                        shData.overlayOpen = false;
-                    
-                        // 7) Optionally set next overlay
-                        if (usingPackageLauncher || directMode) {
-                            tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
-                        }
-                        notification->shutdown();
-
-                        overlay->resetFlags();
-                        
-                        hlp::requestForeground(false);
-                        
-                        //mainComboHasTriggered.store(false, std::memory_order_acquire);
-                        //launchComboHasTriggered.store(false, std::memory_order_acquire);
-                        // events already fired inside beginShutdown(); no need to eventClear here
-                        break;
-                    }
-
-                    continue;
-                }
-            }
-
-            firstLoop = false;
-            eventClear(&notificationEvent);
-            eventClear(&shData.comboEvent);
-            shData.overlayOpen = true;
-
-            
-#if IS_STATUS_MONITOR_DIRECTIVE
-            if (!isMiniOrMicroMode)
-                hlp::requestForeground(true);
-#else
-            hlp::requestForeground(true);
-#endif
-            
-            overlay->show();
-            if (!comboBreakout && !notification->isActive())
-                overlay->clearScreen();
-            
+    
             while (shData.running) {
-                overlay->loop();
-                
-                {
-                    std::scoped_lock lock(shData.dataMutex);
-                    if (!overlay->fadeAnimationPlaying()) {
-                        overlay->handleInput(shData.keysDownPending, shData.keysHeld, shData.touchState.count, shData.touchState.touches[0], shData.joyStickPosLeft, shData.joyStickPosRight);
+                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
+                    shData.running = false;
+                    shData.overlayOpen = false;
+                    break;
+                }
+    
+                if (!notification->isActive()){
+                    svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
+                    eventClear(&notificationEvent);
+                    eventClear(&shData.comboEvent);
+                }
+    
+                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
+                    shData.running = false;
+                    shData.overlayOpen = false;
+                    break;
+                }
+    
+                if ((notification->isActive() && !firstLoop) || (index == 1)) {
+                    
+                    comboBreakout = false;
+    
+                    //overlay->clearScreen();
+                    
+                    while (shData.running) {
+                        
+                        overlay->loop(true);   // draw prompts while hidden
+                        
+                        // Check if combo occurs while prompt is active
+                        if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
+                            mainComboHasTriggered.store(false, std::memory_order_acquire);
+                            comboBreakout = true;
+                            exitAfterPrompt = false;
+                            break;
+                        }
+    
+                        // Also check for other configured launch combos (if enabled)
+                        if (launchComboHasTriggered.load(std::memory_order_acquire)) {
+                            exitAfterPrompt = true;
+                            usingPackageLauncher = false;
+                            directMode = false;
+                            break;
+                        }
+    
+                        if (!notification->isActive()) {
+                            break;
+                        }
                     }
-                    shData.keysDownPending = 0;
-                }
-                
-
-                #if IS_STATUS_MONITOR_DIRECTIVE
-                if (pendingExit && wasRendering) {
-                    pendingExit = false;
-                    wasRendering = false;
-                    isRendering = true;
-                    leventClear(&renderingStopEvent);
-                }
-                #endif
-
-                if (overlay->shouldHide()) {
-                    if (overlay->shouldCloseAfter()) {
-                        if (!directMode) {
-                            // safe shutdown
-                            tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                            ult::launchingOverlay.store(true, std::memory_order_release);
+    
+                    if (!comboBreakout || !shData.running) {
+                        overlay->clearScreen();
+                        if (exitAfterPrompt) {
+                            exitAfterPrompt = false;
                             
                             shData.running = false;
                             shData.overlayOpen = false;
-                            notification->shutdown();
-                            break;  // Exit immediately, don't clear events
-                        } else {
-                            exitAfterPrompt = true;
-                            #if IS_STATUS_MONITOR_DIRECTIVE
-                            pendingExit = true;
-                            #endif
+
+                            //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                            ult::launchingOverlay.store(true, std::memory_order_release);
+                            
+                        
+                            // 7) Optionally set next overlay
+                            if (usingPackageLauncher || directMode) {
+                                tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
+                            }
+    
+                            overlay->resetFlags();
+                            
+                            hlp::requestForeground(false);
+                            
+                            //mainComboHasTriggered.store(false, std::memory_order_acquire);
+                            //launchComboHasTriggered.store(false, std::memory_order_acquire);
+                            // events already fired inside beginShutdown(); no need to eventClear here
+                            break;
                         }
+                        continue;
                     }
-                    break;
                 }
-                
-                if (overlay->shouldClose()) {
-                    tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                    ult::launchingOverlay.store(true, std::memory_order_release);
-                    
+
+                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
                     shData.running = false;
                     shData.overlayOpen = false;
-                    notification->shutdown();
                     break;
                 }
-            }
-            
-
-            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                shData.running = false;
-                shData.overlayOpen = false;
-                notification->shutdown();
-                break;
-            }
-
-            if (!notification->isActive())
-               overlay->clearScreen();
-
-            if (shData.running) {
-                overlay->resetFlags();
-                hlp::requestForeground(false);
-                shData.overlayOpen = false;
-                mainComboHasTriggered.store(false, std::memory_order_acquire);
+    
+                firstLoop = false;
+                shData.overlayOpen = true;
+    
                 
-                // Safe to clear events only if shutdown hasn't been called
-                eventClear(&notificationEvent);
-                eventClear(&shData.comboEvent);
+    #if IS_STATUS_MONITOR_DIRECTIVE
+                if (!isMiniOrMicroMode)
+                    hlp::requestForeground(true);
+    #else
+                hlp::requestForeground(true);
+    #endif
+                
+                overlay->show();
+                if (!comboBreakout && !notification->isActive())
+                    overlay->clearScreen();
+                
+                while (shData.running) {
+                    
+                    overlay->loop();
+                    
+                    {
+                        std::scoped_lock lock(shData.dataMutex);
+                        if (!overlay->fadeAnimationPlaying()) {
+                            overlay->handleInput(shData.keysDownPending, shData.keysHeld, shData.touchState.count, shData.touchState.touches[0], shData.joyStickPosLeft, shData.joyStickPosRight);
+                        }
+                        shData.keysDownPending = 0;
+                    }
+
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (pendingExit && wasRendering) {
+                        pendingExit = false;
+                        wasRendering = false;
+                        isRendering = true;
+                        leventClear(&renderingStopEvent);
+                    }
+                    #endif
+    
+                    if (overlay->shouldHide()) {
+                        if (overlay->shouldCloseAfter()) {
+                            if (!directMode) {
+                                //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
+                                // safe shutdown
+                                //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                                
+                                shData.running = false;
+                                shData.overlayOpen = false;
+
+                                ult::launchingOverlay.store(true, std::memory_order_release);
+                                break;  // Exit immediately, don't clear events
+                            } else {
+                                exitAfterPrompt = true;
+                                #if IS_STATUS_MONITOR_DIRECTIVE
+                                pendingExit = true;
+                                #endif
+                            }
+                        }
+                        break;
+                    }
+                    
+                    if (overlay->shouldClose()) {
+                        //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
+                        shData.running = false;
+                        shData.overlayOpen = false;
+
+                        //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                        ult::launchingOverlay.store(true, std::memory_order_release);
+                        break;
+                    }
+                }
+                
+    
+                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
+                    shData.running = false;
+                    shData.overlayOpen = false;
+                    break;
+                }
+    
+                if (shData.running) {
+                    if (!notification->isActive())
+                       overlay->clearScreen();
+
+                    overlay->resetFlags();
+                    hlp::requestForeground(false);
+                    shData.overlayOpen = false;
+                    mainComboHasTriggered.store(false, std::memory_order_acquire);
+                    
+                    // Safe to clear events only if shutdown hasn't been called
+                    //eventClear(&notificationEvent);
+                    //eventClear(&shData.comboEvent);
+                }
             }
         }
 
-        tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-        // Ensure we've run shutdown steps (defensive: beginShutdown is idempotent-ish)
-        //beginShutdown();
-
         hlp::requestForeground(false);
-        shData.running = false;
-        shData.overlayOpen = false;
 
         // Wait & close background thread
         threadWaitForExit(&backgroundThread);
         threadClose(&backgroundThread);
 
-        overlay->clearScreen();
-        overlay->resetFlags();
+        //notification->shutdown();
 
+        eventClose(&shData.comboEvent);
         
-        //svcSleepThread(1'000'000'000);
+
         overlay->exitScreen();
         overlay->exitServices();
-        
-
-        // Safe to clear events only if shutdown hasn't been called
-        eventClear(&notificationEvent);
-        eventClear(&shData.comboEvent);
-
-        // Wake threads if any and wait for them to exit
-        // (beginShutdown already fired events; we also defensively fire again)
-        //eventFire(&notificationEvent);
-        //eventFire(&shData.comboEvent);
-
-        // Now safe to close events
-        eventClose(&notificationEvent);
-        eventClose(&shData.comboEvent);
-
-
-        //svcSleepThread(1'000'000'000);
-        
-        
-        
 
         // FINAL element cleanup with proper locking
         {
             std::lock_guard<std::mutex> lock(tsl::elm::s_lastFrameItemsMutex);
-            overlay->s_overlayInstance = nullptr;
-            overlay = nullptr;
-            notification = nullptr;
-            for (auto* el : tsl::elm::s_lastFrameItems) {
-                delete el;
+            tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
+            for (auto*& el : tsl::elm::s_lastFrameItems) {
+                el = nullptr;
             }
             tsl::elm::s_lastFrameItems.clear();
+            tsl::elm::s_cacheForwardFrameOnce.store(false, std::memory_order_release);
+            tsl::elm::s_isForwardCache.store(false, std::memory_order_release);
+            tsl::elm::s_hasValidFrame.store(false, std::memory_order_release);
+            
         }
-
-        //delete notification;
+        //
         
 
+        delete overlay;
+
+        
+        notification.reset();
+        eventClose(&notificationEvent);
+
+        
         tsl::gfx::FontManager::cleanup();
 
-        //tsl::gfx::FontManager::cleanup();
 
+        //tsl::gfx::FontManager::clearAllCaches();
         return 0;
     }
 
 }
 
-//#define ULTRAHAND_OVERLAY_MARKER 0x554C5452
-//
-//extern "C" __attribute__((used, naked, section(".text.startup"))) 
-//const uint32_t __ultrahand_signature = 0x554C5452;
+
+
 
 #ifdef TESLA_INIT_IMPL
 
