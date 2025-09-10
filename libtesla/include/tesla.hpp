@@ -179,7 +179,7 @@ inline bool screenshotsAreDisabled = false;
 inline bool hideHidden = false;
 //#endif
 
-inline std::atomic<bool> isLaunchingNextOverlay{false};
+//inline std::atomic<bool> isLaunchingNextOverlay{false};
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 
@@ -5616,9 +5616,10 @@ namespace tsl {
         //static std::atomic<bool> s_skipCaching(false);
 
         static std::mutex s_safeToSwapMutex;
-        static std::mutex s_safeTransitionMutex;
+        //static std::mutex s_safeTransitionMutex;
         static std::atomic<bool> s_safeToSwap{false};
 
+        static std::atomic<bool> fullDeconstruction{false};
         static std::atomic<bool> skipDeconstruction{false};
         static std::atomic<bool> skipOnce{false};
 
@@ -5628,6 +5629,10 @@ namespace tsl {
         
         public:
             List() : Element() {
+                if (fullDeconstruction.load(std::memory_order_acquire)) {
+                    return;
+                }
+
                 s_safeToSwap.store(false, std::memory_order_release);
                 //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
@@ -5660,6 +5665,22 @@ namespace tsl {
             }
             
             virtual ~List() {
+                if (fullDeconstruction.load(std::memory_order_acquire)) {
+                    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);  // Add this
+                    
+                    purgePendingItems();
+                    
+                    if (s_isForwardCache.load(std::memory_order_acquire)) {
+                        clearStaticCacheUnsafe(true);
+                        s_isForwardCache.store(false, std::memory_order_release);
+                    } else {
+                        clearStaticCacheUnsafe();
+                    }
+                    clearItems();
+                    
+                    return;
+                }
+
                 s_safeToSwap.store(false, std::memory_order_release);
                 //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
@@ -5668,7 +5689,7 @@ namespace tsl {
                 // NOW take mutex for shared static variable operations
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
-            
+
                     if (!skipDeconstruction.load(std::memory_order_acquire)) {
                         purgePendingItems();
                         
@@ -5692,6 +5713,10 @@ namespace tsl {
             
             
             virtual void draw(gfx::Renderer* renderer) override {
+                if (fullDeconstruction.load(std::memory_order_acquire)) {
+                    return;
+                }
+
                 s_safeToSwap.store(false, std::memory_order_release);
                 std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
@@ -10062,282 +10087,161 @@ namespace tsl {
         
     }
     
-    
-    static inline Event notificationEvent = {0};
+    // Global state and event system
+    static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
+    static inline std::atomic<uint32_t> notificationGeneration{0};
     
     class NotificationPrompt {
     public:
-        // Destructor ensures cleanup (calls shutdown)
+        NotificationPrompt()
+            : enabled_(true),
+              is_active_(false),
+              //pending_event_fire_(false),
+              generation_(notificationGeneration.load(std::memory_order_acquire))
+        {}
+    
         ~NotificationPrompt() {
-            shutdown();
+            shutdown(); // safe cleanup
         }
     
-        enum class PromptState { Inactive, SlidingIn, Visible, SlidingOut };
+        enum class PromptState {
+            Inactive,
+            SlidingIn,
+            Visible,
+            SlidingOut
+        };
     
         struct NotificationData {
-            std::unique_ptr<char[]> text;
-            std::unique_ptr<char[]> fileName;
+            std::string text;
+            std::string fileName;
             size_t fontSize = 28;
-            s32 promptWidth = 448, promptHeight = 88;
-            u32 durationMs = 2500, priority = 20;
+            s32 promptWidth = 448;
+            s32 promptHeight = 88;
+            u32 durationMs = 2500;
+            u32 priority = 20;
             u64 arrivalNs = 0;
     
             NotificationData() = default;
     
-            // Construct from strings
             NotificationData(const std::string& t, const std::string& f = "",
                              size_t fs = 28, s32 w = 448, s32 h = 88,
-                             u32 dur = 2500, int prio = 20)
-                : fontSize(fs), promptWidth(w), promptHeight(h),
-                  durationMs(dur), priority(prio), arrivalNs(0)
-            {
-                if (!t.empty()) {
-                    text = std::make_unique<char[]>(t.size()+1);
-                    std::strcpy(text.get(), t.c_str());
-                }
-                if (!f.empty()) {
-                    fileName = std::make_unique<char[]>(f.size()+1);
-                    std::strcpy(fileName.get(), f.c_str());
-                }
-            }
-    
-            // Copy constructor (deep-copy the strings)
-            NotificationData(const NotificationData& other)
-                : fontSize(other.fontSize), promptWidth(other.promptWidth),
-                  promptHeight(other.promptHeight), durationMs(other.durationMs),
-                  priority(other.priority), arrivalNs(other.arrivalNs)
-            {
-                if (other.text) {
-                    size_t len = std::strlen(other.text.get());
-                    text = std::make_unique<char[]>(len + 1);
-                    std::strcpy(text.get(), other.text.get());
-                }
-                if (other.fileName) {
-                    size_t len = std::strlen(other.fileName.get());
-                    fileName = std::make_unique<char[]>(len + 1);
-                    std::strcpy(fileName.get(), other.fileName.get());
-                }
-            }
-    
-            // Move operations (default is fine)
-            NotificationData(NotificationData&&) noexcept = default;
-            NotificationData& operator=(NotificationData&&) noexcept = default;
-    
-            // Copy assignment (explicit deep copy)
-            NotificationData& operator=(const NotificationData& other) {
-                if (this != &other) {
-                    fontSize    = other.fontSize;
-                    promptWidth = other.promptWidth;
-                    promptHeight= other.promptHeight;
-                    durationMs  = other.durationMs;
-                    priority    = other.priority;
-                    arrivalNs   = other.arrivalNs;
-                    if (other.text) {
-                        size_t len = std::strlen(other.text.get());
-                        text = std::make_unique<char[]>(len + 1);
-                        std::strcpy(text.get(), other.text.get());
-                    } else {
-                        text.reset();
-                    }
-                    if (other.fileName) {
-                        size_t len = std::strlen(other.fileName.get());
-                        fileName = std::make_unique<char[]>(len + 1);
-                        std::strcpy(fileName.get(), other.fileName.get());
-                    } else {
-                        fileName.reset();
-                    }
-                }
-                return *this;
-            }
+                             u32 dur = 2500, u32 prio = 20)
+                : text(t), fileName(f), fontSize(fs), promptWidth(w), promptHeight(h),
+                  durationMs(dur), priority(prio), arrivalNs(0) {}
         };
     
         struct NotificationCompare {
             bool operator()(const NotificationData& a, const NotificationData& b) const {
-                // Lower priority value means higher priority; if equal, earlier arrival first.
-                if (a.priority == b.priority)
-                    return a.arrivalNs > b.arrivalNs; // earlier (smaller) arrival goes first
-                return a.priority > b.priority;       // smaller priority number goes first
+                if (a.priority == b.priority) {
+                    return a.arrivalNs > b.arrivalNs; // FIFO
+                }
+                return a.priority < b.priority; // Max-heap
             }
         };
     
         struct NotificationState {
-            std::unique_ptr<char[]> activeText;
-            std::unique_ptr<char[]> fileName;
+            std::string activeText;
+            std::string fileName;
             size_t fontSize = 28;
-            s32 promptWidth = 448, promptHeight = 88;
+            s32 promptWidth = 448;
+            s32 promptHeight = 88;
             PromptState state = PromptState::Inactive;
-            u64 expireNs = 0, stateStartNs = 0;
+            u64 expireNs = 0;
+            u64 stateStartNs = 0;
     
             NotificationState() = default;
-    
-            // Copy constructor (deep-copy)
-            NotificationState(const NotificationState& other)
-                : fontSize(other.fontSize), promptWidth(other.promptWidth),
-                  promptHeight(other.promptHeight), state(other.state),
-                  expireNs(other.expireNs), stateStartNs(other.stateStartNs)
-            {
-                if (other.activeText) {
-                    size_t len = std::strlen(other.activeText.get());
-                    activeText = std::make_unique<char[]>(len + 1);
-                    std::strcpy(activeText.get(), other.activeText.get());
-                }
-                if (other.fileName) {
-                    size_t len = std::strlen(other.fileName.get());
-                    fileName = std::make_unique<char[]>(len + 1);
-                    std::strcpy(fileName.get(), other.fileName.get());
-                }
-            }
-    
-            // Move operations
-            NotificationState(NotificationState&&) noexcept = default;
-            NotificationState& operator=(NotificationState&&) noexcept = default;
-    
-            // Copy assignment (deep copy)
-            NotificationState& operator=(const NotificationState& other) {
-                if (this != &other) {
-                    fontSize    = other.fontSize;
-                    promptWidth = other.promptWidth;
-                    promptHeight= other.promptHeight;
-                    state       = other.state;
-                    expireNs    = other.expireNs;
-                    stateStartNs= other.stateStartNs;
-                    if (other.activeText) {
-                        size_t len = std::strlen(other.activeText.get());
-                        activeText = std::make_unique<char[]>(len + 1);
-                        std::strcpy(activeText.get(), other.activeText.get());
-                    } else {
-                        activeText.reset();
-                    }
-                    if (other.fileName) {
-                        size_t len = std::strlen(other.fileName.get());
-                        fileName = std::make_unique<char[]>(len + 1);
-                        std::strcpy(fileName.get(), other.fileName.get());
-                    } else {
-                        fileName.reset();
-                    }
-                }
-                return *this;
-            }
-    
-            bool isTextEmpty() const {
-                return !activeText || activeText[0] == '\0';
-            }
+            bool isTextEmpty() const { return activeText.empty(); }
         };
     
-        static constexpr size_t MAX_NOTIFS = 30;
+        // ---------------- Public Methods ----------------
     
-        void show(const std::string& msg, size_t fontSize = 26, int priority = 20,
+        void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", u32 durationMs = 2500,
                   s32 promptWidth = 448, s32 promptHeight = 88)
         {
-            // Quick early return checks
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || msg.empty()) {
-                return;
-            }
+            if (msg.empty()) return;
     
-            NotificationData notif(
-                msg, fileName,
-                std::clamp(fontSize, size_t(8), size_t(48)),
-                std::clamp(promptWidth, (s32)100, (s32)1280),
-                std::clamp(promptHeight, (s32)50, (s32)720),
-                std::clamp(durationMs, 500u, 30000u),
-                priority
-            );
-            notif.arrivalNs = armTicksToNs(armGetSystemTick());
+            // Quick reject using atomics (fast-path)
+            if (!enabled_.load(std::memory_order_acquire)) return;
+            if (!ult::useNotifications) return;
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
     
-            bool shouldFireEvent = false;
-            {
-                std::unique_lock<std::mutex> lock(mtx);
-                if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
-                    return;
-                }
-                
-                if (pendingQueue.size() < MAX_NOTIFS) {
-                    pendingQueue.push(std::move(notif));
-                    
-                    if (!isActiveAtomic.load(std::memory_order_acquire)) {
-                        shouldFireEvent = startNext_NoLock();
-                    }
-                }
-            }
-            
-            if (shouldFireEvent) {
+            NotificationData data;
+            data.text = msg;
+            data.fileName = fileName;
+            data.fontSize = std::clamp(fontSize, size_t(8), size_t(48));
+            data.promptWidth = std::clamp(promptWidth, s32(100), s32(1280));
+            data.promptHeight = std::clamp(promptHeight, s32(50), s32(720));
+            data.durationMs = std::clamp(durationMs, 500u, 30000u);
+            data.priority = priority;
+            data.arrivalNs = armTicksToNs(armGetSystemTick());
+    
+            std::lock_guard<std::mutex> lg(state_mutex_);
+    
+            // Re-check under lock to avoid TOCTOU
+            if (!enabled_.load(std::memory_order_acquire)) return;
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
+            if (pending_queue_.size() >= MAX_NOTIFS) return;
+    
+            pending_queue_.push(data);
+    
+            if (!is_active_) {
+                startNext_NoLock();
+                //pending_event_fire_.store(true, std::memory_order_release);
                 eventFire(&notificationEvent);
             }
         }
-
+    
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || !renderer) {
-                return;
+            if (ult::launchingOverlay.load(std::memory_order_acquire) ||
+                generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
+            if (!enabled_.load(std::memory_order_acquire)) return;
+    
+            NotificationState copy;
+            {
+                std::lock_guard<std::mutex> lg(state_mutex_);
+                if (current_state_.state == PromptState::Inactive || current_state_.activeText.empty()) return;
+                copy = current_state_;
             }
     
-            // Use condition variable to coordinate with other operations
-            std::unique_lock<std::mutex> lock(mtx);
-            renderingCV.wait(lock, [this] { 
-                return !isRendering.load(std::memory_order_acquire) || !enabled.load(std::memory_order_acquire);
-            });
-            
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
-                return;
-            }
-            
-            if (!isActiveAtomic.load(std::memory_order_acquire) || currentState.isTextEmpty()) {
-                return;
-            }
-            
-            isRendering.store(true, std::memory_order_release);
-            NotificationState stateCopy = currentState;
-            lock.unlock();
-    
-            // Render with copied state (no locks held)
             u64 now = armTicksToNs(armGetSystemTick());
-            u64 elapsedMs = (now - stateCopy.stateStartNs) / 1'000'000ULL;
-            
+            u64 elapsedMs = (now - copy.stateStartNs) / 1'000'000ULL;
+    
             s32 x = 0, y = 0;
-            switch (stateCopy.state) {
+            switch (copy.state) {
                 case PromptState::SlidingIn: {
-                    float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
-                    if (ult::useRightAlignment) {
-                        x = tsl::cfg::FramebufferWidth - stateCopy.promptWidth +
-                            static_cast<s32>((1.0f - t) * stateCopy.promptWidth);
-                    } else {
-                        x = static_cast<s32>(-stateCopy.promptWidth + t * stateCopy.promptWidth);
-                    }
+                    float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
+                    x = ult::useRightAlignment ?
+                        (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>((1.0f - t) * copy.promptWidth)) :
+                        static_cast<s32>(-copy.promptWidth + t * copy.promptWidth);
                     break;
                 }
                 case PromptState::Visible:
-                    x = ult::useRightAlignment ? (tsl::cfg::FramebufferWidth - stateCopy.promptWidth) : 0;
+                    x = ult::useRightAlignment ? (tsl::cfg::FramebufferWidth - copy.promptWidth) : 0;
                     break;
                 case PromptState::SlidingOut: {
-                    float t = std::min(1.0f, float(elapsedMs) / slideDurationMs);
-                    if (ult::useRightAlignment) {
-                        x = tsl::cfg::FramebufferWidth - stateCopy.promptWidth +
-                            static_cast<s32>(t * stateCopy.promptWidth);
-                    } else {
-                        x = static_cast<s32>(-t * stateCopy.promptWidth);
-                    }
+                    float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
+                    x = ult::useRightAlignment ?
+                        (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>(t * copy.promptWidth)) :
+                        static_cast<s32>(-t * copy.promptWidth);
                     break;
                 }
-                case PromptState::Inactive:
-                default:
-                    isRendering.store(false, std::memory_order_release);
-                    renderingCV.notify_all();
-                    return;
+                default: return;
             }
-        
+    
             s32 scissorX = std::max(0, x);
-            s32 scissorW = std::min(stateCopy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
-            
-            if (scissorX >= 0 && scissorW > 0 && stateCopy.promptHeight > 0) {
-                renderer->enableScissoring(scissorX, y, scissorW, stateCopy.promptHeight);
-                renderer->drawRect(x, y, stateCopy.promptWidth, stateCopy.promptHeight, defaultBackgroundColor);
-        
-                if (stateCopy.activeText && stateCopy.activeText[0] != '\0') {
+            s32 scissorW = std::min(copy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
+    
+            if (scissorX >= 0 && scissorW > 0 && copy.promptHeight > 0) {
+                renderer->enableScissoring(scissorX, y, scissorW, copy.promptHeight);
+                renderer->drawRect(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
+    
+                if (!copy.activeText.empty()) {
                     std::vector<std::string> lines;
-                    const char* ptr = stateCopy.activeText.get();
+                    const char* ptr = copy.activeText.data();
                     const char* lineStart = ptr;
-                    
+    
                     while (*ptr && lines.size() < 8) {
                         if (*ptr == '\\' && *(ptr + 1) == 'n') {
                             lines.emplace_back(lineStart, ptr - lineStart);
@@ -10347,169 +10251,183 @@ namespace tsl {
                             ++ptr;
                         }
                     }
-                    if (*lineStart && lines.size() < 8) {
-                        lines.emplace_back(lineStart);
-                    }
-        
-                    auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', stateCopy.fontSize);
-                    s32 startY = y + (stateCopy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
-                    
+                    if (*lineStart && lines.size() < 8) lines.emplace_back(lineStart);
+    
+                    auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', copy.fontSize);
+                    s32 startY = y + (copy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
+    
                     for (size_t i = 0; i < lines.size(); ++i) {
-                        auto [lw, lh] = renderer->getNotificationTextDimensions(lines[i], false, stateCopy.fontSize);
+                        auto [lw, lh] = renderer->getNotificationTextDimensions(lines[i], false, copy.fontSize);
                         renderer->drawNotificationString(
                             lines[i], false,
-                            x + (stateCopy.promptWidth - lw) / 2,
+                            x + (copy.promptWidth - lw) / 2,
                             startY + static_cast<int>(i) * fm.lineHeight,
-                            stateCopy.fontSize, defaultTextColor
+                            copy.fontSize, defaultTextColor
                         );
                     }
                 }
-        
+    
                 if (!ult::useRightAlignment) {
-                    renderer->drawRect(x + stateCopy.promptWidth - 1, y, 1, stateCopy.promptHeight, edgeSeparatorColor);
-                    renderer->drawRect(x, y + stateCopy.promptHeight - 1, stateCopy.promptWidth, 1, edgeSeparatorColor);
+                    renderer->drawRect(x + copy.promptWidth - 1, y, 1, copy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
                 } else {
-                    renderer->drawRect(x, y, 1, stateCopy.promptHeight, edgeSeparatorColor);
-                    renderer->drawRect(x, y + stateCopy.promptHeight - 1, stateCopy.promptWidth, 1, edgeSeparatorColor);
+                    renderer->drawRect(x, y, 1, copy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
                 }
-                
+    
                 renderer->disableScissoring();
             }
-            
-            isRendering.store(false, std::memory_order_release);
-            renderingCV.notify_all();
         }
     
         void update() {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
+            if (!isActive()) {
                 return;
             }
-            
-            std::unique_lock<std::mutex> lock(mtx);
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            // Optional extra safety: skip if already inactive and queue empty
+            if (ult::launchingOverlay.load(std::memory_order_acquire) ||
+                (!is_active_ && current_state_.activeText.empty() && pending_queue_.empty())) {
                 return;
             }
-            
-            if (!isActiveAtomic.load(std::memory_order_acquire)) {
-                return;
-            }
-            
-            u64 now = armTicksToNs(armGetSystemTick());
-            u64 elapsedMs = (now - currentState.stateStartNs) / 1'000'000ULL;
+
+            //if (pending_event_fire_.load(std::memory_order_acquire) &&
+            //    !ult::launchingOverlay.load(std::memory_order_acquire) &&
+            //    generation_ == notificationGeneration.load(std::memory_order_acquire))
+            //{
+            //    pending_event_fire_.store(false, std::memory_order_release);
+            //    
+            //    if ((current_state_.activeText.empty() || current_state_.state == PromptState::Inactive) && pending_queue_.empty()) {
+            //        eventFire(&notificationEvent);
+            //    }
+            //}
     
-            switch (currentState.state) {
+            //std::lock_guard<std::mutex> lg(state_mutex_);
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire) ||
+                !enabled_.load(std::memory_order_acquire))
+            {
+                current_state_ = NotificationState{};
+                is_active_ = false;
+                return;
+            }
+    
+            u64 now = armTicksToNs(armGetSystemTick());
+            u64 elapsedMs = (current_state_.stateStartNs == 0) ? 0 : (now - current_state_.stateStartNs) / 1'000'000ULL;
+    
+            switch (current_state_.state) {
                 case PromptState::SlidingIn:
-                    if (elapsedMs >= slideDurationMs) {
-                        currentState.state = PromptState::Visible;
-                        currentState.stateStartNs = now;
+                    if (elapsedMs >= SLIDE_DURATION_MS) {
+                        current_state_.state = PromptState::Visible;
+                        current_state_.stateStartNs = now;
                     }
                     break;
                 case PromptState::Visible:
-                    if (now >= currentState.expireNs) {
-                        currentState.state = PromptState::SlidingOut;
-                        currentState.stateStartNs = now;
+                    if (now >= current_state_.expireNs) {
+                        current_state_.state = PromptState::SlidingOut;
+                        current_state_.stateStartNs = now;
                     }
                     break;
                 case PromptState::SlidingOut:
-                    if (elapsedMs >= slideDurationMs) {
-                        if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications) {
-                            return;
-                        }
-                        
-                        std::string fileToDelete;
-                        if (currentState.fileName && currentState.fileName[0] != '\0') {
-                            fileToDelete = ult::NOTIFICATIONS_PATH + std::string(currentState.fileName.get());
-                        }
-                        
-                        currentState = NotificationState{};
-                        isActiveAtomic.store(false, std::memory_order_release);
-                        
-                        bool hasNext = startNext_NoLock();
-                        lock.unlock();
-                        
+                    if (elapsedMs >= SLIDE_DURATION_MS) {
+                        const std::string fileToDelete = current_state_.fileName;
+                        // Delete the JSON file safely
                         if (!fileToDelete.empty()) {
-                            ult::deleteFileOrDirectory(fileToDelete);
+                            std::lock_guard<std::mutex> lg(notificationJsonMutex);
+                            const std::string fullPath = ult::NOTIFICATIONS_PATH + fileToDelete;
+                            remove(fullPath.c_str());  // ignore errors for now
                         }
-                        
-                        if (hasNext) {
-                            eventFire(&notificationEvent);
-                        }
-                        return;
+
+                        current_state_ = NotificationState{};
+                        bool hadNext = startNext_NoLock();
+                        if (!hadNext) is_active_ = false;
                     }
                     break;
-                default:
-                    break;
+                default: break;
             }
         }
     
         bool isActive() const {
-            return enabled.load(std::memory_order_acquire) && 
-                   ult::useNotifications && 
-                   isActiveAtomic.load(std::memory_order_acquire);
+            if (!ult::useNotifications) return false;
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            if (is_active_) return true;
+            if (!pending_queue_.empty()) return true;
+            //if (pending_event_fire_.load(std::memory_order_acquire)) return true;
+            if (!current_state_.activeText.empty() && current_state_.state != PromptState::Inactive) return true;
+            return false;
         }
     
         void shutdown() {
-            bool expected = true;
-            if (!enabled.compare_exchange_strong(expected, false, std::memory_order_seq_cst)) {
-                return;
-            }
-            
-            // Wait for rendering to complete
-            std::unique_lock<std::mutex> lock(mtx);
-            renderingCV.wait(lock, [this] { 
-                return !isRendering.load(std::memory_order_acquire); 
-            });
-            
-            while (!pendingQueue.empty()) pendingQueue.pop();
-            currentState = NotificationState{};
-            isActiveAtomic.store(false, std::memory_order_release);
-            
-            lock.unlock();
-            eventClear(&notificationEvent);
-            //eventClose(&notificationEvent);
+            enabled_.store(false, std::memory_order_release);
+            notificationGeneration.fetch_add(1, std::memory_order_acq_rel);
+            generation_ = notificationGeneration.load(std::memory_order_acquire);
+    
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            while (!pending_queue_.empty()) pending_queue_.pop();
+            current_state_ = NotificationState{};
+            is_active_ = false;
+            //pending_event_fire_.store(false, std::memory_order_release);
         }
-        
-        std::atomic<bool> enabled{true};
-        
+    
+        void forceShutdown() {
+            enabled_.store(false, std::memory_order_release);
+            //pending_event_fire_.store(false, std::memory_order_release);
+        }
+    
+        void forceCompleteTransition() {
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            current_state_ = NotificationState{};
+            while (!pending_queue_.empty()) pending_queue_.pop();
+            is_active_ = false;
+            //pending_event_fire_.store(false, std::memory_order_release);
+        }
+    
+        void freezeState() {
+            generation_++;
+            enabled_.store(false, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lg(state_mutex_);
+                is_active_ = false;
+            }
+            //pending_event_fire_.store(false, std::memory_order_release);
+        }
+    
     private:
-        mutable std::mutex mtx;
-        mutable std::condition_variable renderingCV;
-        
-        std::atomic<bool> isRendering{false};
-        std::atomic<bool> isActiveAtomic{false};
+        static constexpr size_t MAX_NOTIFS = 30;
+        static constexpr u32 SLIDE_DURATION_MS = 200;
     
-        NotificationState currentState;
-        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pendingQueue;
-        const u32 slideDurationMs = 200;
-        
+        mutable std::mutex state_mutex_;
+        NotificationState current_state_;
+        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pending_queue_;
+
+    
+        std::atomic<bool> enabled_{true};
+        bool is_active_{false}; // protected by mutex
+        //std::atomic<bool> pending_event_fire_{false};
+        uint32_t generation_{0};
+    
         bool startNext_NoLock() {
-            if (!enabled.load(std::memory_order_acquire) || !ult::useNotifications || pendingQueue.empty()) {
-                return false;
-            }
+            if (pending_queue_.empty()) return false;
+            NotificationData next = pending_queue_.top();
+            pending_queue_.pop();
     
-            NotificationData next = pendingQueue.top();
-            pendingQueue.pop();
-            if (!next.text || next.text[0] == '\0') {
-                return false;
-            }
-    
-            currentState.activeText   = std::move(next.text);
-            currentState.fileName     = std::move(next.fileName);
-            currentState.fontSize     = next.fontSize;
-            currentState.promptWidth  = next.promptWidth;
-            currentState.promptHeight = next.promptHeight;
-            currentState.state        = PromptState::SlidingIn;
-            currentState.stateStartNs = armTicksToNs(armGetSystemTick());
-            currentState.expireNs     = currentState.stateStartNs +
-                                        slideDurationMs * 1'000'000ULL +
-                                        next.durationMs * 1'000'000ULL;
-            
-            isActiveAtomic.store(true, std::memory_order_release);
+            u64 now = armTicksToNs(armGetSystemTick());
+            current_state_.activeText = next.text;
+            current_state_.fileName = next.fileName;
+            current_state_.fontSize = next.fontSize;
+            current_state_.promptWidth = next.promptWidth;
+            current_state_.promptHeight = next.promptHeight;
+            current_state_.state = PromptState::SlidingIn;
+            current_state_.stateStartNs = now;
+            current_state_.expireNs = now + static_cast<u64>(SLIDE_DURATION_MS) * 1'000'000ULL
+                                        + static_cast<u64>(next.durationMs) * 1'000'000ULL;
+            is_active_ = true;
             return true;
         }
     };
     
-    inline static std::shared_ptr<NotificationPrompt> notification;
+    // Optional: pointer to global notification
+    static inline NotificationPrompt* notification = nullptr;
+    
 
     // GUI
     
@@ -10689,11 +10607,6 @@ namespace tsl {
     };
     
 
-    // Swap state tracking variables
-    //inline u64 lastNextPageTapTime = 0;
-    
-    //inline bool swapComplete = true;
-
     // Overlay
     
     /**
@@ -10715,9 +10628,6 @@ namespace tsl {
          *
          */
         virtual ~Overlay() {}
-        
-        // Add NotificationPrompt as a member
-        //NotificationPrompt notification;
 
 
         /**
@@ -10840,7 +10750,7 @@ namespace tsl {
          *
          */
         void close(bool forceClose = false) {
-            if (!forceClose && notification->isActive()) {
+            if (!forceClose && notification && notification->isActive()) {
                 this->closeAfter();
                 this->hide(true);
                 return;
@@ -10995,7 +10905,7 @@ namespace tsl {
 
         
         /**
-         * @brief Main loop
+         * @brief Overlay Main loop
          *
          */
         void loop(bool promptOnly = false) {
@@ -11036,11 +10946,10 @@ namespace tsl {
         
             // Notification handling - safer approach with consistent ordering
             {
-                if (notification->enabled.load(std::memory_order_acquire)) {
-                    // Snapshot pointer to avoid it becoming null mid-use
-                    notification->update();
-            
+                if (notification) {
                     if (notification->isActive()) {
+                        // Snapshot pointer to avoid it becoming null mid-use
+                        notification->update();
                         notification->draw(&renderer, promptOnly);
                         notificationCacheNeedsClearing.store(true, std::memory_order_release);
                     } else {
@@ -11075,10 +10984,6 @@ namespace tsl {
             static bool singlePressHandled = false;
             static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL; // 340ms in nanoseconds
             
-
-
-            //static u64 lastTouchReleaseTime_ns = 0;
-            //static constexpr u64 TOUCH_DEBOUNCE_NS = 300000000ULL; // 300ms
 
             static bool hasScrolled = false;
             static void* lastGuiPtr = nullptr;  // Use void* instead
@@ -11154,17 +11059,6 @@ namespace tsl {
                 keysDown |= KEY_B;
                 //ult::simulatedBack = false;
             }
-            
-            //else if (ult::simulatedNextPage.load(std::memory_order_acquire)) {
-            //    ult::simulatedNextPage.store(false, std::memory_order_release);
-            //    if (s_onLeftPage.load(std::memory_order_acquire)) {
-            //        keysDown |= KEY_RIGHT;
-            //    }
-            //    else if (s_onRightPage.load(std::memory_order_acquire)) {
-            //        keysDown |= KEY_LEFT;
-            //    }
-            //}
-
 
             if (!overrideBackButton) {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
@@ -11235,21 +11129,6 @@ namespace tsl {
                     hasScrolled = true;
                 }
             }
-
-            //if (!currentFocus && !touchDetected && (!oldTouchDetected || (oldTouchEvent == elm::TouchEvent::Scroll))) {
-            //    if (!isNavigatingBackwards.load(std::memory_order_acquire) && !ult::longTouchAndRelease.load(std::memory_order_acquire) && !ult::simulatedSelect.load(std::memory_order_acquire) && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
-            //        if (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll) {
-            //            hasScrolled = true;
-            //        }
-            //        if (!hasScrolled) {
-            //            currentGui->removeFocus();
-            //            currentGui->requestFocus(topElement, FocusDirection::None);
-            //        }
-            //    }
-            //    else if (ult::longTouchAndRelease.load(std::memory_order_acquire)) {
-            //        ult::longTouchAndRelease.store(false, std::memory_order_release);
-            //    }
-            //}
             
             bool handled = false;
             elm::Element* parentElement = currentFocus;
@@ -11362,17 +11241,6 @@ namespace tsl {
         #if !IS_STATUS_MONITOR_DIRECTIVE
                     } else {
                         buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
-                        // Handle the rest of the input
-                        //if (ult::simulatedBack.load(std::memory_order_acquire)) {
-                        //    ult::simulatedBack.store(false, std::memory_order_release);
-                        //    keysDown |= KEY_B;
-                        //    return;
-                        //    //ult::simulatedBack = false;
-                        //}
-        
-                        //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK))
-                        //    this->goBack();
-                        //singlePressHandled = false;
         #endif
                     }
                 }
@@ -11655,6 +11523,14 @@ namespace tsl {
                 }
             }
             
+            //if (keysDown & KEY_ZL) {
+            //    //while (tsl::notification && tsl::notification->isActive()) {
+            //    //    tsl::notification->update(true, true); // No file ops, allow state transitions
+            //    //    svcSleepThread(10'000'000); // 1ms sleep
+            //    //}
+            //    if (notification)
+            //        notification->forceShutdown();
+            //}
 
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
@@ -11953,7 +11829,7 @@ namespace tsl {
          */
         void goBack(u32 count = 1) {
             // If there is exactly one GUI and an active notification, handle that first
-            if (this->m_guiStack.size() == 1 && notification->isActive()) {
+            if (this->m_guiStack.size() == 1 && notification && notification->isActive()) {
                 this->close(); 
                 return;
             }
@@ -12184,24 +12060,6 @@ namespace tsl {
             // Parse Tesla settings
             impl::parseOverlaySettings();
             
-        //#if IS_LAUNCHER_DIRECTIVE
-            // Load overlay key combos
-            
-        //#endif
-            
-            // Configure input to take all controllers and up to 8
-            //padConfigureInput(8, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
-            //
-            //// Initialize pad
-            //PadState pad;
-            //padInitializeAny(&pad);
-            //
-            //// Initialize touch screen
-            //hidInitializeTouchScreen();
-            //
-            //// Drop all inputs from the previous overlay
-            //padUpdate(&pad);
-        
         
             // Allow only Player 1 and handheld mode
             HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
@@ -12268,181 +12126,11 @@ namespace tsl {
         
             //u64 elapsedTime_ns;
             
-            while (shData->running) {
-                if (ult::launchingOverlay.load(std::memory_order_acquire))
-                    return;
+            while (shData->running.load(std::memory_order_acquire)) {
 
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
                 
-        
-                // Poll Title ID every 1 seconds
-                if (!ult::resetForegroundCheck.load(std::memory_order_acquire)) {
-                    const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
-                    if (elapsedNs >= 1'000'000'000ULL) {
-                        lastPollTick = nowTick;
-                        
-                        currentTitleID = ult::getTitleIdAsString();
-                        if (currentTitleID != ult::lastTitleID) {
-                            ult::lastTitleID = currentTitleID;
-                            ult::resetForegroundCheck.store(true, std::memory_order_release);
-                            resetStartTick = nowTick;
-                        }
-                    }
-                }
-                
-                if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
-                    const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
-                
-                    if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
-                        // Update layer dimensions without destroying state
-                        tsl::gfx::Renderer::get().updateLayerSize();
-                
-                        lastUnderscanPixels = currentUnderscanPixels;
-                        firstUnderscanCheck = false;
-                    }
-                
-                    lastUnderscanCheckNs = nowNs;
-                }
-
-                // If a reset is scheduled, trigger after 3.5s delay
-                if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
-                    const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
-                    if (resetElapsedNs >= 3'500'000'000ULL) {
-                        if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
-                            hlp::requestForeground(true, false);
-                        }
-                        ult::resetForegroundCheck.store(false, std::memory_order_release);
-                    }
-                }
-
-                //bool expected = true;
-                //if (fireNotificationEvent.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
-                //    if (ult::launchingOverlay.load(std::memory_order_acquire))
-                //        return;
-                //    eventFire(&shData->notificationEvent);  // wake the loop
-                //}
-
-                // Process notification files every 300ms
-                {
-                    std::lock_guard<std::mutex> jsonLock(notificationJsonMutex);
-                    static u64 lastNotifCheck = 0;
-                
-                    if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
-                        lastNotifCheck = nowTick;
-                
-                        DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
-                        if (!dir) return;
-                
-                        if (ult::useNotifications) {
-                            std::string filename, fullPath, prioStr;
-                            std::string bestFile;
-                
-                            struct dirent* entry;
-                
-                            const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                            const size_t notifPathLen = notifPath.length();
-                
-                            static std::vector<std::string> shownFiles;
-                
-                            // --- Prune missing files from shownFiles ---
-                            for (auto it = shownFiles.begin(); it != shownFiles.end();) {
-                                const std::string fullPath = notifPath + *it;
-                                if (access(fullPath.c_str(), F_OK) != 0) {
-                                    it = shownFiles.erase(it);
-                                } else {
-                                    ++it;
-                                }
-                            }
-                
-                            static std::string text;
-                            static int fontSize;
-                            static int priority;
-                
-                            // --- Scan notification files ---
-                            while ((entry = readdir(dir)) != nullptr) {
-                                if (entry->d_type != DT_REG) continue;
-                
-                                filename = entry->d_name;
-                                const size_t filenameLen = filename.size();
-                
-                                // Must end with ".notify"
-                                if (filenameLen <= 7 || filename.compare(filenameLen - 7, 7, ".notify") != 0)
-                                    continue;
-                
-                                // Skip if already shown
-                                if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end())
-                                    continue;
-                
-                                // --- Parse priority ---
-                                priority = 20; // default
-                                const size_t dashPos = filename.find('-');
-                                if (dashPos != std::string::npos && dashPos > 0) {
-                                    prioStr.assign(filename, 0, dashPos);
-                                    if (!prioStr.empty() &&
-                                        std::all_of(prioStr.begin(), prioStr.end(),
-                                                    [](unsigned char c) { return std::isdigit(c); })) {
-                                        priority = std::stoi(prioStr);
-                                    }
-                                }
-                
-                                // --- Build path ---
-                                fullPath.clear();
-                                //fullPath.reserve(notifPathLen + filenameLen);
-                                fullPath = notifPath;
-                                fullPath += filename;
-                
-                                // --- Load JSON (safe outside notification lock) ---
-                                text = ult::getStringFromJsonFile(fullPath, "text");
-                                if (!text.empty()) {
-                                    fontSize = 28; // default
-                
-                                    std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                        ult::readJsonFromFile(fullPath), ult::JsonDeleter());
-                                    if (root) {
-                                        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                        cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-                                        if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
-                                            fontSize = std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34);
-                                        }
-                                    }
-                
-                                    // --- Show notification safely ---
-                                    if (notification) {
-                                        notification->show(text, fontSize, priority, filename);
-                                    }
-                
-                                    // Mark file as shown
-                                    shownFiles.push_back(filename);
-                                }
-                            }
-                
-                            closedir(dir);
-                
-                        } else {
-                            // --- Notifications disabled: delete all files ---
-                            struct dirent* entry;
-                            std::string fullPath;
-                
-                            while ((entry = readdir(dir)) != nullptr) {
-                                if (entry->d_type != DT_REG) continue;
-                
-                                const char* fname = entry->d_name;
-                                const size_t len = strlen(fname);
-                
-                                if (len > 7 && strcmp(fname + len - 7, ".notify") == 0) {
-                                    fullPath.clear();
-                                    //fullPath.reserve(notifPathLen + len);
-                                    fullPath = ult::NOTIFICATIONS_PATH;
-                                    fullPath.append(fname, len);
-                
-                                    remove(fullPath.c_str());
-                                }
-                            }
-                            closedir(dir);
-                        }
-                    }
-                }
         
         
                 // Scan for input changes from both controllers
@@ -12452,10 +12140,185 @@ namespace tsl {
                 // Read in HID values
                 {
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
-                        return;
+                        break;
                     std::scoped_lock lock(shData->dataMutex);
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
-                        return;
+                        break;
+
+                    // Poll Title ID every 1 seconds
+                    if (!ult::resetForegroundCheck.load(std::memory_order_acquire)) {
+                        const u64 elapsedNs = armTicksToNs(nowTick - lastPollTick);
+                        if (elapsedNs >= 1'000'000'000ULL) {
+                            lastPollTick = nowTick;
+                            
+                            currentTitleID = ult::getTitleIdAsString();
+                            if (currentTitleID != ult::lastTitleID) {
+                                ult::lastTitleID = currentTitleID;
+                                ult::resetForegroundCheck.store(true, std::memory_order_release);
+                                resetStartTick = nowTick;
+                            }
+                        }
+                    }
+                    
+                    if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
+                        const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
+                    
+                        if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
+                            // Update layer dimensions without destroying state
+                            tsl::gfx::Renderer::get().updateLayerSize();
+                    
+                            lastUnderscanPixels = currentUnderscanPixels;
+                            firstUnderscanCheck = false;
+                        }
+                    
+                        lastUnderscanCheckNs = nowNs;
+                    }
+    
+                    // If a reset is scheduled, trigger after 3.5s delay
+                    if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
+                        const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
+                        if (resetElapsedNs >= 3'500'000'000ULL) {
+                            if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                hlp::requestForeground(true, false);
+                            }
+                            ult::resetForegroundCheck.store(false, std::memory_order_release);
+                        }
+                    }
+    
+                    //bool expected = true;
+                    //if (fireNotificationEvent.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
+                    //    if (ult::launchingOverlay.load(std::memory_order_acquire))
+                    //        return;
+                    //    eventFire(&shData->notificationEvent);  // wake the loop
+                    //}
+    
+                    // Process notification files every 300ms
+                    {
+                        std::lock_guard<std::mutex> jsonLock(notificationJsonMutex);
+                        static u64 lastNotifCheck = 0;
+                    
+                        if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
+                            lastNotifCheck = nowTick;
+                    
+                            DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
+                            if (dir) {
+                                
+                                if (ult::useNotifications) {
+                                    std::string filename, fullPath, prioStr;
+                                    std::string bestFile;
+                        
+                                    struct dirent* entry;
+                        
+                                    const std::string& notifPath = ult::NOTIFICATIONS_PATH;
+                                    const size_t notifPathLen = notifPath.length();
+                        
+                                    static std::vector<std::string> shownFiles;
+                        
+                                    // --- Prune missing files from shownFiles ---
+                                    for (auto it = shownFiles.begin(); it != shownFiles.end();) {
+                                        const std::string fullPath = notifPath + *it;
+                                        if (access(fullPath.c_str(), F_OK) != 0) {
+                                            it = shownFiles.erase(it);
+                                        } else {
+                                            ++it;
+                                        }
+                                    }
+                        
+                                    static std::string text;
+                                    static int fontSize;
+                                    static int priority;
+                        
+                                    // --- Scan notification files ---
+                                    while ((entry = readdir(dir)) != nullptr) {
+                                        if (entry->d_type != DT_REG) continue;
+                        
+                                        filename = entry->d_name;
+                                        const size_t filenameLen = filename.size();
+                        
+                                        // Must end with ".notify"
+                                        if (filenameLen <= 7 || filename.compare(filenameLen - 7, 7, ".notify") != 0)
+                                            continue;
+                        
+                                        // Skip if already shown
+                                        if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end())
+                                            continue;
+                        
+                                        // --- Parse priority ---
+                                        priority = 20; // default
+                                        const size_t dashPos = filename.find('-');
+                                        if (dashPos != std::string::npos && dashPos > 0) {
+                                            prioStr.assign(filename, 0, dashPos);
+                                            if (!prioStr.empty() &&
+                                                std::all_of(prioStr.begin(), prioStr.end(),
+                                                            [](unsigned char c) { return std::isdigit(c); })) {
+                                                priority = std::stoi(prioStr);
+                                            }
+                                        }
+                        
+                                        // --- Build path ---
+                                        fullPath.clear();
+                                        //fullPath.reserve(notifPathLen + filenameLen);
+                                        fullPath = notifPath;
+                                        fullPath += filename;
+                        
+                                        // --- Load JSON (safe outside notification lock) ---
+                                        text = ult::getStringFromJsonFile(fullPath, "text");
+                                        if (!text.empty()) {
+                                            fontSize = 28; // default
+                        
+                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                                ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                            if (root) {
+                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                                cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
+                                                if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
+                                                    fontSize = std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34);
+                                                }
+                                            }
+                        
+                                            // --- Show notification safely ---
+                                            if (notification) {
+                                                notification->show(text, fontSize, priority, filename);
+                                            }
+                        
+                                            // Mark file as shown
+                                            shownFiles.push_back(filename);
+                                        }
+                                    }
+                        
+                                    closedir(dir);
+                        
+                                } else {
+                                    // --- Notifications disabled: delete all files ---
+                                    struct dirent* entry;
+                                    std::string fullPath;
+                        
+                                    while ((entry = readdir(dir)) != nullptr) {
+                                        if (entry->d_type != DT_REG) continue;
+                        
+                                        const char* fname = entry->d_name;
+                                        const size_t len = strlen(fname);
+                        
+                                        if (len > 7 && strcmp(fname + len - 7, ".notify") == 0) {
+                                            fullPath.clear();
+                                            //fullPath.reserve(notifPathLen + len);
+                                            fullPath = ult::NOTIFICATIONS_PATH;
+                                            fullPath.append(fname, len);
+                        
+                                            remove(fullPath.c_str());
+                                        }
+                                    }
+                                    closedir(dir);
+                                }
+                            }
+                        }
+                    }
+
+
+
+
+
+
                     
                     // Combine inputs from both controllers
                     const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
@@ -12543,7 +12406,7 @@ namespace tsl {
 
                     #if IS_STATUS_MONITOR_DIRECTIVE
                     if (triggerExitNow) {
-                        
+                        ult::launchingOverlay.store(true, std::memory_order_release);
                         ult::setIniFileValue(
                             ult::ULTRAHAND_CONFIG_INI_PATH,
                             ult::ULTRAHAND_PROJECT_NAME,
@@ -12555,7 +12418,6 @@ namespace tsl {
                         );
                         tsl::Overlay::get()->close();
                         triggerExitNow = false;
-                        ult::launchingOverlay.store(true, std::memory_order_release);
                         break;
                     }
                     #endif
@@ -12610,6 +12472,7 @@ namespace tsl {
                         }
                         
                         if (!requestedPath.empty()) {
+
                             const std::string overlayFileName = ult::getNameFromPath(requestedPath);
                             
                             // Set overlay state for ovlmenu.ovl
@@ -12627,14 +12490,18 @@ namespace tsl {
                             ult::allowSlide.store(false, std::memory_order_release);
                             ult::unlockedSlide.store(false, std::memory_order_release);
                             
+                            eventClose(&homeButtonPressEvent);
+                            eventClose(&powerButtonPressEvent);
+                            eventClose(&captureButtonPressEvent);
+
+                            //hidExit();
                             // Launch the overlay using the same mechanism as key combos
                             //shData->overlayOpen = false;
-                            
+                            ult::launchingOverlay.store(true, std::memory_order_release);
                             tsl::setNextOverlay(requestedPath, requestedArgs+" --direct");
                             tsl::Overlay::get()->close();
                             eventFire(&shData->comboEvent);
 
-                            ult::launchingOverlay.store(true, std::memory_order_release);
                             launchComboHasTriggered.store(true, std::memory_order_release);
                             return;
                         }
@@ -12685,11 +12552,16 @@ namespace tsl {
                                     );
                                 
                                     //shData->overlayOpen = false;
-                                    
+                                    //hidExit();
+
+                                    eventClose(&homeButtonPressEvent);
+                                    eventClose(&powerButtonPressEvent);
+                                    eventClose(&captureButtonPressEvent);
+
+                                    ult::launchingOverlay.store(true, std::memory_order_release);
                                     tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct");
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
-                                    ult::launchingOverlay.store(true, std::memory_order_release);
                                     launchComboHasTriggered.store(true, std::memory_order_release);
                                     return;
                                 }
@@ -12741,10 +12613,15 @@ namespace tsl {
                                 }
                     
                                 //shData->overlayOpen = false;
+                                //hidExit();
+                                eventClose(&homeButtonPressEvent);
+                                eventClose(&powerButtonPressEvent);
+                                eventClose(&captureButtonPressEvent);
+
+                                ult::launchingOverlay.store(true, std::memory_order_release);
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 tsl::Overlay::get()->close();
                                 eventFire(&shData->comboEvent);
-                                ult::launchingOverlay.store(true, std::memory_order_release);
                                 launchComboHasTriggered.store(true, std::memory_order_release);
                                 return;
                             }
@@ -12754,8 +12631,6 @@ namespace tsl {
                     
                     shData->keysDownPending |= shData->keysDown;
                 }
-                
-                if (!shData->running) break;
 
                 //20 ms
                 //s32 idx = 0;
@@ -12835,6 +12710,12 @@ namespace tsl {
                     ASSERT_FATAL(rc);
                 }
             }
+            //hidExit();
+
+            eventClose(&homeButtonPressEvent);
+            eventClose(&powerButtonPressEvent);
+            eventClose(&captureButtonPressEvent);
+
         }
     }
     
@@ -12981,7 +12862,7 @@ namespace tsl {
         
         *p = '\0';
         
-        isLaunchingNextOverlay.store(true, std::memory_order_release);
+        //isLaunchingNextOverlay.store(true, std::memory_order_release);
         envSetNextLoad(ovlPath.c_str(), buffer);
     }
     
@@ -13015,16 +12896,8 @@ namespace tsl {
     template<typename TOverlay, impl::LaunchFlags launchFlags>
     static inline int loop(int argc, char** argv) {
         static_assert(std::is_base_of_v<tsl::Overlay, TOverlay>, "tsl::loop expects a type derived from tsl::Overlay");
-        //notification = new NotificationPrompt();
-        notification = std::make_shared<NotificationPrompt>();
 
-        // cleanup any lingering items (if they exist)
-        //if (!tsl::elm::s_lastFrameItems.empty()) {
-        //    for (auto* el : tsl::elm::s_lastFrameItems) {
-        //        delete el;
-        //    }
-        //    tsl::elm::s_lastFrameItems = {};
-        //}
+
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
@@ -13035,49 +12908,30 @@ namespace tsl {
             ult::DOWNLOAD_READ_BUFFER = 262144;
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
         }
-
-//#if IS_STATUS_MONITOR_DIRECTIVE
-//        // Check for mini/micro mode flags
-//        bool isMiniOrMicroMode = false;
-//#endif
-
-
-        // CUSTOM SECTION START
-        // Argument parsing
-    //#if IS_LAUNCHER_DIRECTIVE
-    //    const std::string settings = ult::inputExists(ult::SETTINGS_PATH);
-    //#endif
-
+    
         if (argc > 0) {
             g_overlayFilename = ult::getNameFromPath(argv[0]);
             lastOverlayFilename = g_overlayFilename;
-            
-            // Extract mode - find first argument that isn't a flag or flag value
+    
             lastOverlayMode.clear();
             bool skip;
             for (u8 arg = 1; arg < argc; arg++) {
                 const char* s = argv[arg];
-
-#if IS_STATUS_MONITOR_DIRECTIVE
-                // Check for mini/micro mode flags
+    #if IS_STATUS_MONITOR_DIRECTIVE
                 if (s[0] == '-') {
                     if (s[1] == 'm') {
-                        // Single targeted comparison for "-mini" or "-micro"
                         if (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0) {
                             isMiniOrMicroMode = true;
                         }
                     } else if (s[1] == '-' && s[2] == 'm') {
-                        // Single targeted comparison for "--miniOverlay" or "--microOverlay"
                         if (strcasecmp(s, "--miniOverlay") == 0 || strcasecmp(s, "--microOverlay") == 0) {
                             isMiniOrMicroMode = true;
                         }
                     }
                 }
-#endif
-
+    #endif
                 skip = false;
-                
-                // Check if this arg is a flag value for --lastTitleID or --foregroundFix
+    
                 if (arg > 1) {
                     const char* prev = argv[arg - 1];
                     if (prev[0] == '-' && prev[1] == '-') {
@@ -13086,29 +12940,24 @@ namespace tsl {
                         }
                     }
                 }
-                
-                // Check if this is a known flag (NOTE: --package is NOT in this list)
+    
                 if (!skip && s[0] == '-' && s[1] == '-') {
-                    if (strcmp(s, "--direct") == 0 || 
-                        strcmp(s, "--skipCombo") == 0 || 
-                        strcmp(s, "--lastTitleID") == 0 || 
+                    if (strcmp(s, "--direct") == 0 ||
+                        strcmp(s, "--skipCombo") == 0 ||
+                        strcmp(s, "--lastTitleID") == 0 ||
                         strcmp(s, "--foregroundFix") == 0) {
                         skip = true;
                     }
                 }
-                
+    
                 if (!skip) {
-                    // Special handling for --package: reconstruct the full package command
                     if (strcmp(s, "--package") == 0) {
-                        lastOverlayMode = "--package"; // Start with the flag
-                        arg++; // Move to the first package name argument
-                        
+                        lastOverlayMode = "--package";
+                        arg++;
                         if (arg < argc) {
                             lastOverlayMode += " ";
-                            lastOverlayMode += argv[arg]; // Add first part
+                            lastOverlayMode += argv[arg];
                             arg++;
-                            
-                            // Collect remaining parts until we hit another flag or end
                             while (arg < argc && argv[arg][0] != '-') {
                                 lastOverlayMode += " ";
                                 lastOverlayMode += argv[arg];
@@ -13116,60 +12965,40 @@ namespace tsl {
                             }
                         }
                     } else {
-                        // Regular mode (not a package)
                         lastOverlayMode = s;
                     }
                     break;
                 }
             }
         }
-
+    
         bool skipCombo = false;
-
-        #if IS_LAUNCHER_DIRECTIVE
+    #if IS_LAUNCHER_DIRECTIVE
         bool directMode = true;
-        #else
+    #else
         bool directMode = false;
-        #endif
+    #endif
         bool usingPackageLauncher = false;
-        
-        //u64 promptDuration = 0;
+    
         for (u8 arg = 0; arg < argc; arg++) {
             const char* s = argv[arg];
-            
             if (s[0] != '-' || s[1] != '-') continue;
-            
             const char* opt = s + 2;
-
-            //if (strcmp(opt, "promptDuration") == 0) {
-            //    if (++arg < argc) {
-            //        promptDuration = strtoull(argv[arg], nullptr, 10); // ns value
-            //    }
-            //    continue;
-            //}
-            
-            // Check each option directly - memcmp handles both length and content
-            for (u8 i = 0; i < 4; i++) {
-                // memcmp returns 0 for exact match, and checks the null terminator position
+    
+            for (u8 i = 0; i < 5; i++) {
                 if (memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
-                    
                     switch (options[i].action) {
                         case 1: // direct
-                            {
-                                //std::lock_guard<std::mutex> lock(jumpItemMutex);
-                                directMode = true;
-                                g_overlayFilename = "";
-                                jumpItemName = "";
-                                jumpItemValue = "";
-                                jumpItemExactMatch.store(true, std::memory_order_release);
-                            }
+                            directMode = true;
+                            g_overlayFilename = "";
+                            jumpItemName = "";
+                            jumpItemValue = "";
+                            jumpItemExactMatch.store(true, std::memory_order_release);
                             break;
-                            
-                        case 2: // skipCombo  
+                        case 2: // skipCombo
                             skipCombo = true;
                             ult::firstBoot = false;
                             break;
-                            
                         case 3: // lastTitleID
                             if (++arg < argc) {
                                 const char* providedID = argv[arg];
@@ -13178,167 +13007,129 @@ namespace tsl {
                                 }
                             }
                             break;
-                            
-                            
                         case 4: // foregroundFix
                             if (++arg < argc) {
-                                ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) || 
-                                                           (argv[arg][0] == '1'), std::memory_order_release);
+                                ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) ||
+                                                               (argv[arg][0] == '1'), std::memory_order_release);
                             }
                             break;
-                        case 5: // foregroundFix
+                        case 5: // package
                             usingPackageLauncher = true;
                             break;
                     }
-                    //break; // Exit loop once found
                 }
             }
         }
-
+    
         impl::SharedThreadData shData;
-        
-        shData.running = true;
-        
+        shData.running.store(true, std::memory_order_release);
+    
         Thread backgroundThread;
-        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2); // changed from 0x1000 for rapid launcher
+        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
         threadStart(&backgroundThread);
-        
+    
         eventCreate(&shData.comboEvent, false);
-        eventCreate(&notificationEvent, false);
-        
+    
         auto& overlay = tsl::Overlay::s_overlayInstance;
         overlay = new TOverlay();
         overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
-        
-        
+    
         tsl::hlp::doWithSmSession([&overlay]{
             overlay->initServices();
         });
-    #if IS_LAUNCHER_DIRECTIVE
-    #else
-        tsl::initializeUltrahandSettings(); // for initializing settings
+    #if !IS_LAUNCHER_DIRECTIVE
+        tsl::initializeUltrahandSettings();
     #endif
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
-
-
+    
     #if IS_LAUNCHER_DIRECTIVE
         {
             bool inOverlay;
             bool shouldFireEvent = false;
             auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
             bool needsUpdate = false;
-            
-            // Handle first boot
+    
             if (ult::firstBoot) {
                 configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
                 needsUpdate = true;
             }
-            
-            // Read the overlay value
+    
             auto projectIt = configData.find(ult::ULTRAHAND_PROJECT_NAME);
             if (projectIt != configData.end()) {
                 auto overlayIt = projectIt->second.find(ult::IN_OVERLAY_STR);
                 inOverlay = (overlayIt == projectIt->second.end() || overlayIt->second != ult::FALSE_STR);
             } else {
-                inOverlay = true; // Default if section doesn't exist
+                inOverlay = true;
             }
-            
-            // Check if we need to update overlay status and fire event
+    
             if (inOverlay && skipCombo) {
                 configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
                 needsUpdate = true;
                 shouldFireEvent = true;
             }
-            
-            // Save all changes at once
+    
             if (needsUpdate) {
                 ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
             }
-        
+    
             if (shouldFireEvent) {
                 eventFire(&shData.comboEvent);
             }
-
-        } // configData automatically destroyed here
+        }
     #else
         if (skipCombo) {
             eventFire(&shData.comboEvent);
         }
     #endif
-
-
+    
         overlay->disableNextAnimation();
-
+    
         {
             Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
             s32 index = -1;
     
             bool exitAfterPrompt = false;
             bool comboBreakout = false;
-            bool firstLoop = true;
-            if (ult::firstBoot)
-                firstLoop = false;
+            bool firstLoop = !ult::firstBoot;
     
-    
-            // Call this instead of assigning shData.running = false directly.
-            // setNextOverlayFlag -> if true, set next overlay to ovlmenu.ovl
-            //auto beginShutdown = [&](bool setNextOverlayFlag = false) {
-            //    ult::launchingOverlay.store(true, std::memory_order_release);
-            //    
-            //    shData.running = false;
-            //    shData.overlayOpen = false;
-            //
-            //    // 7) Optionally set next overlay
-            //    if (setNextOverlayFlag) {
-            //        tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
-            //    }
-            //    notification->shutdown();
-            //};
-                    
-    
-            while (shData.running) {
+            while (shData.running.load(std::memory_order_acquire)) {
+                // Early exit if launching new overlay
                 if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                    shData.running = false;
-                    shData.overlayOpen = false;
+                    //std::scoped_lock lock(shData.dataMutex);
+                    shData.running.store(false, std::memory_order_release);
+                    shData.overlayOpen.store(false, std::memory_order_release);
                     break;
                 }
     
-                if (!notification->isActive()){
+                // Wait for events only if no active notification
+                if (!(notification && notification->isActive())) {
                     svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
                     eventClear(&notificationEvent);
                     eventClear(&shData.comboEvent);
                 }
     
-                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                    shData.running = false;
-                    shData.overlayOpen = false;
-                    break;
-                }
-    
-                if ((notification->isActive() && !firstLoop) || (index == 1)) {
-                    
+                if ((notification && notification->isActive() && !firstLoop) || index == 1) {
                     comboBreakout = false;
     
-                    //overlay->clearScreen();
-                    
-                    while (shData.running) {
-                        
-                        overlay->loop(true);   // draw prompts while hidden
-                        
-                        // Check if combo occurs while prompt is active
-                        if (mainComboHasTriggered.load(std::memory_order_acquire)) {  // proper timeout
+                    while (shData.running.load(std::memory_order_acquire)) {
+                        {
+                            //std::scoped_lock lock(shData.dataMutex);
+                            if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                                shData.running.store(false, std::memory_order_release);
+                                shData.overlayOpen.store(false, std::memory_order_release);
+                                break;
+                            }
+                            overlay->loop(true); // Draw prompts while hidden
+                        }
+    
+                        if (mainComboHasTriggered.load(std::memory_order_acquire)) {
                             mainComboHasTriggered.store(false, std::memory_order_acquire);
                             comboBreakout = true;
                             exitAfterPrompt = false;
                             break;
                         }
     
-                        // Also check for other configured launch combos (if enabled)
                         if (launchComboHasTriggered.load(std::memory_order_acquire)) {
                             exitAfterPrompt = true;
                             usingPackageLauncher = false;
@@ -13346,184 +13137,165 @@ namespace tsl {
                             break;
                         }
     
-                        if (!notification->isActive()) {
+                        if (!(notification && notification->isActive())) {
                             break;
                         }
                     }
     
-                    if (!comboBreakout || !shData.running) {
-                        overlay->clearScreen();
+                    if (!comboBreakout || !shData.running.load(std::memory_order_acquire)) {
+                        {
+                            //std::scoped_lock lock(shData.dataMutex);
+                            if (!ult::launchingOverlay.load(std::memory_order_acquire)) {
+                                overlay->clearScreen();
+                            }
+                        }
                         if (exitAfterPrompt) {
+                            std::scoped_lock lock(shData.dataMutex);
                             exitAfterPrompt = false;
-                            
-                            shData.running = false;
-                            shData.overlayOpen = false;
-
-                            //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
+                            shData.running.store(false, std::memory_order_release);
+                            shData.overlayOpen.store(false, std::memory_order_release);
                             ult::launchingOverlay.store(true, std::memory_order_release);
-                            
-                        
-                            // 7) Optionally set next overlay
+    
                             if (usingPackageLauncher || directMode) {
                                 tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
                             }
     
-                            overlay->resetFlags();
-                            
                             hlp::requestForeground(false);
-                            
-                            //mainComboHasTriggered.store(false, std::memory_order_acquire);
-                            //launchComboHasTriggered.store(false, std::memory_order_acquire);
-                            // events already fired inside beginShutdown(); no need to eventClear here
                             break;
                         }
                         continue;
                     }
                 }
-
-                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                    //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                    shData.running = false;
-                    shData.overlayOpen = false;
-                    break;
+    
+                {
+                    //std::scoped_lock lock(shData.dataMutex);
+                    if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                        shData.running.store(false, std::memory_order_release);
+                        shData.overlayOpen.store(false, std::memory_order_release);
+                        break;
+                    }
+                    firstLoop = false;
+                    shData.overlayOpen.store(true, std::memory_order_release);
+    
+    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (!isMiniOrMicroMode)
+                        hlp::requestForeground(true);
+    #else
+                    hlp::requestForeground(true);
+    #endif
+    
+                    overlay->show();
+                    if (!comboBreakout && !(notification && notification->isActive()))
+                        overlay->clearScreen();
                 }
     
-                firstLoop = false;
-                shData.overlayOpen = true;
-    
-                
-    #if IS_STATUS_MONITOR_DIRECTIVE
-                if (!isMiniOrMicroMode)
-                    hlp::requestForeground(true);
-    #else
-                hlp::requestForeground(true);
-    #endif
-                
-                overlay->show();
-                if (!comboBreakout && !notification->isActive())
-                    overlay->clearScreen();
-                
-                while (shData.running) {
-                    
-                    overlay->loop();
-                    
+                while (shData.running.load(std::memory_order_acquire)) {
                     {
-                        std::scoped_lock lock(shData.dataMutex);
-                        if (!overlay->fadeAnimationPlaying()) {
-                            overlay->handleInput(shData.keysDownPending, shData.keysHeld, shData.touchState.count, shData.touchState.touches[0], shData.joyStickPosLeft, shData.joyStickPosRight);
+                        
+                        if (ult::launchingOverlay.load(std::memory_order_acquire)) {
+                            shData.running.store(false, std::memory_order_release);
+                            shData.overlayOpen.store(false, std::memory_order_release);
+                            break;
                         }
-                        shData.keysDownPending = 0;
+                        overlay->loop();
+                        {
+                            std::scoped_lock lock(shData.dataMutex);
+                            if (!overlay->fadeAnimationPlaying()) {
+                                overlay->handleInput(shData.keysDownPending, shData.keysHeld, shData.touchState.count, shData.touchState.touches[0], shData.joyStickPosLeft, shData.joyStickPosRight);
+                            }
+                            shData.keysDownPending = 0;
+                        }
                     }
-
-                    #if IS_STATUS_MONITOR_DIRECTIVE
+    
+    #if IS_STATUS_MONITOR_DIRECTIVE
                     if (pendingExit && wasRendering) {
                         pendingExit = false;
                         wasRendering = false;
                         isRendering = true;
                         leventClear(&renderingStopEvent);
                     }
-                    #endif
+    #endif
     
                     if (overlay->shouldHide()) {
                         if (overlay->shouldCloseAfter()) {
                             if (!directMode) {
-                                //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                                // safe shutdown
-                                //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                                
-                                shData.running = false;
-                                shData.overlayOpen = false;
-
-                                ult::launchingOverlay.store(true, std::memory_order_release);
-                                break;  // Exit immediately, don't clear events
+                                //std::scoped_lock lock(shData.dataMutex);
+                                shData.running.store(false, std::memory_order_release);
+                                shData.overlayOpen.store(false, std::memory_order_release);
+                                break;
                             } else {
                                 exitAfterPrompt = true;
-                                #if IS_STATUS_MONITOR_DIRECTIVE
+    #if IS_STATUS_MONITOR_DIRECTIVE
                                 pendingExit = true;
-                                #endif
+    #endif
                             }
                         }
                         break;
                     }
-                    
+    
                     if (overlay->shouldClose()) {
-                        //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                        shData.running = false;
-                        shData.overlayOpen = false;
-
-                        //tsl::elm::skipDeconstruction.store(true, std::memory_order_release);
-                        ult::launchingOverlay.store(true, std::memory_order_release);
+                        //std::scoped_lock lock(shData.dataMutex);
+                        shData.running.store(false, std::memory_order_release);
+                        shData.overlayOpen.store(false, std::memory_order_release);
                         break;
                     }
                 }
-                
     
-                if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                    //std::scoped_lock lock(shData.dataMutex);  // Hold lock during entire shutdown
-                    shData.running = false;
-                    shData.overlayOpen = false;
-                    break;
-                }
-    
-                if (shData.running) {
-                    if (!notification->isActive())
-                       overlay->clearScreen();
-
+                if (shData.running.load(std::memory_order_acquire)) {
+                    //std::scoped_lock lock(shData.dataMutex);
+                    if (!(notification && notification->isActive()))
+                        overlay->clearScreen();
                     overlay->resetFlags();
                     hlp::requestForeground(false);
-                    shData.overlayOpen = false;
+                    shData.overlayOpen.store(false, std::memory_order_release);
                     mainComboHasTriggered.store(false, std::memory_order_acquire);
-                    
-                    // Safe to clear events only if shutdown hasn't been called
-                    //eventClear(&notificationEvent);
-                    //eventClear(&shData.comboEvent);
+                    launchComboHasTriggered.store(false, std::memory_order_acquire);
+                    eventClear(&shData.comboEvent);
                 }
             }
-        }
+            //if (notification)
+            //    notification->forceShutdown();
+    
+            //while (notification && notification->isActive()) {
+            //    notification->update(true, true); // No file ops, allow state transitions
+            //    svcSleepThread(10'000'000); // 1ms sleep
+            //}
+            //tsl::notificationGeneration.fetch_add(1, std::memory_order_release);
 
-        hlp::requestForeground(false);
+            // Ensure background thread is fully stopped before overlay cleanup
+            shData.running.store(false, std::memory_order_release);
+            threadWaitForExit(&backgroundThread);
+            threadClose(&backgroundThread);
 
-        // Wait & close background thread
-        threadWaitForExit(&backgroundThread);
-        threadClose(&backgroundThread);
-
-        //notification->shutdown();
-
-        eventClose(&shData.comboEvent);
-        
-
-        overlay->exitScreen();
-        overlay->exitServices();
-
-        // FINAL element cleanup with proper locking
-        {
-            std::lock_guard<std::mutex> lock(tsl::elm::s_lastFrameItemsMutex);
-            tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
-            for (auto*& el : tsl::elm::s_lastFrameItems) {
-                el = nullptr;
-            }
-            tsl::elm::s_lastFrameItems.clear();
-            tsl::elm::s_cacheForwardFrameOnce.store(false, std::memory_order_release);
-            tsl::elm::s_isForwardCache.store(false, std::memory_order_release);
-            tsl::elm::s_hasValidFrame.store(false, std::memory_order_release);
+            // Cleanup overlay resources
+            tsl::elm::fullDeconstruction.store(true, std::memory_order_release);
+            hlp::requestForeground(false);
+            overlay->exitScreen();
+            overlay->exitServices();
+            delete overlay;
             
+            // Synchronize notification shutdown
+           //if (notification) {
+           //    notification->forceShutdown(); // Immediate disable of new notifications
+           //    while (notification->isActive()) {
+           //        notification->update(true, true); // No file ops, allow state transitions
+           //        svcSleepThread(1'000'000); // 1ms sleep
+           //    }
+           //    
+           //    notificationGeneration.fetch_add(1, std::memory_order_release);
+           //    delete notification;
+           //    
+           //    //lock.unlock();
+           //}
+
+            
+            eventClose(&shData.comboEvent);
+            
+            // Brief delay to ensure thread quiescence before nx-ovlloader transition
+            //svcSleepThread(100'000'000); // 100ms
+    
+            return 0;
         }
-        //
-        
-
-        delete overlay;
-
-        
-        notification.reset();
-        eventClose(&notificationEvent);
-
-        
-        tsl::gfx::FontManager::cleanup();
-
-
-        //tsl::gfx::FontManager::clearAllCaches();
-        return 0;
     }
 
 }
@@ -13597,6 +13369,10 @@ extern "C" {
         serviceClose(plSrv);
         *plSrv = plClone;
         #endif
+
+        eventCreate(&tsl::notificationEvent, false);
+        tsl::notification = new tsl::NotificationPrompt();
+        //tsl::notification = nullptr;
     }
     
     /**
@@ -13604,7 +13380,12 @@ extern "C" {
      *
      */
     void __appExit(void) {
-        
+        delete tsl::notification;
+        eventClose(&tsl::notificationEvent); // Close early to prevent NS errors
+
+
+
+        smExit();
         //socketExit();
         //nifmExit();
         spsmExit();
@@ -13622,7 +13403,9 @@ extern "C" {
         pmdmntExit();
         hidsysExit();
         setsysExit();
-        smExit();
+
+        // Final cleanup
+        tsl::gfx::FontManager::cleanup();
     }
 
 }
