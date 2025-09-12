@@ -10136,7 +10136,7 @@ namespace tsl {
                 if (a.priority == b.priority) {
                     return a.arrivalNs > b.arrivalNs; // FIFO
                 }
-                return a.priority < b.priority; // Max-heap
+                return a.priority > b.priority; // Max-heap
             }
         };
     
@@ -10193,25 +10193,26 @@ namespace tsl {
             }
         }
     
+
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
             if (ult::launchingOverlay.load(std::memory_order_acquire) ||
                 generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
             if (!enabled_.load(std::memory_order_acquire)) return;
-    
+        
             NotificationState copy;
             {
                 std::lock_guard<std::mutex> lg(state_mutex_);
                 if (current_state_.state == PromptState::Inactive || current_state_.activeText.empty()) return;
                 copy = current_state_;
             }
-    
-            u64 now = armTicksToNs(armGetSystemTick());
-            u64 elapsedMs = (now - copy.stateStartNs) / 1'000'000ULL;
-    
+        
+            const u64 now = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (now - copy.stateStartNs) / 1'000'000ULL;
+        
             s32 x = 0, y = 0;
             switch (copy.state) {
                 case PromptState::SlidingIn: {
-                    float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
+                    const float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
                     x = ult::useRightAlignment ?
                         (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>((1.0f - t) * copy.promptWidth)) :
                         static_cast<s32>(-copy.promptWidth + t * copy.promptWidth);
@@ -10221,7 +10222,7 @@ namespace tsl {
                     x = ult::useRightAlignment ? (tsl::cfg::FramebufferWidth - copy.promptWidth) : 0;
                     break;
                 case PromptState::SlidingOut: {
-                    float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
+                    const float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
                     x = ult::useRightAlignment ?
                         (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>(t * copy.promptWidth)) :
                         static_cast<s32>(-t * copy.promptWidth);
@@ -10229,44 +10230,68 @@ namespace tsl {
                 }
                 default: return;
             }
-    
-            s32 scissorX = std::max(0, x);
-            s32 scissorW = std::min(copy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
-    
+        
+            const s32 scissorX = std::max(0, x);
+            const s32 scissorW = std::min(copy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
+        
             if (scissorX >= 0 && scissorW > 0 && copy.promptHeight > 0) {
                 renderer->enableScissoring(scissorX, y, scissorW, copy.promptHeight);
+
+            #if IS_STATUS_MONITOR_DIRECTIVE
                 renderer->drawRect(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
-    
+            #else
+                if (!promptOnly && ult::expandedMemory)
+                    renderer->drawRectMultiThreaded(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
+                else
+                    renderer->drawRect(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
+            #endif
+            
                 if (!copy.activeText.empty()) {
                     std::vector<std::string> lines;
-                    const char* ptr = copy.activeText.data();
-                    const char* lineStart = ptr;
-    
-                    while (*ptr && lines.size() < 8) {
-                        if (*ptr == '\\' && *(ptr + 1) == 'n') {
-                            lines.emplace_back(lineStart, ptr - lineStart);
-                            ptr += 2;
-                            lineStart = ptr;
+                    const std::string& text = copy.activeText;
+            
+                    size_t start = 0;
+                    while (start < text.size() && lines.size() < 8) {
+                        // Look for escaped "\n"
+                        const size_t pos = text.find("\\n", start);
+            
+                        if (pos == std::string::npos) {
+                            // No more "\n", take the rest
+                            lines.emplace_back(text.substr(start));
+                            break;
                         } else {
-                            ++ptr;
+                            // Extract line up to the escape sequence
+                            lines.emplace_back(text.substr(start, pos - start));
+                            start = pos + 2; // Skip past "\n"
                         }
                     }
-                    if (*lineStart && lines.size() < 8) lines.emplace_back(lineStart);
-    
-                    auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', copy.fontSize);
-                    s32 startY = y + (copy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
-    
+            
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', copy.fontSize);
+                    const s32 startY = y + (copy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
+            
                     for (size_t i = 0; i < lines.size(); ++i) {
-                        auto [lw, lh] = renderer->getNotificationTextDimensions(lines[i], false, copy.fontSize);
-                        renderer->drawNotificationString(
-                            lines[i], false,
-                            x + (copy.promptWidth - lw) / 2,
-                            startY + static_cast<int>(i) * fm.lineHeight,
-                            copy.fontSize, defaultTextColor
-                        );
+                        const std::string& line = lines[i];
+                        
+                        // Check if line contains "Ultrahand" (case insensitive)
+                        const bool hasUltrahand = (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos);
+                        
+                        if (hasUltrahand) {
+                            // Draw line with dynamic Ultrahand effect
+                            drawUltrahandLine(renderer, line, x, startY + static_cast<int>(i) * fm.lineHeight, 
+                                            copy.fontSize, copy.promptWidth);
+                        } else {
+                            // Draw normal line
+                            const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, copy.fontSize);
+                            renderer->drawNotificationString(
+                                line, false,
+                                x + (copy.promptWidth - lw) / 2,
+                                startY + static_cast<int>(i) * fm.lineHeight,
+                                copy.fontSize, defaultTextColor
+                            );
+                        }
                     }
                 }
-    
+            
                 if (!ult::useRightAlignment) {
                     renderer->drawRect(x + copy.promptWidth - 1, y, 1, copy.promptHeight, edgeSeparatorColor);
                     renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
@@ -10274,11 +10299,124 @@ namespace tsl {
                     renderer->drawRect(x, y, 1, copy.promptHeight, edgeSeparatorColor);
                     renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
                 }
-    
+            
                 renderer->disableScissoring();
             }
         }
-    
+
+        void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line, s32 x, s32 y, 
+                              u32 fontSize, s32 promptWidth) {
+            // Find position of "Ultrahand" in the line (case insensitive)
+            size_t ultrahandPos = std::string::npos;
+            std::string ultrahandToReplace;
+            
+            // Check for "Ultrahand" first
+            ultrahandPos = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
+            if (ultrahandPos != std::string::npos) {
+                ultrahandToReplace = ult::CAPITAL_ULTRAHAND_PROJECT_NAME;
+            }
+            
+            if (ultrahandPos == std::string::npos) {
+                // Fallback to normal drawing if not found
+                const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, fontSize);
+                renderer->drawNotificationString(line, false, x + (promptWidth - lw) / 2, y, fontSize, defaultTextColor);
+                return;
+            }
+            
+            // Split the line into parts
+            const std::string before = line.substr(0, ultrahandPos);
+            const std::string ultra = ult::SPLIT_PROJECT_NAME_1;
+            const std::string hand = ult::SPLIT_PROJECT_NAME_2;
+            const std::string after = line.substr(ultrahandPos + ultrahandToReplace.length());
+            
+            // Calculate individual part widths to get accurate total width
+            s32 beforeWidth = 0, ultraWidth = 0, handWidth = 0, afterWidth = 0;
+            
+            if (!before.empty()) {
+                const auto [bw, bh] = renderer->getNotificationTextDimensions(before, false, fontSize);
+                beforeWidth = bw;
+            }
+            
+            if (!after.empty()) {
+                const auto [aw, ah] = renderer->getNotificationTextDimensions(after, false, fontSize);
+                afterWidth = aw;
+            }
+            
+            const auto [hw, hh] = renderer->getNotificationTextDimensions(hand, false, fontSize);
+            handWidth = hw;
+            
+            // For "Ultra" width, we need to handle dynamic vs static rendering differently
+            if (ult::useDynamicLogo) {
+                // Calculate width by measuring each character (since dynamic rendering might have slight differences)
+                for (const char letter : ultra) {
+                    const std::string letterStr(1, letter);
+                    const auto [lw, lh] = renderer->getNotificationTextDimensions(letterStr, false, fontSize);
+                    ultraWidth += lw;
+                }
+            } else {
+                const auto [uw, uh] = renderer->getNotificationTextDimensions(ultra, false, fontSize);
+                ultraWidth = uw;
+            }
+            
+            // Calculate total width and starting position for centering
+            const s32 totalWidth = beforeWidth + ultraWidth + handWidth + afterWidth;
+            s32 currentX = x + (promptWidth - totalWidth) / 2;
+            
+            // Draw each part in sequence
+            
+            // Draw "before" part
+            if (!before.empty()) {
+                renderer->drawNotificationString(before, false, currentX, y, fontSize, defaultTextColor);
+                currentX += beforeWidth;
+            }
+            
+            // Draw dynamic "Ultra" part
+            if (ult::useDynamicLogo) {
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
+                const double timeBase = std::fmod(currentTimeCount, cycleDuration);
+                const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
+                static constexpr double phaseShift = ult::_M_PI / 2.0;
+                
+                float countOffset = 0;
+                for (const char letter : ultra) {
+                    const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
+                    const double rawProgress = std::cos(wavePhase - phaseShift);
+                    
+                    const double normalizedProgress = (rawProgress + 1.0) * 0.5;
+                    const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
+                    const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
+                    
+                    const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
+                    
+                    const tsl::Color highlightColor = {
+                        static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
+                        static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
+                        static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
+                        15
+                    };
+                    
+                    const std::string letterStr(1, letter);
+                    const auto [letterWidth, letterHeight] = renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor);
+                    currentX += letterWidth;
+                    countOffset -= static_cast<float>(cycleDuration / 8.0);
+                }
+            } else {
+                renderer->drawNotificationString(ultra, false, currentX, y, fontSize, logoColor1);
+                currentX += ultraWidth;
+            }
+            
+            // Draw static "hand" part
+            renderer->drawNotificationString(hand, false, currentX, y, fontSize, logoColor2);
+            currentX += handWidth;
+            
+            // Draw "after" part
+            if (!after.empty()) {
+                renderer->drawNotificationString(after, false, currentX, y, fontSize, defaultTextColor);
+            }
+        }
+
+
         void update() {
             if (!isActive()) {
                 return;
@@ -10310,8 +10448,8 @@ namespace tsl {
                 return;
             }
     
-            u64 now = armTicksToNs(armGetSystemTick());
-            u64 elapsedMs = (current_state_.stateStartNs == 0) ? 0 : (now - current_state_.stateStartNs) / 1'000'000ULL;
+            const u64 now = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (current_state_.stateStartNs == 0) ? 0 : (now - current_state_.stateStartNs) / 1'000'000ULL;
     
             switch (current_state_.state) {
                 case PromptState::SlidingIn:
@@ -10337,7 +10475,7 @@ namespace tsl {
                         }
 
                         current_state_ = NotificationState{};
-                        bool hadNext = startNext_NoLock();
+                        const bool hadNext = startNext_NoLock();
                         if (!hadNext) is_active_ = false;
                     }
                     break;
@@ -10373,27 +10511,28 @@ namespace tsl {
             //pending_event_fire_.store(false, std::memory_order_release);
         }
     
-        void forceCompleteTransition() {
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            current_state_ = NotificationState{};
-            while (!pending_queue_.empty()) pending_queue_.pop();
-            is_active_ = false;
-            //pending_event_fire_.store(false, std::memory_order_release);
-        }
-    
-        void freezeState() {
-            generation_++;
-            enabled_.store(false, std::memory_order_release);
-            {
-                std::lock_guard<std::mutex> lg(state_mutex_);
-                is_active_ = false;
-            }
-            //pending_event_fire_.store(false, std::memory_order_release);
-        }
+        //void forceCompleteTransition() {
+        //    std::lock_guard<std::mutex> lg(state_mutex_);
+        //    current_state_ = NotificationState{};
+        //    while (!pending_queue_.empty()) pending_queue_.pop();
+        //    is_active_ = false;
+        //    //pending_event_fire_.store(false, std::memory_order_release);
+        //}
+        //
+        //void freezeState() {
+        //    generation_++;
+        //    enabled_.store(false, std::memory_order_release);
+        //    {
+        //        std::lock_guard<std::mutex> lg(state_mutex_);
+        //        is_active_ = false;
+        //    }
+        //    //pending_event_fire_.store(false, std::memory_order_release);
+        //}
     
     private:
         static constexpr size_t MAX_NOTIFS = 30;
         static constexpr u32 SLIDE_DURATION_MS = 200;
+        static constexpr double cycleDuration = 1.6;
     
         mutable std::mutex state_mutex_;
         NotificationState current_state_;
@@ -10407,10 +10546,10 @@ namespace tsl {
     
         bool startNext_NoLock() {
             if (pending_queue_.empty()) return false;
-            NotificationData next = pending_queue_.top();
+            const NotificationData next = pending_queue_.top();
             pending_queue_.pop();
     
-            u64 now = armTicksToNs(armGetSystemTick());
+            const u64 now = armTicksToNs(armGetSystemTick());
             current_state_.activeText = next.text;
             current_state_.fileName = next.fileName;
             current_state_.fontSize = next.fontSize;
@@ -13105,9 +13244,11 @@ namespace tsl {
                 // Wait for events only if no active notification
                 if (!(notification && notification->isActive())) {
                     svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
-                    eventClear(&notificationEvent);
-                    eventClear(&shData.comboEvent);
+                    //eventClear(&notificationEvent);
+                    //eventClear(&shData.comboEvent);
                 }
+                eventClear(&notificationEvent);
+                eventClear(&shData.comboEvent);
     
                 if ((notification && notification->isActive() && !firstLoop) || index == 1) {
                     comboBreakout = false;
@@ -13381,9 +13522,7 @@ extern "C" {
      */
     void __appExit(void) {
         delete tsl::notification;
-        eventClose(&tsl::notificationEvent); // Close early to prevent NS errors
-
-
+        eventClose(&tsl::notificationEvent);
 
         smExit();
         //socketExit();
