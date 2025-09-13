@@ -11108,10 +11108,10 @@ namespace tsl {
             // Notification handling - safer approach with consistent ordering
             {
                 if (notification) {
-                    notification->update();
+                    
                     if (notification->isActive()) {
                         // Snapshot pointer to avoid it becoming null mid-use
-                        
+                        notification->update();
                         notification->draw(&renderer, promptOnly);
                         notificationCacheNeedsClearing.store(true, std::memory_order_release);
                     } else {
