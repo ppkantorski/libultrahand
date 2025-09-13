@@ -10190,6 +10190,15 @@ namespace tsl {
                 startNext_NoLock();
                 //pending_event_fire_.store(true, std::memory_order_release);
                 eventFire(&notificationEvent);
+
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                if (isRendering) {
+                    isRendering = false;
+                    wasRendering = true;
+                    
+                    leventSignal(&renderingStopEvent);
+                }
+                #endif
             }
         }
     
@@ -10205,7 +10214,7 @@ namespace tsl {
                 if (current_state_.state == PromptState::Inactive || current_state_.activeText.empty()) return;
                 copy = current_state_;
             }
-        
+            
             const u64 now = armTicksToNs(armGetSystemTick());
             const u64 elapsedMs = (now - copy.stateStartNs) / 1'000'000ULL;
         
@@ -10272,6 +10281,7 @@ namespace tsl {
                     for (size_t i = 0; i < lines.size(); ++i) {
                         const std::string& line = lines[i];
                         
+                        #if IS_LAUNCHER_DIRECTIVE
                         // Check if line contains "Ultrahand" (case insensitive)
                         const bool hasUltrahand = (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos);
                         
@@ -10289,6 +10299,16 @@ namespace tsl {
                                 copy.fontSize, defaultTextColor
                             );
                         }
+                        #else
+                        // Draw normal line
+                        const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, copy.fontSize);
+                        renderer->drawNotificationString(
+                            line, false,
+                            x + (copy.promptWidth - lw) / 2,
+                            startY + static_cast<int>(i) * fm.lineHeight,
+                            copy.fontSize, defaultTextColor
+                        );
+                        #endif
                     }
                 }
             
@@ -10304,6 +10324,7 @@ namespace tsl {
             }
         }
 
+        #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line, s32 x, s32 y, 
                               u32 fontSize, s32 promptWidth) {
             // Find position of "Ultrahand" in the line (case insensitive)
@@ -10415,7 +10436,7 @@ namespace tsl {
                 renderer->drawNotificationString(after, false, currentX, y, fontSize, defaultTextColor);
             }
         }
-
+        #endif
 
         void update() {
             if (!isActive()) {
@@ -10476,7 +10497,9 @@ namespace tsl {
 
                         current_state_ = NotificationState{};
                         const bool hadNext = startNext_NoLock();
-                        if (!hadNext) is_active_ = false;
+                        if (!hadNext) {
+                            is_active_ = false;
+                        }
                     }
                     break;
                 default: break;
@@ -10538,7 +10561,6 @@ namespace tsl {
         NotificationState current_state_;
         std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pending_queue_;
 
-    
         std::atomic<bool> enabled_{true};
         bool is_active_{false}; // protected by mutex
         //std::atomic<bool> pending_event_fire_{false};
@@ -11086,14 +11108,22 @@ namespace tsl {
             // Notification handling - safer approach with consistent ordering
             {
                 if (notification) {
+                    notification->update();
                     if (notification->isActive()) {
                         // Snapshot pointer to avoid it becoming null mid-use
-                        notification->update();
+                        
                         notification->draw(&renderer, promptOnly);
                         notificationCacheNeedsClearing.store(true, std::memory_order_release);
                     } else {
                         if (notificationCacheNeedsClearing.exchange(false, std::memory_order_acq_rel)) {
                             tsl::gfx::FontManager::clearNotificationCache();
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            if (wasRendering) {
+                                wasRendering = false;
+                                isRendering = true;
+                                leventClear(&renderingStopEvent);
+                            }
+                            #endif
                         }
                     }
                 }
@@ -12349,7 +12379,7 @@ namespace tsl {
                                     struct dirent* entry;
                         
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                    const size_t notifPathLen = notifPath.length();
+                                    //const size_t notifPathLen = notifPath.length();
                         
                                     static std::vector<std::string> shownFiles;
                         
