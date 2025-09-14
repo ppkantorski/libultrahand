@@ -12374,15 +12374,23 @@ namespace tsl {
                                 
                                 if (ult::useNotifications) {
                                     std::string filename, fullPath, prioStr;
-                                    std::string bestFile;
-                        
+                                    
                                     struct dirent* entry;
-                        
+                                    
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                    //const size_t notifPathLen = notifPath.length();
-                        
+                                    
                                     static std::vector<std::string> shownFiles;
-                        
+                                    
+                                    // Structure to hold file info with creation time
+                                    struct NotificationFile {
+                                        std::string filename;
+                                        std::string fullPath;
+                                        time_t creationTime;
+                                        int priority;
+                                    };
+                                    
+                                    std::vector<NotificationFile> notificationFiles;
+                                    
                                     // --- Prune missing files from shownFiles ---
                                     for (auto it = shownFiles.begin(); it != shownFiles.end();) {
                                         const std::string fullPath = notifPath + *it;
@@ -12392,51 +12400,77 @@ namespace tsl {
                                             ++it;
                                         }
                                     }
-                        
+                                    
                                     static std::string text;
                                     static int fontSize;
                                     static int priority;
-                        
-                                    // --- Scan notification files ---
+                                    
+                                    // --- Collect notification files with creation time ---
                                     while ((entry = readdir(dir)) != nullptr) {
                                         if (entry->d_type != DT_REG) continue;
-                        
+                                        
                                         filename = entry->d_name;
                                         const size_t filenameLen = filename.size();
-                        
+                                        
                                         // Must end with ".notify"
                                         if (filenameLen <= 7 || filename.compare(filenameLen - 7, 7, ".notify") != 0)
                                             continue;
-                        
+                                        
                                         // Skip if already shown
                                         if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end())
                                             continue;
-                        
-                                        // --- Parse priority ---
-                                        priority = 20; // default
-                                        const size_t dashPos = filename.find('-');
-                                        if (dashPos != std::string::npos && dashPos > 0) {
-                                            prioStr.assign(filename, 0, dashPos);
-                                            if (!prioStr.empty() &&
-                                                std::all_of(prioStr.begin(), prioStr.end(),
-                                                            [](unsigned char c) { return std::isdigit(c); })) {
-                                                priority = std::stoi(prioStr);
-                                            }
-                                        }
-                        
+                                        
                                         // --- Build path ---
                                         fullPath.clear();
-                                        //fullPath.reserve(notifPathLen + filenameLen);
                                         fullPath = notifPath;
                                         fullPath += filename;
-                        
+                                        
+                                        // --- Get file creation/modification time ---
+                                        struct stat fileStat;
+                                        time_t creationTime = 0;
+                                        if (stat(fullPath.c_str(), &fileStat) == 0) {
+                                            // Use modification time as creation time (more universally supported)
+                                            creationTime = fileStat.st_mtime;
+                                        }
+                                        
+                                        // --- Read priority from JSON ---
+                                        priority = 20; // default
+                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                            ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                        if (root) {
+                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                            cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(croot, "priority");
+                                            if (priorityObj && cJSON_IsNumber(priorityObj)) {
+                                                priority = static_cast<int>(priorityObj->valuedouble);
+                                            }
+                                        }
+                                        
+                                        // Add to collection
+                                        notificationFiles.push_back({filename, fullPath, creationTime, priority});
+                                    }
+                                    
+                                    closedir(dir);
+                                    
+                                    // --- Sort files by priority (higher first), then creation time (older first) ---
+                                    std::sort(notificationFiles.begin(), notificationFiles.end(),
+                                             [](const NotificationFile& a, const NotificationFile& b) {
+                                                 // Primary sort: Higher priority first
+                                                 if (a.priority != b.priority) {
+                                                     return a.priority > b.priority;
+                                                 }
+                                                 // Secondary sort: Older creation time first (FIFO within same priority)
+                                                 return a.creationTime < b.creationTime;
+                                             });
+                                    
+                                    // --- Process files in chronological order ---
+                                    for (const auto& notifFile : notificationFiles) {
                                         // --- Load JSON (safe outside notification lock) ---
-                                        text = ult::getStringFromJsonFile(fullPath, "text");
+                                        text = ult::getStringFromJsonFile(notifFile.fullPath, "text");
                                         if (!text.empty()) {
                                             fontSize = 28; // default
-                        
+                                            
                                             std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                                ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                                ult::readJsonFromFile(notifFile.fullPath), ult::JsonDeleter());
                                             if (root) {
                                                 cJSON* croot = reinterpret_cast<cJSON*>(root.get());
                                                 cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
@@ -12444,36 +12478,33 @@ namespace tsl {
                                                     fontSize = std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34);
                                                 }
                                             }
-                        
+                                            
                                             // --- Show notification safely ---
                                             if (notification) {
-                                                notification->show(text, fontSize, priority, filename);
+                                                notification->show(text, fontSize, notifFile.priority, notifFile.filename);
                                             }
-                        
+                                            
                                             // Mark file as shown
-                                            shownFiles.push_back(filename);
+                                            shownFiles.push_back(notifFile.filename);
                                         }
                                     }
-                        
-                                    closedir(dir);
-                        
+                                    
                                 } else {
                                     // --- Notifications disabled: delete all files ---
                                     struct dirent* entry;
                                     std::string fullPath;
-                        
+                                    
                                     while ((entry = readdir(dir)) != nullptr) {
                                         if (entry->d_type != DT_REG) continue;
-                        
+                                        
                                         const char* fname = entry->d_name;
                                         const size_t len = strlen(fname);
-                        
+                                        
                                         if (len > 7 && strcmp(fname + len - 7, ".notify") == 0) {
                                             fullPath.clear();
-                                            //fullPath.reserve(notifPathLen + len);
                                             fullPath = ult::NOTIFICATIONS_PATH;
                                             fullPath.append(fname, len);
-                        
+                                            
                                             remove(fullPath.c_str());
                                         }
                                     }
@@ -12482,8 +12513,6 @@ namespace tsl {
                             }
                         }
                     }
-
-
 
 
 
