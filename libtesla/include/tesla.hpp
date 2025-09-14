@@ -12925,7 +12925,7 @@ namespace tsl {
     }
         
     
-    std::mutex setNextOverlayMutex;
+    static inline std::mutex setNextOverlayMutex;
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         std::lock_guard lk(setNextOverlayMutex);
         char buffer[512];
