@@ -1077,7 +1077,7 @@ namespace ult {
     void applyLangReplacements(std::string& text, bool isValue) {
         // Static maps for replacements
         #if IS_LAUNCHER_DIRECTIVE
-        static const std::unordered_map<std::string, std::string*> launcherReplacements = {
+        const std::unordered_map<std::string, std::string*> launcherReplacements = {
             {"Reboot To", &REBOOT_TO},
             {"Boot Entry", &BOOT_ENTRY},
             {"Reboot", &REBOOT},
@@ -1085,7 +1085,7 @@ namespace ult {
         };
         #endif
     
-        static const std::unordered_map<std::string, std::string*> valueReplacements = {
+        const std::unordered_map<std::string, std::string*> valueReplacements = {
             {"On", &ON},
             {"Off", &OFF}
         };

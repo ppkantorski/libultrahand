@@ -7604,7 +7604,7 @@ namespace tsl {
         
         private:
             void applyInitialTranslations(bool isValue = false) {
-                std::string& target = isValue ? m_value : m_text;
+                std::string& target = isValue ? m_value : m_text_clean;
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
                 
