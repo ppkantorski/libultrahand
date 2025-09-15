@@ -502,7 +502,10 @@ namespace ult {
     std::string ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
     std::string NEW_UPDATE_IS_AVAILABLE = "New update is available!";
     std::string REBOOT_IS_REQUIRED = "Reboot is required.";
-    
+    std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
+    std::string SELECTION_IS_EMPTY = "Selection is empty!";
+
+
     //std::string PACKAGE_VERSIONS = "Package Versions";
 
     //std::string PROGRESS_ANIMATION = "Progress Animation";
@@ -534,8 +537,6 @@ namespace ult {
     
 
     //std::string EMPTY = "Empty";
-    std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
-    std::string SELECTION_IS_EMPTY = "Selection is empty!";
     
     #if USING_WIDGET_DIRECTIVE
     std::string SUNDAY = "Sunday";
@@ -723,10 +724,10 @@ namespace ult {
         ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
         NEW_UPDATE_IS_AVAILABLE = "New update is available!";
         REBOOT_IS_REQUIRED = "Reboot is required.";
-
-        //EMPTY = "Empty";
         HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
+
+        //EMPTY = "Empty";
     
         SUNDAY = "Sunday";
         MONDAY = "Monday";
@@ -917,6 +918,8 @@ namespace ult {
             {"ULTRAHAND_HAS_STARTED", &ULTRAHAND_HAS_STARTED},
             {"NEW_UPDATE_IS_AVAILABLE", &NEW_UPDATE_IS_AVAILABLE},
             {"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
+            {"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
+            {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
 
             //{"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
@@ -944,8 +947,6 @@ namespace ult {
             {"GAP_2", &GAP_2},
 
             //{"EMPTY", &EMPTY},
-            {"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
-            {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
 
             #if USING_WIDGET_DIRECTIVE
             {"SUNDAY", &SUNDAY},

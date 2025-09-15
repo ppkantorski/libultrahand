@@ -437,6 +437,8 @@ namespace ult {
     extern std::string ULTRAHAND_HAS_STARTED;
     extern std::string NEW_UPDATE_IS_AVAILABLE;
     extern std::string REBOOT_IS_REQUIRED;
+    extern std::string HOLD_A_TO_DELETE;
+    extern std::string SELECTION_IS_EMPTY;
 
     //extern std::string PACKAGE_VERSIONS;
     //extern std::string PROGRESS_ANIMATION;
@@ -465,8 +467,6 @@ namespace ult {
     extern std::atomic<float> halfGap;
 
     //extern std::string EMPTY;
-    extern std::string HOLD_A_TO_DELETE;
-    extern std::string SELECTION_IS_EMPTY;
 
     #if USING_WIDGET_DIRECTIVE
     extern std::string SUNDAY;
