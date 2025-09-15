@@ -404,6 +404,7 @@ namespace ult {
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
+    extern std::string NOTIFICATIONS;
     extern std::string OPAQUE_SCREENSHOTS;
 
     extern std::string PACKAGE_INFO;
@@ -432,6 +433,11 @@ namespace ult {
     extern std::string LIBULTRAHAND_TITLES;
     extern std::string LIBULTRAHAND_VERSIONS;
     extern std::string PACKAGE_TITLES;
+
+    extern std::string ULTRAHAND_HAS_STARTED;
+    extern std::string NEW_UPDATE_IS_AVAILABLE;
+    extern std::string REBOOT_IS_REQUIRED;
+
     //extern std::string PACKAGE_VERSIONS;
     //extern std::string PROGRESS_ANIMATION;
 

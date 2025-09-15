@@ -469,6 +469,7 @@ namespace ult {
     std::string OPTIONS = "Options";
     std::string FAILED_TO_OPEN = "Failed to open file";
     std::string LAUNCH_COMBOS = "Launch Combos";
+    std::string NOTIFICATIONS = "Notifications";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
 
     std::string PACKAGE_INFO = "Package Info";
@@ -497,6 +498,11 @@ namespace ult {
     std::string LIBULTRAHAND_TITLES = "libultrahand Titles";
     std::string LIBULTRAHAND_VERSIONS = "libultrahand Versions";
     std::string PACKAGE_TITLES = "Package Titles";
+
+    std::string ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
+    std::string NEW_UPDATE_IS_AVAILABLE = "New update is available!";
+    std::string REBOOT_IS_REQUIRED = "Reboot is required.";
+    
     //std::string PACKAGE_VERSIONS = "Package Versions";
 
     //std::string PROGRESS_ANIMATION = "Progress Animation";
@@ -670,6 +676,7 @@ namespace ult {
         FAILED_TO_OPEN = "Failed to open file";
 
         LAUNCH_COMBOS = "Launch Combos";
+        NOTIFICATIONS = "Notifications";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
         ON = "On";
         OFF = "Off";
@@ -713,6 +720,9 @@ namespace ult {
         PACKAGE_TITLES = "Package Titles";
         //PACKAGE_VERSIONS = "Package Versions";
 
+        ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
+        NEW_UPDATE_IS_AVAILABLE = "New update is available!";
+        REBOOT_IS_REQUIRED = "Reboot is required.";
 
         //EMPTY = "Empty";
         HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
@@ -874,6 +884,7 @@ namespace ult {
             {"FAILED_TO_OPEN", &FAILED_TO_OPEN},
 
             {"LAUNCH_COMBOS", &LAUNCH_COMBOS},
+            {"NOTIFICATIONS", &NOTIFICATIONS},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
 
             {"PACKAGE_INFO", &PACKAGE_INFO},
@@ -902,6 +913,11 @@ namespace ult {
             {"LIBULTRAHAND_TITLES", &LIBULTRAHAND_TITLES},
             {"LIBULTRAHAND_VERSIONS", &LIBULTRAHAND_VERSIONS},
             {"PACKAGE_TITLES", &PACKAGE_TITLES},
+
+            {"ULTRAHAND_HAS_STARTED", &ULTRAHAND_HAS_STARTED},
+            {"NEW_UPDATE_IS_AVAILABLE", &NEW_UPDATE_IS_AVAILABLE},
+            {"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
+
             //{"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
 
