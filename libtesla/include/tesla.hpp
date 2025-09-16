@@ -12328,6 +12328,22 @@ namespace tsl {
                             }
                         }
                     }
+
+                    // If a reset is scheduled, trigger after 3.5s delay
+                    if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
+                        const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
+                        if (resetElapsedNs >= 3'500'000'000ULL) {
+                            if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                #if IS_STATUS_MONITOR_DIRECTIVE
+                                if (!isMiniOrMicroMode)
+                                    hlp::requestForeground(true, false);
+                                #else
+                                hlp::requestForeground(true, false);
+                                #endif
+                            }
+                            ult::resetForegroundCheck.store(false, std::memory_order_release);
+                        }
+                    }
                     
                     if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
                         const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
@@ -12335,23 +12351,12 @@ namespace tsl {
                         if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
                             // Update layer dimensions without destroying state
                             tsl::gfx::Renderer::get().updateLayerSize();
-                    
+                            
                             lastUnderscanPixels = currentUnderscanPixels;
                             firstUnderscanCheck = false;
                         }
                     
                         lastUnderscanCheckNs = nowNs;
-                    }
-    
-                    // If a reset is scheduled, trigger after 3.5s delay
-                    if (ult::resetForegroundCheck.load(std::memory_order_acquire)) {
-                        const u64 resetElapsedNs = armTicksToNs(nowTick - resetStartTick);
-                        if (resetElapsedNs >= 3'500'000'000ULL) {
-                            if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
-                                hlp::requestForeground(true, false);
-                            }
-                            ult::resetForegroundCheck.store(false, std::memory_order_release);
-                        }
                     }
     
                     //bool expected = true;
@@ -12604,18 +12609,19 @@ namespace tsl {
 
                     #if IS_STATUS_MONITOR_DIRECTIVE
                     if (triggerExitNow) {
-                        ult::launchingOverlay.store(true, std::memory_order_release);
+                        //ult::launchingOverlay.store(true, std::memory_order_release);
                         ult::setIniFileValue(
                             ult::ULTRAHAND_CONFIG_INI_PATH,
                             ult::ULTRAHAND_PROJECT_NAME,
                             ult::IN_OVERLAY_STR,
                             ult::FALSE_STR
                         );
-                        tsl::setNextOverlay(
-                            ult::OVERLAY_PATH + "ovlmenu.ovl"
-                        );
-                        tsl::Overlay::get()->close();
-                        triggerExitNow = false;
+                        //tsl::setNextOverlay(
+                        //    ult::OVERLAY_PATH + "ovlmenu.ovl"
+                        //);
+                        //tsl::Overlay::get()->close();
+                        tsl::goBack();
+                        //triggerExitNow = false;
                         break;
                     }
                     #endif

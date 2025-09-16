@@ -724,7 +724,7 @@ namespace ult {
         ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
         NEW_UPDATE_IS_AVAILABLE = "New update is available!";
         REBOOT_IS_REQUIRED = "Reboot is required.";
-        HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
+        HOLD_A_TO_DELETE = "Hold  to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
 
         //EMPTY = "Empty";
