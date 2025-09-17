@@ -1143,6 +1143,7 @@ namespace ult {
         {"separator_color", "404040"},
         {"text_separator_color", "404040"},
         {"text_color", whiteColor},
+        {"notification_text_color", whiteColor},
         {"header_text_color", whiteColor},
         {"header_separator_color", whiteColor},
         {"star_color", whiteColor},

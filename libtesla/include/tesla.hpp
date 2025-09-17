@@ -295,6 +295,7 @@ namespace tsl {
     
     static Color defaultBackgroundColor = RGB888(ult::blackColor, defaultBackgroundAlpha);
     static Color defaultTextColor = RGB888(ult::whiteColor);
+    static Color notificationTextColor = RGB888(ult::whiteColor);
     static Color headerTextColor = RGB888(ult::whiteColor);
     static Color headerSeparatorColor = RGB888(ult::whiteColor);
     static Color starColor = RGB888(ult::whiteColor);
@@ -416,6 +417,7 @@ namespace tsl {
             defaultBackgroundAlpha = getAlpha("bg_alpha");
             defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
             defaultTextColor = getColor("text_color");
+            notificationTextColor = getColor("notification_text_color");
             headerTextColor = getColor("header_text_color");
             headerSeparatorColor = getColor("header_separator_color");
             starColor = getColor("star_color");
@@ -924,8 +926,11 @@ namespace tsl {
             return result;
         }
 
+        inline static std::mutex comboMutex;
+
         // Function to load key combo mappings from both overlays.ini and packages.ini
         static void loadEntryKeyCombos() {
+            std::lock_guard<std::mutex> lock(comboMutex);
             ult::g_entryCombos.clear();
         
             // Load overlay combos from overlays.ini
@@ -980,6 +985,7 @@ namespace tsl {
         
         // Function to check if a key combination matches any overlay key combo
         static OverlayCombo getEntryForKeyCombo(u64 keys) {
+            std::lock_guard<std::mutex> lock(comboMutex);
             if (auto it = ult::g_entryCombos.find(keys); it != ult::g_entryCombos.end())
                 return it->second;
             return { "", "" };
@@ -10296,7 +10302,7 @@ namespace tsl {
                                 line, false,
                                 x + (copy.promptWidth - lw) / 2,
                                 startY + static_cast<int>(i) * fm.lineHeight,
-                                copy.fontSize, defaultTextColor
+                                copy.fontSize, notificationTextColor
                             );
                         }
                         #else
@@ -10306,7 +10312,7 @@ namespace tsl {
                             line, false,
                             x + (copy.promptWidth - lw) / 2,
                             startY + static_cast<int>(i) * fm.lineHeight,
-                            copy.fontSize, defaultTextColor
+                            copy.fontSize, notificationTextColor
                         );
                         #endif
                     }
@@ -10340,7 +10346,7 @@ namespace tsl {
             if (ultrahandPos == std::string::npos) {
                 // Fallback to normal drawing if not found
                 const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, fontSize);
-                renderer->drawNotificationString(line, false, x + (promptWidth - lw) / 2, y, fontSize, defaultTextColor);
+                renderer->drawNotificationString(line, false, x + (promptWidth - lw) / 2, y, fontSize, notificationTextColor);
                 return;
             }
             
@@ -10387,7 +10393,7 @@ namespace tsl {
             
             // Draw "before" part
             if (!before.empty()) {
-                renderer->drawNotificationString(before, false, currentX, y, fontSize, defaultTextColor);
+                renderer->drawNotificationString(before, false, currentX, y, fontSize, notificationTextColor);
                 currentX += beforeWidth;
             }
             
@@ -10433,7 +10439,7 @@ namespace tsl {
             
             // Draw "after" part
             if (!after.empty()) {
-                renderer->drawNotificationString(after, false, currentX, y, fontSize, defaultTextColor);
+                renderer->drawNotificationString(after, false, currentX, y, fontSize, notificationTextColor);
             }
         }
         #endif
