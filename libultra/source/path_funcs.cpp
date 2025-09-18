@@ -408,7 +408,59 @@ namespace ult {
             path = "";
         }
     }
-    
+
+    // Helper function to reverse a log file
+    void reverseLogFile(const std::string& logFilePath) {
+        std::vector<std::string> lines;
+        
+    #if !USING_FSTREAM_DIRECTIVE
+        // Read all lines using C-style file operations
+        FILE* file = fopen(logFilePath.c_str(), "r");
+        if (!file) return;
+        
+        static constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        
+        while (fgets(buffer, BUFFER_SIZE, file)) {
+            // Remove trailing newline if present
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            lines.emplace_back(buffer);
+        }
+        fclose(file);
+        
+        // Write back in reverse order
+        FILE* outFile = fopen(logFilePath.c_str(), "w");
+        if (outFile) {
+            for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+                fprintf(outFile, "%s\n", it->c_str());
+            }
+            fclose(outFile);
+        }
+    #else
+        // Read all lines using C++ streams
+        std::ifstream file(logFilePath);
+        if (!file.is_open()) return;
+        
+        std::string line;
+        while (std::getline(file, line)) {
+            lines.push_back(std::move(line));
+        }
+        file.close();
+        
+        // Write back in reverse order
+        std::ofstream outFile(logFilePath);
+        if (outFile.is_open()) {
+            for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+                outFile << *it << '\n';
+            }
+            outFile.close();
+        }
+    #endif
+    }
+        
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
                        const std::string& logSource, const std::string& logDestination) {
         
@@ -429,17 +481,45 @@ namespace ult {
             return;
         }
     
-        // Batch logging optimization - collect successful operations instead of logging immediately
-        std::vector<std::string> successfulSources, successfulDestinations;
         bool needsLogging = !logSource.empty() || !logDestination.empty();
-    
+        
         std::vector<std::pair<std::string, std::string>> stack;
         std::vector<std::string> directoriesToRemove;
         
         stack.push_back({sourcePath, destinationPath});
     
-        // Variables moved outside the loop to avoid repeated allocation
+        // Pre-open log files for forward writing
+    #if !USING_FSTREAM_DIRECTIVE
+        FILE* logSrcFile = nullptr;
+        FILE* logDestFile = nullptr;
+        
+        if (needsLogging && !logSource.empty()) {
+            createDirectory(getParentDirFromPath(logSource));
+            logSrcFile = fopen(logSource.c_str(), "w"); // "w" to overwrite
+        }
+        if (needsLogging && !logDestination.empty()) {
+            createDirectory(getParentDirFromPath(logDestination));
+            logDestFile = fopen(logDestination.c_str(), "w"); // "w" to overwrite
+        }
+    #else
+        std::unique_ptr<std::ofstream> logSrcFile, logDestFile;
+        
+        if (needsLogging && !logSource.empty()) {
+            createDirectory(getParentDirFromPath(logSource));
+            logSrcFile = std::make_unique<std::ofstream>(logSource);
+        }
+        if (needsLogging && !logDestination.empty()) {
+            createDirectory(getParentDirFromPath(logDestination));
+            logDestFile = std::make_unique<std::ofstream>(logDestination);
+        }
+    #endif
+    
+        // Pre-allocate strings
         std::string name, fullPathSrc, fullPathDst;
+        //name.reserve(256);
+        //fullPathSrc.reserve(512);
+        //fullPathDst.reserve(512);
+        
         dirent* entry;
         DIR* dir;
         
@@ -458,21 +538,22 @@ namespace ult {
             }
     
             while ((entry = readdir(dir)) != nullptr) {
-                name = entry->d_name;
+                name.assign(entry->d_name);
                 if (name == "." || name == "..") continue;
     
-                // Optimize string concatenation - avoid repeated substr operations
-                fullPathSrc = currentSource;
+                fullPathSrc.assign(currentSource);
                 if (!fullPathSrc.empty() && fullPathSrc.back() == '/') {
                     fullPathSrc.pop_back();
                 }
-                fullPathSrc += "/" + name;
+                fullPathSrc += "/";
+                fullPathSrc += name;
                 
-                fullPathDst = currentDestination;
+                fullPathDst.assign(currentDestination);
                 if (!fullPathDst.empty() && fullPathDst.back() == '/') {
                     fullPathDst.pop_back();
                 }
-                fullPathDst += "/" + name;
+                fullPathDst += "/";
+                fullPathDst += name;
     
                 if (entry->d_type == DT_DIR) {
                     if (mkdir(fullPathDst.c_str(), 0777) != 0 && errno != EEXIST) {
@@ -482,21 +563,31 @@ namespace ult {
                         #endif
                         continue;
                     }
-                    stack.push_back({fullPathSrc, fullPathDst});
-                    directoriesToRemove.push_back(fullPathSrc);
-
-                    // Log each subdirectory that gets successfully created
+                    stack.emplace_back(fullPathSrc, fullPathDst);
+                    directoriesToRemove.emplace_back(fullPathSrc);
+    
+                    // Write to log immediately in FORWARD order
                     if (needsLogging) {
-                        successfulSources.push_back(fullPathSrc + "/");
-                        successfulDestinations.push_back(fullPathDst + "/");
+    #if !USING_FSTREAM_DIRECTIVE
+                        if (logSrcFile) writeLog(logSrcFile, fullPathSrc + "/");
+                        if (logDestFile) writeLog(logDestFile, fullPathDst + "/");
+    #else
+                        if (logSrcFile && logSrcFile->is_open()) writeLog(*logSrcFile, fullPathSrc + "/");
+                        if (logDestFile && logDestFile->is_open()) writeLog(*logDestFile, fullPathDst + "/");
+    #endif
                     }
                 } else {
                     remove(fullPathDst.c_str());
                     if (rename(fullPathSrc.c_str(), fullPathDst.c_str()) == 0) {
-                        // Batch logging - store successful operations instead of writing immediately
+                        // Write to log immediately in FORWARD order
                         if (needsLogging) {
-                            successfulSources.push_back(fullPathSrc);
-                            successfulDestinations.push_back(fullPathDst);
+    #if !USING_FSTREAM_DIRECTIVE
+                            if (logSrcFile) writeLog(logSrcFile, fullPathSrc);
+                            if (logDestFile) writeLog(logDestFile, fullPathDst);
+    #else
+                            if (logSrcFile && logSrcFile->is_open()) writeLog(*logSrcFile, fullPathSrc);
+                            if (logDestFile && logDestFile->is_open()) writeLog(*logDestFile, fullPathDst);
+    #endif
                         }
                     } else {
                         #if USING_LOGGING_DIRECTIVE
@@ -509,7 +600,16 @@ namespace ult {
             closedir(dir);
         }
     
-        // Clean up source directories in reverse order
+        // Close files before reversing
+    #if !USING_FSTREAM_DIRECTIVE
+        if (logSrcFile) fclose(logSrcFile);
+        if (logDestFile) fclose(logDestFile);
+    #else
+        if (logSrcFile) logSrcFile->close();
+        if (logDestFile) logDestFile->close();
+    #endif
+    
+        // Clean up directories
         for (auto it = directoriesToRemove.rbegin(); it != directoriesToRemove.rend(); ++it) {
             if (rmdir(it->c_str()) != 0) {
                 #if USING_LOGGING_DIRECTIVE
@@ -526,76 +626,14 @@ namespace ult {
             #endif
         }
     
-        // KEY OPTIMIZATION: Batch write all successful operations to log files at the end
-        // This eliminates the overhead of logging inside the hot loop
-        if (needsLogging && !successfulSources.empty()) {
-    #if !USING_FSTREAM_DIRECTIVE
+        // REVERSE LOG FILES: Now that all files are moved, reverse the logs
+        if (needsLogging) {
             if (!logSource.empty()) {
-                createDirectory(getParentDirFromPath(logSource));
-                if (FILE* logFile = fopen(logSource.c_str(), "a")) {
-                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
-                        writeLog(logFile, *it);
-                    }
-                    fclose(logFile);
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open source log file: " + logSource);
-                }
-                #endif
+                reverseLogFile(logSource);
             }
-    
             if (!logDestination.empty()) {
-                createDirectory(getParentDirFromPath(logDestination));
-                if (FILE* logFile = fopen(logDestination.c_str(), "a")) {
-                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
-                        writeLog(logFile, *it);
-                    }
-                    fclose(logFile);
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open destination log file: " + logDestination);
-                }
-                #endif
+                reverseLogFile(logDestination);
             }
-    #else
-            if (!logSource.empty()) {
-                createDirectory(getParentDirFromPath(logSource));
-                std::ofstream logSourceFile(logSource, std::ios::app);
-                if (logSourceFile.is_open()) {
-                    for (auto it = successfulSources.rbegin(); it != successfulSources.rend(); ++it) {
-                        writeLog(logSourceFile, *it);
-                    }
-                    logSourceFile.close();
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open source log file: " + logSource);
-                }
-                #endif
-            }
-    
-            if (!logDestination.empty()) {
-                createDirectory(getParentDirFromPath(logDestination));
-                std::ofstream logDestFile(logDestination, std::ios::app);
-                if (logDestFile.is_open()) {
-                    for (auto it = successfulDestinations.rbegin(); it != successfulDestinations.rend(); ++it) {
-                        writeLog(logDestFile, *it);
-                    }
-                    logDestFile.close();
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open destination log file: " + logDestination);
-                }
-                #endif
-            }
-    #endif
         }
     }
     
@@ -763,7 +801,7 @@ namespace ult {
             // if sourceFile is a file (Needs condition handling)
             if (!isDirectory(sourceFileOrDirectory)) {
                 //logMessage("destinationPath: "+destinationPath);
-                moveFileOrDirectory(sourceFileOrDirectory.c_str(), destinationPath.c_str(), logSource, logDestination);
+                moveFileOrDirectory(sourceFileOrDirectory, destinationPath, logSource, logDestination);
             } else if (isDirectory(sourceFileOrDirectory)) {
                 // if sourceFile is a directory (needs conditoin handling)
                 folderName = getNameFromPath(sourceFileOrDirectory);
@@ -771,7 +809,7 @@ namespace ult {
                 
                 //logMessage("fixedDestinationPath: "+fixedDestinationPath);
                 
-                moveFileOrDirectory(sourceFileOrDirectory.c_str(), fixedDestinationPath.c_str(), logSource, logDestination);
+                moveFileOrDirectory(sourceFileOrDirectory, fixedDestinationPath, logSource, logDestination);
             }
             sourceFileOrDirectory = "";
         }

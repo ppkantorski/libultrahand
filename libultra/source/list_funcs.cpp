@@ -362,23 +362,96 @@ namespace ult {
     #endif
     }
 
+    // Helper function for streaming comparison
+    void streamCompareAndWrite(const std::string& streamFilePath, 
+                              const std::unordered_set<std::string>& compareSet, 
+                              const std::string& outputTxtFilePath) {
+        std::lock_guard<std::mutex> lock(file_access_mutex);
+        
+    #if !USING_FSTREAM_DIRECTIVE
+        FILE* streamFile = fopen(streamFilePath.c_str(), "r");
+        if (!streamFile) return;
+        
+        FILE* outputFile = fopen(outputTxtFilePath.c_str(), "w");
+        if (!outputFile) {
+            fclose(streamFile);
+            return;
+        }
+        
+        static constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        size_t len;
+        
+        while (fgets(buffer, BUFFER_SIZE, streamFile)) {
+            len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            
+            if (compareSet.count(std::string(buffer))) {
+                fprintf(outputFile, "%s\n", buffer);
+            }
+        }
+        
+        fclose(streamFile);
+        fclose(outputFile);
+        
+    #else
+        std::ifstream streamFile(streamFilePath);
+        if (!streamFile.is_open()) return;
+        
+        std::ofstream outputFile(outputTxtFilePath);
+        if (!outputFile.is_open()) return;
+        
+        std::string line;
+        while (std::getline(streamFile, line)) {
+            if (compareSet.count(line)) {
+                outputFile << line << '\n';
+            }
+        }
+    #endif
+    }
     
     // Function to compare two file lists and save duplicates to an output file
     void compareFilesLists(const std::string& txtFilePath1, const std::string& txtFilePath2, const std::string& outputTxtFilePath) {
-        // Read files into sets
-        std::unordered_set<std::string> fileSet1 = readSetFromFile(txtFilePath1);
-        std::unordered_set<std::string> fileSet2 = readSetFromFile(txtFilePath2);
-        std::unordered_set<std::string> duplicateFiles;
-    
-        // Find intersection (common elements) between the two sets
-        for (const auto& entry : fileSet1) {
-            if (fileSet2.count(entry)) {
-                duplicateFiles.insert(entry);
+        std::lock_guard<std::mutex> lock(file_access_mutex);
+        
+        // Determine which file is smaller by counting lines (minimal memory)
+        auto countLines = [](const std::string& filePath) -> size_t {
+            size_t count = 0;
+    #if !USING_FSTREAM_DIRECTIVE
+            FILE* file = fopen(filePath.c_str(), "r");
+            if (!file) return 0;
+            
+            static constexpr size_t BUFFER_SIZE = 8192;
+            char buffer[BUFFER_SIZE];
+            while (fgets(buffer, BUFFER_SIZE, file)) {
+                count++;
             }
+            fclose(file);
+    #else
+            std::ifstream file(filePath);
+            std::string line;
+            while (std::getline(file, line)) {
+                count++;
+            }
+    #endif
+            return count;
+        };
+        
+        size_t lines1 = countLines(txtFilePath1);
+        size_t lines2 = countLines(txtFilePath2);
+        
+        // Load smaller file into memory, stream larger file
+        if (lines1 <= lines2) {
+            // File1 is smaller or equal, load it
+            std::unordered_set<std::string> smallerSet = readSetFromFile(txtFilePath1);
+            streamCompareAndWrite(txtFilePath2, smallerSet, outputTxtFilePath);
+        } else {
+            // File2 is smaller, load it
+            std::unordered_set<std::string> smallerSet = readSetFromFile(txtFilePath2);
+            streamCompareAndWrite(txtFilePath1, smallerSet, outputTxtFilePath);
         }
-    
-        // Write the duplicates to the output file
-        writeSetToFile(duplicateFiles, outputTxtFilePath);
     }
     
     // Helper function to read a text file and process each line with a callback
@@ -437,31 +510,72 @@ namespace ult {
         const std::string& txtFilePath,
         const std::string& outputTxtFilePath
     ) {
-        // STEP 1: Read target file into fast lookup set (only once)
+        // STEP 1: Read target file into fast lookup set (unavoidable for O(1) lookups)
         const std::unordered_set<std::string> targetLines = readSetFromFile(txtFilePath);
-        std::unordered_set<std::string> duplicates;
         
-        // STEP 2: Get wildcard files
-        std::vector<std::string> wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
+        // STEP 2: Open output file for immediate writing (avoid accumulating duplicates)
+        std::lock_guard<std::mutex> lock(file_access_mutex);
         
-        // STEP 3: Process each wildcard file line-by-line (minimum memory)
-        for (auto& filePath : wildcardFiles) {
-            if (filePath == txtFilePath) {
-                filePath = "";
-                continue;
-            }
+    #if !USING_FSTREAM_DIRECTIVE
+        FILE* outputFile = fopen(outputTxtFilePath.c_str(), "w");
+        if (!outputFile) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open output file: " + outputTxtFilePath);
+            #endif
+            return;
+        }
+    #else
+        std::ofstream outputFile(outputTxtFilePath);
+        if (!outputFile.is_open()) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open output file: " + outputTxtFilePath);
+            #endif
+            return;
+        }
+    #endif
+    
+        // STEP 3: Track written duplicates to avoid writing same line twice
+        std::unordered_set<std::string> alreadyWritten;
+        
+        // STEP 4: Process wildcard files in chunks
+        const size_t CHUNK_SIZE = 100;
+        size_t chunkIndex = 0;
+        
+        std::vector<std::string> wildcardFiles;
 
-            // Process line-by-line without loading entire file into memory
-            processFileLines(filePath, [&](const std::string& line) {
-                // O(1) lookup + O(1) insert if duplicate found
-                if (targetLines.count(line)) {
-                    duplicates.insert(line);
+        while (true) {
+            wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath, CHUNK_SIZE, chunkIndex);
+            if (wildcardFiles.empty()) break;
+            
+            // Process this chunk
+            for (auto& filePath : wildcardFiles) {
+                if (filePath == txtFilePath) {
+                    filePath.clear();
+                    continue;
                 }
-            });
-            filePath = "";
+                
+                // Process line-by-line without loading entire file into memory
+                processFileLines(filePath, [&](const std::string& line) {
+                    // O(1) lookup + immediate write if duplicate found
+                    if (targetLines.count(line) && alreadyWritten.find(line) == alreadyWritten.end()) {
+                        alreadyWritten.insert(line);
+                        // Write immediately to output file
+    #if !USING_FSTREAM_DIRECTIVE
+                        fprintf(outputFile, "%s\n", line.c_str());
+    #else
+                        outputFile << line << '\n';
+    #endif
+                    }
+                });
+                filePath.clear(); // Free memory immediately
+            }
+            
+            chunkIndex++;
+            if (wildcardFiles.size() < CHUNK_SIZE) break; // Last chunk
         }
         
-        // STEP 4: Write results
-        writeSetToFile(duplicates, outputTxtFilePath);
+    #if !USING_FSTREAM_DIRECTIVE
+        fclose(outputFile);
+    #endif
     }
 }

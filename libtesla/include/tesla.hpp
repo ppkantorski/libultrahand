@@ -12615,18 +12615,18 @@ namespace tsl {
 
                     #if IS_STATUS_MONITOR_DIRECTIVE
                     if (triggerExitNow) {
-                        //ult::launchingOverlay.store(true, std::memory_order_release);
+                        ult::launchingOverlay.store(true, std::memory_order_release);
                         ult::setIniFileValue(
                             ult::ULTRAHAND_CONFIG_INI_PATH,
                             ult::ULTRAHAND_PROJECT_NAME,
                             ult::IN_OVERLAY_STR,
                             ult::FALSE_STR
                         );
-                        //tsl::setNextOverlay(
-                        //    ult::OVERLAY_PATH + "ovlmenu.ovl"
-                        //);
-                        //tsl::Overlay::get()->close();
-                        tsl::goBack();
+                        tsl::setNextOverlay(
+                            ult::OVERLAY_PATH + "ovlmenu.ovl"
+                        );
+                        tsl::Overlay::get()->close();
+                        //tsl::goBack();
                         //triggerExitNow = false;
                         break;
                     }
