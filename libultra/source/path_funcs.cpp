@@ -414,16 +414,19 @@ namespace ult {
         std::vector<std::string> lines;
         
     #if !USING_FSTREAM_DIRECTIVE
-        // Read all lines using C-style file operations
+        // Read all lines using C-style file operations with larger buffer
         FILE* file = fopen(logFilePath.c_str(), "r");
         if (!file) return;
+        
+        // Set larger buffer for reading
+        setvbuf(file, nullptr, _IOFBF, 8192);
         
         static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
         
         while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove trailing newline if present
-            size_t len = strlen(buffer);
+            const size_t len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
@@ -431,18 +434,23 @@ namespace ult {
         }
         fclose(file);
         
-        // Write back in reverse order
+        // Write back in reverse order with larger buffer
         FILE* outFile = fopen(logFilePath.c_str(), "w");
         if (outFile) {
+            setvbuf(outFile, nullptr, _IOFBF, 8192);
             for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
                 fprintf(outFile, "%s\n", it->c_str());
             }
             fclose(outFile);
         }
     #else
-        // Read all lines using C++ streams
+        // Read all lines using C++ streams with larger buffer
         std::ifstream file(logFilePath);
         if (!file.is_open()) return;
+        
+        // Set larger buffer
+        static char readBuffer[8192];
+        file.rdbuf()->pubsetbuf(readBuffer, sizeof(readBuffer));
         
         std::string line;
         while (std::getline(file, line)) {
@@ -450,9 +458,12 @@ namespace ult {
         }
         file.close();
         
-        // Write back in reverse order
+        // Write back in reverse order with larger buffer
         std::ofstream outFile(logFilePath);
         if (outFile.is_open()) {
+            static char writeBuffer[8192];
+            outFile.rdbuf()->pubsetbuf(writeBuffer, sizeof(writeBuffer));
+            
             for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
                 outFile << *it << '\n';
             }
@@ -495,33 +506,42 @@ namespace ult {
         
         if (needsLogging && !logSource.empty()) {
             createDirectory(getParentDirFromPath(logSource));
-            logSrcFile = fopen(logSource.c_str(), "w"); // "w" to overwrite
+            logSrcFile = fopen(logSource.c_str(), "w");
+            if (logSrcFile) setvbuf(logSrcFile, nullptr, _IOFBF, 8192);
         }
         if (needsLogging && !logDestination.empty()) {
             createDirectory(getParentDirFromPath(logDestination));
-            logDestFile = fopen(logDestination.c_str(), "w"); // "w" to overwrite
+            logDestFile = fopen(logDestination.c_str(), "w");
+            if (logDestFile) setvbuf(logDestFile, nullptr, _IOFBF, 8192);
         }
     #else
         std::unique_ptr<std::ofstream> logSrcFile, logDestFile;
+        static char srcBuffer[8192], destBuffer[8192];
         
         if (needsLogging && !logSource.empty()) {
             createDirectory(getParentDirFromPath(logSource));
             logSrcFile = std::make_unique<std::ofstream>(logSource);
+            if (logSrcFile->is_open()) {
+                logSrcFile->rdbuf()->pubsetbuf(srcBuffer, sizeof(srcBuffer));
+            }
         }
         if (needsLogging && !logDestination.empty()) {
             createDirectory(getParentDirFromPath(logDestination));
             logDestFile = std::make_unique<std::ofstream>(logDestination);
+            if (logDestFile->is_open()) {
+                logDestFile->rdbuf()->pubsetbuf(destBuffer, sizeof(destBuffer));
+            }
         }
     #endif
     
-        // Pre-allocate strings
-        std::string name, fullPathSrc, fullPathDst;
-        //name.reserve(256);
-        //fullPathSrc.reserve(512);
-        //fullPathDst.reserve(512);
+        // Pre-allocate strings to reduce reallocations
+        std::string fullPathSrc, fullPathDst;
+        //fullPathSrc.reserve(1024);
+        //fullPathDst.reserve(1024);
         
         dirent* entry;
         DIR* dir;
+        const char* name;
         
         std::string currentSource, currentDestination;
         while (!stack.empty()) {
@@ -538,21 +558,23 @@ namespace ult {
             }
     
             while ((entry = readdir(dir)) != nullptr) {
-                name.assign(entry->d_name);
-                if (name == "." || name == "..") continue;
-    
-                fullPathSrc.assign(currentSource);
-                if (!fullPathSrc.empty() && fullPathSrc.back() == '/') {
-                    fullPathSrc.pop_back();
+                name = entry->d_name;
+                // Fast skip for "." and ".."
+                if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) {
+                    continue;
                 }
-                fullPathSrc += "/";
+    
+                // Optimized path building - reuse string capacity
+                fullPathSrc.assign(currentSource);
+                if (!fullPathSrc.empty() && fullPathSrc.back() != '/') {
+                    fullPathSrc += '/';
+                }
                 fullPathSrc += name;
                 
                 fullPathDst.assign(currentDestination);
-                if (!fullPathDst.empty() && fullPathDst.back() == '/') {
-                    fullPathDst.pop_back();
+                if (!fullPathDst.empty() && fullPathDst.back() != '/') {
+                    fullPathDst += '/';
                 }
-                fullPathDst += "/";
                 fullPathDst += name;
     
                 if (entry->d_type == DT_DIR) {
@@ -569,11 +591,21 @@ namespace ult {
                     // Write to log immediately in FORWARD order
                     if (needsLogging) {
     #if !USING_FSTREAM_DIRECTIVE
-                        if (logSrcFile) writeLog(logSrcFile, fullPathSrc + "/");
-                        if (logDestFile) writeLog(logDestFile, fullPathDst + "/");
+                        if (logSrcFile) {
+                            fputs(fullPathSrc.c_str(), logSrcFile);
+                            fputs("/\n", logSrcFile);
+                        }
+                        if (logDestFile) {
+                            fputs(fullPathDst.c_str(), logDestFile);
+                            fputs("/\n", logDestFile);
+                        }
     #else
-                        if (logSrcFile && logSrcFile->is_open()) writeLog(*logSrcFile, fullPathSrc + "/");
-                        if (logDestFile && logDestFile->is_open()) writeLog(*logDestFile, fullPathDst + "/");
+                        if (logSrcFile && logSrcFile->is_open()) {
+                            *logSrcFile << fullPathSrc << "/\n";
+                        }
+                        if (logDestFile && logDestFile->is_open()) {
+                            *logDestFile << fullPathDst << "/\n";
+                        }
     #endif
                     }
                 } else {
@@ -582,11 +614,21 @@ namespace ult {
                         // Write to log immediately in FORWARD order
                         if (needsLogging) {
     #if !USING_FSTREAM_DIRECTIVE
-                            if (logSrcFile) writeLog(logSrcFile, fullPathSrc);
-                            if (logDestFile) writeLog(logDestFile, fullPathDst);
+                            if (logSrcFile) {
+                                fputs(fullPathSrc.c_str(), logSrcFile);
+                                fputc('\n', logSrcFile);
+                            }
+                            if (logDestFile) {
+                                fputs(fullPathDst.c_str(), logDestFile);
+                                fputc('\n', logDestFile);
+                            }
     #else
-                            if (logSrcFile && logSrcFile->is_open()) writeLog(*logSrcFile, fullPathSrc);
-                            if (logDestFile && logDestFile->is_open()) writeLog(*logDestFile, fullPathDst);
+                            if (logSrcFile && logSrcFile->is_open()) {
+                                *logSrcFile << fullPathSrc << '\n';
+                            }
+                            if (logDestFile && logDestFile->is_open()) {
+                                *logDestFile << fullPathDst << '\n';
+                            }
     #endif
                         }
                     } else {

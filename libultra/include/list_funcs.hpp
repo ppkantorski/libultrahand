@@ -101,7 +101,7 @@ namespace ult {
 
     
     // Helper function to read a text file and process each line with a callback
-    void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback);
+    //void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback);
 
     
     void compareWildcardFilesLists(const std::string& wildcardPatternFilePath, const std::string& txtFilePath, const std::string& outputTxtFilePath);

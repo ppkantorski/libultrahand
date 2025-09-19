@@ -356,52 +356,64 @@ namespace ult {
     
     // Iterative function to handle wildcard directories and file patterns
     void handleDirectory(const std::string& basePath, 
-                               const std::vector<std::string>& parts, 
-                               size_t partIndex, 
-                               std::vector<std::string>& results, 
-                               bool directoryOnly,
-                               size_t maxLines,
-                               size_t chunkIndex) {
+                        const std::vector<std::string>& parts, 
+                        size_t partIndex, 
+                        std::vector<std::string>& results, 
+                        bool directoryOnly,
+                        size_t maxLines) {
         
         std::vector<std::pair<std::string, size_t>> stack;
         stack.emplace_back(basePath, partIndex);
         
-        std::string fullPath, result, currentPath;
+        // Pre-declare strings to avoid repeated allocations
+        std::string fullPath;
+        std::string result;
+        std::string currentPath;
+        //fullPath.reserve(512);
+        //result.reserve(512);  
+        //currentPath.reserve(512);
+
         struct stat st;
         
-        size_t totalSeen = 0;
-        const size_t skipCount = chunkIndex * maxLines;
-        const size_t targetCount = maxLines;
-        
+        bool isDir;
+        //std::string pathRef;
+        size_t currentPartIndex;
+
         while (!stack.empty()) {
-            if (maxLines > 0 && results.size() >= targetCount) return;
+            if (maxLines > 0 && results.size() >= maxLines) return;
             
-            std::tie(currentPath, partIndex) = stack.back();
+            std::tie(currentPath, currentPartIndex) = stack.back();
             stack.pop_back();
             
-            if (partIndex >= parts.size()) continue;
+            // Copy once to avoid repeated access
+            //currentPath = pathRef;
+            
+            if (currentPartIndex >= parts.size()) continue;
     
             DIR* dirPtr = opendir(currentPath.c_str());
             if (!dirPtr) continue;
             std::unique_ptr<DIR, DirCloser> dir(dirPtr);
     
-            const std::string& pattern = parts[partIndex];
-            const bool isLastPart = (partIndex == parts.size() - 1);
+            const std::string& pattern = parts[currentPartIndex];
+            const bool isLastPart = (currentPartIndex == parts.size() - 1);
             const bool needsSlash = currentPath.back() != '/';
+            
+            // Pre-calculate base path for efficiency
+            //const size_t basePathLen = currentPath.length();
     
             struct dirent* entry;
             while ((entry = readdir(dir.get())) != nullptr) {
-                if (maxLines > 0 && results.size() >= targetCount) return;
+                if (maxLines > 0 && results.size() >= maxLines) return;
                 
                 const char* name = entry->d_name;
                 if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) continue;
                 
                 if (fnmatch(pattern.c_str(), name, FNM_NOESCAPE) != 0) continue;
                 
-                bool isDir;
                 if (entry->d_type != DT_UNKNOWN) {
                     isDir = (entry->d_type == DT_DIR);
                 } else {
+                    // More efficient path building for stat check
                     fullPath.clear();
                     fullPath.assign(currentPath);
                     if (needsSlash) fullPath += '/';
@@ -411,23 +423,22 @@ namespace ult {
                 
                 if (isLastPart) {
                     if (!directoryOnly || isDir) {
-                        if (totalSeen >= skipCount) {
-                            // We're in the target chunk, collect this result
-                            result.clear();
-                            result.assign(currentPath);
-                            if (needsSlash) result += '/';
-                            result += name;
-                            if (isDir) result += '/';
-                            results.emplace_back(std::move(result));
-                        }
-                        totalSeen++;
+                        // More efficient result building
+                        result.clear();
+                        result.assign(currentPath);
+                        if (needsSlash) result += '/';
+                        result += name;
+                        if (isDir) result += '/';
+                        results.emplace_back(std::move(result));
+                        if (maxLines > 0 && results.size() >= maxLines) return;
                     }
                 } else if (isDir) {
+                    // More efficient path building for stack
                     fullPath.clear();
                     fullPath.assign(currentPath);
                     if (needsSlash) fullPath += '/';
                     fullPath += name;
-                    stack.emplace_back(std::move(fullPath), partIndex + 1);
+                    stack.emplace_back(std::move(fullPath), currentPartIndex + 1);
                 }
             }
         }
@@ -442,14 +453,14 @@ namespace ult {
      * @param pathPattern The wildcard pattern to match files and folders.
      * @return A vector of strings containing the paths of matching files and folders.
      */
-    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern, size_t maxLines, size_t chunkIndex) {
+    std::vector<std::string> getFilesListByWildcards(const std::string& pathPattern, size_t maxLines) {
         std::vector<std::string> results;
         
         if (pathPattern.empty()) return results;
     
-        // Same validation logic...
+        // Disallow any `/**/` or ending with `/**`
         if (pathPattern.find("**") != std::string::npos || pathPattern.find("*null") != std::string::npos || pathPattern.find("null*") != std::string::npos) {
-            return results;
+            return results; // Exclude invalid patterns
         }
     
         const bool directoryOnly = pathPattern.back() == '/';
@@ -460,7 +471,6 @@ namespace ult {
         const std::string basePath = pathPattern.substr(0, prefixEnd + 2);
         std::vector<std::string> parts;
         
-        // Same parsing logic...
         size_t start = prefixEnd + 2;
         size_t pos = start;
         const size_t pathLen = pathPattern.length();
@@ -479,18 +489,18 @@ namespace ult {
             parts.emplace_back(pathPattern.data() + start, pathLen - start);
         }
     
+        // Extra: check parsed parts to disallow "**"
         for (size_t i = 0; i + 1 < parts.size(); ++i) {
             if (parts[i] == "**" && parts[i + 1] == "**") {
-                return results;
+                return results; // invalid, exclude
             }
         }
         
         if (!parts.empty()) {
-            handleDirectory(basePath, parts, 0, results, directoryOnly, maxLines, chunkIndex);
+            handleDirectory(basePath, parts, 0, results, directoryOnly, maxLines);
         }
         
         return results;
     }
-    
     
 }

@@ -8311,6 +8311,11 @@ namespace tsl {
             
             virtual bool onClick(u64 keys) override {
 
+                #if IS_LAUNCHER_DIRECTIVE
+                if (ult::runningInterpreter.load(std::memory_order_acquire))
+                    return false;
+                #endif
+
                 // Handle KEY_A for toggling
                 if (keys & KEY_A) {
                     this->m_state = !this->m_state;
@@ -8348,6 +8353,11 @@ namespace tsl {
              * @param state State
              */
             virtual inline void setState(bool state) {
+                #if IS_LAUNCHER_DIRECTIVE
+                if (ult::runningInterpreter.load(std::memory_order_acquire))
+                    return;
+                #endif
+
                 this->m_state = state;
                 this->setValue(state ? this->m_onValue : this->m_offValue, !state);
             }
