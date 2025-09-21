@@ -7420,8 +7420,10 @@ namespace tsl {
         
         #if IS_LAUNCHER_DIRECTIVE
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight), m_useScriptKey(useScriptKey) {
+                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
                 m_isItem = true;
+                m_flags.m_useScriptKey = useScriptKey;
+                m_flags.m_useClickAnimation = true;
                 m_text_clean = m_text;
                 ult::removeTag(m_text_clean);
                 applyInitialTranslations();
@@ -7431,6 +7433,7 @@ namespace tsl {
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
                 m_isItem = true;
+                m_flags.m_useClickAnimation = true;
                 m_text_clean = m_text;
                 ult::removeTag(m_text_clean);
                 applyInitialTranslations();
@@ -7441,16 +7444,14 @@ namespace tsl {
             virtual ~ListItem() = default;
         
             virtual void draw(gfx::Renderer *renderer) override {
-                const bool useClickTextColor = m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
+                const bool useClickTextColor = m_flags.m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
                 if (useClickTextColor) [[unlikely]] {
-                    if (ult::expandedMemory)
-                        renderer->drawRectMultiThreaded(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
-                    else
-                        renderer->drawRect(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
+                    auto drawFunc = ult::expandedMemory ? &gfx::Renderer::drawRectMultiThreaded : &gfx::Renderer::drawRect;
+                    (renderer->*drawFunc)(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                 }
         
-                const s32 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) /2.0) +0.5f; // Bit shift for division by 2
+                const s16 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1) + 1;
         
                 if (!m_maxWidth) [[unlikely]] {
                     calculateWidths(renderer);
@@ -7473,14 +7474,14 @@ namespace tsl {
                 static const std::vector<std::string> specialChars = {};
             #endif
                 // Fast path for non-truncated text
-                if (!m_truncated) [[likely]] {
+                if (!m_flags.m_truncated) [[likely]] {
                     const Color textColor = m_focused
                         ? (!ult::useSelectionText
-                            ? (m_hasCustomTextColor ? m_customTextColor : defaultTextColor)
+                            ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor)
                             : (useClickTextColor
                                 ? clickTextColor
                                 : selectedTextColor))
-                        : (m_hasCustomTextColor
+                        : (m_flags.m_hasCustomTextColor
                             ? m_customTextColor
                             : (useClickTextColor
                                 ? clickTextColor
@@ -7503,7 +7504,7 @@ namespace tsl {
         
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
-                    if (m_useClickAnimation)
+                    if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
@@ -7513,22 +7514,21 @@ namespace tsl {
         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 if (event == TouchEvent::Touch) [[likely]] {
-                    if ((m_touched = inBounds(currX, currY))) [[likely]] {
+                    if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
                     }
                     return false;
                 }
         
-                if (event == TouchEvent::Release && m_touched) [[likely]] {
-                    m_touched = false;
+                if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
+                    m_flags.m_touched = false;
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
         #if IS_LAUNCHER_DIRECTIVE
-                        const s64 keyToUse = determineKeyOnTouchRelease(m_useScriptKey);
-                        const bool handled = onClick(keyToUse);
+                        const s64 keyToUse = determineKeyOnTouchRelease(m_flags.m_useScriptKey);
         #else
                         const s64 keyToUse = determineKeyOnTouchRelease(false);
-                        const bool handled = onClick(keyToUse);
         #endif
+                        const bool handled = onClick(keyToUse);
                         m_clickAnimationProgress = 0;
                         return handled;
                     }
@@ -7538,7 +7538,7 @@ namespace tsl {
             
             virtual void setFocused(bool state) override {
                 if (state != m_focused) [[likely]] {
-                    m_scroll = false;
+                    m_flags.m_scroll = false;
                     m_scrollOffset = 0;
                     timeIn_ns = armTicksToNs(armGetSystemTick());
                     Element::setFocused(state);
@@ -7560,10 +7560,9 @@ namespace tsl {
             }
         
             inline void setValue(const std::string& value, bool faint = false) {
-                if (m_value != value || m_faint != faint) [[likely]] {
+                if (m_value != value || m_flags.m_faint != faint) [[likely]] {
                     m_value = value;
-                    m_faint = faint;
-                    //m_useVersionColor = useVersionColor;
+                    m_flags.m_faint = faint;
                     m_maxWidth = 0;
                     if (!value.empty()) applyInitialTranslations(true);
                 }
@@ -7571,30 +7570,29 @@ namespace tsl {
             
             inline void setTextColor(Color color) {
                 m_customTextColor = color;
-                m_hasCustomTextColor = true;
+                m_flags.m_hasCustomTextColor = true;
             }
             
             inline void setValueColor(Color color) {
                 m_customValueColor = color;
-                m_hasCustomValueColor = true;
+                m_flags.m_hasCustomValueColor = true;
             }
             
             inline void clearTextColor() {
-                m_hasCustomTextColor = false;
+                m_flags.m_hasCustomTextColor = false;
             }
             
             inline void clearValueColor() {
-                m_hasCustomValueColor = false;
+                m_flags.m_hasCustomValueColor = false;
             }
 
             inline void disableClickAnimation() {
-                m_useClickAnimation = false;
+                m_flags.m_useClickAnimation = false;
             }
 
             inline void enableClickAnimation() {
-                m_useClickAnimation = true;
+                m_flags.m_useClickAnimation = true;
             }
-
             
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -7603,10 +7601,6 @@ namespace tsl {
             inline const std::string& getValue() const noexcept {
                 return m_value;
             }
-
-            //virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue) const override {
-            //    return matchesJumpCriteria(jumpText, jumpValue, true); // Default to exact match
-            //}
 
             virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool exactMatch=true) const {
                 if (jumpText.empty() && jumpValue.empty()) return false;
@@ -7635,57 +7629,69 @@ namespace tsl {
             std::string m_value;
             std::string m_scrollText;
             std::string m_ellipsisText;
-            u32 m_listItemHeight;
+            u16 m_listItemHeight;  // Changed from u32 to u16
+            
+            // Bitfield for boolean flags - saves ~7 bytes per instance
+            struct {
+                bool m_scroll : 1;
+                bool m_truncated : 1;
+                bool m_faint : 1;
+                bool m_touched : 1;
+                bool m_hasCustomTextColor : 1;
+                bool m_hasCustomValueColor : 1;
+                bool m_useClickAnimation : 1;
+            #if IS_LAUNCHER_DIRECTIVE
+                bool m_useScriptKey : 1;
+            #endif
+            } m_flags = {};
         
-        #if IS_LAUNCHER_DIRECTIVE
-            bool m_useScriptKey = false;
-        #endif
-        
-            bool m_scroll = false;
-            bool m_truncated = false;
-            bool m_faint = false;
-            //bool m_useVersionColor = false;
-            bool m_touched = false;
-        
-            bool m_hasCustomTextColor = false;
-            bool m_hasCustomValueColor = false;
             Color m_customTextColor = {0};
             Color m_customValueColor = {0};
-            bool m_useClickAnimation = true;
         
             float m_scrollOffset = 0.0f;
-            u32 m_maxWidth = 0;
-            u32 m_textWidth = 0;
+            u16 m_maxWidth = 0;     // Changed from u32 to u16
+            u16 m_textWidth = 0;     // Changed from u32 to u16
         
         private:
+            // Consolidated scroll constants struct
+            struct ScrollConstants {
+                double totalCycleDuration;
+                double delayDuration;
+                double scrollDuration;
+                double accelTime;
+                double constantVelocityTime;
+                double maxVelocity;
+                double accelDistance;
+                double constantVelocityDistance;
+                double minScrollDistance;
+                double invAccelTime;
+                double invDecelTime;
+                double invBillion;
+                bool initialized = false;
+            };
+            
             void applyInitialTranslations(bool isValue = false) {
                 std::string& target = isValue ? m_value : m_text_clean;
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
                 
-                // Thread-safe translation cache access
                 #ifdef UI_OVERRIDE_PATH
                 {
-                    // Use the processed target as the key for translation lookup
                     const std::string originalKey = target;
                     
                     std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalKey);
                     if (translatedIt != ult::translationCache.end()) {
-                        target = translatedIt->second;  // Apply translation to target, not text
+                        target = translatedIt->second;
                     } else {
-                        // Need to upgrade to write lock
                         readLock.unlock();
                         std::unique_lock<std::shared_mutex> writeLock(tsl::gfx::s_translationCacheMutex);
                         
-                        // Double-check pattern
                         translatedIt = ult::translationCache.find(originalKey);
                         if (translatedIt != ult::translationCache.end()) {
                             target = translatedIt->second;
                         } else {
-                            // Store the original as both key and value if no translation exists
                             ult::translationCache[originalKey] = originalKey;
-                            // target already contains the correct value, no need to modify
                         }
                     }
                 }
@@ -7696,22 +7702,17 @@ namespace tsl {
                 if (m_value.empty()) {
                     m_maxWidth = getWidth() - 62;
                 } else {
-                    //auto valueWidth = renderer->getTextDimensions(m_value, false, 20).first;
                     m_maxWidth = getWidth() - renderer->getTextDimensions(m_value, false, 20).first - 66;
                 }
             
-                //auto textWidth = renderer->getTextDimensions(m_text, false, 23).first;
-                const u32 width = renderer->getTextDimensions(m_text_clean, false, 23).first;
-                m_truncated = width > m_maxWidth + 20;
+                const u16 width = renderer->getTextDimensions(m_text_clean, false, 23).first;
+                m_flags.m_truncated = width > m_maxWidth + 20;
             
-                if (m_truncated) [[unlikely]] {
-                    // Optimized string building for scroll text
+                if (m_flags.m_truncated) [[unlikely]] {
                     m_scrollText.clear();
-                    m_scrollText.reserve(m_text_clean.size() * 2 + 8); // Pre-allocate for text + spaces + text
+                    m_scrollText.reserve(m_text_clean.size() * 2 + 8);
                     
-                    // Build scroll text efficiently: "text        text"
                     m_scrollText.append(m_text_clean).append("        ");
-                    //auto scrollWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
                     m_textWidth = renderer->getTextDimensions(m_scrollText, false, 23).first;
                     m_scrollText.append(m_text_clean);
                     
@@ -7725,120 +7726,83 @@ namespace tsl {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
                     
-                    //Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                    //    (useClickTextColor ? clickTextColor : selectedTextColor);
-                    
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
                         !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
-                    //Color textColor = m_hasCustomTextColor ? m_customTextColor : 
-                    //    (useClickTextColor ? clickTextColor : defaultTextColor);
-                    
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (starColor));
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (starColor));
                 }
             }
-
                     
             void handleScrolling() {
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const u64 elapsed_ns = currentTime_ns - timeIn_ns;
-                
-                // Frame rate compensation - cache calculations to reduce stutter
+                static ScrollConstants sc;
                 static u64 lastUpdateTime = 0;
                 static float cachedScrollOffset = 0.0f;
                 
-                // Pre-compute constants as statics to avoid recalculation
-                static bool constantsInitialized = false;
-                static double totalCycleDuration;
-                static double delayDuration;
-                static double scrollDuration;
-                static double accelTime;
-                static double constantVelocityTime;
-                static double maxVelocity;
-                static double accelDistance;
-                static double constantVelocityDistance;
-                static double minScrollDistance;
-                static double invAccelTime;  // 1/accelTime for multiplication instead of division
-                static double invDecelTime;  // 1/decelTime for multiplication instead of division
-                static double invBillion;    // 1/1000000000.0 for ns to seconds conversion
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 elapsed_ns = currentTime_ns - timeIn_ns;
                 
-                if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
-                    // Constants for velocity-based scrolling
-                    delayDuration = 2.0;
+                if (!sc.initialized || sc.minScrollDistance != static_cast<double>(m_textWidth)) {
+                    sc.delayDuration = 2.0;
                     static constexpr double pauseDuration = 1.0;
-                    maxVelocity = 166.0;
-                    accelTime = 0.5;
+                    sc.maxVelocity = 166.0;
+                    sc.accelTime = 0.5;
                     static constexpr double decelTime = 0.5;
                     
-                    // Pre-calculate derived constants
-                    minScrollDistance = static_cast<double>(m_textWidth);
-                    accelDistance = 0.5 * maxVelocity * accelTime;
-                    const double decelDistance = 0.5 * maxVelocity * decelTime;
-                    constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
-                    constantVelocityTime = constantVelocityDistance / maxVelocity;
-                    scrollDuration = accelTime + constantVelocityTime + decelTime;
-                    totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
+                    sc.minScrollDistance = static_cast<double>(m_textWidth);
+                    sc.accelDistance = 0.5 * sc.maxVelocity * sc.accelTime;
+                    const double decelDistance = 0.5 * sc.maxVelocity * decelTime;
+                    sc.constantVelocityDistance = std::max(0.0, sc.minScrollDistance - sc.accelDistance - decelDistance);
+                    sc.constantVelocityTime = sc.constantVelocityDistance / sc.maxVelocity;
+                    sc.scrollDuration = sc.accelTime + sc.constantVelocityTime + decelTime;
+                    sc.totalCycleDuration = sc.delayDuration + sc.scrollDuration + pauseDuration;
                     
-                    // Pre-calculate reciprocals for faster division
-                    invAccelTime = 1.0 / accelTime;
-                    invDecelTime = 1.0 / decelTime;
-                    invBillion = 1.0 / 1000000000.0;
+                    sc.invAccelTime = 1.0 / sc.accelTime;
+                    sc.invDecelTime = 1.0 / decelTime;
+                    sc.invBillion = 1.0 / 1000000000.0;
                     
-                    constantsInitialized = true;
+                    sc.initialized = true;
                 }
                 
-                // Fast ns to seconds conversion
-                const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
+                const double elapsed_seconds = static_cast<double>(elapsed_ns) * sc.invBillion;
                 
-                // Update at consistent intervals regardless of frame rate
-                if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
-                    // Use std::fmod for modulo - it's optimized and faster than loops
-                    const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
+                if (currentTime_ns - lastUpdateTime >= 8333333ULL) {
+                    const double cyclePosition = std::fmod(elapsed_seconds, sc.totalCycleDuration);
                     
-                    if (cyclePosition < delayDuration) [[likely]] {
-                        // Delay phase - no scrolling
+                    if (cyclePosition < sc.delayDuration) [[likely]] {
                         cachedScrollOffset = 0.0f;
-                    } else if (cyclePosition < delayDuration + scrollDuration) [[likely]] {
-                        // Scrolling phase - velocity-based movement
-                        const double scrollTime = cyclePosition - delayDuration;
+                    } else if (cyclePosition < sc.delayDuration + sc.scrollDuration) [[likely]] {
+                        const double scrollTime = cyclePosition - sc.delayDuration;
                         double distance;
                         
-                        if (scrollTime <= accelTime) {
-                            // Acceleration phase - quadratic ease-in
-                            const double t = scrollTime * invAccelTime;  // Multiply instead of divide
+                        if (scrollTime <= sc.accelTime) {
+                            const double t = scrollTime * sc.invAccelTime;
                             const double smoothT = t * t;
-                            distance = smoothT * accelDistance;
-                        } else if (scrollTime <= accelTime + constantVelocityTime) {
-                            // Constant velocity phase
-                            const double constantTime = scrollTime - accelTime;
-                            distance = accelDistance + (constantTime * maxVelocity);
+                            distance = smoothT * sc.accelDistance;
+                        } else if (scrollTime <= sc.accelTime + sc.constantVelocityTime) {
+                            const double constantTime = scrollTime - sc.accelTime;
+                            distance = sc.accelDistance + (constantTime * sc.maxVelocity);
                         } else {
-                            // Deceleration phase - quadratic ease-out
-                            const double decelStartTime = accelTime + constantVelocityTime;
-                            const double t = (scrollTime - decelStartTime) * invDecelTime;  // Multiply instead of divide
+                            const double decelStartTime = sc.accelTime + sc.constantVelocityTime;
+                            const double t = (scrollTime - decelStartTime) * sc.invDecelTime;
                             const double oneMinusT = 1.0 - t;
-                            const double smoothT = 1.0 - oneMinusT * oneMinusT;  // Avoid repeated calculation
-                            distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
+                            const double smoothT = 1.0 - oneMinusT * oneMinusT;
+                            distance = sc.accelDistance + sc.constantVelocityDistance + (smoothT * (sc.minScrollDistance - sc.accelDistance - sc.constantVelocityDistance));
                         }
                         
-                        // Use branchless min with conditional move behavior
-                        cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
+                        cachedScrollOffset = static_cast<float>(distance < sc.minScrollDistance ? distance : sc.minScrollDistance);
                     } else [[unlikely]] {
-                        // Pause phase - stay at end
                         cachedScrollOffset = static_cast<float>(m_textWidth);
                     }
                     
                     lastUpdateTime = currentTime_ns;
                 }
                 
-                // Use cached value for consistent display
                 m_scrollOffset = cachedScrollOffset;
                 
-                // Reset timer when cycle completes
-                if (elapsed_seconds >= totalCycleDuration) [[unlikely]] {
+                if (elapsed_seconds >= sc.totalCycleDuration) [[unlikely]] {
                     timeIn_ns = currentTime_ns;
                 }
             }
@@ -7857,65 +7821,59 @@ namespace tsl {
                 } else {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
-                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire); // Relaxed ordering is sufficient
+                lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
             }
                     
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
-                // Check if selection value colors should be disabled
                 if (m_focused && ult::useSelectionValue) {
-                    // Use selection colors when focused and selection colors are enabled
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
                         return useClickTextColor ? (clickTextColor) :
-                               (m_faint ? offTextColor : (useClickTextColor ? clickTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor)));
+                               (m_flags.m_faint ? offTextColor : (useClickTextColor ? clickTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor)));
                     }
                     
                     const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                     if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                      m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                      m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
-                        return m_faint ? offTextColor : (inprogressTextColor);
+                        return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                     }
                     
                     if (m_value == ult::INPROGRESS_SYMBOL) {
-                        return m_faint ? offTextColor : (inprogressTextColor);
+                        return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                     }
                     
                     if (m_value == ult::CROSSMARK_SYMBOL) {
-                        return m_faint ? offTextColor : (invalidTextColor);
+                        return m_flags.m_faint ? offTextColor : (invalidTextColor);
                     }
                     
-                    // For normal values when focused, use selectedValueTextColor
                     return useClickTextColor ? clickTextColor : selectedValueTextColor;
                 }
                 
-                // If focused but selection colors are disabled, or if not focused, use original logic
-                // Check for custom value color first
-                if (m_hasCustomValueColor) {
+                if (m_flags.m_hasCustomValueColor) {
                     return m_customValueColor;
                 }
                 
-                // Original logic for all other cases
                 if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor))) :
-                           (useClickTextColor ? clickTextColor : (m_faint ? offTextColor : defaultTextColor)));
+                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_flags.m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor))) :
+                           (useClickTextColor ? clickTextColor : (m_flags.m_faint ? offTextColor : defaultTextColor)));
                 }
                 
                 const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
-                    return m_faint ? offTextColor : (inprogressTextColor);
+                    return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
                 if (m_value == ult::INPROGRESS_SYMBOL) {
-                    return m_faint ? offTextColor : (inprogressTextColor);
+                    return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                 }
                 
                 if (m_value == ult::CROSSMARK_SYMBOL) {
-                    return m_faint ? offTextColor : (invalidTextColor);
+                    return m_flags.m_faint ? offTextColor : (invalidTextColor);
                 }
                 
-                return (m_faint ? offTextColor : (onTextColor));
+                return (m_flags.m_faint ? offTextColor : (onTextColor));
             }
 
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
@@ -7924,11 +7882,10 @@ namespace tsl {
                 throbberCounter = (throbberCounter + 1) % (10 * ult::THROBBER_SYMBOLS.size());
                 renderer->drawString(throbberSymbol, false, xPosition, yPosition, fontSize, textColor);
             }
-        
             
             s64 determineKeyOnTouchRelease(bool useScriptKey) const {
                 const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
-                const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f; // More efficient than division
+                const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                 
                 #if IS_LAUNCHER_DIRECTIVE
                 if (touchDurationInSeconds >= 0.7f) [[unlikely]] {
@@ -7937,13 +7894,11 @@ namespace tsl {
                 }
                 #endif
                 if (touchDurationInSeconds >= 0.3f) [[unlikely]] {
-                    //if (useScriptKey)
                     ult::shortTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : SETTINGS_KEY;
                 }
                 return KEY_A;
             }
-        
         
             void resetTextProperties() {
                 m_scrollText.clear();

@@ -409,275 +409,222 @@ namespace ult {
         }
     }
 
-    // Helper function to reverse a log file
+    // Helper function to reverse a log file safely
     void reverseLogFile(const std::string& logFilePath) {
         std::vector<std::string> lines;
-        
+    
     #if !USING_FSTREAM_DIRECTIVE
-        // Read all lines using C-style file operations with larger buffer
         FILE* file = fopen(logFilePath.c_str(), "r");
         if (!file) return;
-        
-        // Set larger buffer for reading
+    
         setvbuf(file, nullptr, _IOFBF, 8192);
-        
+    
         static constexpr size_t BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
-        
+    
         while (fgets(buffer, BUFFER_SIZE, file)) {
-            // Remove trailing newline if present
-            const size_t len = strlen(buffer);
-            if (len > 0 && buffer[len - 1] == '\n') {
-                buffer[len - 1] = '\0';
-            }
-            lines.emplace_back(buffer);
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') buffer[len - 1] = '\0';
+            lines.emplace_back(buffer); // std::string constructor ensures proper termination
         }
         fclose(file);
-        
-        // Write back in reverse order with larger buffer
+    
         FILE* outFile = fopen(logFilePath.c_str(), "w");
         if (outFile) {
             setvbuf(outFile, nullptr, _IOFBF, 8192);
             for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+                // Use fprintf instead of fputs to avoid any residual buffer issues
                 fprintf(outFile, "%s\n", it->c_str());
             }
+            fflush(outFile);
             fclose(outFile);
         }
     #else
-        // Read all lines using C++ streams with larger buffer
         std::ifstream file(logFilePath);
         if (!file.is_open()) return;
-        
-        // Set larger buffer
+    
         static char readBuffer[8192];
         file.rdbuf()->pubsetbuf(readBuffer, sizeof(readBuffer));
-        
+    
         std::string line;
-        while (std::getline(file, line)) {
-            lines.push_back(std::move(line));
-        }
+        while (std::getline(file, line)) lines.push_back(std::move(line));
         file.close();
-        
-        // Write back in reverse order with larger buffer
+    
         std::ofstream outFile(logFilePath);
         if (outFile.is_open()) {
             static char writeBuffer[8192];
             outFile.rdbuf()->pubsetbuf(writeBuffer, sizeof(writeBuffer));
-            
+    
             for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
                 outFile << *it << '\n';
             }
+            outFile.flush();
             outFile.close();
         }
     #endif
     }
-        
+    
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
                        const std::string& logSource, const std::string& logDestination) {
-        
+    
         struct stat sourceInfo;
         if (stat(sourcePath.c_str(), &sourceInfo) != 0) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Source directory doesn't exist: " + sourcePath);
-            #endif
+    #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging) logMessage("Source directory doesn't exist: " + sourcePath);
+    #endif
             return;
         }
     
         if (mkdir(destinationPath.c_str(), 0777) != 0 && errno != EEXIST) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to create destination directory: " + destinationPath);
-            #endif
+    #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging) logMessage("Failed to create destination directory: " + destinationPath);
+    #endif
             return;
         }
     
         bool needsLogging = !logSource.empty() || !logDestination.empty();
+
+        {
+            std::vector<std::pair<std::string, std::string>> stack;
+            std::vector<std::string> directoriesToRemove;
         
-        std::vector<std::pair<std::string, std::string>> stack;
-        std::vector<std::string> directoriesToRemove;
+            stack.push_back({sourcePath, destinationPath});
         
-        stack.push_back({sourcePath, destinationPath});
-    
-        // Pre-open log files for forward writing
-    #if !USING_FSTREAM_DIRECTIVE
-        FILE* logSrcFile = nullptr;
-        FILE* logDestFile = nullptr;
+        #if !USING_FSTREAM_DIRECTIVE
+            FILE* logSrcFile = nullptr;
+            FILE* logDestFile = nullptr;
         
-        if (needsLogging && !logSource.empty()) {
-            createDirectory(getParentDirFromPath(logSource));
-            logSrcFile = fopen(logSource.c_str(), "w");
-            if (logSrcFile) setvbuf(logSrcFile, nullptr, _IOFBF, 8192);
-        }
-        if (needsLogging && !logDestination.empty()) {
-            createDirectory(getParentDirFromPath(logDestination));
-            logDestFile = fopen(logDestination.c_str(), "w");
-            if (logDestFile) setvbuf(logDestFile, nullptr, _IOFBF, 8192);
-        }
-    #else
-        std::unique_ptr<std::ofstream> logSrcFile, logDestFile;
-        static char srcBuffer[8192], destBuffer[8192];
-        
-        if (needsLogging && !logSource.empty()) {
-            createDirectory(getParentDirFromPath(logSource));
-            logSrcFile = std::make_unique<std::ofstream>(logSource);
-            if (logSrcFile->is_open()) {
-                logSrcFile->rdbuf()->pubsetbuf(srcBuffer, sizeof(srcBuffer));
+            if (needsLogging && !logSource.empty()) {
+                createDirectory(getParentDirFromPath(logSource));
+                logSrcFile = fopen(logSource.c_str(), "w");
+                if (logSrcFile) setvbuf(logSrcFile, nullptr, _IOFBF, 8192);
             }
-        }
-        if (needsLogging && !logDestination.empty()) {
-            createDirectory(getParentDirFromPath(logDestination));
-            logDestFile = std::make_unique<std::ofstream>(logDestination);
-            if (logDestFile->is_open()) {
-                logDestFile->rdbuf()->pubsetbuf(destBuffer, sizeof(destBuffer));
+            if (needsLogging && !logDestination.empty()) {
+                createDirectory(getParentDirFromPath(logDestination));
+                logDestFile = fopen(logDestination.c_str(), "w");
+                if (logDestFile) setvbuf(logDestFile, nullptr, _IOFBF, 8192);
             }
-        }
-    #endif
-    
-        // Pre-allocate strings to reduce reallocations
-        std::string fullPathSrc, fullPathDst;
-        //fullPathSrc.reserve(1024);
-        //fullPathDst.reserve(1024);
+        #else
+            std::unique_ptr<std::ofstream> logSrcFile, logDestFile;
+            static char srcBuffer[8192], destBuffer[8192];
         
-        dirent* entry;
-        DIR* dir;
-        const char* name;
-        
-        std::string currentSource, currentDestination;
-        while (!stack.empty()) {
-            std::tie(currentSource, currentDestination) = stack.back();
-            stack.pop_back();
-    
-            dir = opendir(currentSource.c_str());
-            if (!dir) {
-                #if USING_LOGGING_DIRECTIVE
-                if (!disableLogging)
-                    logMessage("Failed to open source directory: " + currentSource);
-                #endif
-                continue;
+            if (needsLogging && !logSource.empty()) {
+                createDirectory(getParentDirFromPath(logSource));
+                logSrcFile = std::make_unique<std::ofstream>(logSource);
+                if (logSrcFile->is_open()) logSrcFile->rdbuf()->pubsetbuf(srcBuffer, sizeof(srcBuffer));
             }
-    
-            while ((entry = readdir(dir)) != nullptr) {
-                name = entry->d_name;
-                // Fast skip for "." and ".."
-                if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) {
+            if (needsLogging && !logDestination.empty()) {
+                createDirectory(getParentDirFromPath(logDestination));
+                logDestFile = std::make_unique<std::ofstream>(logDestination);
+                if (logDestFile->is_open()) logDestFile->rdbuf()->pubsetbuf(destBuffer, sizeof(destBuffer));
+            }
+        #endif
+        
+            std::string fullPathSrc, fullPathDst;
+            //fullPathSrc.reserve(1024);
+            //fullPathDst.reserve(1024);
+        
+            dirent* entry;
+            DIR* dir;
+            const char* name;
+        
+            std::string currentSource, currentDestination;
+            while (!stack.empty()) {
+                std::tie(currentSource, currentDestination) = stack.back();
+                stack.pop_back();
+        
+                dir = opendir(currentSource.c_str());
+                if (!dir) {
+        #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging) logMessage("Failed to open source directory: " + currentSource);
+        #endif
                     continue;
                 }
-    
-                // Optimized path building - reuse string capacity
-                fullPathSrc.assign(currentSource);
-                if (!fullPathSrc.empty() && fullPathSrc.back() != '/') {
-                    fullPathSrc += '/';
-                }
-                fullPathSrc += name;
-                
-                fullPathDst.assign(currentDestination);
-                if (!fullPathDst.empty() && fullPathDst.back() != '/') {
-                    fullPathDst += '/';
-                }
-                fullPathDst += name;
-    
-                if (entry->d_type == DT_DIR) {
-                    if (mkdir(fullPathDst.c_str(), 0777) != 0 && errno != EEXIST) {
-                        #if USING_LOGGING_DIRECTIVE
-                        if (!disableLogging)
-                            logMessage("Failed to create destination directory: " + fullPathDst);
-                        #endif
-                        continue;
-                    }
-                    stack.emplace_back(fullPathSrc, fullPathDst);
-                    directoriesToRemove.emplace_back(fullPathSrc);
-    
-                    // Write to log immediately in FORWARD order
-                    if (needsLogging) {
-    #if !USING_FSTREAM_DIRECTIVE
-                        if (logSrcFile) {
-                            fputs(fullPathSrc.c_str(), logSrcFile);
-                            fputs("/\n", logSrcFile);
+        
+                while ((entry = readdir(dir)) != nullptr) {
+                    name = entry->d_name;
+                    if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) continue;
+        
+                    fullPathSrc.assign(currentSource);
+                    if (!fullPathSrc.empty() && fullPathSrc.back() != '/') fullPathSrc += '/';
+                    fullPathSrc += name;
+        
+                    fullPathDst.assign(currentDestination);
+                    if (!fullPathDst.empty() && fullPathDst.back() != '/') fullPathDst += '/';
+                    fullPathDst += name;
+        
+                    if (entry->d_type == DT_DIR) {
+                        if (mkdir(fullPathDst.c_str(), 0777) != 0 && errno != EEXIST) {
+        #if USING_LOGGING_DIRECTIVE
+                            if (!disableLogging) logMessage("Failed to create destination directory: " + fullPathDst);
+        #endif
+                            continue;
                         }
-                        if (logDestFile) {
-                            fputs(fullPathDst.c_str(), logDestFile);
-                            fputs("/\n", logDestFile);
-                        }
-    #else
-                        if (logSrcFile && logSrcFile->is_open()) {
-                            *logSrcFile << fullPathSrc << "/\n";
-                        }
-                        if (logDestFile && logDestFile->is_open()) {
-                            *logDestFile << fullPathDst << "/\n";
-                        }
-    #endif
-                    }
-                } else {
-                    remove(fullPathDst.c_str());
-                    if (rename(fullPathSrc.c_str(), fullPathDst.c_str()) == 0) {
-                        // Write to log immediately in FORWARD order
+                        stack.emplace_back(fullPathSrc, fullPathDst);
+                        directoriesToRemove.emplace_back(fullPathSrc);
+        
                         if (needsLogging) {
-    #if !USING_FSTREAM_DIRECTIVE
-                            if (logSrcFile) {
-                                fputs(fullPathSrc.c_str(), logSrcFile);
-                                fputc('\n', logSrcFile);
-                            }
-                            if (logDestFile) {
-                                fputs(fullPathDst.c_str(), logDestFile);
-                                fputc('\n', logDestFile);
-                            }
-    #else
-                            if (logSrcFile && logSrcFile->is_open()) {
-                                *logSrcFile << fullPathSrc << '\n';
-                            }
-                            if (logDestFile && logDestFile->is_open()) {
-                                *logDestFile << fullPathDst << '\n';
-                            }
-    #endif
+        #if !USING_FSTREAM_DIRECTIVE
+                            if (logSrcFile) fprintf(logSrcFile, "%s/\n", fullPathSrc.c_str()), fflush(logSrcFile);
+                            if (logDestFile) fprintf(logDestFile, "%s/\n", fullPathDst.c_str()), fflush(logDestFile);
+        #else
+                            if (logSrcFile && logSrcFile->is_open()) { *logSrcFile << fullPathSrc << "/\n"; logSrcFile->flush(); }
+                            if (logDestFile && logDestFile->is_open()) { *logDestFile << fullPathDst << "/\n"; logDestFile->flush(); }
+        #endif
                         }
                     } else {
-                        #if USING_LOGGING_DIRECTIVE
-                        if (!disableLogging)
-                            logMessage("Failed to move: " + fullPathSrc);
-                        #endif
+                        remove(fullPathDst.c_str());
+                        if (rename(fullPathSrc.c_str(), fullPathDst.c_str()) == 0) {
+                            if (needsLogging) {
+        #if !USING_FSTREAM_DIRECTIVE
+                                if (logSrcFile) fprintf(logSrcFile, "%s\n", fullPathSrc.c_str()), fflush(logSrcFile);
+                                if (logDestFile) fprintf(logDestFile, "%s\n", fullPathDst.c_str()), fflush(logDestFile);
+        #else
+                                if (logSrcFile && logSrcFile->is_open()) { *logSrcFile << fullPathSrc << '\n'; logSrcFile->flush(); }
+                                if (logDestFile && logDestFile->is_open()) { *logDestFile << fullPathDst << '\n'; logDestFile->flush(); }
+        #endif
+                            }
+                        } else {
+        #if USING_LOGGING_DIRECTIVE
+                            if (!disableLogging) logMessage("Failed to move: " + fullPathSrc);
+        #endif
+                        }
                     }
                 }
+                closedir(dir);
             }
-            closedir(dir);
-        }
-    
-        // Close files before reversing
-    #if !USING_FSTREAM_DIRECTIVE
-        if (logSrcFile) fclose(logSrcFile);
-        if (logDestFile) fclose(logDestFile);
-    #else
-        if (logSrcFile) logSrcFile->close();
-        if (logDestFile) logDestFile->close();
-    #endif
-    
-        // Clean up directories
-        for (auto it = directoriesToRemove.rbegin(); it != directoriesToRemove.rend(); ++it) {
-            if (rmdir(it->c_str()) != 0) {
-                #if USING_LOGGING_DIRECTIVE
-                if (!disableLogging)
-                    logMessage("Failed to delete source directory: " + *it);
-                #endif
+        
+        #if !USING_FSTREAM_DIRECTIVE
+            if (logSrcFile) fclose(logSrcFile);
+            if (logDestFile) fclose(logDestFile);
+        #else
+            if (logSrcFile) { logSrcFile->flush(); logSrcFile->close(); }
+            if (logDestFile) { logDestFile->flush(); logDestFile->close(); }
+        #endif
+        
+            // Clean up directories
+            for (auto it = directoriesToRemove.rbegin(); it != directoriesToRemove.rend(); ++it) {
+                if (rmdir(it->c_str()) != 0) {
+        #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging) logMessage("Failed to delete source directory: " + *it);
+        #endif
+                }
+            }
+        
+            if (rmdir(sourcePath.c_str()) != 0) {
+        #if USING_LOGGING_DIRECTIVE
+                if (!disableLogging) logMessage("Failed to delete source directory: " + sourcePath);
+        #endif
             }
         }
     
-        if (rmdir(sourcePath.c_str()) != 0) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to delete source directory: " + sourcePath);
-            #endif
-        }
-    
-        // REVERSE LOG FILES: Now that all files are moved, reverse the logs
+        // Safely reverse logs now
         if (needsLogging) {
-            if (!logSource.empty()) {
-                reverseLogFile(logSource);
-            }
-            if (!logDestination.empty()) {
-                reverseLogFile(logDestination);
-            }
+            if (!logSource.empty()) reverseLogFile(logSource);
+            if (!logDestination.empty()) reverseLogFile(logDestination);
         }
     }
+
     
     bool moveFile(const std::string& sourcePath,
                   const std::string& destinationPath,
