@@ -4719,6 +4719,7 @@ namespace tsl {
         };
 
 
+        #if IS_LAUNCHER_DIRECTIVE
         // Simple utility function to draw the dynamic "Ultra" part of the logo
         static s32 drawDynamicUltraText(gfx::Renderer* renderer, s32 startX, s32 y, u32 fontSize, 
                                        const tsl::Color& staticColor, bool useNotificationMethod = false) {
@@ -4804,6 +4805,8 @@ namespace tsl {
             
             return totalWidth;
         }
+
+        #endif
                 
         /**
          * @brief The base frame which can contain another view
