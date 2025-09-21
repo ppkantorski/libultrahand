@@ -4718,6 +4718,92 @@ namespace tsl {
             bool isScrollable = false;
         };
 
+
+        // Simple utility function to draw the dynamic "Ultra" part of the logo
+        static s32 drawDynamicUltraText(gfx::Renderer* renderer, s32 startX, s32 y, u32 fontSize, 
+                                       const tsl::Color& staticColor, bool useNotificationMethod = false) {
+            static constexpr double cycleDuration = 1.6;
+            s32 currentX = startX;
+            
+            if (ult::useDynamicLogo) {
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
+                const double timeBase = std::fmod(currentTimeCount, cycleDuration);
+                const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
+                static constexpr double phaseShift = ult::_M_PI / 2.0;
+                
+                float countOffset = 0;
+                for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
+                    const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
+                    const double rawProgress = std::cos(wavePhase - phaseShift);
+                    
+                    const double normalizedProgress = (rawProgress + 1.0) * 0.5;
+                    const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
+                    const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
+                    
+                    const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
+                    
+                    const tsl::Color highlightColor = {
+                        static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
+                        static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
+                        static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
+                        15
+                    };
+                    
+                    const std::string letterStr(1, letter);
+                    if (useNotificationMethod) {
+                        //const auto [letterWidth, letterHeight] = renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor);
+                        currentX += renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor).first;
+                    } else {
+                        currentX += renderer->drawString(letterStr, false, currentX, y, fontSize, highlightColor).first;
+                    }
+                    countOffset -= static_cast<float>(cycleDuration / 8.0);
+                }
+            } else {
+                // Static rendering
+                for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
+                    const std::string letterStr(1, letter);
+                    if (useNotificationMethod) {
+                        //const auto [letterWidth, letterHeight] = renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, staticColor);
+                        currentX += renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, staticColor).first;
+                    } else {
+                        currentX += renderer->drawString(letterStr, false, currentX, y, fontSize, staticColor).first;
+                    }
+                }
+            }
+            
+            return currentX;
+        }
+        
+        // Utility function to calculate width of the Ultra text (for notification centering)
+        static s32 calculateUltraTextWidth(gfx::Renderer* renderer, u32 fontSize, bool useNotificationMethod = false) {
+            s32 totalWidth = 0;
+            
+            if (ult::useDynamicLogo) {
+                // Calculate width by measuring each character for dynamic rendering
+                for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
+                    const std::string letterStr(1, letter);
+                    if (useNotificationMethod) {
+                        //const auto [lw, lh] = renderer->getNotificationTextDimensions(letterStr, false, fontSize);
+                        totalWidth += renderer->getNotificationTextDimensions(letterStr, false, fontSize).first;
+                    } else {
+                        //const auto [lw, lh] = renderer->getTextDimensions(letterStr, false, fontSize);
+                        totalWidth += renderer->getTextDimensions(letterStr, false, fontSize).first;
+                    }
+                }
+            } else {
+                // Static rendering - measure the whole string at once
+                if (useNotificationMethod) {
+                    //const auto [uw, uh] = renderer->getNotificationTextDimensions(ult::SPLIT_PROJECT_NAME_1, false, fontSize);
+                    totalWidth = renderer->getNotificationTextDimensions(ult::SPLIT_PROJECT_NAME_1, false, fontSize).first;
+                } else {
+                    //const auto [uw, uh] = renderer->getTextDimensions(ult::SPLIT_PROJECT_NAME_1, false, fontSize);
+                    totalWidth = renderer->getTextDimensions(ult::SPLIT_PROJECT_NAME_1, false, fontSize).first;
+                }
+            }
+            
+            return totalWidth;
+        }
                 
         /**
          * @brief The base frame which can contain another view
@@ -4744,10 +4830,10 @@ namespace tsl {
             
         
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
-            static constexpr double cycleDuration = 1.6;
-            float counter = 0;
-            float countOffset;
-            float progress;
+            //static constexpr double cycleDuration = 1.6;
+            //float counter = 0;
+            //float countOffset;
+            //float progress;
             float letterWidth;
         #endif
 
@@ -4833,47 +4919,10 @@ namespace tsl {
                     x = 20;
                     fontSize = 42;
                     offset = 6;
-                    countOffset = 0;
+                    //countOffset = 0;
                                                                                                                                     
                     if (ult::useDynamicLogo) {
-                        const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                        
-                        // High precision time calculation to prevent stepping artifacts
-                        const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
-                        
-                        // Pre-calculate time base once per frame for consistent wave sync
-                        const double timeBase = std::fmod(currentTimeCount, cycleDuration);
-                        
-                        // Pre-calculate wave constants - NOW MATCHES CYCLE DURATION
-                        const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
-                        static constexpr double phaseShift = ult::_M_PI / 2.0;
-                        
-                        for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
-                            // Smooth, precise wave calculation
-                            const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
-                            const double rawProgress = std::cos(wavePhase - phaseShift);
-                            
-                            // Apply double smoothstep for ultra-smooth color transitions
-                            const double normalizedProgress = (rawProgress + 1.0) * 0.5; // Convert to 0-1
-                            const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
-                            // Apply smoothstep again for even smoother transitions
-                            const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
-                            
-                            // Pure floating point interpolation - no dithering to eliminate flicker
-                            const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
-                            
-                            // High precision floating point color interpolation
-                            const tsl::Color highlightColor = {
-                                static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
-                                static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
-                                static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
-                                15
-                            };
-                            
-                            const std::string letterStr(1, letter);
-                            x += renderer->drawString(letterStr, false, x, y + offset, fontSize, highlightColor).first;
-                            countOffset -= static_cast<float>(cycleDuration / 8.0);
-                        }
+                        x = drawDynamicUltraText(renderer, x, y + offset, fontSize, logoColor1, false);
                     } else {
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                             const std::string letterStr(1, letter);
@@ -4940,27 +4989,27 @@ namespace tsl {
                                         titleColor = {0xF, 0xF, 0xF, 0xF};
                                     }
                                     break;
-                                case 'u': // ultra
-                                    if (len == 5 && m_colorSelection == "ultra") {
-                                        for (const char letter : m_title) {
-                                            progress = ult::calculateAmplitude(counter - x * 0.0001F);
-                                            
-                                            const tsl::Color highlightColor = {
-                                                static_cast<u8>((0xA - 0xF) * (3 - 1.5 * progress) + 0xF),
-                                                static_cast<u8>((0xA - 0xF) * 1.5 * progress + 0xF),
-                                                static_cast<u8>((0xA - 0xF) * (1.25 - progress) + 0xF),
-                                                0xF
-                                            };
-                                            
-                                            const std::string letterStr(1, letter);
-                                            renderer->drawString(letterStr.c_str(), false, x, y, fontSize, (highlightColor));
-                                            const auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
-                                            x += letterWidth;
-                                            counter -= 0.00004F;
-                                        }
-                                        goto skip_normal_draw;
-                                    }
-                                    break;
+                                //case 'u': // ultra
+                                //    if (len == 5 && m_colorSelection == "ultra") {
+                                //        for (const char letter : m_title) {
+                                //            progress = ult::calculateAmplitude(counter - x * 0.0001F);
+                                //            
+                                //            const tsl::Color highlightColor = {
+                                //                static_cast<u8>((0xA - 0xF) * (3 - 1.5 * progress) + 0xF),
+                                //                static_cast<u8>((0xA - 0xF) * 1.5 * progress + 0xF),
+                                //                static_cast<u8>((0xA - 0xF) * (1.25 - progress) + 0xF),
+                                //                0xF
+                                //            };
+                                //            
+                                //            const std::string letterStr(1, letter);
+                                //            renderer->drawString(letterStr.c_str(), false, x, y, fontSize, (highlightColor));
+                                //            const auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
+                                //            x += letterWidth;
+                                //            counter -= 0.00004F;
+                                //        }
+                                //        goto skip_normal_draw;
+                                //    }
+                                //    break;
                                 case '#': // hex color
                                     if (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) {
                                         titleColor = RGB888(m_colorSelection.substr(1));
@@ -4971,7 +5020,7 @@ namespace tsl {
                         
                         renderer->drawString(m_title, false, x, y, fontSize, (titleColor));
                         y += 2;
-                        skip_normal_draw:;
+                        //skip_normal_draw:;
                     }
                 }
                 static const std::vector<std::string> specialChars2 = {""};
@@ -10370,12 +10419,11 @@ namespace tsl {
             
             // Split the line into parts
             const std::string before = line.substr(0, ultrahandPos);
-            const std::string ultra = ult::SPLIT_PROJECT_NAME_1;
             const std::string hand = ult::SPLIT_PROJECT_NAME_2;
             const std::string after = line.substr(ultrahandPos + ultrahandToReplace.length());
             
             // Calculate individual part widths to get accurate total width
-            s32 beforeWidth = 0, ultraWidth = 0, handWidth = 0, afterWidth = 0;
+            s32 beforeWidth = 0, handWidth = 0, afterWidth = 0;
             
             if (!before.empty()) {
                 const auto [bw, bh] = renderer->getNotificationTextDimensions(before, false, fontSize);
@@ -10390,18 +10438,8 @@ namespace tsl {
             const auto [hw, hh] = renderer->getNotificationTextDimensions(hand, false, fontSize);
             handWidth = hw;
             
-            // For "Ultra" width, we need to handle dynamic vs static rendering differently
-            if (ult::useDynamicLogo) {
-                // Calculate width by measuring each character (since dynamic rendering might have slight differences)
-                for (const char letter : ultra) {
-                    const std::string letterStr(1, letter);
-                    const auto [lw, lh] = renderer->getNotificationTextDimensions(letterStr, false, fontSize);
-                    ultraWidth += lw;
-                }
-            } else {
-                const auto [uw, uh] = renderer->getNotificationTextDimensions(ultra, false, fontSize);
-                ultraWidth = uw;
-            }
+            // Use shared utility to calculate Ultra width
+            const s32 ultraWidth = tsl::elm::calculateUltraTextWidth(renderer, fontSize, true);
             
             // Calculate total width and starting position for centering
             const s32 totalWidth = beforeWidth + ultraWidth + handWidth + afterWidth;
@@ -10415,41 +10453,8 @@ namespace tsl {
                 currentX += beforeWidth;
             }
             
-            // Draw dynamic "Ultra" part
-            if (ult::useDynamicLogo) {
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
-                const double timeBase = std::fmod(currentTimeCount, cycleDuration);
-                const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
-                static constexpr double phaseShift = ult::_M_PI / 2.0;
-                
-                float countOffset = 0;
-                for (const char letter : ultra) {
-                    const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
-                    const double rawProgress = std::cos(wavePhase - phaseShift);
-                    
-                    const double normalizedProgress = (rawProgress + 1.0) * 0.5;
-                    const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
-                    const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
-                    
-                    const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
-                    
-                    const tsl::Color highlightColor = {
-                        static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
-                        static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
-                        static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
-                        15
-                    };
-                    
-                    const std::string letterStr(1, letter);
-                    const auto [letterWidth, letterHeight] = renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor);
-                    currentX += letterWidth;
-                    countOffset -= static_cast<float>(cycleDuration / 8.0);
-                }
-            } else {
-                renderer->drawNotificationString(ultra, false, currentX, y, fontSize, logoColor1);
-                currentX += ultraWidth;
-            }
+            // Draw dynamic "Ultra" part using shared utility
+            currentX = tsl::elm::drawDynamicUltraText(renderer, currentX, y, fontSize, logoColor1, true);
             
             // Draw static "hand" part
             renderer->drawNotificationString(hand, false, currentX, y, fontSize, logoColor2);
@@ -10579,7 +10584,7 @@ namespace tsl {
     private:
         static constexpr size_t MAX_NOTIFS = 30;
         static constexpr u32 SLIDE_DURATION_MS = 200;
-        static constexpr double cycleDuration = 1.6;
+        //static constexpr double cycleDuration = 1.6;
     
         mutable std::mutex state_mutex_;
         NotificationState current_state_;
