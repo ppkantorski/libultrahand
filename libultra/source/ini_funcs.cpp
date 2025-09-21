@@ -2440,7 +2440,7 @@ namespace ult {
             for (const auto& kv : section.second) {
                 fprintf(file, "%s=%s\n", kv.first.c_str(), kv.second.c_str());
             }
-            fprintf(file, "\n"); // Separate sections with a newline
+            fputc('\n', file); // Separate sections with a newline
         }
     
         fclose(file);

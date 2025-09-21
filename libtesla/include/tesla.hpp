@@ -8302,8 +8302,8 @@ namespace tsl {
              * @param onValue Value drawn if the toggle is on
              * @param offValue Value drawn if the toggle is off
              */
-            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF, bool isMini = false)
-                : ListItem(text, "", isMini), m_state(initialState), m_onValue(onValue), m_offValue(offValue) {
+            ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF, bool isMini = false, bool delayedHandle=false)
+                : ListItem(text, "", isMini), m_state(initialState), m_onValue(onValue), m_offValue(offValue), m_delayedHandle(delayedHandle) {
                 this->setState(this->m_state);
             }
             
@@ -8322,9 +8322,9 @@ namespace tsl {
                     
                     this->m_state = !this->m_state;
                     
-                    #if !IS_LAUNCHER_DIRECTIVE
-                    this->setState(this->m_state);
-                    #endif
+                    if (!m_delayedHandle)
+                        this->setState(this->m_state);
+                    
                     this->m_stateChangedListener(this->m_state);
                     
                     
@@ -8386,7 +8386,9 @@ namespace tsl {
 
         protected:
             bool m_state = true;
+
             std::string m_onValue, m_offValue;
+            bool m_delayedHandle = false;
             
             std::function<void(bool)> m_stateChangedListener = [](bool){};
 
