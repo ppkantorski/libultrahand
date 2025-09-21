@@ -102,6 +102,6 @@ namespace ult {
     bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey);
 
 
-    void pushNotificationJson(const std::string& text, size_t fontSize=28);
+    void pushNotificationJson(const std::string& appID, const std::string& text, size_t fontSize=28);
 }
 #endif

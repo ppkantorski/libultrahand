@@ -34,7 +34,10 @@ namespace ult {
             
             FILE* file = fopen(logFilePath.c_str(), "a"); // Open the file in append mode
             if (file != nullptr) {
-                fprintf(file, "%s%s\n", timestamp, message.c_str());
+                //fprintf(file, "%s%s\n", timestamp, message.c_str());
+                fputs(timestamp, file);
+                fputs(message.c_str(), file);
+                fputc('\n', file);
                 fclose(file); // Close the file after writing
             } else {
                 // Handle error when file opening fails (if necessary)

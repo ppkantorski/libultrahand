@@ -21,6 +21,8 @@
 #include <mutex>
 
 namespace ult {
+    const std::string UNABLE_TO_OPEN_FILE = "Unable to open file: ";
+
     // Thread-safe file access mutex
     static std::mutex file_access_mutex;
     
@@ -92,7 +94,7 @@ namespace ult {
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return lines;
         }
@@ -126,7 +128,7 @@ namespace ult {
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return lines;
         }
@@ -161,7 +163,7 @@ namespace ult {
         FILE* file = fopen(listPath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + listPath);
+            logMessage(UNABLE_TO_OPEN_FILE + listPath);
             #endif
             return "";
         }
@@ -200,7 +202,7 @@ namespace ult {
         std::ifstream file(listPath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + listPath);
+            logMessage(UNABLE_TO_OPEN_FILE + listPath);
             #endif
             return "";
         }
@@ -288,7 +290,7 @@ namespace ult {
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return lines;
         }
@@ -310,7 +312,7 @@ namespace ult {
         std::ifstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Unable to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return lines;
         }
@@ -335,7 +337,7 @@ namespace ult {
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return;
         }
@@ -349,7 +351,7 @@ namespace ult {
         std::ofstream file(filePath);
         if (!file.is_open()) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to open file: " + filePath);
+            logMessage(UNABLE_TO_OPEN_FILE + filePath);
             #endif
             return;
         }
@@ -466,7 +468,7 @@ namespace ult {
             FILE* file = fopen(filePath.c_str(), "r");
             if (!file) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Unable to open file: " + filePath);
+                logMessage(UNABLE_TO_OPEN_FILE + filePath);
                 #endif
                 continue;
             }
@@ -490,7 +492,7 @@ namespace ult {
             std::ifstream file(filePath);
             if (!file.is_open()) {
                 #if USING_LOGGING_DIRECTIVE
-                logMessage("Unable to open file: " + filePath);
+                logMessage(UNABLE_TO_OPEN_FILE + filePath);
                 #endif
                 continue;
             }

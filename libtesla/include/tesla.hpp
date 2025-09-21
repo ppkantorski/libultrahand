@@ -8318,10 +8318,15 @@ namespace tsl {
 
                 // Handle KEY_A for toggling
                 if (keys & KEY_A) {
+
+                    
                     this->m_state = !this->m_state;
                     
+                    #if !IS_LAUNCHER_DIRECTIVE
                     this->setState(this->m_state);
+                    #endif
                     this->m_stateChangedListener(this->m_state);
+                    
                     
                     return ListItem::onClick(keys);
                 }
@@ -8378,6 +8383,7 @@ namespace tsl {
             }
             #endif
             
+
         protected:
             bool m_state = true;
             std::string m_onValue, m_offValue;
