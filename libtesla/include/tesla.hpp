@@ -174,6 +174,7 @@ inline std::atomic<bool> jumpItemExactMatch{true};
 inline std::atomic<bool> s_onLeftPage{false};
 inline std::atomic<bool> s_onRightPage{false};
 inline bool screenshotsAreDisabled = false;
+inline std::atomic<bool> screenshotsAreForceDisabled{false};
 
 //#if IS_LAUNCHER_DIRECTIVE
 inline bool hideHidden = false;
@@ -3648,19 +3649,23 @@ namespace tsl {
             /**
              * @brief Adds the layer from screenshot and recording stacks
              */
-            inline void addScreenshotStacks() {
+            inline void addScreenshotStacks(bool forceDisable = true) {
                 ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot));
                 ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording));
                 screenshotsAreDisabled = false;
+                if (forceDisable)
+                    screenshotsAreForceDisabled.store(false, std::memory_order_release);
             }
 
             /**
              * @brief Removes the layer from screenshot and recording stacks
              */
-            inline void removeScreenshotStacks() {
+            inline void removeScreenshotStacks(bool forceDisable = true) {
                 ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot));
                 ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording));
                 screenshotsAreDisabled = true;
+                if (forceDisable)
+                    screenshotsAreForceDisabled.store(true, std::memory_order_release);
             }
             
         private:
@@ -11072,8 +11077,8 @@ namespace tsl {
             // Handle main UI rendering
             if (!promptOnly) {
                 // Screenshot management - thread-safe
-                if (!screenshotStacksAdded.load(std::memory_order_acquire)) {
-                    renderer.addScreenshotStacks();
+                if (!screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
+                    renderer.addScreenshotStacks(false);
                     screenshotStacksAdded.store(true, std::memory_order_release);
                 }
         
@@ -11085,8 +11090,8 @@ namespace tsl {
                 notificationCacheNeedsClearing.store(true, std::memory_order_release);
             } else {
                 // Prompt-only mode - clean up screenshots
-                if (screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreDisabled) {
-                    renderer.removeScreenshotStacks();
+                if (screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreDisabled && !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
+                    renderer.removeScreenshotStacks(false);
                     screenshotStacksAdded.store(false, std::memory_order_release);
                 }
                 renderer.clearScreen();
