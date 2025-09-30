@@ -9724,7 +9724,7 @@ namespace tsl {
 
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
 
-                if (!this->m_focused) {
+                if (!this->m_focused && !(visuallyUnlocked && touchInSliderBounds)) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a(visuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
@@ -11313,7 +11313,7 @@ namespace tsl {
             
 
         
-            if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll || oldTouchEvent == elm::TouchEvent::Hold)) {
+            if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
                 if (!isNavigatingBackwards.load(std::memory_order_acquire) &&
                     !ult::shortTouchAndRelease.load(std::memory_order_acquire) &&
                     !ult::longTouchAndRelease.load(std::memory_order_acquire) &&
@@ -11322,7 +11322,7 @@ namespace tsl {
                     !ult::simulatedNextPage.load(std::memory_order_acquire)
                     && topElement) {
 
-                    if (oldTouchEvent == elm::TouchEvent::Scroll || oldTouchEvent == elm::TouchEvent::Hold) {
+                    if (oldTouchEvent == elm::TouchEvent::Scroll) {
                         hasScrolled = true;
                     }
                     if (!hasScrolled) {
