@@ -8770,28 +8770,94 @@ namespace tsl {
                 return this;
             }
 
+
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
+                m_prevKeysHeld = keysHeld;
+                
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 elapsed_ns = currentTime_ns - m_lastUpdate_ns;
+                
+                // Handle key release
+                if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
+                    m_holding = false;
+                    m_wasLastHeld = false;
+                    return true;
+                }
+                
+                // Ignore simultaneous left+right
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                     return true;
-
-                if (keysHeld & KEY_LEFT) {
+                
+                // Handle initial key press - single tick
+                if (keysDown & KEY_LEFT) {
                     if (this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
+                        m_holding = true;
+                        m_wasLastHeld = false;
+                        m_holdStartTime_ns = currentTime_ns;
+                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
-
-                if (keysHeld & KEY_RIGHT) {
+                
+                if (keysDown & KEY_RIGHT) {
                     if (this->m_value < 100) {
                         this->m_value++;
                         this->m_valueChangedListener(this->m_value);
+                        m_holding = true;
+                        m_wasLastHeld = false;
+                        m_holdStartTime_ns = currentTime_ns;
+                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
-
+                
+                // Handle continued holding (after initial press)
+                if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
+                    const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
+                    
+                    // Initial delay before repeating starts (300ms)
+                    static constexpr u64 initialDelay_ns = 300000000ULL;
+                    
+                    // If we haven't passed the initial delay, don't repeat yet
+                    if (holdDuration_ns < initialDelay_ns) {
+                        return true;
+                    }
+                    
+                    // Calculate interval with acceleration
+                    static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
+                    static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
+                    static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2 seconds
+                    
+                    const u64 holdDurationAfterDelay_ns = holdDuration_ns - initialDelay_ns;
+                    const float t = std::min(1.0f, static_cast<float>(holdDurationAfterDelay_ns) / static_cast<float>(transitionPoint_ns));
+                    const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
+                    
+                    if (elapsed_ns >= currentInterval_ns) {
+                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
+                            this->m_value--;
+                            this->m_valueChangedListener(this->m_value);
+                            m_lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                        
+                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                            this->m_value++;
+                            this->m_valueChangedListener(this->m_value);
+                            m_lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                    }
+                    return true;
+                }
+                
                 return false;
             }
+
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
@@ -9049,6 +9115,12 @@ namespace tsl {
             std::string m_label;
             std::string m_units;
             std::string m_selection; // Used for named step trackbars
+
+            u64 m_prevKeysHeld = 0;
+            bool m_holding = false;
+            bool m_wasLastHeld = false;
+            u64 m_holdStartTime_ns = 0;
+            u64 m_lastUpdate_ns = 0;
         };
 
 
@@ -9434,9 +9506,9 @@ namespace tsl {
                 
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
-        
+            
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
-        
+            
                 if ((keysHeld & KEY_R)) {
                     if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
                         this->shakeHighlight(FocusDirection::Up);
@@ -9450,7 +9522,7 @@ namespace tsl {
                     }
                     return true;
                 }
-        
+            
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
@@ -9462,96 +9534,107 @@ namespace tsl {
                     }
                     return true;
                 }
-        
+            
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
                         m_scriptKeyListener();
                     }
                     return true;
                 }
-        
+            
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
-                    if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) ||
-                        (m_wasLastHeld && !((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT)))) {
-        
-                        m_wasLastHeld = false;
-                        updateAndExecute();
-                        lastUpdate_ns = armTicksToNs(armGetSystemTick()); 
-        
-                        m_holding = false;
-                        return true;
+                    // Handle key release
+                    if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT))) {
+                        // If we were holding and repeating, just stop
+                        if (m_wasLastHeld) {
+                            m_wasLastHeld = false;
+                            m_holding = false;
+                            updateAndExecute();
+                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                            return true;
+                        }
+                        // If it was a quick tap (no repeat happened), handle the single tick
+                        else if (m_holding) {
+                            m_holding = false;
+                            updateAndExecute();
+                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                            return true;
+                        }
                     }
                     
+                    // Ignore simultaneous left+right
                     if (keysDown & KEY_LEFT && keysDown & KEY_RIGHT)
                         return true;
-        
-                    if (keysDown & KEY_LEFT) {
-                        if (this->m_value > m_minValue) {
+                    if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
+                        return true;
+            
+                    // Handle initial key press
+                    if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
+                        // Start tracking the hold
+                        m_holding = true;
+                        m_wasLastHeld = false;
+                        m_holdStartTime_ns = armTicksToNs(armGetSystemTick());
+                        lastUpdate_ns = currentTime_ns;
+                        
+                        // Perform the initial single tick
+                        if (keysDown & KEY_LEFT && this->m_value > m_minValue) {
                             this->m_index--;
                             this->m_value--;
                             this->m_valueChangedListener(this->m_value);
                             updateAndExecute(false);
-                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
-                            return true;
-                        }
-                    }
-                    
-                    if (keysDown & KEY_RIGHT) {
-                        if (this->m_value < m_maxValue) {
+                        } else if (keysDown & KEY_RIGHT && this->m_value < m_maxValue) {
                             this->m_index++;
                             this->m_value++;
                             this->m_valueChangedListener(this->m_value);
                             updateAndExecute(false);
-                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                        }
+                        return true;
+                    }
+                    
+                    // Handle continued holding (after initial press)
+                    if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
+                        const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
+            
+                        // Initial delay before repeating starts (e.g., 300ms)
+                        static constexpr u64 initialDelay_ns = 300000000ULL;
+                        
+                        // If we haven't passed the initial delay, don't repeat yet
+                        if (holdDuration_ns < initialDelay_ns) {
                             return true;
                         }
-                    }
-        
-                    if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
-                        return true;
-                    
-                    if (((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
-                        if (!m_holding) {
-                            m_holding = true;
-                            m_holdStartTime_ns = armTicksToNs(armGetSystemTick());
-                        }
+            
+                        // Calculate interval with acceleration
+                        static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
+                        static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
+                        static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2 seconds
                         
-                        const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
-        
-                        static constexpr u64 initialInterval_ns = 67000000ULL;
-                        static constexpr u64 shortInterval_ns = 10000000ULL;
-                        static constexpr u64 transitionPoint_ns = 2000000000ULL;
-                        
-                        const float t = std::min(1.0f, static_cast<float>(holdDuration_ns) / static_cast<float>(transitionPoint_ns));
+                        const u64 holdDurationAfterDelay_ns = holdDuration_ns - initialDelay_ns;
+                        const float t = std::min(1.0f, static_cast<float>(holdDurationAfterDelay_ns) / static_cast<float>(transitionPoint_ns));
                         const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
                         
                         if (elapsed_ns >= currentInterval_ns) {
-                            if (keysHeld & KEY_LEFT) {
-                                if (this->m_value > m_minValue) {
-                                    this->m_index--;
-                                    this->m_value--;
-                                    this->m_valueChangedListener(this->m_value);
-                                    if (m_executeOnEveryTick) {
-                                        updateAndExecute(false);
-                                    }
-                                    lastUpdate_ns = armTicksToNs(armGetSystemTick());
-                                    m_wasLastHeld = true;
-                                    return true;
+                            if (keysHeld & KEY_LEFT && this->m_value > m_minValue) {
+                                this->m_index--;
+                                this->m_value--;
+                                this->m_valueChangedListener(this->m_value);
+                                if (m_executeOnEveryTick) {
+                                    updateAndExecute(false);
                                 }
+                                lastUpdate_ns = currentTime_ns;
+                                m_wasLastHeld = true;
+                                return true;
                             }
                             
-                            if (keysHeld & KEY_RIGHT) {
-                                if (this->m_value < m_maxValue) {
-                                    this->m_index++;
-                                    this->m_value++;
-                                    this->m_valueChangedListener(this->m_value);
-                                    if (m_executeOnEveryTick) {
-                                        updateAndExecute(false);
-                                    }
-                                    lastUpdate_ns = armTicksToNs(armGetSystemTick());
-                                    m_wasLastHeld = true;
-                                    return true;
+                            if (keysHeld & KEY_RIGHT && this->m_value < m_maxValue) {
+                                this->m_index++;
+                                this->m_value++;
+                                this->m_valueChangedListener(this->m_value);
+                                if (m_executeOnEveryTick) {
+                                    updateAndExecute(false);
                                 }
+                                lastUpdate_ns = currentTime_ns;
+                                m_wasLastHeld = true;
+                                return true;
                             }
                         }
                     } else {
@@ -9561,7 +9644,7 @@ namespace tsl {
                 
                 return false;
             }
-            
+
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
