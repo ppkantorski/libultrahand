@@ -8932,6 +8932,17 @@ namespace tsl {
                     handlePos = (width) * (this->m_value) / (100);
                 }
 
+
+                if (touchInSliderBounds) {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
+                    }
+                }
+
+
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
 
@@ -9698,11 +9709,21 @@ namespace tsl {
                 const s32 yPos = this->getY() + 40 + 16 - 1;
                 const s32 width = this->getWidth() - 95;
         
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
                 
                 const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
                 const bool visuallyUnlocked = (m_unlockedTrackbar && !m_keyRHeld) || touchInSliderBounds;
                 
+                if (visuallyUnlocked && touchInSliderBounds) {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
+                    }
+                }
+
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
@@ -11292,7 +11313,7 @@ namespace tsl {
             
 
         
-            if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
+            if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll || oldTouchEvent == elm::TouchEvent::Hold)) {
                 if (!isNavigatingBackwards.load(std::memory_order_acquire) &&
                     !ult::shortTouchAndRelease.load(std::memory_order_acquire) &&
                     !ult::longTouchAndRelease.load(std::memory_order_acquire) &&
@@ -11301,7 +11322,7 @@ namespace tsl {
                     !ult::simulatedNextPage.load(std::memory_order_acquire)
                     && topElement) {
 
-                    if (oldTouchEvent == elm::TouchEvent::Scroll) {
+                    if (oldTouchEvent == elm::TouchEvent::Scroll || oldTouchEvent == elm::TouchEvent::Hold) {
                         hasScrolled = true;
                     }
                     if (!hasScrolled) {
