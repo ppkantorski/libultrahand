@@ -8770,94 +8770,28 @@ namespace tsl {
                 return this;
             }
 
-
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
-                m_prevKeysHeld = keysHeld;
-                
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const u64 elapsed_ns = currentTime_ns - m_lastUpdate_ns;
-                
-                // Handle key release
-                if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
-                    m_holding = false;
-                    m_wasLastHeld = false;
-                    return true;
-                }
-                
-                // Ignore simultaneous left+right
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                     return true;
-                
-                // Handle initial key press - single tick
-                if (keysDown & KEY_LEFT) {
+
+                if (keysHeld & KEY_LEFT) {
                     if (this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
-                        m_holding = true;
-                        m_wasLastHeld = false;
-                        m_holdStartTime_ns = currentTime_ns;
-                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
-                
-                if (keysDown & KEY_RIGHT) {
+
+                if (keysHeld & KEY_RIGHT) {
                     if (this->m_value < 100) {
                         this->m_value++;
                         this->m_valueChangedListener(this->m_value);
-                        m_holding = true;
-                        m_wasLastHeld = false;
-                        m_holdStartTime_ns = currentTime_ns;
-                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
-                
-                // Handle continued holding (after initial press)
-                if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
-                    const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
-                    
-                    // Initial delay before repeating starts (300ms)
-                    static constexpr u64 initialDelay_ns = 300000000ULL;
-                    
-                    // If we haven't passed the initial delay, don't repeat yet
-                    if (holdDuration_ns < initialDelay_ns) {
-                        return true;
-                    }
-                    
-                    // Calculate interval with acceleration
-                    static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
-                    static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
-                    static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2 seconds
-                    
-                    const u64 holdDurationAfterDelay_ns = holdDuration_ns - initialDelay_ns;
-                    const float t = std::min(1.0f, static_cast<float>(holdDurationAfterDelay_ns) / static_cast<float>(transitionPoint_ns));
-                    const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
-                    
-                    if (elapsed_ns >= currentInterval_ns) {
-                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
-                            this->m_value--;
-                            this->m_valueChangedListener(this->m_value);
-                            m_lastUpdate_ns = currentTime_ns;
-                            m_wasLastHeld = true;
-                            return true;
-                        }
-                        
-                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
-                            this->m_value++;
-                            this->m_valueChangedListener(this->m_value);
-                            m_lastUpdate_ns = currentTime_ns;
-                            m_wasLastHeld = true;
-                            return true;
-                        }
-                    }
-                    return true;
-                }
-                
+
                 return false;
             }
-
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
@@ -8913,6 +8847,14 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 static float lastBottomBound;
                 
+                if (touchInSliderBounds) {
+                    m_drawFrameless = true;
+                    drawHighlight(renderer);
+                } else {
+                    m_drawFrameless = false;
+                }
+
+
                 s32 xPos = this->getX() + 59;
                 s32 yPos = this->getY() + 40 + 16 - 1;
                 s32 width = this->getWidth() - 95;
@@ -8931,17 +8873,6 @@ namespace tsl {
                     width -= iconOffset;
                     handlePos = (width) * (this->m_value) / (100);
                 }
-
-
-                if (touchInSliderBounds) {
-                    if (ult::useSelectionBG) {
-                        if (ult::expandedMemory)
-                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
-                        else
-                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
-                    }
-                }
-
 
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
@@ -9065,19 +8996,29 @@ namespace tsl {
                         y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
-            
-                if (ult::useSelectionBG) {
-                    if (ult::expandedMemory)
-                        renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
-                    else
-                        renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
-
-
-                    //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
-                }
-            
-                renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
                 
+                if (!m_drawFrameless) {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
+
+
+                        //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
+                    }
+                    
+                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                } else {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
+                    }
+                }
+
+
                 if (!ult::onTrackBar.load(std::memory_order_acquire))
                     ult::onTrackBar.store(true, std::memory_order_release);
             }
@@ -9126,12 +9067,7 @@ namespace tsl {
             std::string m_label;
             std::string m_units;
             std::string m_selection; // Used for named step trackbars
-
-            u64 m_prevKeysHeld = 0;
-            bool m_holding = false;
-            bool m_wasLastHeld = false;
-            u64 m_holdStartTime_ns = 0;
-            u64 m_lastUpdate_ns = 0;
+            bool m_drawFrameless = false;
         };
 
 
@@ -9709,24 +9645,22 @@ namespace tsl {
                 const s32 yPos = this->getY() + 40 + 16 - 1;
                 const s32 width = this->getWidth() - 95;
         
-                
                 const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
                 const bool visuallyUnlocked = (m_unlockedTrackbar && !m_keyRHeld) || touchInSliderBounds;
-                
+
                 if (visuallyUnlocked && touchInSliderBounds) {
-                    if (ult::useSelectionBG) {
-                        if (ult::expandedMemory)
-                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
-                        else
-                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
-                    }
+                    m_drawFrameless = true;
+                    drawHighlight(renderer);
+                } else {
+                    m_drawFrameless = false;
                 }
 
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
-
-                if (!this->m_focused && !(visuallyUnlocked && touchInSliderBounds)) {
+                
+                
+                if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(!m_drawFrameless ? trackBarSliderBorderColor : highlightColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a(visuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
@@ -9853,14 +9787,25 @@ namespace tsl {
                     }
                 }
             
-                if (ult::useSelectionBG) {
-                    if (ult::expandedMemory)
-                        renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
-                    else
-                        renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
+                
+                if (!m_drawFrameless) {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
+                    }
+
+                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                } else {
+                    if (ult::useSelectionBG) {
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
+                        else
+                            renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
+                    }
+
                 }
-            
-                renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
                 
                 ult::onTrackBar.store(true, std::memory_order_release);
             
@@ -9942,6 +9887,7 @@ namespace tsl {
             u64 m_holdStartTime_ns = 0;
             u64 m_prevKeysHeld = 0;
             bool m_wasLastHeld = false;
+            bool m_drawFrameless = false;
         };
         
         
