@@ -8841,7 +8841,7 @@ namespace tsl {
             }
 
             virtual void draw(gfx::Renderer *renderer) override {
-                static float lastBottomBound;
+                //static float lastBottomBound;
                 
                 if (touchInSliderBounds) {
                     m_drawFrameless = true;
@@ -8875,7 +8875,7 @@ namespace tsl {
 
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
@@ -9287,7 +9287,7 @@ namespace tsl {
             
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
