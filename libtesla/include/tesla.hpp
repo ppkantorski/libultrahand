@@ -8802,35 +8802,31 @@ namespace tsl {
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
-
                 if (event == TouchEvent::Release) {
-                    this->m_interactionLocked = false;
                     touchInSliderBounds = false;
                     return false;
                 }
-
-                if (!this->m_interactionLocked && (touchInCircle || touchInSliderBounds)) {
+            
+                if (touchInCircle || touchInSliderBounds) {
                     touchInSliderBounds = true;
-                    if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
-                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
-
-                        if (newValue < 0) {
-                            newValue = 0;
-                        } else if (newValue > 100) {
-                            newValue = 100;
-                        }
-
-                        if (newValue != this->m_value) {
-                            this->m_value = newValue;
-                            this->m_valueChangedListener(this->getProgress());
-                        }
-
-                        return true;
+                    //if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
+                    s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+                    
+                    if (newValue < 0) {
+                        newValue = 0;
+                    } else if (newValue > 100) {
+                        newValue = 100;
                     }
+        
+                    if (newValue != this->m_value) {
+                        this->m_value = newValue;
+                        this->m_valueChangedListener(this->getProgress());
+                    }
+        
+                    return true;
+                    //}
                 }
-                else
-                    this->m_interactionLocked = true;
-
+            
                 return false;
             }
 
@@ -8930,10 +8926,10 @@ namespace tsl {
                 //renderer->drawCircle(this->getX() + 62 + handlePos, this->getY() + 42, 18, false, a(tsl::style::color::ColorFrame));
 
 
-                if (lastBottomBound != this->getTopBound())
+                if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
-                lastBottomBound = this->getBottomBound();
+                m_lastBottomBound = this->getBottomBound();
             }
 
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -9068,6 +9064,8 @@ namespace tsl {
             std::string m_units;
             std::string m_selection; // Used for named step trackbars
             bool m_drawFrameless = false;
+
+            float m_lastBottomBound;
         };
 
 
@@ -9122,27 +9120,41 @@ namespace tsl {
             }
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                if (this->inBounds(initialX, initialY)) {
-                    if (currY > this->getTopBound() && currY < this->getBottomBound()) {
-                        s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
-
-                        if (newValue < 0) {
-                            newValue = 0;
-                        } else if (newValue > 100) {
-                            newValue = 100;
-                        } else {
-                            newValue = std::round(newValue / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
-                        }
-
-                        if (newValue != this->m_value) {
-                            this->m_value = newValue;
-                            this->m_valueChangedListener(this->getProgress());
-                        }
-
-                        return true;
-                    }
+                const u16 trackBarWidth = this->getWidth() - 95;
+                const u16 handlePos = (trackBarWidth * this->m_value) / 100;
+                const s32 circleCenterX = this->getX() + 59 + handlePos;
+                const s32 circleCenterY = this->getY() + 40 + 16 - 1;
+                static constexpr s32 circleRadius = 16;
+                
+                const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                
+                if (event == TouchEvent::Release) {
+                    touchInSliderBounds = false;
+                    return false;
                 }
-
+            
+                if (touchInCircle || touchInSliderBounds) {
+                    touchInSliderBounds = true;
+                    //if (currY > this->getTopBound() && currY < this->getBottomBound()) {
+                    s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+        
+                    if (newValue < 0) {
+                        newValue = 0;
+                    } else if (newValue > 100) {
+                        newValue = 100;
+                    } else {
+                        newValue = std::round(newValue / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                    }
+        
+                    if (newValue != this->m_value) {
+                        this->m_value = newValue;
+                        this->m_valueChangedListener(this->getProgress());
+                    }
+        
+                    return true;
+                    //}
+                }
+            
                 return false;
             }
 
@@ -9244,59 +9256,79 @@ namespace tsl {
             }
 
             virtual void draw(gfx::Renderer *renderer) override {
-                // TrackBar width excluding the handle areas
-                u16 trackBarWidth = this->getWidth() - 95;
-                
-                // Base X and Y coordinates
-                u16 baseX = this->getX() + 59;
-                const u16 baseY = this->getY() + 44; // 50 - 3
-                
-                s32 iconOffset = 0;
-                
-                if (!m_useV2Style && m_icon[0] != '\0') {
-                    s32 iconWidth = 23;//tsl::gfx::calculateStringWidth(m_icon, 23);
-                    iconOffset = 14 + iconWidth;
-                    baseX += iconOffset;
-                    trackBarWidth -= iconOffset;
+                if (touchInSliderBounds) {
+                    m_drawFrameless = true;
+                    drawHighlight(renderer);
+                } else {
+                    m_drawFrameless = false;
                 }
-                
-                // Calculate the spacing between each step
-                const float stepSpacing = static_cast<float>(trackBarWidth) / (this->m_numSteps - 1);
-                
-                // Calculate the halfway point index
-                const u8 halfNumSteps = (this->m_numSteps - 1) / 2;
-                // Draw step rectangles
-                u16 stepX;
-                for (u8 i = 0; i < this->m_numSteps; i++) {
-                    stepX = baseX + std::round(i * stepSpacing);
-                    
-                    // Subtract 1 from the X position for steps on the right side of the center
-                    if (i > halfNumSteps) {
-                        stepX -= 1;
-                    }
-                    // Adjust the last step to avoid overshooting
-                    if (i == this->m_numSteps - 1) {
-                        stepX = baseX + trackBarWidth -1;
-                    }
             
-                    renderer->drawRect(stepX, baseY, 1, 8, a(trackBarEmptyColor));
+                s32 xPos = this->getX() + 59;
+                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 width = this->getWidth() - 95;
+                u16 handlePos = width * (this->m_value) / (100);
+            
+                if (!m_usingNamedStepTrackbar) {
+                    yPos -= 11;
                 }
-                
-                const u8 currentDescIndex = std::clamp(this->m_value / (100 / (this->m_numSteps - 1)), 0, this->m_numSteps - 1);
-                
-                // Update selection for current index
-                if (currentDescIndex < m_stepDescriptions.size()) {
-                    this->m_selection = m_stepDescriptions[currentDescIndex];
+            
+                s32 iconOffset = 0;
+            
+                if (!m_useV2Style && m_icon[0] != '\0') {
+                    s32 iconWidth = 23;
+                    iconOffset = 14 + iconWidth;
+                    xPos += iconOffset;
+                    width -= iconOffset;
+                    handlePos = (width) * (this->m_value) / (100);
                 }
-                
-                // Only draw the step description above the bar if not using V2 style (V2 style shows it on the right)
-                if (!m_useV2Style) {
-                    const auto descWidth = renderer->getTextDimensions(this->m_stepDescriptions[currentDescIndex].c_str(), false, 15).first;
-                    renderer->drawString(this->m_stepDescriptions[currentDescIndex].c_str(), false, ((baseX +1) + (trackBarWidth) / 2) - (descWidth / 2), this->getY() + 20 + 6, 15, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
+            
+                // Draw track bar background
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+            
+                if (!this->m_focused) {
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                } else {
+                    touchInSliderBounds = false;
+                    if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
+                        ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
+            
+                // Draw icon (original style) or label + value (V2 style)
+                if (m_useV2Style) {
+                    // V2 Style: Draw label and value
+                    std::string labelPart = this->m_label;
+                    ult::removeTag(labelPart);
                 
-                // Draw the parent trackbar
-                StepTrackBar::draw(renderer);
+                    std::string valuePart;
+                    if (!m_usingNamedStepTrackbar) {
+                        valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? 
+                                   ult::to_string(this->m_value) + this->m_units : 
+                                   ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                    } else {
+                        valuePart = this->m_selection;
+                    }
+                
+                    const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
+                
+                    renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
+                                       ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+            
+                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
+                } else {
+                    // Original Style: Draw icon
+                    if (m_icon[0] != '\0')
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
+                }
+            
+                if (m_lastBottomBound != this->getTopBound())
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                m_lastBottomBound = this->getBottomBound();
             }
 
         protected:
