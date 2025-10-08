@@ -48,6 +48,27 @@ namespace ult {
     }
 
 
+    //bool canConvertToInt(const std::string& str) {
+    //    if (str.empty()) {
+    //        return false;
+    //    }
+    //    
+    //    size_t start = 0;
+    //    if (str[0] == '-' || str[0] == '+') {
+    //        if (str.length() == 1) return false;
+    //        start = 1;
+    //    }
+    //    
+    //    for (size_t i = start; i < str.length(); ++i) {
+    //        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+    //            return false;
+    //        }
+    //    }
+    //    
+    //    return true;
+    //}
+
+
     // Mimics std::getline() with a delimiter
     bool StringStream::getline(std::string& output, char delimiter) {
         if (position >= data.size()) {
@@ -371,14 +392,22 @@ namespace ult {
     
     // Helper function to check if a string is a valid integer
     bool isValidNumber(const std::string& str) {
-        if (str.empty() || ((str[0] != '-') && !std::isdigit(str[0])) || (str[0] == '-' && str.size() == 1)) {
+        if (str.empty()) {
             return false;
         }
-        for (size_t i = 1; i < str.size(); ++i) {
-            if (!std::isdigit(str[i])) {
+        
+        size_t start = 0;
+        if (str[0] == '-' || str[0] == '+') {
+            if (str.length() == 1) return false;
+            start = 1;
+        }
+        
+        for (size_t i = start; i < str.length(); ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
                 return false;
             }
         }
+        
         return true;
     }
     

@@ -563,7 +563,7 @@ namespace ult {
     float calculateAmplitude(float x, float peakDurationFactor = 0.25f);
             
     
-    
+    extern std::atomic<bool> refreshWallpaperNow;
     extern std::atomic<bool> refreshWallpaper;
     extern std::vector<u8> wallpaperData;
     extern std::atomic<bool> inPlot;

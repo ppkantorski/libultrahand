@@ -1240,7 +1240,7 @@ namespace ult {
     }
             
     
-    
+    std::atomic<bool> refreshWallpaperNow(false);
     std::atomic<bool> refreshWallpaper(false);
     std::vector<u8> wallpaperData; 
     std::atomic<bool> inPlot(false);
