@@ -574,10 +574,10 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
-    void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
+    void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720, bool reducedMemory=false);
     void loadWallpaperFileWhenSafe();
 
-    void reloadWallpaper();
+    void reloadWallpaper(bool reducedMemory=false);
     
     // Global variables for FPS calculation
     //extern double lastTimeCount;
