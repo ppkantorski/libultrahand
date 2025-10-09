@@ -1250,7 +1250,7 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
-    void loadWallpaperFile(const std::string& filePath, s32 width, s32 height, bool reducedMemory) {
+    void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
         const size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
         const size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
         
@@ -1269,13 +1269,13 @@ namespace ult {
             }
     
             std::vector<uint8_t> buffer;
-            if (reducedMemory) {
-                // Reuse wallpaperData to avoid double allocation
-                buffer.swap(wallpaperData);
-                buffer.resize(originalDataSize);
-            } else {
-                buffer.resize(originalDataSize);
-            }
+            //if (reducedMemory) {
+            //    // Reuse wallpaperData to avoid double allocation
+            //    buffer.swap(wallpaperData);
+            //    buffer.resize(originalDataSize);
+            //} else {
+            buffer.resize(originalDataSize);
+            //}
 
             const size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
             fclose(file);
@@ -1293,12 +1293,12 @@ namespace ult {
             }
     
             std::vector<uint8_t> buffer;
-            if (reducedMemory) {
-                buffer.swap(wallpaperData);
-                buffer.resize(originalDataSize);
-            } else {
-                buffer.resize(originalDataSize);
-            }
+            //if (reducedMemory) {
+            //    buffer.swap(wallpaperData);
+            //    buffer.resize(originalDataSize);
+            //} else {
+            buffer.resize(originalDataSize);
+            //}
 
             file.read(reinterpret_cast<char*>(buffer.data()), originalDataSize);
             if (!file) {
@@ -1308,52 +1308,52 @@ namespace ult {
         #endif
     
         // Compress RGBA8888 to RGBA4444
-        if (reducedMemory) {
-            // In-place compression to save memory
-            size_t writeIndex = 0;
-            for (size_t i = 0; i < originalDataSize; i += 8, writeIndex += 4) {
-                uint8_t r1 = buffer[i] >> 4;
-                uint8_t g1 = buffer[i + 1] >> 4;
-                uint8_t b1 = buffer[i + 2] >> 4;
-                uint8_t a1 = buffer[i + 3] >> 4;
-    
-                uint8_t r2 = buffer[i + 4] >> 4;
-                uint8_t g2 = buffer[i + 5] >> 4;
-                uint8_t b2 = buffer[i + 6] >> 4;
-                uint8_t a2 = buffer[i + 7] >> 4;
-    
-                buffer[writeIndex]     = (r1 << 4) | g1;
-                buffer[writeIndex + 1] = (b1 << 4) | a1;
-                buffer[writeIndex + 2] = (r2 << 4) | g2;
-                buffer[writeIndex + 3] = (b2 << 4) | a2;
-            }
-            buffer.resize(compressedDataSize);
-            wallpaperData.swap(buffer);
-        } else {
-            uint8_t* input = buffer.data();
-            uint8_t* output = wallpaperData.data();
-            uint8_t r1, g1, b1, a1;
-            uint8_t r2, g2, b2, a2;
-    
-            for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
-                // Read 2 RGBA pixels (8 bytes)
-                r1 = input[i] >> 4;
-                g1 = input[i + 1] >> 4;
-                b1 = input[i + 2] >> 4;
-                a1 = input[i + 3] >> 4;
-    
-                r2 = input[i + 4] >> 4;
-                g2 = input[i + 5] >> 4;
-                b2 = input[i + 6] >> 4;
-                a2 = input[i + 7] >> 4;
-    
-                // Pack them into 4 bytes (2 bytes per pixel)
-                output[j]     = (r1 << 4) | g1;
-                output[j + 1] = (b1 << 4) | a1;
-                output[j + 2] = (r2 << 4) | g2;
-                output[j + 3] = (b2 << 4) | a2;
-            }
+        //if (reducedMemory) {
+        //    // In-place compression to save memory
+        //    size_t writeIndex = 0;
+        //    for (size_t i = 0; i < originalDataSize; i += 8, writeIndex += 4) {
+        //        uint8_t r1 = buffer[i] >> 4;
+        //        uint8_t g1 = buffer[i + 1] >> 4;
+        //        uint8_t b1 = buffer[i + 2] >> 4;
+        //        uint8_t a1 = buffer[i + 3] >> 4;
+        //
+        //        uint8_t r2 = buffer[i + 4] >> 4;
+        //        uint8_t g2 = buffer[i + 5] >> 4;
+        //        uint8_t b2 = buffer[i + 6] >> 4;
+        //        uint8_t a2 = buffer[i + 7] >> 4;
+        //
+        //        buffer[writeIndex]     = (r1 << 4) | g1;
+        //        buffer[writeIndex + 1] = (b1 << 4) | a1;
+        //        buffer[writeIndex + 2] = (r2 << 4) | g2;
+        //        buffer[writeIndex + 3] = (b2 << 4) | a2;
+        //    }
+        //    buffer.resize(compressedDataSize);
+        //    wallpaperData.swap(buffer);
+        //} else {
+        uint8_t* input = buffer.data();
+        uint8_t* output = wallpaperData.data();
+        uint8_t r1, g1, b1, a1;
+        uint8_t r2, g2, b2, a2;
+        
+        for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
+            // Read 2 RGBA pixels (8 bytes)
+            r1 = input[i] >> 4;
+            g1 = input[i + 1] >> 4;
+            b1 = input[i + 2] >> 4;
+            a1 = input[i + 3] >> 4;
+            
+            r2 = input[i + 4] >> 4;
+            g2 = input[i + 5] >> 4;
+            b2 = input[i + 6] >> 4;
+            a2 = input[i + 7] >> 4;
+            
+            // Pack them into 4 bytes (2 bytes per pixel)
+            output[j]     = (r1 << 4) | g1;
+            output[j + 1] = (b1 << 4) | a1;
+            output[j + 2] = (r2 << 4) | g2;
+            output[j + 3] = (b2 << 4) | a2;
         }
+        //}
     }
 
 
@@ -1369,7 +1369,7 @@ namespace ult {
     }
 
 
-    void reloadWallpaper(bool reducedMemory) {
+    void reloadWallpaper() {
         // Signal that wallpaper is being refreshed
         refreshWallpaper.store(true, std::memory_order_release);
     
@@ -1384,7 +1384,7 @@ namespace ult {
     
         // Reload the wallpaper file
         if (isFileOrDirectory(WALLPAPER_PATH)) {
-            loadWallpaperFile(WALLPAPER_PATH, 448, 720, reducedMemory);
+            loadWallpaperFile(WALLPAPER_PATH);
         }
     
         // Signal that wallpaper has finished refreshing
