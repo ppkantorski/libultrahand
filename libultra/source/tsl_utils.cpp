@@ -191,10 +191,8 @@ namespace ult {
 
     std::string getTitleIdAsString() {
         u64 pid = 0, tid = 0;
-        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
-            return NULL_STR;
-    
-        if (R_FAILED(pmdmntGetProgramId(&tid, pid)))
+        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)) ||
+            R_FAILED(pmdmntGetProgramId(&tid, pid)))
             return NULL_STR;
     
         char tidStr[17];

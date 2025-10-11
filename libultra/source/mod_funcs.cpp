@@ -408,33 +408,33 @@ namespace ult {
     
     
     // Corrected helper function to convert values to big-endian format
-    uint32_t toBigEndian(uint32_t value) {
-        return ((value & 0x000000FF) << 24) |
-               ((value & 0x0000FF00) << 8)  |
-               ((value & 0x00FF0000) >> 8)  |
-               ((value & 0xFF000000) >> 24);
-    }
-    
-    uint16_t toBigEndian(uint16_t value) {
-        return ((value & 0x00FF) << 8) |
-               ((value & 0xFF00) >> 8);
-    }
+   //uint32_t toBigEndian(uint32_t value) {
+   //    return ((value & 0x000000FF) << 24) |
+   //           ((value & 0x0000FF00) << 8)  |
+   //           ((value & 0x00FF0000) >> 8)  |
+   //           ((value & 0xFF000000) >> 24);
+   //}
+   //
+   //uint16_t toBigEndian(uint16_t value) {
+   //    return ((value & 0x00FF) << 8) |
+   //           ((value & 0xFF00) >> 8);
+   //}
     
     // Helper function to convert a vector of bytes to a hex string for logging
     
-    std::string hexToString(const std::vector<uint8_t>& bytes) {
-        StringStream oss;  // Use your custom StringStream
-        oss.hex();  // Enable hex mode for the stream
-    
-        for (uint8_t byte : bytes) {
-            if (byte < 0x10) {
-                oss << "0";  // Append leading zero for single-digit hex values
-            }
-            oss << static_cast<int>(byte);  // Convert byte to int and then append it
-        }
-    
-        return oss.str();  // Return the final hex string
-    }
+    //std::string hexToString(const std::vector<uint8_t>& bytes) {
+    //    StringStream oss;  // Use your custom StringStream
+    //    oss.hex();  // Enable hex mode for the stream
+    //
+    //    for (uint8_t byte : bytes) {
+    //        if (byte < 0x10) {
+    //            oss << "0";  // Append leading zero for single-digit hex values
+    //        }
+    //        oss << static_cast<int>(byte);  // Convert byte to int and then append it
+    //    }
+    //
+    //    return oss.str();  // Return the final hex string
+    //}
 
 
     

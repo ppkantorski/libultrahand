@@ -83,13 +83,26 @@ namespace ult {
     bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName = "", std::string outCheatPath = "");
     
     // Corrected helper function to convert values to big-endian format
-    uint32_t toBigEndian(uint32_t value);
+    //uint32_t toBigEndian(uint32_t value);
+    //
+    //uint16_t toBigEndian(uint16_t value);
+
+    // Corrected helper function to convert values to big-endian format
+    inline uint32_t toBigEndian(uint32_t value) {
+        return ((value & 0x000000FF) << 24) |
+               ((value & 0x0000FF00) << 8)  |
+               ((value & 0x00FF0000) >> 8)  |
+               ((value & 0xFF000000) >> 24);
+    }
     
-    uint16_t toBigEndian(uint16_t value);
+    inline uint16_t toBigEndian(uint16_t value) {
+        return ((value & 0x00FF) << 8) |
+               ((value & 0xFF00) >> 8);
+    }
     
     // Helper function to convert a vector of bytes to a hex string for logging
     
-    std::string hexToString(const std::vector<uint8_t>& bytes);
+    //std::string hexToString(const std::vector<uint8_t>& bytes);
     
     
     /**
