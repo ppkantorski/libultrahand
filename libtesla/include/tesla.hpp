@@ -147,7 +147,13 @@ bool deactivateOriginalFooter = false;
 bool disableJumpTo = false;
 
 // Check for mini/micro mode flags
-bool isMiniOrMicroMode = false;
+//bool isMiniOrMicroMode = false;
+inline std::string lastMode;
+inline std::set<std::string> overlayModes = {"full", "mini", "micro", "fps_graph", "fps_counter", "game_resolutions"};
+
+bool isValidOverlayMode() {
+    return overlayModes.count(lastMode) > 0;
+}
 
 #endif
 
@@ -5296,7 +5302,7 @@ namespace tsl {
                 
                 if (FullMode == true) {
                     renderer->fillScreen(a(defaultBackgroundColor));
-                    if (!isRendering)
+                    if (lastMode.empty())
                         renderer->drawWallpaper();
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
@@ -12326,7 +12332,7 @@ namespace tsl {
                         if (resetElapsedNs >= 3'500'000'000ULL) {
                             if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
                                 #if IS_STATUS_MONITOR_DIRECTIVE
-                                if (!isMiniOrMicroMode)
+                                if (!isValidOverlayMode())
                                     hlp::requestForeground(true, false);
                                 #else
                                 hlp::requestForeground(true, false);
@@ -12838,7 +12844,7 @@ namespace tsl {
         
         #if IS_STATUS_MONITOR_DIRECTIVE
                     if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
-                        if (shData->overlayOpen && !isMiniOrMicroMode) {
+                        if (shData->overlayOpen && !isValidOverlayMode()) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
                         }
@@ -12883,7 +12889,8 @@ namespace tsl {
                             }
 
                             #if IS_STATUS_MONITOR_DIRECTIVE
-                            if (isMiniOrMicroMode) {
+                            bool inOverlayMode = isValidOverlayMode();
+                            if (inOverlayMode) {
                                 delayUpdate = true;
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
@@ -12896,7 +12903,7 @@ namespace tsl {
                             ult::disableTransparency = false;
         
                             #if IS_STATUS_MONITOR_DIRECTIVE
-                            if (isMiniOrMicroMode) {
+                            if (inOverlayMode) {
                                 isRendering = true;
                                 leventClear(&renderingStopEvent);
                                 delayUpdate = false;
@@ -13118,19 +13125,19 @@ namespace tsl {
             bool skip;
             for (u8 arg = 1; arg < argc; arg++) {
                 const char* s = argv[arg];
-    #if IS_STATUS_MONITOR_DIRECTIVE
-                if (s[0] == '-') {
-                    if (s[1] == 'm') {
-                        if (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0) {
-                            isMiniOrMicroMode = true;
-                        }
-                    } else if (s[1] == '-' && s[2] == 'm') {
-                        if (strcasecmp(s, "--miniOverlay") == 0 || strcasecmp(s, "--microOverlay") == 0) {
-                            isMiniOrMicroMode = true;
-                        }
-                    }
-                }
-    #endif
+    //#if IS_STATUS_MONITOR_DIRECTIVE
+    //            if (s[0] == '-') {
+    //                if (s[1] == 'm') {
+    //                    if (strcasecmp(s, "-mini") == 0 || strcasecmp(s, "-micro") == 0) {
+    //                        isMiniOrMicroMode = true;
+    //                    }
+    //                } else if (s[1] == '-' && s[2] == 'm') {
+    //                    if (strcasecmp(s, "--miniOverlay") == 0 || strcasecmp(s, "--microOverlay") == 0) {
+    //                        isMiniOrMicroMode = true;
+    //                    }
+    //                }
+    //            }
+    //#endif
                 skip = false;
     
                 if (arg > 1) {
@@ -13381,7 +13388,7 @@ namespace tsl {
                     shData.overlayOpen.store(true, std::memory_order_release);
     
     #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (!isMiniOrMicroMode)
+                    if (!isValidOverlayMode())
                         hlp::requestForeground(true);
     #else
                     hlp::requestForeground(true);
