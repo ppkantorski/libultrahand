@@ -21,7 +21,7 @@
 #include <mutex>
 
 namespace ult {
-    const std::string UNABLE_TO_OPEN_FILE = "Unable to open file: ";
+    static constexpr const char* UNABLE_TO_OPEN_FILE = "Unable to open file: ";
 
     // Thread-safe file access mutex
     static std::mutex file_access_mutex;

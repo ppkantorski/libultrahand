@@ -125,6 +125,8 @@ namespace ult {
 
     bool consoleIsDocked();
     
+    std::string getBuildIdAsString();
+
     std::string getTitleIdAsString();
     
     extern std::string lastTitleID;
@@ -306,6 +308,7 @@ namespace ult {
     
     extern const std::string whiteColor;
     extern const std::string blackColor;
+    extern const std::string greyColor;
 
     extern std::atomic<bool> languageWasChanged;
     

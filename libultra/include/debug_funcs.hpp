@@ -45,6 +45,7 @@ namespace ult {
      *
      * @param message The message to be logged.
      */
+    void logMessage(const char* message);
     void logMessage(const std::string& message);
     #endif
 }

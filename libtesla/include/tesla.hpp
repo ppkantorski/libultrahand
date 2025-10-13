@@ -331,13 +331,13 @@ namespace tsl {
     static Color packageTextColor = RGB888(ult::whiteColor);
     static Color ultPackageTextColor = RGB888("9ed0ff");
 
-    static Color bannerVersionTextColor = RGB888("AAAAAA");
-    static Color overlayVersionTextColor = RGB888("AAAAAA");
+    static Color bannerVersionTextColor = RGB888(ult::greyColor);
+    static Color overlayVersionTextColor = RGB888(ult::greyColor);
     static Color ultOverlayVersionTextColor = RGB888("00FFDD");
-    static Color packageVersionTextColor = RGB888("AAAAAA");
+    static Color packageVersionTextColor = RGB888(ult::greyColor);
     static Color ultPackageVersionTextColor = RGB888("00FFDD");
     static Color onTextColor = RGB888("00FFDD");
-    static Color offTextColor = RGB888("AAAAAA");
+    static Color offTextColor = RGB888(ult::greyColor);
     
     #if IS_LAUNCHER_DIRECTIVE
     static Color dynamicLogoRGB1 = RGB888("00E669");
@@ -5277,8 +5277,8 @@ namespace tsl {
 
                 if (FullMode)
                     ult::loadWallpaperFileWhenSafe();
-                else
-                    svcSleepThread(180'000); // sleep thread for initial values to auto-load
+                //else
+                //    svcSleepThread(250'000); // sleep thread for initial values to auto-load
 
                 m_isItem = false;
             }

@@ -280,69 +280,62 @@ namespace ult {
     void preprocessPath(std::string& path, const std::string& packagePath) {
         removeQuotes(path);
         
-        // In-place multiple slash removal - no temporary string creation
-        if (!path.empty()) {
-            size_t writePos = 0;
-            bool previousSlash = false;
-            
-            for (size_t i = 0; i < path.length(); ++i) {
-                if (path[i] == '/') {
-                    if (!previousSlash) {
-                        path[writePos++] = path[i];
-                    }
+        if (path.empty())
+            return;
+        
+        // In-place multiple slash removal
+        size_t writePos = 0;
+        bool previousSlash = false;
+        
+        for (size_t i = 0, len = path.length(); i < len; ++i) {
+            const char c = path[i];
+            if (c == '/') {
+                if (!previousSlash) {
+                    path[writePos++] = '/';
                     previousSlash = true;
-                } else {
-                    path[writePos++] = path[i];
-                    previousSlash = false;
                 }
+            } else {
+                path[writePos++] = c;
+                previousSlash = false;
             }
-            path.resize(writePos);
         }
+        path.resize(writePos);
     
-        // First handle "./" replacement if present
+        // Handle "./" replacement if present
         if (!packagePath.empty() && path.length() >= 2 && path[0] == '.' && path[1] == '/') {
-            // Handle "./" - replace with packagePath
             path.replace(0, 2, packagePath);
         }
         
-        size_t dotDotPos, lastSlash;
-        std::string beforeDotDot;
-
-        // Then handle any "../" sequences that may exist anywhere in the path
-        while (!path.empty()) {
-            dotDotPos = path.find("../");
-            if (dotDotPos == std::string::npos) {
-                break; // No more "../" sequences found
+        // Handle "../" sequences
+        size_t dotDotPos;
+        size_t searchEnd;
+        while ((dotDotPos = path.find("../")) != std::string::npos) {
+            // Check if there's a trailing slash before "../"
+            searchEnd = dotDotPos;
+            if (searchEnd > 0 && path[searchEnd - 1] == '/') {
+                --searchEnd;
             }
             
-            // Found "../" sequence at dotDotPos
-            beforeDotDot = path.substr(0, dotDotPos);
+            // Find the previous slash
+            const size_t lastSlash = (searchEnd > 0) ? path.rfind('/', searchEnd - 1) : std::string::npos;
             
-            // Remove trailing slash from the part before "../"
-            if (!beforeDotDot.empty() && beforeDotDot.back() == '/') {
-                beforeDotDot.pop_back();
-            }
-            
-            // Go up one level
-            lastSlash = beforeDotDot.find_last_of('/');
             if (lastSlash != std::string::npos) {
-                beforeDotDot = beforeDotDot.substr(0, lastSlash + 1);
+                // Erase from after lastSlash to after "../"
+                path.erase(lastSlash + 1, dotDotPos + 3 - lastSlash - 1);
             } else {
-                // No slash found, we're at root level
-                beforeDotDot = "/";
+                // No slash found, replace with root
+                path.erase(0, dotDotPos);
+                path.insert(0, "/");
             }
-            
-            // Replace the path up to and including this "../" with the resolved path
-            path = beforeDotDot + path.substr(dotDotPos + 3);
         }
     
-        // Direct character comparison instead of substr() for sdmc: prefix
+        // Check for sdmc: prefix
         if (path.length() < 5 || 
             path[0] != 's' || path[1] != 'd' || path[2] != 'm' || path[3] != 'c' || path[4] != ':') {
             path.insert(0, "sdmc:");
         }
     }
-
+    
     
     /**
      * @brief Preprocesses a URL string by adding "https://" prefix.
@@ -353,11 +346,16 @@ namespace ult {
      */
     void preprocessUrl(std::string& path) {
         removeQuotes(path);
-        if ((path.compare(0, 7, "http://") == 0) || (path.compare(0, 8, "https://") == 0)) {
-            return; // No need to modify the string if it already has a prefix
-        } else {
-            path = "https://" + path; // Prepend "https://"
+        
+        if (path.size() >= 7 && path[0] == 'h' && path[1] == 't' && 
+            path[2] == 't' && path[3] == 'p') {
+            if ((path.size() >= 8 && path[4] == 's' && path[5] == ':') ||
+                (path[4] == ':')) {
+                return;
+            }
         }
+        
+        path.insert(0, "https://");
     }
     
     /**

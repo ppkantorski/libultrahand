@@ -77,6 +77,14 @@ namespace ult {
         size_t keyStart, keyEnd, colonPos, valueStart, valueEnd;
         std::string key, value;
     
+        auto normalizeNewlines = [](std::string &s) {
+            size_t n = 0;
+            while ((n = s.find("\\n", n)) != std::string::npos) {
+                s.replace(n, 2, "\n");
+                n += 1;
+            }
+        };
+    
         while ((pos = content.find('"', pos)) != std::string::npos) {
             keyStart = pos + 1;
             keyEnd = content.find('"', keyStart);
@@ -91,11 +99,16 @@ namespace ult {
             if (valueStart == std::string::npos || valueEnd == std::string::npos) break;
     
             value = content.substr(valueStart + 1, valueEnd - valueStart - 1);
+    
+            // 🔹 Convert escaped newlines (\\n) into real ones
+            normalizeNewlines(key);
+            normalizeNewlines(value);
+    
             result[key] = value;
+    
             key.clear();
             value.clear();
-    
-            pos = valueEnd + 1; // Move to the next key-value pair
+            pos = valueEnd + 1; // Move to next pair
         }
     }
     
@@ -188,6 +201,55 @@ namespace ult {
     //    snprintf(titleIdStr, sizeof(titleIdStr), "%016lX", tid);
     //    return std::string(titleIdStr);
     //}
+    
+    //std::string getProcessIdAsString() {
+    //    u64 pid = 0;
+    //    if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
+    //        return NULL_STR;
+    //    
+    //    char pidStr[21];  // Max u64 is 20 digits + null terminator
+    //    snprintf(pidStr, sizeof(pidStr), "%llu", pid);
+    //    return std::string(pidStr);
+    //}
+
+    std::string getBuildIdAsString() {
+        u64 pid = 0;
+        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
+            return NULL_STR;
+        
+        Service srv;
+        if (R_FAILED(smGetService(&srv, "dmnt:cht")))
+            return NULL_STR;
+        
+        if (R_FAILED(serviceDispatch(&srv, 65003))) {
+            serviceClose(&srv);
+            return NULL_STR;
+        }
+        
+        struct {
+            u64 process_id;
+            u64 title_id;
+            struct { u64 base; u64 size; } main_nso_extents;
+            struct { u64 base; u64 size; } heap_extents;
+            struct { u64 base; u64 size; } alias_extents;
+            struct { u64 base; u64 size; } address_space_extents;
+            u8 main_nso_build_id[0x20];
+        } metadata;
+        
+        Result rc = serviceDispatchOut(&srv, 65002, metadata);
+        serviceClose(&srv);
+        
+        if (R_FAILED(rc))
+            return NULL_STR;
+        
+        u64 buildid;
+        std::memcpy(&buildid, metadata.main_nso_build_id, sizeof(u64));
+        
+        char buildIdStr[17];
+        snprintf(buildIdStr, sizeof(buildIdStr), "%016lX", __builtin_bswap64(buildid));
+        return std::string(buildIdStr);
+    }
+    
 
     std::string getTitleIdAsString() {
         u64 pid = 0, tid = 0;
@@ -372,8 +434,9 @@ namespace ult {
     }
     
     
-    CONSTEXPR_STRING std::string whiteColor = "#FFFFFF";
-    CONSTEXPR_STRING std::string blackColor = "#000000";
+    CONSTEXPR_STRING std::string whiteColor = "FFFFFF";
+    CONSTEXPR_STRING std::string blackColor = "000000";
+    CONSTEXPR_STRING std::string greyColor = "AAAAAA";
     
     std::atomic<bool> languageWasChanged{false};
 
@@ -1168,13 +1231,13 @@ namespace ult {
         {"ult_overlay_text_color", "9ed0ff"},
         {"package_text_color", whiteColor},
         {"ult_package_text_color", "9ed0ff"},
-        {"banner_version_text_color", "AAAAAA"},
-        {"overlay_version_text_color", "AAAAAA"},
+        {"banner_version_text_color", greyColor},
+        {"overlay_version_text_color", greyColor},
         {"ult_overlay_version_text_color", "00FFDD"},
-        {"package_version_text_color", "AAAAAA"},
+        {"package_version_text_color", greyColor},
         {"ult_package_version_text_color", "00FFDD"},
         {"on_text_color", "00FFDD"},
-        {"off_text_color", "AAAAAA"},
+        {"off_text_color", greyColor},
         {"invalid_text_color", "FF0000"},
         {"inprogress_text_color", "FFFF45"},
         {"selection_text_color", "9ed0ff"},
@@ -1330,26 +1393,37 @@ namespace ult {
         //} else {
         uint8_t* input = buffer.data();
         uint8_t* output = wallpaperData.data();
-        uint8_t r1, g1, b1, a1;
-        uint8_t r2, g2, b2, a2;
+        //uint8_t r1, g1, b1, a1;
+        //uint8_t r2, g2, b2, a2;
         
-        for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
-            // Read 2 RGBA pixels (8 bytes)
-            r1 = input[i] >> 4;
-            g1 = input[i + 1] >> 4;
-            b1 = input[i + 2] >> 4;
-            a1 = input[i + 3] >> 4;
-            
-            r2 = input[i + 4] >> 4;
-            g2 = input[i + 5] >> 4;
-            b2 = input[i + 6] >> 4;
-            a2 = input[i + 7] >> 4;
-            
-            // Pack them into 4 bytes (2 bytes per pixel)
-            output[j]     = (r1 << 4) | g1;
-            output[j + 1] = (b1 << 4) | a1;
-            output[j + 2] = (r2 << 4) | g2;
-            output[j + 3] = (b2 << 4) | a2;
+        //for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
+        //    // Read 2 RGBA pixels (8 bytes)
+        //    const uint8_t r1 = input[i] >> 4;
+        //    const uint8_t g1 = input[i + 1] >> 4;
+        //    const uint8_t b1 = input[i + 2] >> 4;
+        //    const uint8_t a1 = input[i + 3] >> 4;
+        //    
+        //    const uint8_t r2 = input[i + 4] >> 4;
+        //    const uint8_t g2 = input[i + 5] >> 4;
+        //    const uint8_t b2 = input[i + 6] >> 4;
+        //    const uint8_t a2 = input[i + 7] >> 4;
+        //    
+        //    // Pack them into 4 bytes (2 bytes per pixel)
+        //    output[j]     = (r1 << 4) | g1;
+        //    output[j + 1] = (b1 << 4) | a1;
+        //    output[j + 2] = (r2 << 4) | g2;
+        //    output[j + 3] = (b2 << 4) | a2;
+        //}
+
+        for (size_t i = 0, j = 0; i < originalDataSize; i += 16, j += 8) {
+            output[j]     = ((input[i]     >> 4) << 4) | (input[i + 1] >> 4);
+            output[j + 1] = ((input[i + 2] >> 4) << 4) | (input[i + 3] >> 4);
+            output[j + 2] = ((input[i + 4] >> 4) << 4) | (input[i + 5] >> 4);
+            output[j + 3] = ((input[i + 6] >> 4) << 4) | (input[i + 7] >> 4);
+            output[j + 4] = ((input[i + 8] >> 4) << 4) | (input[i + 9] >> 4);
+            output[j + 5] = ((input[i + 10] >> 4) << 4) | (input[i + 11] >> 4);
+            output[j + 6] = ((input[i + 12] >> 4) << 4) | (input[i + 13] >> 4);
+            output[j + 7] = ((input[i + 14] >> 4) << 4) | (input[i + 15] >> 4);
         }
         //}
     }
