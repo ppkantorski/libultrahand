@@ -143,7 +143,7 @@ namespace ult {
     
     
 
-    void handleDirectory(const std::string& basePath, const std::vector<std::string>& parts, size_t partIndex, std::vector<std::string>& results, bool directoryOnly, size_t maxLines=0);
+    void handleDirectory(const std::string& basePath, const std::vector<std::string>& parts, size_t partIndex, std::vector<std::string>& results, bool directoryOnly, size_t maxLines=0, std::function<void(const std::string&)> callback = nullptr);
     /**
      * @brief Gets a list of files and folders based on a wildcard pattern.
      *
