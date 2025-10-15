@@ -8851,6 +8851,30 @@ namespace tsl {
                     handlePos = (width) * (this->m_value) / (100);
                 }
 
+                // Draw step tick marks if this is a step trackbar
+                if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
+                    const u8 numSteps = m_numSteps;
+                    const u16 baseX = xPos;
+                    const u16 baseY = this->getY() + 44;
+                    const u8 halfNumSteps = (numSteps - 1) / 2;
+                    const u16 lastStepX = baseX + width - 1;
+                    const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
+                    const auto stepColor = a(trackBarEmptyColor);
+                    
+                    u16 stepX;
+                    for (u8 i = 0; i < numSteps; i++) {
+                        if (i == numSteps - 1) {
+                            stepX = lastStepX;
+                        } else {
+                            stepX = baseX + static_cast<u16>(std::round(i * stepSpacing));
+                            if (i > halfNumSteps) {
+                                stepX -= 1;
+                            }
+                        }
+                        renderer->drawRect(stepX, baseY, 1, 8, stepColor);
+                    }
+                }
+
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
 
@@ -9039,6 +9063,7 @@ namespace tsl {
             bool m_unlockedTrackbar = true;
             bool touchInSliderBounds = false;
             
+            u8 m_numSteps = 101;
             // V2 Style properties
             bool m_useV2Style = false;
             std::string m_label;
@@ -9186,6 +9211,7 @@ namespace tsl {
                 if (!m_stepDescriptions.empty()) {
                     this->m_selection = m_stepDescriptions[0];
                 }
+                m_numSteps = m_stepDescriptions.size();
             }
 
             virtual ~NamedStepTrackBar() {}
@@ -9263,6 +9289,30 @@ namespace tsl {
                     handlePos = (width) * (this->m_value) / (100);
                 }
             
+                // Draw step tick marks if this is a step trackbar
+                {
+                    const u8 numSteps = m_numSteps;
+                    const u16 baseX = xPos;
+                    const u16 baseY = this->getY() + 44;
+                    const u8 halfNumSteps = (numSteps - 1) / 2;
+                    const u16 lastStepX = baseX + width - 1;
+                    const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
+                    const auto stepColor = a(trackBarEmptyColor);
+                    
+                    u16 stepX;
+                    for (u8 i = 0; i < numSteps; i++) {
+                        if (i == numSteps - 1) {
+                            stepX = lastStepX;
+                        } else {
+                            stepX = baseX + static_cast<u16>(std::round(i * stepSpacing));
+                            if (i > halfNumSteps) {
+                                stepX -= 1;
+                            }
+                        }
+                        renderer->drawRect(stepX, baseY, 1, 8, stepColor);
+                    }
+                }
+
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
             
