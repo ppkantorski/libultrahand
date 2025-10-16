@@ -7465,7 +7465,7 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
                 static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
             #else
-                static const std::vector<std::string> specialChars = {};
+                static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
             #endif
                 // Fast path for non-truncated text
                 if (!m_flags.m_truncated) [[likely]] {
@@ -7480,9 +7480,13 @@ namespace tsl {
                             : (useClickTextColor
                                 ? clickTextColor
                                 : defaultTextColor));
-
+                #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         textColor, (m_focused ? starColor : selectionStarColor));
+                #else
+                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                        textColor, textSeparatorColor);
+                #endif
                 } else {
                     drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
                 }
@@ -7719,14 +7723,23 @@ namespace tsl {
             void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
-                    
+                #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
                         !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
+                #else
+                    renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
+                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (textSeparatorColor));
+                #endif
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
+                #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
                         m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (starColor));
+                #else
+                    renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (textSeparatorColor));
+                #endif
                 }
             }
                     
