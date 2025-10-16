@@ -54,7 +54,7 @@ namespace ult {
     const std::string FLAGS_PATH                  = BASE_CONFIG_PATH + "flags/";
     const std::string NOTIFICATIONS_PATH          = BASE_CONFIG_PATH + "notifications/";
     const std::string PAYLOADS_PATH               = BASE_CONFIG_PATH + "payloads/";
-    const std::string HB_APPSTORE_JSON            = SWITCH_PATH + ".appstore/.get/packages/UltrahandOverlay/info.json";
+    const std::string HB_APPSTORE_JSON            = SWITCH_PATH + "appstore/.get/packages/UltrahandOverlay/info.json";
     std::string THEME_CONFIG_INI_PATH             = BASE_CONFIG_PATH + THEME_FILENAME;
     std::string WALLPAPER_PATH                    = BASE_CONFIG_PATH + WALLPAPER_FILENAME;
     const std::string DOWNLOADS_PATH              = BASE_CONFIG_PATH + "downloads/";
