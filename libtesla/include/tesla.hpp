@@ -182,7 +182,7 @@ inline std::atomic<bool> jumpItemExactMatch{true};
 
 inline std::atomic<bool> s_onLeftPage{false};
 inline std::atomic<bool> s_onRightPage{false};
-inline bool screenshotsAreDisabled = false;
+inline std::atomic<bool> screenshotsAreDisabled{false};
 inline std::atomic<bool> screenshotsAreForceDisabled{false};
 
 //#if IS_LAUNCHER_DIRECTIVE
@@ -192,6 +192,134 @@ inline bool hideHidden = false;
 //inline std::atomic<bool> isLaunchingNextOverlay{false};
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
+
+
+
+//static bool rumbleInitialized = false;
+//static HidVibrationDeviceHandle vibHandheld;
+//static HidVibrationDeviceHandle vibPlayer1Left;
+//static HidVibrationDeviceHandle vibPlayer1Right;
+//
+//inline std::atomic<bool> triggerRumbleClick{false};
+//static std::atomic<bool> rumbleActive{false};
+//static u64 rumbleStartTick = 0;
+//static constexpr u64 RUMBLE_DURATION_NS = 30 * 1000 * 1000ULL;  // 30 ms
+//
+//void initRumble() {
+//    if (rumbleInitialized) return;
+//    
+//    // Initialize handheld controller
+//    {
+//        HidNpadIdType npad = HidNpadIdType_Handheld;
+//        u32 styleMask = hidGetNpadStyleSet(npad);
+//        if (styleMask != 0) {
+//            Result rc = hidInitializeVibrationDevices(&vibHandheld, 1, npad, (HidNpadStyleTag)styleMask);
+//            if (R_SUCCEEDED(rc)) {
+//                // success for handheld
+//            }
+//        }
+//    }
+//    
+//    // Initialize Player 1's Joy-Cons (both left and right)
+//    {
+//        HidNpadIdType npad = HidNpadIdType_No1;
+//        u32 styleMask = hidGetNpadStyleSet(npad);
+//        if (styleMask != 0) {
+//            // Get both vibration device handles for Player 1
+//            HidVibrationDeviceHandle handles[2];
+//            Result rc = hidInitializeVibrationDevices(handles, 2, npad, (HidNpadStyleTag)styleMask);
+//            if (R_SUCCEEDED(rc)) {
+//                vibPlayer1Left = handles[0];   // Left Joy-Con
+//                vibPlayer1Right = handles[1];  // Right Joy-Con
+//            }
+//        }
+//    }
+//    
+//    rumbleInitialized = true;
+//}
+//
+//void deinitRumble() {
+//    // Nothing to do per docs
+//    rumbleInitialized = false;
+//}
+//
+//
+//void checkAndReinitRumble() {
+//    static u32 lastHandheldStyle = 0;
+//    static u32 lastPlayer1Style = 0;
+//    
+//    u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+//    u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
+//    
+//    // If controller configuration changed, reinitialize
+//    if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
+//        rumbleInitialized = false;
+//        initRumble();
+//        lastHandheldStyle = currentHandheldStyle;
+//        lastPlayer1Style = currentPlayer1Style;
+//    }
+//}
+//
+//// Stronger haptic click for handheld and player1
+//void rumbleClick() {
+//    if (!rumbleInitialized) initRumble();
+//    if (!rumbleInitialized) return;
+//
+//    // Pronounced click pulse
+//    HidVibrationValue click = {
+//        .amp_low  = 0.20f,   // small bass bump, noticeable
+//        .freq_low = 100.0f,  
+//        .amp_high = 0.80f,   // strong snap for tactile click
+//        .freq_high = 300.0f  
+//    };
+//
+//    HidVibrationValue stop = {0};
+//
+//    // Send to handheld if present
+//    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+//        hidSendVibrationValue(vibHandheld, &click);
+//
+//    // Send to Player 1's left Joy-Con if present
+//    if (hidGetNpadStyleSet(HidNpadIdType_No1))
+//        hidSendVibrationValue(vibPlayer1Left, &click);
+//
+//    // Send to Player 1's right Joy-Con if present
+//    if (hidGetNpadStyleSet(HidNpadIdType_No1))
+//        hidSendVibrationValue(vibPlayer1Right, &click);
+//
+//    // Mark active & record start tick
+//    rumbleActive = true;
+//    rumbleStartTick = svcGetSystemTick();
+//}
+//
+//// Call in your update loop to stop the click after ~15–20 ms
+//void processRumbleStop() {
+//    if (!rumbleActive) return;
+//
+//    u64 now = svcGetSystemTick();
+//    u64 elapsed = now - rumbleStartTick;
+//    u64 tickFreq = armGetSystemTickFreq();
+//
+//    // Stop after ~15 ms
+//    if (elapsed * 1000000000ULL >= 15 * 1000000ULL * tickFreq / 1000000000ULL) {
+//        HidVibrationValue stop = {0};
+//
+//        // Stop vibration on handheld if active
+//        if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+//            hidSendVibrationValue(vibHandheld, &stop);
+//
+//        // Stop vibration on Player 1's left Joy-Con if active
+//        if (hidGetNpadStyleSet(HidNpadIdType_No1))
+//            hidSendVibrationValue(vibPlayer1Left, &stop);
+//
+//        // Stop vibration on Player 1's right Joy-Con if active
+//        if (hidGetNpadStyleSet(HidNpadIdType_No1))
+//            hidSendVibrationValue(vibPlayer1Right, &stop);
+//
+//        rumbleActive = false;
+//    }
+//}
+
 
 namespace tsl {
 
@@ -3635,9 +3763,9 @@ namespace tsl {
              * @brief Adds the layer from screenshot and recording stacks
              */
             inline void addScreenshotStacks(bool forceDisable = true) {
-                ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot));
-                ASSERT_FATAL(tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording));
-                screenshotsAreDisabled = false;
+                tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot);
+                tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording);
+                screenshotsAreDisabled.store(false, std::memory_order_release);
                 if (forceDisable)
                     screenshotsAreForceDisabled.store(false, std::memory_order_release);
             }
@@ -3646,9 +3774,9 @@ namespace tsl {
              * @brief Removes the layer from screenshot and recording stacks
              */
             inline void removeScreenshotStacks(bool forceDisable = true) {
-                ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot));
-                ASSERT_FATAL(tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording));
-                screenshotsAreDisabled = true;
+                tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot);
+                tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording);
+                screenshotsAreDisabled.store(true, std::memory_order_release);
                 if (forceDisable)
                     screenshotsAreForceDisabled.store(true, std::memory_order_release);
             }
@@ -6586,6 +6714,7 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;
+                    //triggerRumbleClick.store(true, std::memory_order_release);
                     return result;
                 }
                 
@@ -6610,6 +6739,7 @@ namespace tsl {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
+                    //triggerRumbleClick.store(true, std::memory_order_release);
                     return handleJumpToTop(oldFocus);
                 }
                 
@@ -6658,6 +6788,7 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;
+                    //triggerRumbleClick.store(true, std::memory_order_release);
                     return result;
                 }
                 
@@ -6682,6 +6813,7 @@ namespace tsl {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
+                    //triggerRumbleClick.store(true, std::memory_order_release);
                     return handleJumpToBottom(oldFocus);
                 }
                 
@@ -7502,11 +7634,15 @@ namespace tsl {
         
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
+                    //triggerRumbleClick.store(true, std::memory_order_release);
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
                 }
+                //if (keys & KEY_B) {
+                //    triggerRumbleClick.store(true, std::memory_order_release);
+                //}
                 return Element::onClick(keys);
             }
         
@@ -11137,8 +11273,8 @@ namespace tsl {
                 return;
             }
             
-            // Static state management - made atomic for thread safety
-            static std::atomic<bool> screenshotStacksAdded{false};
+            // CRITICAL: Initialize to TRUE because stacks are added in init()!
+            static std::atomic<bool> screenshotStacksAdded{true};
             static std::atomic<bool> notificationCacheNeedsClearing{false};
             
             auto& renderer = gfx::Renderer::get();
@@ -11146,23 +11282,40 @@ namespace tsl {
         
             // Handle main UI rendering
             if (!promptOnly) {
-                // Screenshot management - thread-safe
-                if (!screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
-                    renderer.addScreenshotStacks(false);
-                    screenshotStacksAdded.store(true, std::memory_order_release);
+                // In normal mode, ensure screenshots are enabled
+                // Only re-add if they were removed AND force-disable is not set
+                //const bool shouldAddScreenshots = !screenshotStacksAdded.load(std::memory_order_acquire) &&
+                //                           !screenshotsAreForceDisabled.load(std::memory_order_acquire);
+                
+                if (!screenshotStacksAdded.load(std::memory_order_acquire) &&
+                    !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
+                    bool expected = false;
+                    if (screenshotStacksAdded.compare_exchange_strong(expected, true, 
+                                                                     std::memory_order_acq_rel)) {
+                        renderer.addScreenshotStacks(false);
+                    }
                 }
-        
+                
                 this->animationLoop();
                 this->getCurrentGui()->update();
                 this->getCurrentGui()->draw(&renderer);
                 
-                // Mark that we may need to clear notification cache later
-                notificationCacheNeedsClearing.store(true, std::memory_order_release);
+                //notificationCacheNeedsClearing.store(true, std::memory_order_release);
             } else {
-                // Prompt-only mode - clean up screenshots
-                if (screenshotStacksAdded.load(std::memory_order_acquire) && !screenshotsAreDisabled && !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
-                    renderer.removeScreenshotStacks(false);
-                    screenshotStacksAdded.store(false, std::memory_order_release);
+                // Prompt-only mode - temporarily remove screenshots
+                //const bool shouldRemoveScreenshots = screenshotStacksAdded.load(std::memory_order_acquire) &&
+                //                              !screenshotsAreDisabled.load(std::memory_order_acquire) &&
+                //                              !screenshotsAreForceDisabled.load(std::memory_order_acquire);
+                
+                if (screenshotStacksAdded.load(std::memory_order_acquire) &&
+                    !screenshotsAreDisabled.load(std::memory_order_acquire) &&
+                    !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
+
+                    bool expected = true;
+                    if (screenshotStacksAdded.compare_exchange_strong(expected, false, 
+                                                                     std::memory_order_acq_rel)) {
+                        renderer.removeScreenshotStacks(false);
+                    }
                 }
                 renderer.clearScreen();
             }
@@ -11170,10 +11323,14 @@ namespace tsl {
             // Notification handling — safe, consistent, and null-guarded
             {
                 if (notification && notification->isActive()) {
-                    // Snapshot pointer to avoid it becoming null mid-use
                     notification->update();
                     notification->draw(&renderer, promptOnly);
-                    notificationCacheNeedsClearing.store(true, std::memory_order_release);
+
+                    // Only set flag if it's not already set
+                    bool expected = false;
+                    notificationCacheNeedsClearing.compare_exchange_strong(expected, true, 
+                                                                  std::memory_order_acq_rel);
+                    
                 } else if (notificationCacheNeedsClearing.exchange(false, std::memory_order_acq_rel)) {
                     tsl::gfx::FontManager::clearNotificationCache();
                     #if IS_STATUS_MONITOR_DIRECTIVE
@@ -12365,8 +12522,8 @@ namespace tsl {
                 const u64 nowTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(nowTick);
                 
-        
-        
+                
+                
                 // Scan for input changes from both controllers
                 padUpdate(&pad_p1);
                 padUpdate(&pad_handheld);
@@ -12586,6 +12743,11 @@ namespace tsl {
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
                         break;
 
+                    //if (triggerRumbleClick.exchange(false)) {
+                    //    checkAndReinitRumble();
+                    //    rumbleClick();
+                    //}
+                    //processRumbleStop();
                     
                     // Combine inputs from both controllers
                     const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
@@ -13574,8 +13736,6 @@ namespace tsl {
 }
 
 
-
-
 #ifdef TESLA_INIT_IMPL
 
 namespace tsl::cfg {
@@ -13635,6 +13795,8 @@ extern "C" {
         });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
 
+        //initRumble();
+
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();
         Service plClone;
@@ -13655,6 +13817,8 @@ extern "C" {
     void __appExit(void) {
         delete tsl::notification;
         eventClose(&tsl::notificationEvent);
+
+        //deinitRumble();
 
         smExit();
         //socketExit();
