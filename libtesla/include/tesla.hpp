@@ -4051,7 +4051,7 @@ namespace tsl {
              * @return Result
              */
             Result initFonts() {
-                static PlFontData stdFontData, localFontData, extFontData;
+                PlFontData stdFontData, localFontData, extFontData;
                 
                 // Nintendo's default font
                 TSL_R_TRY(plGetSharedFontByType(&stdFontData, PlSharedFontType_Standard));
@@ -11330,7 +11330,7 @@ namespace tsl {
                     bool expected = false;
                     notificationCacheNeedsClearing.compare_exchange_strong(expected, true, 
                                                                   std::memory_order_acq_rel);
-                    
+
                 } else if (notificationCacheNeedsClearing.exchange(false, std::memory_order_acq_rel)) {
                     tsl::gfx::FontManager::clearNotificationCache();
                     #if IS_STATUS_MONITOR_DIRECTIVE

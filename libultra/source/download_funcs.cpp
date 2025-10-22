@@ -100,16 +100,34 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 void initializeCurl() {
     std::lock_guard<std::mutex> lock(curlInitMutex);
     if (!curlInitialized.load(std::memory_order_acquire)) {
-        const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-        if (res != CURLE_OK) {
+        constexpr int maxRetries = 3;
+        constexpr u64 retryDelayNs = 10'000'000ULL; // 10ms
+        
+        for (uint8_t i = 0; i < maxRetries; i++) {
+            const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+            if (res == CURLE_OK) {
+                curlInitialized.store(true, std::memory_order_release);
+                return;
+            }
+            
             #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
+            if (!disableLogging) {
+                logMessage("curl_global_init() attempt " + std::to_string(i + 1) + 
+                          " failed: " + std::string(curl_easy_strerror(res)));
+            }
             #endif
-            // Handle error appropriately, possibly exit the program
-        } else {
-            curlInitialized.store(true, std::memory_order_release);
+            
+            if (i < maxRetries - 1) {
+                svcSleepThread(retryDelayNs);
+            }
         }
+        
+        // All retries failed
+        //#if USING_LOGGING_DIRECTIVE
+        //if (!disableLogging) {
+        //    logMessage("curl_global_init() failed after " + std::to_string(maxRetries) + " attempts");
+        //}
+        //#endif
     }
 }
 
