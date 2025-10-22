@@ -5405,8 +5405,8 @@ namespace tsl {
 
                 if (FullMode)
                     ult::loadWallpaperFileWhenSafe();
-                //else
-                //    svcSleepThread(250'000); // sleep thread for initial values to auto-load
+                else
+                    svcSleepThread(250'000); // sleep thread for initial values to auto-load
 
                 m_isItem = false;
             }
