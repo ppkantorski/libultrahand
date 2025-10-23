@@ -67,6 +67,8 @@
 #include <map>
 //#include <barrier>
 
+#include "audio_player.hpp"
+
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
 // #define TESLA_INIT_IMPL
@@ -194,132 +196,203 @@ inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 
 
+inline std::atomic<bool> triggerNavigationSound{false};
+inline std::atomic<bool> triggerEnterSound{false};
 
-//static bool rumbleInitialized = false;
-//static HidVibrationDeviceHandle vibHandheld;
-//static HidVibrationDeviceHandle vibPlayer1Left;
-//static HidVibrationDeviceHandle vibPlayer1Right;
-//
-//inline std::atomic<bool> triggerRumbleClick{false};
-//static std::atomic<bool> rumbleActive{false};
-//static u64 rumbleStartTick = 0;
-//static constexpr u64 RUMBLE_DURATION_NS = 30 * 1000 * 1000ULL;  // 30 ms
-//
-//void initRumble() {
-//    if (rumbleInitialized) return;
-//    
-//    // Initialize handheld controller
-//    {
-//        HidNpadIdType npad = HidNpadIdType_Handheld;
-//        u32 styleMask = hidGetNpadStyleSet(npad);
-//        if (styleMask != 0) {
-//            Result rc = hidInitializeVibrationDevices(&vibHandheld, 1, npad, (HidNpadStyleTag)styleMask);
-//            if (R_SUCCEEDED(rc)) {
-//                // success for handheld
-//            }
-//        }
-//    }
-//    
-//    // Initialize Player 1's Joy-Cons (both left and right)
-//    {
-//        HidNpadIdType npad = HidNpadIdType_No1;
-//        u32 styleMask = hidGetNpadStyleSet(npad);
-//        if (styleMask != 0) {
-//            // Get both vibration device handles for Player 1
-//            HidVibrationDeviceHandle handles[2];
-//            Result rc = hidInitializeVibrationDevices(handles, 2, npad, (HidNpadStyleTag)styleMask);
-//            if (R_SUCCEEDED(rc)) {
-//                vibPlayer1Left = handles[0];   // Left Joy-Con
-//                vibPlayer1Right = handles[1];  // Right Joy-Con
-//            }
-//        }
-//    }
-//    
-//    rumbleInitialized = true;
-//}
-//
-//void deinitRumble() {
-//    // Nothing to do per docs
-//    rumbleInitialized = false;
-//}
-//
-//
-//void checkAndReinitRumble() {
-//    static u32 lastHandheldStyle = 0;
-//    static u32 lastPlayer1Style = 0;
-//    
-//    u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
-//    u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
-//    
-//    // If controller configuration changed, reinitialize
-//    if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
-//        rumbleInitialized = false;
-//        initRumble();
-//        lastHandheldStyle = currentHandheldStyle;
-//        lastPlayer1Style = currentPlayer1Style;
-//    }
-//}
-//
-//// Stronger haptic click for handheld and player1
-//void rumbleClick() {
-//    if (!rumbleInitialized) initRumble();
-//    if (!rumbleInitialized) return;
-//
-//    // Pronounced click pulse
-//    HidVibrationValue click = {
-//        .amp_low  = 0.20f,   // small bass bump, noticeable
-//        .freq_low = 100.0f,  
-//        .amp_high = 0.80f,   // strong snap for tactile click
-//        .freq_high = 300.0f  
-//    };
-//
-//    HidVibrationValue stop = {0};
-//
-//    // Send to handheld if present
-//    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-//        hidSendVibrationValue(vibHandheld, &click);
-//
-//    // Send to Player 1's left Joy-Con if present
-//    if (hidGetNpadStyleSet(HidNpadIdType_No1))
-//        hidSendVibrationValue(vibPlayer1Left, &click);
-//
-//    // Send to Player 1's right Joy-Con if present
-//    if (hidGetNpadStyleSet(HidNpadIdType_No1))
-//        hidSendVibrationValue(vibPlayer1Right, &click);
-//
-//    // Mark active & record start tick
-//    rumbleActive = true;
-//    rumbleStartTick = svcGetSystemTick();
-//}
-//
-//// Call in your update loop to stop the click after ~15–20 ms
-//void processRumbleStop() {
-//    if (!rumbleActive) return;
-//
-//    u64 now = svcGetSystemTick();
-//    u64 elapsed = now - rumbleStartTick;
-//    u64 tickFreq = armGetSystemTickFreq();
-//
-//    // Stop after ~15 ms
-//    if (elapsed * 1000000000ULL >= 15 * 1000000ULL * tickFreq / 1000000000ULL) {
-//        HidVibrationValue stop = {0};
-//
-//        // Stop vibration on handheld if active
-//        if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-//            hidSendVibrationValue(vibHandheld, &stop);
-//
-//        // Stop vibration on Player 1's left Joy-Con if active
-//        if (hidGetNpadStyleSet(HidNpadIdType_No1))
-//            hidSendVibrationValue(vibPlayer1Left, &stop);
-//
-//        // Stop vibration on Player 1's right Joy-Con if active
-//        if (hidGetNpadStyleSet(HidNpadIdType_No1))
-//            hidSendVibrationValue(vibPlayer1Right, &stop);
-//
-//        rumbleActive = false;
-//    }
-//}
+static bool rumbleInitialized = false;
+static HidVibrationDeviceHandle vibHandheld;
+static HidVibrationDeviceHandle vibPlayer1Left;
+static HidVibrationDeviceHandle vibPlayer1Right;
 
+inline std::atomic<bool> triggerRumbleClick{false};
+inline std::atomic<bool> triggerRumbleDoubleClick{false};
+
+static std::atomic<bool> rumbleActive{false};
+static std::atomic<bool> doubleClickActive{false};
+
+static u64 rumbleStartTick = 0;
+static u64 doubleClickTick = 0;
+static int doubleClickPulse = 0;
+
+static constexpr u64 RUMBLE_DURATION_NS = 30 * 1000 * 1000ULL;  // 15ms
+static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30 * 1000 * 1000ULL;  // 40ms per pulse
+static constexpr u64 DOUBLE_CLICK_GAP_NS = 80 * 1000 * 1000ULL;  // 60ms gap between pulses
+
+void initRumble() {
+    if (rumbleInitialized) return;
+    
+    // Initialize handheld controller
+    {
+        HidNpadIdType npad = HidNpadIdType_Handheld;
+        u32 styleMask = hidGetNpadStyleSet(npad);
+        if (styleMask != 0) {
+            Result rc = hidInitializeVibrationDevices(&vibHandheld, 1, npad, (HidNpadStyleTag)styleMask);
+            if (R_SUCCEEDED(rc)) {
+                // success for handheld
+            }
+        }
+    }
+    
+    // Initialize Player 1's Joy-Cons (both left and right)
+    {
+        HidNpadIdType npad = HidNpadIdType_No1;
+        u32 styleMask = hidGetNpadStyleSet(npad);
+        if (styleMask != 0) {
+            HidVibrationDeviceHandle handles[2];
+            Result rc = hidInitializeVibrationDevices(handles, 2, npad, (HidNpadStyleTag)styleMask);
+            if (R_SUCCEEDED(rc)) {
+                vibPlayer1Left = handles[0];
+                vibPlayer1Right = handles[1];
+            }
+        }
+    }
+    
+    rumbleInitialized = true;
+}
+
+void deinitRumble() {
+    rumbleInitialized = false;
+}
+
+void checkAndReinitRumble() {
+    static u32 lastHandheldStyle = 0;
+    static u32 lastPlayer1Style = 0;
+    
+    const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+    const u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
+    
+    if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
+        rumbleInitialized = false;
+        initRumble();
+        lastHandheldStyle = currentHandheldStyle;
+        lastPlayer1Style = currentPlayer1Style;
+    }
+}
+
+// Vibration values
+const HidVibrationValue clickDocked = {
+    .amp_low  = 0.20f,
+    .freq_low = 100.0f,
+    .amp_high = 0.80f,
+    .freq_high = 300.0f
+};
+
+const HidVibrationValue clickHandheld = {
+    .amp_low  = 0.20f*1.25,
+    .freq_low = 100.0f,
+    .amp_high = 0.80f*1.25,
+    .freq_high = 300.0f
+};
+
+// Single click rumble
+void rumbleClick() {
+    if (!rumbleInitialized) initRumble();
+    if (!rumbleInitialized) return;
+    
+    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+        hidSendVibrationValue(vibHandheld, &clickHandheld);
+    
+    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+        hidSendVibrationValue(vibPlayer1Left, &clickDocked);
+        hidSendVibrationValue(vibPlayer1Right, &clickDocked);
+    }
+    
+    rumbleActive = true;
+    rumbleStartTick = svcGetSystemTick();
+}
+
+// Double-tap rumble
+void rumbleDoubleClick() {
+    if (!rumbleInitialized) initRumble();
+    if (!rumbleInitialized) return;
+    
+    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+        hidSendVibrationValue(vibHandheld, &clickHandheld);
+    
+    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+        hidSendVibrationValue(vibPlayer1Left, &clickDocked);
+        hidSendVibrationValue(vibPlayer1Right, &clickDocked);
+    }
+    
+    doubleClickActive = true;
+    doubleClickTick = svcGetSystemTick();
+    doubleClickPulse = 1;
+}
+
+// Process single click stop
+void processRumbleStop(u64 nowTick, u64 nowNs) {
+    if (!rumbleActive) return;
+    
+    u64 elapsedNs = nowNs - armTicksToNs(rumbleStartTick);
+    
+    if (elapsedNs >= RUMBLE_DURATION_NS) {
+        HidVibrationValue stop = {0};
+        
+        if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+            hidSendVibrationValue(vibHandheld, &stop);
+        
+        if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+            hidSendVibrationValue(vibPlayer1Left, &stop);
+            hidSendVibrationValue(vibPlayer1Right, &stop);
+        }
+        
+        rumbleActive = false;
+    }
+}
+
+// Process double-click sequence
+void processRumbleDoubleClick(u64 nowTick, u64 nowNs) {
+    if (!doubleClickActive) return;
+    
+    u64 elapsedNs = nowNs - armTicksToNs(doubleClickTick);
+    HidVibrationValue stop = {0};
+    
+    if (doubleClickPulse == 1) {
+        // Stop first pulse after 40ms
+        if (elapsedNs >= DOUBLE_CLICK_PULSE_DURATION_NS) {
+            if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+                hidSendVibrationValue(vibHandheld, &stop);
+            
+            if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+                hidSendVibrationValue(vibPlayer1Left, &stop);
+                hidSendVibrationValue(vibPlayer1Right, &stop);
+            }
+            
+            doubleClickPulse = 2;
+            doubleClickTick = svcGetSystemTick();
+        }
+    }
+    else if (doubleClickPulse == 2) {
+        // Wait 60ms gap, then trigger second pulse
+        if (elapsedNs >= DOUBLE_CLICK_GAP_NS) {
+            if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+                hidSendVibrationValue(vibHandheld, &clickHandheld);
+            
+            if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+                hidSendVibrationValue(vibPlayer1Left, &clickDocked);
+                hidSendVibrationValue(vibPlayer1Right, &clickDocked);
+            }
+            
+            doubleClickPulse = 3;
+            doubleClickTick = svcGetSystemTick();
+        }
+    }
+    else if (doubleClickPulse == 3) {
+        // Stop second pulse after 40ms
+        if (elapsedNs >= DOUBLE_CLICK_PULSE_DURATION_NS) {
+            if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
+                hidSendVibrationValue(vibHandheld, &stop);
+            
+            if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
+                hidSendVibrationValue(vibPlayer1Left, &stop);
+                hidSendVibrationValue(vibPlayer1Right, &stop);
+            }
+            
+            doubleClickActive = false;
+            doubleClickPulse = 0;
+        }
+    }
+}
 
 namespace tsl {
 
@@ -697,6 +770,7 @@ namespace tsl {
         } else {
             ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
         }
+        ult::useHapticFeedback = getBoolValue("haptic_feedback", false);
 
         ult::useSwipeToOpen = getBoolValue("swipe_to_open", true);        // TRUE_STR default
         ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true); // TRUE_STR default
@@ -4925,7 +4999,26 @@ namespace tsl {
         }
 
         #endif
-                
+
+        struct TopCache {
+            std::string title;
+            std::string subtitle;
+            tsl::Color titleColor{0xF, 0xF, 0xF, 0xF}; // white by default
+            bool widgetDrawn = false;
+            bool useDynamicLogo = false;
+        };
+        
+        struct BottomCache {
+            std::string bottomText;
+            float backWidth = 0.0f;
+            float selectWidth = 0.0f;
+            float nextPageWidth = 0.0f;
+        };
+        
+        // Global or namespace-level variable
+        inline TopCache g_cachedTop;
+        inline BottomCache g_cachedBottom;
+
         /**
          * @brief The base frame which can contain another view
          *
@@ -4976,6 +5069,8 @@ namespace tsl {
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
                     m_isItem = false;
+                    //if (!ult::isHidden.load(std::memory_order_acquire))
+                    //    triggerRumbleClick.store(true, std::memory_order_release);
                 }
         
             ~OverlayFrame() {
@@ -5008,7 +5103,6 @@ namespace tsl {
                     tsl::initializeThemeVars();
                 }
                 
-                
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
                 
@@ -5017,21 +5111,40 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Current interpreter state (atomic<bool>)
-                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) && (ult::downloadPercentage.load(std::memory_order_acquire) != -1 || ult::unzipPercentage.load(std::memory_order_acquire) != -1 || ult::copyPercentage.load(std::memory_order_acquire) != -1) ;
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) && (ult::downloadPercentage.load(std::memory_order_acquire) != -1 || ult::unzipPercentage.load(std::memory_order_acquire) != -1 || ult::copyPercentage.load(std::memory_order_acquire) != -1);
                 
-
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
-
+            
                 const bool isUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                         m_subtitle.find("Ultrahand Package") == std::string::npos && 
                                         m_subtitle.find("Ultrahand Script") == std::string::npos);
                 
-                if (isUltrahandMenu) {
-                #if USING_WIDGET_DIRECTIVE
-                    renderer->drawWidget();
-                #endif
+                // Determine if we should use cached data (first frame of new overlay)
+                const bool useCachedTop = !g_cachedTop.title.empty() && 
+                                          (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
+                
+                // Use cached or current data for rendering
+                const std::string& renderTitle = useCachedTop ? g_cachedTop.title : m_title;
+                const std::string& renderSubtitle = useCachedTop ? g_cachedTop.subtitle : m_subtitle;
+                const tsl::Color& renderTitleColor = useCachedTop ? g_cachedTop.titleColor : titleColor;
+                const bool renderUseDynamicLogo = useCachedTop ? g_cachedTop.useDynamicLogo : ult::useDynamicLogo;
+                
+                const bool renderIsUltrahandMenu = (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
+                                                     renderSubtitle.find("Ultrahand Package") == std::string::npos && 
+                                                     renderSubtitle.find("Ultrahand Script") == std::string::npos);
+                
+                if (renderIsUltrahandMenu) {
+            #if USING_WIDGET_DIRECTIVE
+                    if (useCachedTop) {
+                        if (g_cachedTop.widgetDrawn) {
+                            renderer->drawWidget();
+                        }
+                    } else {
+                        renderer->drawWidget();
+                    }
+            #endif
             
                     if (ult::touchingMenu.load(std::memory_order_acquire) && ult::inMainMenu.load(std::memory_order_acquire)) {
                         renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
@@ -5040,9 +5153,8 @@ namespace tsl {
                     x = 20;
                     fontSize = 42;
                     offset = 6;
-                    //countOffset = 0;
-                                                                                                                                    
-                    if (ult::useDynamicLogo) {
+                    
+                    if (renderUseDynamicLogo) {
                         x = drawDynamicUltraText(renderer, x, y + offset, fontSize, logoColor1, false);
                     } else {
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
@@ -5050,147 +5162,150 @@ namespace tsl {
                             x += renderer->drawString(letterStr, false, x, y + offset, fontSize, logoColor1).first;
                         }
                     }
-                                                                                                    
+                    
                     renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, (logoColor2));
                     
                 } else {
-                    if (m_showWidget)
-                        renderer->drawWidget();
-
+                    if (useCachedTop) {
+                        if (g_cachedTop.widgetDrawn) {
+                            renderer->drawWidget();
+                        }
+                    } else {
+                        if (m_showWidget) {
+                            renderer->drawWidget();
+                        }
+                    }
+            
                     x = 20;
-                    y = 52 -2;
+                    y = 52 - 2;
                     fontSize = 32;
             
-                    if (m_subtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(m_title, false, x, y, fontSize, (defaultScriptColor));
+                    if (renderSubtitle.find("Ultrahand Script") != std::string::npos) {
+                        renderer->drawString(renderTitle, false, x, y, fontSize, (defaultScriptColor));
                     } else {
-                        titleColor = defaultPackageColor; // Default to green
+                        tsl::Color drawColor = defaultPackageColor; // Default to green
                         
-                        // Ultra-fast color selection using first character optimization
-                        if (!m_colorSelection.empty()) {
-                            const char firstChar = m_colorSelection[0];
-                            const size_t len = m_colorSelection.length();
-                            
-                            // Fast path: check first char + length for unique combinations
-                            switch (firstChar) {
-                                case 'g': // green
-                                    if (len == 5 && m_colorSelection == "green") {
-                                        titleColor = {0x0, 0xF, 0x0, 0xF};
-                                    }
-                                    break;
-                                case 'r': // red
-                                    if (len == 3 && m_colorSelection == "red") {
-                                        titleColor = RGB888("#F7253E");
-                                    }
-                                    break;
-                                case 'b': // blue
-                                    if (len == 4 && m_colorSelection == "blue") {
-                                        titleColor = {0x7, 0x7, 0xF, 0xF};
-                                    }
-                                    break;
-                                case 'y': // yellow
-                                    if (len == 6 && m_colorSelection == "yellow") {
-                                        titleColor = {0xF, 0xF, 0x0, 0xF};
-                                    }
-                                    break;
-                                case 'o': // orange
-                                    if (len == 6 && m_colorSelection == "orange") {
-                                        titleColor = {0xFF, 0xA5, 0x00, 0xFF};
-                                    }
-                                    break;
-                                case 'p': // pink or purple
-                                    if (len == 4 && m_colorSelection == "pink") {
-                                        titleColor = {0xFF, 0x69, 0xB4, 0xFF};
-                                    } else if (len == 6 && m_colorSelection == "purple") {
-                                        titleColor = {0x80, 0x00, 0x80, 0xFF};
-                                    }
-                                    break;
-                                case 'w': // white
-                                    if (len == 5 && m_colorSelection == "white") {
-                                        titleColor = {0xF, 0xF, 0xF, 0xF};
-                                    }
-                                    break;
-                                //case 'u': // ultra
-                                //    if (len == 5 && m_colorSelection == "ultra") {
-                                //        for (const char letter : m_title) {
-                                //            progress = ult::calculateAmplitude(counter - x * 0.0001F);
-                                //            
-                                //            const tsl::Color highlightColor = {
-                                //                static_cast<u8>((0xA - 0xF) * (3 - 1.5 * progress) + 0xF),
-                                //                static_cast<u8>((0xA - 0xF) * 1.5 * progress + 0xF),
-                                //                static_cast<u8>((0xA - 0xF) * (1.25 - progress) + 0xF),
-                                //                0xF
-                                //            };
-                                //            
-                                //            const std::string letterStr(1, letter);
-                                //            renderer->drawString(letterStr.c_str(), false, x, y, fontSize, (highlightColor));
-                                //            const auto letterWidth = renderer->getTextDimensions(letterStr, false, fontSize).first;
-                                //            x += letterWidth;
-                                //            counter -= 0.00004F;
-                                //        }
-                                //        goto skip_normal_draw;
-                                //    }
-                                //    break;
-                                case '#': // hex color
-                                    if (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) {
-                                        titleColor = RGB888(m_colorSelection.substr(1));
-                                    }
-                                    break;
+                        if (!useCachedTop) {
+                            // Calculate color only if not using cache
+                            if (!m_colorSelection.empty()) {
+                                const char firstChar = m_colorSelection[0];
+                                const size_t len = m_colorSelection.length();
+                                
+                                // Fast path: check first char + length for unique combinations
+                                switch (firstChar) {
+                                    case 'g': // green
+                                        if (len == 5 && m_colorSelection == "green") {
+                                            drawColor = {0x0, 0xF, 0x0, 0xF};
+                                        }
+                                        break;
+                                    case 'r': // red
+                                        if (len == 3 && m_colorSelection == "red") {
+                                            drawColor = RGB888("#F7253E");
+                                        }
+                                        break;
+                                    case 'b': // blue
+                                        if (len == 4 && m_colorSelection == "blue") {
+                                            drawColor = {0x7, 0x7, 0xF, 0xF};
+                                        }
+                                        break;
+                                    case 'y': // yellow
+                                        if (len == 6 && m_colorSelection == "yellow") {
+                                            drawColor = {0xF, 0xF, 0x0, 0xF};
+                                        }
+                                        break;
+                                    case 'o': // orange
+                                        if (len == 6 && m_colorSelection == "orange") {
+                                            drawColor = {0xFF, 0xA5, 0x00, 0xFF};
+                                        }
+                                        break;
+                                    case 'p': // pink or purple
+                                        if (len == 4 && m_colorSelection == "pink") {
+                                            drawColor = {0xFF, 0x69, 0xB4, 0xFF};
+                                        } else if (len == 6 && m_colorSelection == "purple") {
+                                            drawColor = {0x80, 0x00, 0x80, 0xFF};
+                                        }
+                                        break;
+                                    case 'w': // white
+                                        if (len == 5 && m_colorSelection == "white") {
+                                            drawColor = {0xF, 0xF, 0xF, 0xF};
+                                        }
+                                        break;
+                                    case '#': // hex color
+                                        if (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) {
+                                            drawColor = RGB888(m_colorSelection.substr(1));
+                                        }
+                                        break;
+                                }
                             }
+                            titleColor = drawColor;
+                        } else {
+                            drawColor = renderTitleColor;
                         }
                         
-                        renderer->drawString(m_title, false, x, y, fontSize, (titleColor));
+                        renderer->drawString(renderTitle, false, x, y, fontSize, (drawColor));
                         y += 2;
-                        //skip_normal_draw:;
                     }
                 }
+                
                 static const std::vector<std::string> specialChars2 = {""};
-                if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
+                if (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
                     renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 20, y+25, 15, (bannerVersionTextColor), textSeparatorColor);
                 } else {
-                    std::string subtitle = m_subtitle;
+                    std::string subtitle = renderSubtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
                     renderer->drawStringWithColoredSections(subtitle, false, specialChars2, 20, y+23, 15, (bannerVersionTextColor), textSeparatorColor);
                 }
+                
+                // Update top cache after rendering for next frame
+                g_cachedTop.title = m_title;
+                g_cachedTop.subtitle = m_subtitle;
+                g_cachedTop.titleColor = titleColor;
+                g_cachedTop.useDynamicLogo = ult::useDynamicLogo;
+                // Store whether widget was ACTUALLY drawn this frame
+                if (isUltrahandMenu) {
+                    g_cachedTop.widgetDrawn = true;  // Ultrahand menu always shows widget
+                } else {
+                    g_cachedTop.widgetDrawn = m_showWidget;  // Other menus use m_showWidget
+                }
             
             #else
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
-                #if USING_WIDGET_DIRECTIVE
+            #if USING_WIDGET_DIRECTIVE
                 if (m_showWidget)
                     renderer->drawWidget();
-                #endif
+            #endif
                 
                 renderer->drawString(m_title, false, 20, 52-2, 32, (defaultOverlayColor));
                 renderer->drawString(m_subtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
-
+            
                 // Compute gap width once from GAP_1 and derive halfGap
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
                 
                 // Calculate text widths for buttons depending on launch mode and interpreter state
-                #if IS_LAUNCHER_DIRECTIVE
-                    const float backTextWidth = renderer->getTextDimensions(
-                        "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
-                    const float selectTextWidth = renderer->getTextDimensions(
-                        "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
-                #else
-                    const float backTextWidth = renderer->getTextDimensions(
-                        "\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    const float selectTextWidth = renderer->getTextDimensions(
-                        "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-                #endif
+            #if IS_LAUNCHER_DIRECTIVE
+                const float backTextWidth = renderer->getTextDimensions(
+                    "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
+                const float selectTextWidth = renderer->getTextDimensions(
+                    "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
+            #else
+                const float backTextWidth = renderer->getTextDimensions(
+                    "\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                const float selectTextWidth = renderer->getTextDimensions(
+                    "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+            #endif
                 
                 const float _halfGap = gapWidth / 2.0f;
                 if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
                     ult::halfGap.store(_halfGap, std::memory_order_release);
-
+            
                 // Total button widths include half-gap padding on both sides
                 const float _backWidth = backTextWidth + gapWidth;
                 if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
@@ -5214,7 +5329,7 @@ namespace tsl {
                                               _selectWidth-2, 73.0f, 10.0f, a(clickColor));
                 }
                 
-                #if IS_LAUNCHER_DIRECTIVE
+            #if IS_LAUNCHER_DIRECTIVE
                 // Handle optional next page button when in launcher mode and appropriate conditions are met
                 if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
                                                  !m_pageLeftName.empty() || !m_pageRightName.empty())) {
@@ -5230,7 +5345,7 @@ namespace tsl {
                                     ult::PACKAGES : ult::OVERLAYS_ABBR)) :
                                 ""),
                             false, 23).first + gapWidth;
-
+            
                     if (_nextPageWidth != ult::nextPageWidth.load(std::memory_order_acquire))
                         ult::nextPageWidth.store(_nextPageWidth, std::memory_order_release);
                 
@@ -5245,12 +5360,10 @@ namespace tsl {
                                                   73.0f, 10.0f, a(clickColor));
                     }
                 }
-                #endif
+            #endif
                 
-
-                #if IS_LAUNCHER_DIRECTIVE
-
-                const std::string menuBottomLine =
+            #if IS_LAUNCHER_DIRECTIVE
+                std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 +
                     (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
                     (!m_noClickableItems && !interpreterIsRunningNow
@@ -5277,20 +5390,34 @@ namespace tsl {
                         : !interpreterIsRunningNow && !m_pageRightName.empty()
                             ? "\uE0EE" + ult::GAP_2 + m_pageRightName
                             : "");
-                #else
-                const std::string menuBottomLine =
+            #else
+                std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
                     (!m_noClickableItems
                         ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
                         : "");
-                #endif
+            #endif
+                
+                // Determine if we should use cached bottom text (first frame of new overlay)
+                const bool useCachedBottom = !g_cachedBottom.bottomText.empty() && 
+                                              g_cachedBottom.bottomText != currentBottomLine;
+                
+                const std::string& menuBottomLine = useCachedBottom ? g_cachedBottom.bottomText : currentBottomLine;
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
                 static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
                                                         buttonStartX, 693, 23, 
                                                         (bottomTextColor), (buttonColor));
-
+                
+                // Update bottom cache after rendering for next frame
+                g_cachedBottom.bottomText = currentBottomLine;
+                g_cachedBottom.backWidth = _backWidth;
+                g_cachedBottom.selectWidth = _selectWidth;
+            #if IS_LAUNCHER_DIRECTIVE
+                g_cachedBottom.nextPageWidth = ult::nextPageWidth.load(std::memory_order_acquire);
+            #endif
+            
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
@@ -5311,7 +5438,7 @@ namespace tsl {
             
                 if (m_contentElement != nullptr)
                     m_contentElement->frame(renderer);
-
+            
                 if (!ult::useRightAlignment)
                     renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
                 else
@@ -6714,7 +6841,8 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;
-                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
                     return result;
                 }
                 
@@ -6739,7 +6867,8 @@ namespace tsl {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
-                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
                     return handleJumpToTop(oldFocus);
                 }
                 
@@ -6788,7 +6917,8 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;
-                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
                     return result;
                 }
                 
@@ -6813,7 +6943,8 @@ namespace tsl {
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
                     triggerShakeOnce = true;  // Reset when wrapping
-                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
                     return handleJumpToBottom(oldFocus);
                 }
                 
@@ -7180,6 +7311,8 @@ namespace tsl {
                     
                     Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
                         return newFocus;
                     }
                 }
@@ -7228,6 +7361,8 @@ namespace tsl {
                     
                     Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                     if (newFocus && newFocus != oldFocus) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
                         return newFocus;
                     }
                 }
@@ -7345,6 +7480,8 @@ namespace tsl {
                         m_focusedIndex = lastVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerNavigationSound.store(true, std::memory_order_release);
                             return newFocus;
                         }
                     }
@@ -7460,6 +7597,8 @@ namespace tsl {
                         m_focusedIndex = firstVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerNavigationSound.store(true, std::memory_order_release);
                             return newFocus;
                         }
                     }
@@ -7634,15 +7773,17 @@ namespace tsl {
         
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
-                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerEnterSound.store(true, std::memory_order_release);
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
                 }
-                //if (keys & KEY_B) {
-                //    triggerRumbleClick.store(true, std::memory_order_release);
-                //}
+                if (keys & KEY_B) {
+                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
+                }
                 return Element::onClick(keys);
             }
         
@@ -9707,6 +9848,7 @@ namespace tsl {
                         // If we were holding and repeating, just stop
                         if (m_wasLastHeld) {
                             m_wasLastHeld = false;
+                            triggerRumbleClick.store(true, std::memory_order_release);
                             m_holding = false;
                             updateAndExecute();
                             lastUpdate_ns = armTicksToNs(armGetSystemTick());
@@ -9715,6 +9857,7 @@ namespace tsl {
                         // If it was a quick tap (no repeat happened), handle the single tick
                         else if (m_holding) {
                             m_holding = false;
+                            triggerRumbleClick.store(true, std::memory_order_release);
                             updateAndExecute();
                             lastUpdate_ns = armTicksToNs(armGetSystemTick());
                             return true;
@@ -9729,6 +9872,7 @@ namespace tsl {
             
                     // Handle initial key press
                     if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
                         // Start tracking the hold
                         m_holding = true;
                         m_wasLastHeld = false;
@@ -10196,9 +10340,11 @@ namespace tsl {
                         if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                             const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
                             if (keysHeld & KEY_LEFT && this->m_index > 0) {
+                                triggerRumbleClick.store(true, std::memory_order_release);
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                             } else if (keysHeld & KEY_RIGHT && this->m_index < this->m_numSteps-1) {
+                                triggerRumbleClick.store(true, std::memory_order_release);
                                 this->m_index++;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                             } else {
@@ -11036,6 +11182,7 @@ namespace tsl {
          *
          */
         void show() {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -11058,12 +11205,15 @@ namespace tsl {
          *
          */
         void hide(bool useNoFade = false) {
+
+
             if (useNoFade) {
                 // Immediately hide overlay
                 ult::isHidden.store(true);
                 this->m_shouldHide = true;
                 return;
             }
+            triggerRumbleClick.store(true, std::memory_order_release);
 
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
@@ -12684,8 +12834,10 @@ namespace tsl {
                                                  return a.creationTime < b.creationTime;
                                              });
                                     
-                                    // --- Process files in chronological order ---
-                                    for (const auto& notifFile : notificationFiles) {
+                                    // --- Process the first file (highest priority, oldest first) ---
+                                    if (!notificationFiles.empty()) {
+                                        const auto& notifFile = notificationFiles.front();
+                                        
                                         // --- Load JSON (safe outside notification lock) ---
                                         text = ult::getStringFromJsonFile(notifFile.fullPath, "text");
                                         if (!text.empty()) {
@@ -12743,16 +12895,31 @@ namespace tsl {
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
                         break;
 
-                    //if (triggerRumbleClick.exchange(false)) {
-                    //    checkAndReinitRumble();
-                    //    rumbleClick();
-                    //}
-                    //processRumbleStop();
+                    if (ult::useHapticFeedback) {
+                        if (triggerRumbleDoubleClick.exchange(false)) {
+                            checkAndReinitRumble();
+                            rumbleDoubleClick();
+                            triggerRumbleClick.exchange(false);
+                        }
+                        else if (triggerRumbleClick.exchange(false)) {
+                            checkAndReinitRumble();
+                            rumbleClick();
+                        }
+                        processRumbleStop(nowTick, nowNs);
+                        processRumbleDoubleClick(nowTick, nowNs);
+                    }
+
+                    if (triggerNavigationSound.exchange(false)) {
+                        AudioPlayer::playNavigateSound();
+                    }
+                    else if (triggerEnterSound.exchange(false)) {
+                        AudioPlayer::playEnterSound();
+                    }
                     
                     // Combine inputs from both controllers
                     const u64 kDown_p1 = padGetButtonsDown(&pad_p1);
-                    const u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
                     const u64 kHeld_p1 = padGetButtons(&pad_p1);
+                    const u64 kDown_handheld = padGetButtonsDown(&pad_handheld);
                     const u64 kHeld_handheld = padGetButtons(&pad_handheld);
                     
                     shData->keysDown = kDown_p1 | kDown_handheld;
@@ -13795,7 +13962,8 @@ extern "C" {
         });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
 
-        //initRumble();
+        initRumble();
+        AudioPlayer::initialize();
 
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();
@@ -13819,6 +13987,7 @@ extern "C" {
         eventClose(&tsl::notificationEvent);
 
         //deinitRumble();
+        AudioPlayer::exit();
 
         smExit();
         //socketExit();
