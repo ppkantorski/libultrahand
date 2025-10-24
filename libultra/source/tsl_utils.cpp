@@ -275,6 +275,7 @@ namespace ult {
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
     bool useNotifications = true;
+    bool useSoundEffects = true;
     bool useHapticFeedback = false;
     bool usePageSwap = false;
     bool useDynamicLogo = true;

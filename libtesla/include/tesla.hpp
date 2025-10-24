@@ -725,6 +725,7 @@ namespace tsl {
         } else {
             ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
         }
+        ult::useSoundEffects = getBoolValue("sound_effects", false);
         ult::useHapticFeedback = getBoolValue("haptic_feedback", false);
 
         ult::useSwipeToOpen = getBoolValue("swipe_to_open", true);        // TRUE_STR default
@@ -4776,7 +4777,7 @@ namespace tsl {
         // Global or namespace-level variable
         inline TopCache g_cachedTop;
         inline BottomCache g_cachedBottom;
-        
+
         inline std::atomic<bool> g_disableMenuCacheOnReturn = false;
 
         /**
@@ -12630,36 +12631,44 @@ namespace tsl {
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
                         break;
 
-                    if (ult::useHapticFeedback) {
+                    // Flush any pending rumble triggers when feedback is off
+                    if (!ult::useHapticFeedback) {
+                        triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
+                        triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel);
+                    } else {
                         checkAndReinitRumble();
                     
                         if (triggerRumbleDoubleClick.exchange(false)) {
-                            if (!doubleClickActive.load(std::memory_order_acquire)) {      // <-- guard
+                            if (!doubleClickActive.load(std::memory_order_acquire)) {
                                 rumbleDoubleClick();
                             }
                             triggerRumbleClick.exchange(false);
-                        }
-                        else if (triggerRumbleClick.exchange(false)) {
+                        } else if (triggerRumbleClick.exchange(false)) {
                             rumbleClick();
                         }
                     
-                        // These must run every frame to finish sequences
                         processRumbleStop(nowTick, nowNs);
                         processRumbleDoubleClick(nowTick, nowNs);
                     }
-
-                    if (triggerNavigationSound.exchange(false)) {
-                        AudioPlayer::playNavigateSound();
+                    
+                    // Flush any pending sound triggers when effects are off
+                    if (!ult::useSoundEffects) {
+                        triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
+                        triggerEnterSound.exchange(false, std::memory_order_acq_rel);
+                        triggerExitSound.exchange(false, std::memory_order_acq_rel);
+                        triggerWallSound.exchange(false, std::memory_order_acq_rel);
+                    } else {
+                        if (triggerNavigationSound.exchange(false)) {
+                            AudioPlayer::playNavigateSound();
+                        } else if (triggerEnterSound.exchange(false)) {
+                            AudioPlayer::playEnterSound();
+                        } else if (triggerExitSound.exchange(false)) {
+                            AudioPlayer::playExitSound();
+                        } else if (triggerWallSound.exchange(false)) {
+                            AudioPlayer::playWallSound();
+                        }
                     }
-                    else if (triggerEnterSound.exchange(false)) {
-                        AudioPlayer::playEnterSound();
-                    }
-                    else if (triggerExitSound.exchange(false)) {
-                        AudioPlayer::playExitSound();
-                    }
-                    else if (triggerWallSound.exchange(false)) {
-                        AudioPlayer::playWallSound();
-                    }
+                    
                     //else if (triggerNavigationSound.exchange(false)) {
                     //    AudioPlayer::playSlideSound();
                     //}
