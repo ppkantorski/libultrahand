@@ -16,17 +16,7 @@ public:
         Wall,
         Count
     };
-
-    struct SoundConfig {
-        float frequency;
-        float duration;
-        float volume;
-        float attack;
-        float decay;
-        bool useEnvelope;
-        std::string name;
-    };
-
+    
     struct CachedSound {
         void* buffer = nullptr;
         size_t bufferSize = 0;
@@ -48,7 +38,6 @@ private:
     static bool m_initialized;
     static bool m_enabled;
     static float m_masterVolume;
-    static std::vector<SoundConfig> m_soundConfigs;
     static std::vector<CachedSound> m_cachedSounds;
 
     static void initializeDefaultConfigs();
