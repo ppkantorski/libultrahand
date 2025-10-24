@@ -4762,6 +4762,7 @@ namespace tsl {
             tsl::Color titleColor{0xF, 0xF, 0xF, 0xF}; // white by default
             bool widgetDrawn = false;
             bool useDynamicLogo = false;
+            bool disabled = false;
         };
         
         struct BottomCache {
@@ -4769,17 +4770,14 @@ namespace tsl {
             float backWidth = 0.0f;
             float selectWidth = 0.0f;
             float nextPageWidth = 0.0f;
+            bool disabled = false;
         };
         
         // Global or namespace-level variable
         inline TopCache g_cachedTop;
         inline BottomCache g_cachedBottom;
-
-        void clearFrameCache() {
-            // reset cache (script overlay doesnt use it)
-            g_cachedTop = TopCache{};
-            g_cachedBottom = BottomCache{};
-        }
+        
+        inline std::atomic<bool> g_disableMenuCacheOnReturn = false;
 
         /**
          * @brief The base frame which can contain another view
@@ -4804,7 +4802,7 @@ namespace tsl {
             std::string m_pageLeftName; // CUSTOM MODIFICATION
             std::string m_pageRightName; // CUSTOM MODIFICATION
             
-        
+            
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
             float letterWidth;
         #endif
@@ -4827,12 +4825,16 @@ namespace tsl {
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
                     m_isItem = false;
-                    //if (!ult::isHidden.load(std::memory_order_acquire))
-                    //    triggerRumbleClick.store(true, std::memory_order_release);
                 }
         
             ~OverlayFrame() {
                 delete m_contentElement;
+                
+                // Check if returning from a list that disabled caching
+                if (g_disableMenuCacheOnReturn.exchange(false, std::memory_order_acq_rel)) {
+                    g_cachedTop.disabled = true;
+                    g_cachedBottom.disabled = true;
+                }
             }
         
         #if USING_FPS_INDICATOR_DIRECTIVE
@@ -4861,6 +4863,7 @@ namespace tsl {
                     tsl::initializeThemeVars();
                 }
                 
+
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
                 
@@ -4880,7 +4883,8 @@ namespace tsl {
                                         m_subtitle.find("Ultrahand Script") == std::string::npos);
                 
                 // Determine if we should use cached data (first frame of new overlay)
-                const bool useCachedTop = !g_cachedTop.title.empty() && 
+                const bool useCachedTop = !g_cachedTop.disabled && 
+                                          !g_cachedTop.title.empty() && 
                                           (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
                 
                 // Use cached or current data for rendering
@@ -5028,6 +5032,7 @@ namespace tsl {
                 } else {
                     g_cachedTop.widgetDrawn = m_showWidget;  // Other menus use m_showWidget
                 }
+                g_cachedTop.disabled = false;
             
             #else
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
@@ -5157,7 +5162,8 @@ namespace tsl {
             #endif
                 
                 // Determine if we should use cached bottom text (first frame of new overlay)
-                const bool useCachedBottom = !g_cachedBottom.bottomText.empty() && 
+                const bool useCachedBottom = !g_cachedBottom.disabled && 
+                                              !g_cachedBottom.bottomText.empty() && 
                                               g_cachedBottom.bottomText != currentBottomLine;
                 
                 const std::string& menuBottomLine = useCachedBottom ? g_cachedBottom.bottomText : currentBottomLine;
@@ -5175,6 +5181,7 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
                 g_cachedBottom.nextPageWidth = ult::nextPageWidth.load(std::memory_order_acquire);
             #endif
+                g_cachedBottom.disabled = false;
             
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
@@ -5201,6 +5208,7 @@ namespace tsl {
                     renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
                 else
                     renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
+
             }
             // CUSTOM SECTION END
         
@@ -6073,6 +6081,8 @@ namespace tsl {
 
             inline void disableCaching() {
                 m_cachingDisabled = true;
+                //clearFrameCache();
+                g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
             }
         
         protected:
