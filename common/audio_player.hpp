@@ -1,7 +1,11 @@
 #pragma once
 #include <switch.h>
+#include <cstdio>
+#include <algorithm>
 #include <vector>
 #include <string>
+#include <cstring>
+
 
 class AudioPlayer {
 public:
@@ -9,6 +13,7 @@ public:
         Navigate,
         Enter,
         Exit,
+        Wall,
         Count
     };
 
@@ -31,9 +36,10 @@ public:
     static bool initialize();
     static void exit();
     static void playSound(SoundType type);
-    static void playNavigateSound(); // Tesla compatibility
-    static void playEnterSound(); // Tesla compatibility
-    static void playExitSound(); // Tesla compatibility
+    static void playNavigateSound();
+    static void playEnterSound();
+    static void playExitSound();
+    static void playWallSound();
     static void setMasterVolume(float volume);
     static void setEnabled(bool enabled);
     static bool isEnabled();
@@ -46,9 +52,6 @@ private:
     static std::vector<CachedSound> m_cachedSounds;
 
     static void initializeDefaultConfigs();
-    //static void pregenerateSoundBuffers();
-    //static void generateTone(void* buffer, size_t size, const SoundConfig& config);
-    //static void applyEnvelope(float* sample, float time, float duration, float attack, float decay);
     static void playAudioBuffer(void* buffer, size_t bufferSize);
     static bool loadSoundFromWav(SoundType type, const char* path);
 };
