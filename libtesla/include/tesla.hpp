@@ -12094,6 +12094,8 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
+            tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
+            
             // If there is exactly one GUI and an active notification, handle that first
             if (this->m_guiStack.size() == 1 && notification && notification->isActive()) {
                 this->close(); 
@@ -12129,6 +12131,7 @@ namespace tsl {
                 triggerExitSound.store(true, std::memory_order_release);
                 triggerRumbleDoubleClick.store(true, std::memory_order_release);
             }
+
         }
 
         void pop(u32 count = 1) {
@@ -12668,7 +12671,7 @@ namespace tsl {
                             AudioPlayer::playWallSound();
                         }
                     }
-                    
+
                     //else if (triggerNavigationSound.exchange(false)) {
                     //    AudioPlayer::playSlideSound();
                     //}
