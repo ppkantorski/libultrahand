@@ -7121,12 +7121,11 @@ namespace tsl {
                 invalidate();
                 resetNavigationState();
             
-                // Calculate target offset once (good optimization to keep)
-                const float targetOffset = (m_listHeight > getHeight()) ? 
+                const float targetOffset = (m_listHeight > getHeight()) ?
                                            static_cast<float>(m_listHeight - getHeight()) : 0.0f;
                 static constexpr float tolerance = 0.0f;
-
-                // Find the last focusable item
+            
+                // Find last focusable item
                 size_t lastFocusableIndex = m_items.size();
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
@@ -7135,31 +7134,21 @@ namespace tsl {
                         break;
                     }
                 }
-
-                // Check if we're already at the bottom with proper tolerance
-                bool alreadyAtBottom = false;
-                if (lastFocusableIndex < m_items.size()) {
-                    alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) && 
-                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                }
-                
-                if (alreadyAtBottom) {
-                    return oldFocus;  // Already at bottom, do nothing
-                }
-
-
-                const float viewHeight = static_cast<float>(getHeight());
-                const float maxOffset = (m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f;
             
-                // Calculate the target viewport center after skipping
+                bool alreadyAtBottom = (lastFocusableIndex < m_items.size()) &&
+                                       (m_focusedIndex == lastFocusableIndex) &&
+                                       (std::abs(m_nextOffset - targetOffset) <= tolerance);
+            
+                if (alreadyAtBottom) return oldFocus;
+            
+                const float viewHeight = static_cast<float>(getHeight());
+                const float maxOffset = (m_listHeight > viewHeight) ? static_cast<float>(m_listHeight - viewHeight) : 0.0f;
                 const float targetViewportTop = std::min(m_offset + viewHeight, maxOffset);
-
-                // Check if we traveled less than a full viewport
+            
                 const float actualTravelDistance = targetViewportTop - m_offset;
                 const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
                 const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
             
-                // Find the item closest to the center of the new viewport
                 float itemTop = 0.0f;
                 size_t targetIndex = 0;
                 bool foundFocusable = false;
@@ -7170,7 +7159,6 @@ namespace tsl {
                     const float itemCenter = itemTop + (itemHeight / 2.0f);
                     const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
             
-                    // Check if this item is focusable and closer to center
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
                     if (test && test->m_isItem && distanceFromCenter < bestDistance) {
                         targetIndex = i;
@@ -7181,6 +7169,8 @@ namespace tsl {
                     itemTop += itemHeight;
                 }
             
+                const float oldOffset = m_nextOffset;
+            
                 if (foundFocusable) {
                     bool nearBottom = true;
                     if (targetIndex > m_focusedIndex && traveledFullViewport) {
@@ -7188,46 +7178,45 @@ namespace tsl {
                         nearBottom = false;
                     }
                     isTableScrolling.store(false, std::memory_order_release);
-                    updateScrollOffset(); // This will center the cursor properly
-                    
+                    updateScrollOffset();
+            
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    //return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
+            
                     if (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) {
-                        // Trigger feedback on real focus change
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerNavigationSound.store(true, std::memory_order_release);
                         return newFocus;
                     } else {
-                        // Fallback if no new focus: behave like jump-to-bottom
                         return handleJumpToBottom(oldFocus);
                     }
                 } else {
+                    // Scroll viewport even if no focusable items
                     isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
-
-                    // NEW: Find the last focusable item that's still visible
+            
+                    if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
+                    }
+            
+                    // Focus last visible focusable item
                     float searchItemTop = 0.0f;
-                    size_t lastVisibleFocusable = m_focusedIndex;  // Default to current
-                    
+                    size_t lastVisibleFocusable = m_focusedIndex;
+            
                     for (size_t i = 0; i < m_items.size(); ++i) {
                         const float itemHeight = m_items[i]->getHeight();
                         const float itemBottom = searchItemTop + itemHeight;
-                        
-                        // Stop if we've gone past the new viewport
+            
                         if (searchItemTop >= targetViewportTop + viewHeight) break;
-                        
-                        // Check if this item is focusable and visible in the new viewport
+            
                         if (itemBottom > targetViewportTop) {
                             Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                            if (test && test->m_isItem) {
-                                lastVisibleFocusable = i;
-                            }
+                            if (test && test->m_isItem) lastVisibleFocusable = i;
                         }
-                        
+            
                         searchItemTop += itemHeight;
                     }
-                    
-                    // Focus on the last visible focusable item
+            
                     if (lastVisibleFocusable != m_focusedIndex) {
                         m_focusedIndex = lastVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
@@ -7238,7 +7227,7 @@ namespace tsl {
                         }
                     }
                 }
-
+            
                 return oldFocus;
             }
             
@@ -7248,12 +7237,11 @@ namespace tsl {
                 invalidate();
                 resetNavigationState();
             
-                // Define constants for clarity and consistency
                 static constexpr float targetOffset = 0.0f;
                 static constexpr float tolerance = 0.0f;
-
-                // Find the first focusable item
-                size_t firstFocusableIndex = m_items.size();  // Default to invalid
+            
+                // Find first focusable item
+                size_t firstFocusableIndex = m_items.size();
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
                     if (test) {
@@ -7261,31 +7249,20 @@ namespace tsl {
                         break;
                     }
                 }
-                
-                // Check if we're already at the top with proper tolerance
-                bool alreadyAtTop = false;
-                if (firstFocusableIndex < m_items.size()) {
-                    alreadyAtTop = (m_focusedIndex == firstFocusableIndex) && 
-                                  (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                }
-                
-                if (alreadyAtTop) {
-                    return oldFocus;  // Already at top, do nothing
-                }
-
-
+            
+                bool alreadyAtTop = (firstFocusableIndex < m_items.size()) &&
+                                    (m_focusedIndex == firstFocusableIndex) &&
+                                    (std::abs(m_nextOffset - targetOffset) <= tolerance);
+            
+                if (alreadyAtTop) return oldFocus;
+            
                 const float viewHeight = static_cast<float>(getHeight());
-                
-                // Calculate the target viewport center after skipping
                 const float targetViewportTop = std::max(0.0f, m_offset - viewHeight);
-
-                // Check if we traveled less than a full viewport
+            
                 const float actualTravelDistance = m_offset - targetViewportTop;
                 const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
-
                 const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
             
-                // Find the item closest to the center of the new viewport
                 float itemTop = 0.0f;
                 size_t targetIndex = 0;
                 bool foundFocusable = false;
@@ -7296,7 +7273,6 @@ namespace tsl {
                     const float itemCenter = itemTop + (itemHeight / 2.0f);
                     const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
             
-                    // Check if this item is focusable and closer to center
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
                     if (test && test->m_isItem && distanceFromCenter < bestDistance) {
                         targetIndex = i;
@@ -7307,55 +7283,55 @@ namespace tsl {
                     itemTop += itemHeight;
                 }
             
+                const float oldOffset = m_nextOffset;
+            
                 if (foundFocusable) {
-
                     bool nearTop = true;
                     if (targetIndex < m_focusedIndex && traveledFullViewport) {
                         m_focusedIndex = targetIndex;
                         nearTop = false;
                     }
-                    //if (traveledFullViewport)
                     isTableScrolling.store(false, std::memory_order_release);
-                    updateScrollOffset(); // This will center the cursor properly
-                    
+                    updateScrollOffset();
+            
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    //return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
-
-
+            
                     if (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) {
-                        // Trigger feedback on real focus change
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerNavigationSound.store(true, std::memory_order_release);
                         return newFocus;
                     } else {
-                        // Fallback if no new focus: behave like jump-to-top
                         return handleJumpToTop(oldFocus);
                     }
                 } else {
+                    // Scroll viewport even if no focusable items
                     isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
-                    
-                    // NEW: Find the first focusable item that's still visible
+            
+                    if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
+                    }
+            
+                    // Focus first visible focusable item
                     float searchItemTop = 0.0f;
-                    size_t firstVisibleFocusable = m_focusedIndex;  // Default to current
-                    
+                    size_t firstVisibleFocusable = m_focusedIndex;
+            
                     for (size_t i = 0; i < m_items.size(); ++i) {
                         const float itemHeight = m_items[i]->getHeight();
                         const float itemBottom = searchItemTop + itemHeight;
-                        
-                        // Check if this item is visible in the new viewport
+            
                         if (itemBottom > targetViewportTop && searchItemTop < targetViewportTop + viewHeight) {
                             Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
                             if (test && test->m_isItem) {
                                 firstVisibleFocusable = i;
-                                break;  // Take the first one for skip up
+                                break;
                             }
                         }
-                        
+            
                         searchItemTop += itemHeight;
                     }
-                    
-                    // Focus on the first visible focusable item
+            
                     if (firstVisibleFocusable != m_focusedIndex) {
                         m_focusedIndex = firstVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
@@ -7366,7 +7342,7 @@ namespace tsl {
                         }
                     }
                 }
-                
+            
                 return oldFocus;
             }
             
