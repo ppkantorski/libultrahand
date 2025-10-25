@@ -200,6 +200,8 @@ inline std::atomic<bool> triggerNavigationSound{false};
 inline std::atomic<bool> triggerEnterSound{false};
 inline std::atomic<bool> triggerExitSound{false};
 inline std::atomic<bool> triggerWallSound{false};
+inline std::atomic<bool> triggerOnSound{false};
+inline std::atomic<bool> triggerOffSound{false};
 
 static bool rumbleInitialized = false;
 static HidVibrationDeviceHandle vibHandheld;
@@ -7135,7 +7137,7 @@ namespace tsl {
                     }
                 }
             
-                bool alreadyAtBottom = (lastFocusableIndex < m_items.size()) &&
+                const bool alreadyAtBottom = (lastFocusableIndex < m_items.size()) &&
                                        (m_focusedIndex == lastFocusableIndex) &&
                                        (std::abs(m_nextOffset - targetOffset) <= tolerance);
             
@@ -7250,7 +7252,7 @@ namespace tsl {
                     }
                 }
             
-                bool alreadyAtTop = (firstFocusableIndex < m_items.size()) &&
+                const bool alreadyAtTop = (firstFocusableIndex < m_items.size()) &&
                                     (m_focusedIndex == firstFocusableIndex) &&
                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
             
@@ -8344,7 +8346,10 @@ namespace tsl {
 
                 // Handle KEY_A for toggling
                 if (keys & KEY_A) {
-                    triggerEnterSound.store(true, std::memory_order_release);
+                    if (!this->m_state)
+                        triggerOnSound.store(true, std::memory_order_release);
+                    else
+                        triggerOffSound.store(true, std::memory_order_release);
                     triggerRumbleClick.store(true, std::memory_order_release);
                     
                     this->m_state = !this->m_state;
@@ -8355,7 +8360,7 @@ namespace tsl {
                     this->m_stateChangedListener(this->m_state);
                     
                     
-                    return ListItem::onClick(keys);
+                    return true;
                 }
                 if (keys & KEY_B) {
                     triggerExitSound.store(true, std::memory_order_release);
@@ -12674,6 +12679,8 @@ namespace tsl {
                         triggerEnterSound.exchange(false, std::memory_order_acq_rel);
                         triggerExitSound.exchange(false, std::memory_order_acq_rel);
                         triggerWallSound.exchange(false, std::memory_order_acq_rel);
+                        triggerOnSound.exchange(false, std::memory_order_acq_rel);
+                        triggerOffSound.exchange(false, std::memory_order_acq_rel);
                     } else {
                         if (triggerNavigationSound.exchange(false)) {
                             AudioPlayer::playNavigateSound();
@@ -12683,6 +12690,10 @@ namespace tsl {
                             AudioPlayer::playExitSound();
                         } else if (triggerWallSound.exchange(false)) {
                             AudioPlayer::playWallSound();
+                        } else if (triggerOnSound.exchange(false)) {
+                            AudioPlayer::playOnSound();
+                        } else if (triggerOffSound.exchange(false)) {
+                            AudioPlayer::playOffSound();
                         }
                     }
 

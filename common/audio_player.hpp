@@ -14,9 +14,11 @@ public:
         Enter,
         Exit,
         Wall,
+        On,
+        Off,
         Count
     };
-    
+
     struct CachedSound {
         void* buffer = nullptr;
         size_t bufferSize = 0;
@@ -30,6 +32,8 @@ public:
     static void playEnterSound();
     static void playExitSound();
     static void playWallSound();
+    static void playOnSound();
+    static void playOffSound();
     static void setMasterVolume(float volume);
     static void setEnabled(bool enabled);
     static bool isEnabled();

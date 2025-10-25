@@ -103,11 +103,11 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
     const size_t inputSamples = dataSize / sizeof(s16);
     const size_t outputSamples = isMono ? inputSamples * 2 : inputSamples;
     const size_t outputDataSize = outputSamples * sizeof(s16);
-    
+
     // Use smaller alignment for small sounds to save memory
     const size_t alignment = outputDataSize < 16384 ? 0x100 : 0x1000;
     const size_t bufferSize = (outputDataSize + (alignment - 1)) & ~(alignment - 1);
-    
+
     void* buffer = aligned_alloc(alignment, bufferSize);
     if (!buffer) {
         fclose(file);
@@ -115,22 +115,25 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
     }
 
     fseek(file, dataChunkPos, SEEK_SET);
-    
-    const float scale = std::clamp(m_masterVolume, 0.0f, 1.0f);
     s16* outputSamples16 = static_cast<s16*>(buffer);
-    
+    const float scale = std::clamp(m_masterVolume, 0.0f, 1.0f);
+
     if (isMono) {
-        // Read and convert mono to stereo on-the-fly
-        s16 monoSample;
+        // Read mono and expand to stereo in-place
+        std::vector<s16> monoSamples(inputSamples);
+        if (fread(monoSamples.data(), sizeof(s16), inputSamples, file) != inputSamples) {
+            free(buffer);
+            fclose(file);
+            return false;
+        }
+
         for (size_t i = 0; i < inputSamples; ++i) {
-            if (fread(&monoSample, sizeof(s16), 1, file) != 1) {
-                free(buffer);
-                fclose(file);
-                return false;
-            }
-            const int32_t val = static_cast<int32_t>(monoSample * scale);
-            const s16 scaledSample = static_cast<s16>(val < -32768 ? -32768 : (val > 32767 ? 32767 : val));
-            outputSamples16[i * 2] = scaledSample;     // Left
+            const int32_t val = static_cast<int32_t>(monoSamples[i] * scale);
+            const s16 scaledSample = static_cast<s16>(
+                val < -32768 ? -32768 : (val > 32767 ? 32767 : val)
+            );
+
+            outputSamples16[i * 2]     = scaledSample; // Left
             outputSamples16[i * 2 + 1] = scaledSample; // Right
         }
     } else {
@@ -142,19 +145,20 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
         }
         for (size_t i = 0; i < inputSamples; ++i) {
             const int32_t val = static_cast<int32_t>(outputSamples16[i] * scale);
-            outputSamples16[i] = static_cast<s16>(val < -32768 ? -32768 : (val > 32767 ? 32767 : val));
+            outputSamples16[i] = static_cast<s16>(
+                val < -32768 ? -32768 : (val > 32767 ? 32767 : val)
+            );
         }
     }
-    
+
     fclose(file);
-    
+
     // Only zero padding if actually needed
     if (outputDataSize < bufferSize) {
         memset(static_cast<u8*>(buffer) + outputDataSize, 0, bufferSize - outputDataSize);
     }
 
     m_cachedSounds[index] = {buffer, bufferSize, false};
-
     return true;
 }
 
@@ -169,6 +173,8 @@ void AudioPlayer::initializeDefaultConfigs() {
     loadSoundFromWav(SoundType::Enter,    "sdmc:/config/ultrahand/sounds/enter.wav");
     loadSoundFromWav(SoundType::Exit,     "sdmc:/config/ultrahand/sounds/exit.wav");
     loadSoundFromWav(SoundType::Wall,     "sdmc:/config/ultrahand/sounds/wall.wav");
+    loadSoundFromWav(SoundType::On,       "sdmc:/config/ultrahand/sounds/on.wav");
+    loadSoundFromWav(SoundType::Off,      "sdmc:/config/ultrahand/sounds/off.wav");
 }
 
 // -------------------- Playback --------------------
@@ -236,4 +242,12 @@ void AudioPlayer::playExitSound() {
 
 void AudioPlayer::playWallSound() { 
     playSound(SoundType::Wall); 
+}
+
+void AudioPlayer::playOnSound() { 
+    playSound(SoundType::On); 
+}
+
+void AudioPlayer::playOffSound() { 
+    playSound(SoundType::Off); 
 }
