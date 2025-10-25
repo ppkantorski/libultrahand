@@ -4204,8 +4204,10 @@ namespace tsl {
              * @param direction Direction to shake highlight in
              */
             void inline shakeHighlight(FocusDirection direction) {
-                if (direction != FocusDirection::None)
+                if (direction != FocusDirection::None && m_isItem) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
                     triggerWallSound.store(true, std::memory_order_release);
+                }
                 this->m_highlightShaking = true;
                 this->m_highlightShakingDirection = direction;
                 this->m_highlightShakingStartTime = armTicksToNs(armGetSystemTick()); // Changed
@@ -6561,18 +6563,19 @@ namespace tsl {
                                                                                                                                             
             inline Element* handleDownFocus(Element* oldFocus) {
                 static bool triggerShakeOnce = true;
+                const bool atBottom = isAtBottom();
                 updateHoldState();
                 
                 // Check if the next item is non-focusable BEFORE we do anything else
                 if (m_focusedIndex + 1 < int(m_items.size())) {
                     Element* nextItem = m_items[m_focusedIndex + 1];
                     if (!nextItem->m_isItem) {
-                        isTableScrolling.store(true, std::memory_order_release);  // Set this IMMEDIATELY
+                        isTableScrolling.store(true, std::memory_order_release);
                     }
                 }
                 
                 // If holding and at boundary, try to scroll first
-                if (m_isHolding && m_stoppedAtBoundary && !isAtBottom()) {
+                if (m_isHolding && m_stoppedAtBoundary && !atBottom) {
                     scrollDown();
                     m_stoppedAtBoundary = false;
                     return oldFocus;
@@ -6583,64 +6586,76 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    triggerShakeOnce = true;
+                    triggerShakeOnce = true;  // This resets it for THIS function
                     triggerRumbleClick.store(true, std::memory_order_release);
                     triggerNavigationSound.store(true, std::memory_order_release);
                     return result;
                 }
                 
                 // Check if we can still scroll down
-                if (!isAtBottom()) {
+                if (!atBottom) {
                     scrollDown();
+                    triggerShakeOnce = true;  // ADDED: Reset when scrolling away from boundary
                     return oldFocus;
                 }
                 
-                // At absolute bottom - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtBottom()) {
-
+                // At absolute bottom - check for wrapping (single tap)
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && atBottom) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
+                    
+                    //if (result->m_isItem) {
                     triggerShakeOnce = true;  // Reset when wrapping
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    //}
                     return handleJumpToTop(oldFocus);
                 }
                 
-                // Set boundary flag
-                if (m_isHolding) {
+                // Set boundary flag (for holding)
+                if (m_isHolding && atBottom) {
                     m_stoppedAtBoundary = true;
                     if (triggerShakeOnce) {
-                        // Find the last focusable item to shake
-                        for (ssize_t i = static_cast<ssize_t>(m_focusedIndex); i >= 0; --i) {
-                            if (m_items[i]->m_isItem) {
-                                m_items[i]->shakeHighlight(FocusDirection::Down);
-                                break;
+                        if (result->m_isItem) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerWallSound.store(true, std::memory_order_release);
+                            
+                            for (ssize_t i = static_cast<ssize_t>(m_focusedIndex); i >= 0; --i) {
+                                if (m_items[i]->m_isItem) {
+                                    m_items[i]->shakeHighlight(FocusDirection::Down);
+                                    break;
+                                }
                             }
+                        } else {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerWallSound.store(true, std::memory_order_release);
                         }
                         triggerShakeOnce = false;
                     }
-                } else
+                } else if (!m_isHolding) {
                     triggerShakeOnce = true;
-                
+                }
+            
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
             
             inline Element* handleUpFocus(Element* oldFocus) {
                 static bool triggerShakeOnce = true;
+                const bool atTop = isAtTop();
                 updateHoldState();
                 
                 // Check if the previous item is non-focusable BEFORE we do anything else
                 if (m_focusedIndex > 0) {
                     Element* prevItem = m_items[m_focusedIndex - 1];
                     if (prevItem->isTable()) {
-                        isTableScrolling.store(true, std::memory_order_release);  // Set this IMMEDIATELY
+                        isTableScrolling.store(true, std::memory_order_release);
                     }
                 }
                 
                 // If holding and at boundary, try to scroll first
-                if (m_isHolding && m_stoppedAtBoundary && !isAtTop()) {
+                if (m_isHolding && m_stoppedAtBoundary && !atTop) {
                     scrollUp();
                     m_stoppedAtBoundary = false;
                     return oldFocus;
@@ -6651,50 +6666,61 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    triggerShakeOnce = true;
+                    triggerShakeOnce = true;  // This resets it for THIS function
                     triggerRumbleClick.store(true, std::memory_order_release);
                     triggerNavigationSound.store(true, std::memory_order_release);
                     return result;
                 }
                 
                 // Check if we can still scroll up
-                if (!isAtTop()) {
+                if (!atTop) {
                     scrollUp();
+                    triggerShakeOnce = true;  // ADDED: Reset when scrolling away from boundary
                     return oldFocus;
                 }
                 
-                // At absolute top - check for wrapping
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && isAtTop()) {
-
+                // At absolute top - check for wrapping (single tap)
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence && atTop) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
+                    
+                    //if (result->m_isItem) {
                     triggerShakeOnce = true;  // Reset when wrapping
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    //}
                     return handleJumpToBottom(oldFocus);
                 }
                 
-                // Set boundary flag
-                if (m_isHolding) {
+                // Set boundary flag (for holding)
+                if (m_isHolding && atTop) {
                     m_stoppedAtBoundary = true;
                     if (triggerShakeOnce) {
-                        // Find the first focusable item to shake
-                        for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
-                            if (m_items[i]->m_isItem) {
-                                m_items[i]->shakeHighlight(FocusDirection::Up);
-                                break;
+                        if (result->m_isItem) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerWallSound.store(true, std::memory_order_release);
+                            
+                            for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
+                                if (m_items[i]->m_isItem) {
+                                    m_items[i]->shakeHighlight(FocusDirection::Up);
+                                    break;
+                                }
                             }
+                        } else {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerWallSound.store(true, std::memory_order_release);
                         }
                         triggerShakeOnce = false;
                     }
-                } else
+                } else if (!m_isHolding) {
                     triggerShakeOnce = true;
-            
+                }
+                
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
-                        
+            
             
             inline bool isAtTop() {
                 if (m_items.empty()) return true;
@@ -6997,20 +7023,19 @@ namespace tsl {
                 m_nextOffset = std::max(m_nextOffset - scrollAmount, 0.0f);
             }
 
-            // Add these methods to handle jumps with smooth scrolling
+            // Jump to Bottom (original behavior + fixed trigger condition)
             Element* handleJumpToBottom(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
                 
                 invalidate();
                 resetNavigationState();
-                jumpToBottom.store(false, std::memory_order_release);  // Reset flag
+                jumpToBottom.store(false, std::memory_order_release);
                 
-                // Calculate target offset once (good optimization to keep)
-                const float targetOffset = (m_listHeight > getHeight()) ? 
+                const float targetOffset = (m_listHeight > getHeight()) ?
                                            static_cast<float>(m_listHeight - getHeight()) : 0.0f;
                 static constexpr float tolerance = 5.0f;
-                
-                // Find the last focusable item
+            
+                // Find last focusable item (search backward)
                 size_t lastFocusableIndex = m_items.size();
                 for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
@@ -7019,49 +7044,45 @@ namespace tsl {
                         break;
                     }
                 }
-                
-                // Check if we're already at the bottom with proper tolerance
-                bool alreadyAtBottom = false;
-                if (lastFocusableIndex < m_items.size()) {
-                    alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) && 
-                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                }
-                
-                if (alreadyAtBottom) {
-                    return oldFocus;  // Already at bottom, do nothing
-                }
-                
-                // Not at bottom - perform the jump using SAME logic as wrapToBottom
-                if (lastFocusableIndex < m_items.size()) {
-                    m_focusedIndex = lastFocusableIndex;
-                    m_nextOffset = targetOffset;  // Use same calculation as wrapToBottom
-                    
-                    Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
-                        return newFocus;
-                    }
-                }
-                
-                // No focusable items - just set target to bottom (same as wrapToBottom)
+            
+                if (lastFocusableIndex == m_items.size())
+                    return oldFocus; // no focusable items
+            
+                bool alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) &&
+                                       (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                if (alreadyAtBottom)
+                    return oldFocus;
+            
+                const float oldOffset = m_nextOffset;
+                m_focusedIndex = lastFocusableIndex;
                 m_nextOffset = targetOffset;
-                return oldFocus;
+            
+                Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
+            
+                // Trigger feedback if offset or focus changed
+                if ((newFocus && newFocus != oldFocus) ||
+                    (std::abs(m_nextOffset - oldOffset) > tolerance)) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
+                }
+            
+                return newFocus ? newFocus : oldFocus;
             }
             
+            
+            // Jump to Top (original behavior + fixed trigger condition)
             Element* handleJumpToTop(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
-                
+            
                 invalidate();
                 resetNavigationState();
-                jumpToTop.store(false, std::memory_order_release);  // Reset flag
-                
-                // Define constants for clarity and consistency
+                jumpToTop.store(false, std::memory_order_release);
+            
                 static constexpr float targetOffset = 0.0f;
-                static constexpr float tolerance = 0.0f;
-                
-                // Find the first focusable item
-                size_t firstFocusableIndex = m_items.size();  // Default to invalid
+                static constexpr float tolerance = 5.0f;
+            
+                // Find first focusable item (search forward)
+                size_t firstFocusableIndex = m_items.size();
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
                     if (test) {
@@ -7069,34 +7090,29 @@ namespace tsl {
                         break;
                     }
                 }
-                
-                // Check if we're already at the top with proper tolerance
-                bool alreadyAtTop = false;
-                if (firstFocusableIndex < m_items.size()) {
-                    alreadyAtTop = (m_focusedIndex == firstFocusableIndex) && 
-                                  (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                }
-                
-                if (alreadyAtTop) {
-                    return oldFocus;  // Already at top, do nothing
-                }
-                
-                // Not at top - perform the jump using SAME logic as wrapToTop
-                if (firstFocusableIndex < m_items.size()) {
-                    m_focusedIndex = firstFocusableIndex;
-                    m_nextOffset = targetOffset;  // Same as wrapToTop
-                    
-                    Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    if (newFocus && newFocus != oldFocus) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
-                        return newFocus;
-                    }
-                }
-                
-                // No focusable items - just set target to top (same as wrapToTop)
+            
+                if (firstFocusableIndex == m_items.size())
+                    return oldFocus; // no focusable items
+            
+                bool alreadyAtTop = (m_focusedIndex == firstFocusableIndex) &&
+                                    (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                if (alreadyAtTop)
+                    return oldFocus;
+            
+                const float oldOffset = m_nextOffset;
+                m_focusedIndex = firstFocusableIndex;
                 m_nextOffset = targetOffset;
-                return oldFocus;
+            
+                Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
+            
+                // Trigger feedback if offset or focus changed
+                if ((newFocus && newFocus != oldFocus) ||
+                    (std::abs(m_nextOffset - oldOffset) > tolerance)) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerNavigationSound.store(true, std::memory_order_release);
+                }
+            
+                return newFocus ? newFocus : oldFocus;
             }
             
             Element* handleSkipDown(Element* oldFocus) {
@@ -7175,7 +7191,16 @@ namespace tsl {
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
+                    //return (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) ? newFocus : handleJumpToBottom(oldFocus);
+                    if (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) {
+                        // Trigger feedback on real focus change
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
+                        return newFocus;
+                    } else {
+                        // Fallback if no new focus: behave like jump-to-bottom
+                        return handleJumpToBottom(oldFocus);
+                    }
                 } else {
                     isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
@@ -7294,7 +7319,18 @@ namespace tsl {
                     updateScrollOffset(); // This will center the cursor properly
                     
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-                    return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
+                    //return (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) ? newFocus : handleJumpToTop(oldFocus);
+
+
+                    if (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) {
+                        // Trigger feedback on real focus change
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
+                        return newFocus;
+                    } else {
+                        // Fallback if no new focus: behave like jump-to-top
+                        return handleJumpToTop(oldFocus);
+                    }
                 } else {
                     isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
@@ -8332,7 +8368,8 @@ namespace tsl {
 
                 // Handle KEY_A for toggling
                 if (keys & KEY_A) {
-
+                    triggerEnterSound.store(true, std::memory_order_release);
+                    triggerRumbleClick.store(true, std::memory_order_release);
                     
                     this->m_state = !this->m_state;
                     
@@ -8344,6 +8381,12 @@ namespace tsl {
                     
                     return ListItem::onClick(keys);
                 }
+                if (keys & KEY_B) {
+                    triggerExitSound.store(true, std::memory_order_release);
+                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    
+                }
+
                 #if IS_LAUNCHER_DIRECTIVE
                 // Handle SCRIPT_KEY for executing script logic
                 else if (keys & SCRIPT_KEY) {
@@ -10915,7 +10958,7 @@ namespace tsl {
          *
          */
         void show() {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -10928,6 +10971,7 @@ namespace tsl {
 
             ult::isHidden.store(false);
             this->onShow();
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
@@ -10946,7 +10990,7 @@ namespace tsl {
                 this->m_shouldHide = true;
                 return;
             }
-            triggerRumbleClick.store(true, std::memory_order_release);
+            
 
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
@@ -10975,6 +11019,7 @@ namespace tsl {
             ult::isHidden.store(true);
             this->onHide();
         #endif
+            triggerRumbleClick.store(true, std::memory_order_release);
         }
         
         /**
@@ -11167,9 +11212,6 @@ namespace tsl {
             if (!promptOnly) {
                 // In normal mode, ensure screenshots are enabled
                 // Only re-add if they were removed AND force-disable is not set
-                //const bool shouldAddScreenshots = !screenshotStacksAdded.load(std::memory_order_acquire) &&
-                //                           !screenshotsAreForceDisabled.load(std::memory_order_acquire);
-                
                 if (!screenshotStacksAdded.load(std::memory_order_acquire) &&
                     !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
                     bool expected = false;
@@ -11186,10 +11228,6 @@ namespace tsl {
                 //notificationCacheNeedsClearing.store(true, std::memory_order_release);
             } else {
                 // Prompt-only mode - temporarily remove screenshots
-                //const bool shouldRemoveScreenshots = screenshotStacksAdded.load(std::memory_order_acquire) &&
-                //                              !screenshotsAreDisabled.load(std::memory_order_acquire) &&
-                //                              !screenshotsAreForceDisabled.load(std::memory_order_acquire);
-                
                 if (screenshotStacksAdded.load(std::memory_order_acquire) &&
                     !screenshotsAreDisabled.load(std::memory_order_acquire) &&
                     !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
@@ -12095,7 +12133,7 @@ namespace tsl {
          */
         void goBack(u32 count = 1) {
             tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
-            
+
             // If there is exactly one GUI and an active notification, handle that first
             if (this->m_guiStack.size() == 1 && notification && notification->isActive()) {
                 this->close(); 
