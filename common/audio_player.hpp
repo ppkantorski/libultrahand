@@ -16,13 +16,15 @@ public:
         Wall,
         On,
         Off,
+        Settings,
+        Move,
         Count
     };
 
     struct CachedSound {
         void* buffer = nullptr;
-        size_t bufferSize = 0;
-        bool playing; // <- new
+        uint32_t bufferSize = 0;
+        uint32_t dataSize = 0;  // ADD THIS
     };
 
     static bool initialize();
@@ -34,6 +36,8 @@ public:
     static void playWallSound();
     static void playOnSound();
     static void playOffSound();
+    static void playSettingsSound();
+    static void playMoveSound();
     static void setMasterVolume(float volume);
     static void setEnabled(bool enabled);
     static bool isEnabled();
@@ -43,8 +47,7 @@ private:
     static bool m_enabled;
     static float m_masterVolume;
     static std::vector<CachedSound> m_cachedSounds;
-
-    static void initializeDefaultConfigs();
-    static void playAudioBuffer(void* buffer, size_t bufferSize);
+    
+    static void playAudioBuffer(void* buffer, uint32_t bufferSize);
     static bool loadSoundFromWav(SoundType type, const char* path);
 };

@@ -202,6 +202,8 @@ inline std::atomic<bool> triggerExitSound{false};
 inline std::atomic<bool> triggerWallSound{false};
 inline std::atomic<bool> triggerOnSound{false};
 inline std::atomic<bool> triggerOffSound{false};
+inline std::atomic<bool> triggerSettingsSound{false};
+inline std::atomic<bool> triggerMoveSound{false};
 
 static bool rumbleInitialized = false;
 static HidVibrationDeviceHandle vibHandheld;
@@ -12681,6 +12683,8 @@ namespace tsl {
                         triggerWallSound.exchange(false, std::memory_order_acq_rel);
                         triggerOnSound.exchange(false, std::memory_order_acq_rel);
                         triggerOffSound.exchange(false, std::memory_order_acq_rel);
+                        triggerSettingsSound.exchange(false, std::memory_order_acq_rel);
+                        triggerMoveSound.exchange(false, std::memory_order_acq_rel);
                     } else {
                         if (triggerNavigationSound.exchange(false)) {
                             AudioPlayer::playNavigateSound();
@@ -12694,6 +12698,10 @@ namespace tsl {
                             AudioPlayer::playOnSound();
                         } else if (triggerOffSound.exchange(false)) {
                             AudioPlayer::playOffSound();
+                        } else if (triggerSettingsSound.exchange(false)) {
+                            AudioPlayer::playSettingsSound();
+                        } else if (triggerMoveSound.exchange(false)) {
+                            AudioPlayer::playMoveSound();
                         }
                     }
 
@@ -13640,24 +13648,24 @@ namespace tsl {
                     // Start first pulse
                     if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
                         hidSendVibrationValue(vibHandheld, &clickHandheld);
-                
+                    
                     if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
                         hidSendVibrationValue(vibPlayer1Left, &clickDocked);
                         hidSendVibrationValue(vibPlayer1Right, &clickDocked);
                     }
-                
+                    
                     // First pulse duration
                     svcSleepThread(DOUBLE_CLICK_PULSE_DURATION_NS);
-                
+                    
                     // Stop first pulse
-                    HidVibrationValue stop{0};
+                    //HidVibrationValue stop{0};
                     if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &stop);
+                        hidSendVibrationValue(vibHandheld, &vibrationStop);
                     if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &stop);
-                        hidSendVibrationValue(vibPlayer1Right, &stop);
+                        hidSendVibrationValue(vibPlayer1Left, &vibrationStop);
+                        hidSendVibrationValue(vibPlayer1Right, &vibrationStop);
                     }
-                
+                    
                     // Gap between pulses
                     svcSleepThread(DOUBLE_CLICK_GAP_NS);
                 
@@ -13674,10 +13682,10 @@ namespace tsl {
                 
                     // Stop second pulse
                     if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &stop);
+                        hidSendVibrationValue(vibHandheld, &vibrationStop);
                     if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &stop);
-                        hidSendVibrationValue(vibPlayer1Right, &stop);
+                        hidSendVibrationValue(vibPlayer1Left, &vibrationStop);
+                        hidSendVibrationValue(vibPlayer1Right, &vibrationStop);
                     }
                 }
             }
