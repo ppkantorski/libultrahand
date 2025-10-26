@@ -205,20 +205,20 @@ inline std::atomic<bool> triggerOffSound{false};
 inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 
-static bool rumbleInitialized = false;
-static HidVibrationDeviceHandle vibHandheld;
-static HidVibrationDeviceHandle vibPlayer1Left;
-static HidVibrationDeviceHandle vibPlayer1Right;
+inline bool rumbleInitialized = false;
+inline HidVibrationDeviceHandle vibHandheld;
+inline HidVibrationDeviceHandle vibPlayer1Left;
+inline HidVibrationDeviceHandle vibPlayer1Right;
 
 inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
-static std::atomic<bool> rumbleActive{false};
-static std::atomic<bool> doubleClickActive{false};
+inline std::atomic<bool> rumbleActive{false};
+inline std::atomic<bool> doubleClickActive{false};
 
-static u64 rumbleStartTick = 0;
-static u64 doubleClickTick = 0;
-static u8 doubleClickPulse = 0;
+inline u64 rumbleStartTick = 0;
+inline u64 doubleClickTick = 0;
+inline u8 doubleClickPulse = 0;
 
 static constexpr u64 RUMBLE_DURATION_NS = 30000000ULL;
 static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30000000ULL;
@@ -247,7 +247,7 @@ static void initController(HidNpadIdType npad, HidVibrationDeviceHandle* handles
     }
 }
 
-void initRumble() {
+static inline void initRumble() {
     if (rumbleInitialized) return;
     
     initController(HidNpadIdType_Handheld, &vibHandheld, 1);
@@ -260,11 +260,11 @@ void initRumble() {
     rumbleInitialized = true;
 }
 
-void deinitRumble() {
+static inline void deinitRumble() {
     rumbleInitialized = false;
 }
 
-void checkAndReinitRumble() {
+static inline void checkAndReinitRumble() {
     static u32 lastHandheldStyle = 0;
     static u32 lastPlayer1Style = 0;
     
@@ -289,7 +289,7 @@ static inline void sendVibration(const HidVibrationValue* value) {
     }
 }
 
-void rumbleClick() {
+static inline void rumbleClick() {
     if (!rumbleInitialized) {
         initRumble();
         if (!rumbleInitialized) return;
@@ -300,7 +300,7 @@ void rumbleClick() {
     rumbleStartTick = armGetSystemTick();
 }
 
-void rumbleDoubleClick() {
+static inline void rumbleDoubleClick() {
     if (!rumbleInitialized) {
         initRumble();
         if (!rumbleInitialized) return;
@@ -312,14 +312,14 @@ void rumbleDoubleClick() {
     doubleClickTick = armGetSystemTick();
 }
 
-void processRumbleStop(u64 nowTick, u64 nowNs) {
+static inline void processRumbleStop(u64 nowTick, u64 nowNs) {
     if (rumbleActive && nowNs - armTicksToNs(rumbleStartTick) >= RUMBLE_DURATION_NS) {
         sendVibration(&vibrationStop);
         rumbleActive = false;
     }
 }
 
-void processRumbleDoubleClick(u64 nowTick, u64 nowNs) {
+static inline void processRumbleDoubleClick(u64 nowTick, u64 nowNs) {
     if (!doubleClickActive) return;
 
     const u64 elapsed = nowNs - armTicksToNs(doubleClickTick);
@@ -7516,8 +7516,8 @@ namespace tsl {
         
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
-                    triggerEnterSound.store(true, std::memory_order_release);
                     triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerEnterSound.store(true, std::memory_order_release);
                     
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
@@ -7525,8 +7525,8 @@ namespace tsl {
                     m_clickAnimationProgress = 0;
                 }
                 if (keys & KEY_B) {
-                    triggerExitSound.store(true, std::memory_order_release);
                     triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerExitSound.store(true, std::memory_order_release);
                     
                 }
                 return Element::onClick(keys);
@@ -8348,11 +8348,12 @@ namespace tsl {
 
                 // Handle KEY_A for toggling
                 if (keys & KEY_A) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
                     if (!this->m_state)
                         triggerOnSound.store(true, std::memory_order_release);
                     else
                         triggerOffSound.store(true, std::memory_order_release);
-                    triggerRumbleClick.store(true, std::memory_order_release);
+                    
                     
                     this->m_state = !this->m_state;
                     
@@ -8365,8 +8366,8 @@ namespace tsl {
                     return true;
                 }
                 if (keys & KEY_B) {
-                    triggerExitSound.store(true, std::memory_order_release);
                     triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerExitSound.store(true, std::memory_order_release);
                     
                 }
 
@@ -9564,8 +9565,9 @@ namespace tsl {
                 }
             
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerEnterSound.store(true, std::memory_order_release);
                     triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerEnterSound.store(true, std::memory_order_release);
+                    
 
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
@@ -9579,8 +9581,8 @@ namespace tsl {
                 }
 
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    triggerExitSound.store(true, std::memory_order_release);
                     triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerExitSound.store(true, std::memory_order_release);
                 }
             
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
@@ -9660,8 +9662,9 @@ namespace tsl {
                         static u64 lastNavigationSound_ns = 0;
                         if (currentTime_ns - lastNavigationSound_ns >= 150'000'000ULL) { // 100ms
                             if (this->m_value > m_minValue && this->m_value < m_maxValue) {
-                                triggerNavigationSound.store(true, std::memory_order_release);
                                 triggerRumbleClick.store(true, std::memory_order_release);
+                                triggerNavigationSound.store(true, std::memory_order_release);
+                                
                             }
                             lastNavigationSound_ns = currentTime_ns;
                         }
@@ -10057,8 +10060,9 @@ namespace tsl {
             
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerEnterSound.store(true, std::memory_order_release);
                     triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerEnterSound.store(true, std::memory_order_release);
+                    
 
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
@@ -10072,8 +10076,8 @@ namespace tsl {
                 }
             
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    triggerExitSound.store(true, std::memory_order_release);
                     triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerExitSound.store(true, std::memory_order_release);
                 }
 
                 // Handle SCRIPT_KEY press
@@ -10108,13 +10112,15 @@ namespace tsl {
                         if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                             const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
                             if (keysHeld & KEY_LEFT && this->m_index > 0) {
-                                triggerNavigationSound.store(true, std::memory_order_release);
                                 triggerRumbleClick.store(true, std::memory_order_release);
+                                triggerNavigationSound.store(true, std::memory_order_release);
+                                
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                             } else if (keysHeld & KEY_RIGHT && this->m_index < this->m_numSteps-1) {
-                                triggerNavigationSound.store(true, std::memory_order_release);
                                 triggerRumbleClick.store(true, std::memory_order_release);
+                                triggerNavigationSound.store(true, std::memory_order_release);
+                                
                                 this->m_index++;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                             } else {
@@ -12149,8 +12155,8 @@ namespace tsl {
             if (this->m_guiStack.empty()) {
                 this->close();
             } else {
-                triggerExitSound.store(true, std::memory_order_release);
                 triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                triggerExitSound.store(true, std::memory_order_release);
             }
 
         }
