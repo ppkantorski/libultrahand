@@ -13721,6 +13721,15 @@ namespace tsl {
                     overlay->show();
                     if (!comboBreakout && !(notification && notification->isActive()))
                         overlay->clearScreen();
+
+                    {
+                        std::scoped_lock lock(shData.dataMutex);
+                        // Clear derived states that the overlay loop will use
+                        shData.keysDown = 0;
+                        shData.keysHeld = 0;
+                        // Clear any queued pending keys so nothing gets processed one frame late
+                        shData.keysDownPending = 0;
+                    }
                 }
                 
                 while (shData.running.load(std::memory_order_acquire)) {
