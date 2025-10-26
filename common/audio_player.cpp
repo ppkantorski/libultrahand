@@ -1,11 +1,15 @@
 #include "audio_player.hpp"
+#include <mutex>
 
 bool AudioPlayer::m_initialized = false;
 bool AudioPlayer::m_enabled = true;
 float AudioPlayer::m_masterVolume = 0.6f;
 std::vector<AudioPlayer::CachedSound> AudioPlayer::m_cachedSounds;
+std::mutex AudioPlayer::m_audioMutex;
 
 bool AudioPlayer::initialize() {
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    
     if (m_initialized) return true;
     
     if (R_FAILED(audoutInitialize()) || R_FAILED(audoutStartAudioOut())) {
@@ -35,6 +39,8 @@ bool AudioPlayer::initialize() {
 }
 
 void AudioPlayer::exit() {
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    
     for (auto& c : m_cachedSounds)
         free(c.buffer);
     m_cachedSounds.clear();
@@ -118,7 +124,7 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
         }
     
         // Precompute scale as 32-bit integer multiplier
-        const int32_t scaleInt = static_cast<int32_t>(scale * 256.0f); // scale in 0..256 range
+        const int32_t scaleInt = static_cast<int32_t>(scale * 256.0f);
     
         for (uint32_t i = 0; i < inSamp; ++i) {
             s16 v = static_cast<s16>((tmp[i] - 128) * scaleInt);
@@ -161,37 +167,63 @@ void AudioPlayer::playSound(SoundType type) {
     auto& cached = m_cachedSounds[idx];
     if (!cached.buffer) return;
 
-    // Static buffer per sound
-    static AudioOutBuffer ab[static_cast<uint32_t>(SoundType::Count)] = {};
+    std::lock_guard<std::mutex> lock(m_audioMutex);
 
-    ab[idx] = {};                  // Reset previous values
-    ab[idx].buffer = cached.buffer;
-    ab[idx].buffer_size = cached.bufferSize;
-    ab[idx].data_size = cached.dataSize;  // Use actual audio data
-    ab[idx].data_offset = 0;
-    ab[idx].next = nullptr;
+    // Drain any released buffers before playing
+    AudioOutBuffer* releasedBuffers = nullptr;
+    u32 releasedCount = 0;
+    audoutGetReleasedAudioOutBuffer(&releasedBuffers, &releasedCount);
 
-    // Play buffer; rel is optional and can be ignored
+    // Use a static buffer that persists after function returns
+    static AudioOutBuffer audioBuffer = {};
+    audioBuffer = {}; // Reset it
+    audioBuffer.buffer = cached.buffer;
+    audioBuffer.buffer_size = cached.bufferSize;
+    audioBuffer.data_size = cached.dataSize;
+    audioBuffer.data_offset = 0;
+    audioBuffer.next = nullptr;
+
     AudioOutBuffer* rel = nullptr;
-    audoutPlayBuffer(&ab[idx], &rel);
+    audoutPlayBuffer(&audioBuffer, &rel);
 }
 
 void AudioPlayer::playAudioBuffer(void* buffer, uint32_t sz) {
-    if (m_initialized && m_enabled && buffer) {
-        AudioOutBuffer ab = {};
-        ab.next = nullptr;
-        ab.buffer = buffer;
-        ab.buffer_size = (u32)sz;
-        ab.data_size = (u32)sz;
-        ab.data_offset = 0;
-        AudioOutBuffer* rel = nullptr;
-        audoutPlayBuffer(&ab, &rel);
-    }
+    if (!m_initialized || !m_enabled || !buffer) return;
+    
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    
+    // Drain any released buffers
+    AudioOutBuffer* releasedBuffers = nullptr;
+    u32 releasedCount = 0;
+    audoutGetReleasedAudioOutBuffer(&releasedBuffers, &releasedCount);
+    
+    // Use a static buffer that persists after function returns
+    static AudioOutBuffer audioBuffer = {};
+    audioBuffer = {}; // Reset it
+    audioBuffer.next = nullptr;
+    audioBuffer.buffer = buffer;
+    audioBuffer.buffer_size = sz;
+    audioBuffer.data_size = sz;
+    audioBuffer.data_offset = 0;
+    
+    AudioOutBuffer* rel = nullptr;
+    audoutPlayBuffer(&audioBuffer, &rel);
 }
 
-void AudioPlayer::setMasterVolume(float v) { m_masterVolume = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
-void AudioPlayer::setEnabled(bool e) { m_enabled = e; }
-bool AudioPlayer::isEnabled() { return m_enabled; }
+void AudioPlayer::setMasterVolume(float v) { 
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    m_masterVolume = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); 
+}
+
+void AudioPlayer::setEnabled(bool e) { 
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    m_enabled = e; 
+}
+
+bool AudioPlayer::isEnabled() { 
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    return m_enabled; 
+}
 
 void AudioPlayer::playNavigateSound() { playSound(SoundType::Navigate); }
 void AudioPlayer::playEnterSound() { playSound(SoundType::Enter); }

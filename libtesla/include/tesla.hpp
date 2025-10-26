@@ -204,6 +204,7 @@ inline std::atomic<bool> triggerOnSound{false};
 inline std::atomic<bool> triggerOffSound{false};
 inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
+inline std::atomic<bool> disableSound{false};
 
 inline bool rumbleInitialized = false;
 inline HidVibrationDeviceHandle vibHandheld;
@@ -312,14 +313,14 @@ static inline void rumbleDoubleClick() {
     doubleClickTick = armGetSystemTick();
 }
 
-static inline void processRumbleStop(u64 nowTick, u64 nowNs) {
+static inline void processRumbleStop(u64 nowNs) {
     if (rumbleActive && nowNs - armTicksToNs(rumbleStartTick) >= RUMBLE_DURATION_NS) {
         sendVibration(&vibrationStop);
         rumbleActive = false;
     }
 }
 
-static inline void processRumbleDoubleClick(u64 nowTick, u64 nowNs) {
+static inline void processRumbleDoubleClick(u64 nowNs) {
     if (!doubleClickActive) return;
 
     const u64 elapsed = nowNs - armTicksToNs(doubleClickTick);
@@ -4832,6 +4833,7 @@ namespace tsl {
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
                     m_isItem = false;
+                    disableSound.store(false, std::memory_order_release);
                 }
         
             ~OverlayFrame() {
@@ -4870,7 +4872,7 @@ namespace tsl {
                     tsl::initializeThemeVars();
                 }
                 
-
+            
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
                 
@@ -5042,16 +5044,45 @@ namespace tsl {
                 g_cachedTop.disabled = false;
             
             #else
+                // NON-LAUNCHER PATH WITH CACHE SUPPORT
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
+                
+                // Determine if we should use cached data (first frame of new overlay)
+                const bool useCachedTop = !g_cachedTop.disabled && 
+                                          !g_cachedTop.title.empty() && 
+                                          (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
+                
+                // Use cached or current data for rendering
+                const std::string& renderTitle = useCachedTop ? g_cachedTop.title : m_title;
+                const std::string& renderSubtitle = useCachedTop ? g_cachedTop.subtitle : m_subtitle;
+                
             #if USING_WIDGET_DIRECTIVE
-                if (m_showWidget)
-                    renderer->drawWidget();
+                if (useCachedTop) {
+                    if (g_cachedTop.widgetDrawn) {
+                        renderer->drawWidget();
+                    }
+                } else {
+                    if (m_showWidget)
+                        renderer->drawWidget();
+                }
             #endif
                 
-                renderer->drawString(m_title, false, 20, 52-2, 32, (defaultOverlayColor));
-                renderer->drawString(m_subtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
+                renderer->drawString(renderTitle, false, 20, 52-2, 32, (defaultOverlayColor));
+                renderer->drawString(renderSubtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
+                
+                // Update top cache after rendering for next frame
+                g_cachedTop.title = m_title;
+                g_cachedTop.subtitle = m_subtitle;
+                g_cachedTop.titleColor = {0xF, 0xF, 0xF, 0xF};
+            #if USING_WIDGET_DIRECTIVE
+                g_cachedTop.widgetDrawn = m_showWidget;
+            #else
+                g_cachedTop.widgetDrawn = false;
+            #endif
+                g_cachedTop.useDynamicLogo = false;
+                g_cachedTop.disabled = false;
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -5187,6 +5218,8 @@ namespace tsl {
                 g_cachedBottom.selectWidth = _selectWidth;
             #if IS_LAUNCHER_DIRECTIVE
                 g_cachedBottom.nextPageWidth = ult::nextPageWidth.load(std::memory_order_acquire);
+            #else
+                g_cachedBottom.nextPageWidth = 0.0f;
             #endif
                 g_cachedBottom.disabled = false;
             
@@ -5215,7 +5248,7 @@ namespace tsl {
                     renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
                 else
                     renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
-
+            
             }
             // CUSTOM SECTION END
         
@@ -5314,6 +5347,12 @@ namespace tsl {
             virtual ~HeaderOverlayFrame() {
                 if (this->m_contentElement != nullptr)
                     delete this->m_contentElement;
+                
+                // Check if returning from a list that disabled caching
+                if (g_disableMenuCacheOnReturn.exchange(false, std::memory_order_acq_rel)) {
+                    g_cachedTop.disabled = true;
+                    g_cachedBottom.disabled = true;
+                }
             }
 
             
@@ -5330,7 +5369,7 @@ namespace tsl {
                 
                 if (FullMode == true) {
                     renderer->fillScreen(a(defaultBackgroundColor));
-                    if (lastMode.empty())
+                    if (lastMode.empty() || lastMode == "returning")
                         renderer->drawWallpaper();
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
@@ -5339,8 +5378,17 @@ namespace tsl {
                 y = 50;
                 offset = 0;
                 
-                renderer->drawString(this->m_title, false, 20, 50, 32, (defaultOverlayColor));
-                renderer->drawString(this->m_subtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
+                // Determine if we should use cached data (first frame of new overlay)
+                const bool useCachedTop = !g_cachedTop.disabled && 
+                                          !g_cachedTop.title.empty() && 
+                                          (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
+                
+                // Use cached or current data for rendering
+                const std::string& renderTitle = useCachedTop ? g_cachedTop.title : m_title;
+                const std::string& renderSubtitle = useCachedTop ? g_cachedTop.subtitle : m_subtitle;
+                
+                renderer->drawString(renderTitle, false, 20, 50, 32, (defaultOverlayColor));
+                renderer->drawString(renderSubtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -5350,24 +5398,24 @@ namespace tsl {
                 
                 if (FullMode && !deactivateOriginalFooter) {
                     // Get the exact gap width from ult::GAP_1
-                    static const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    static const float _halfGap = gapWidth / 2.0f;
+                    const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+                    const float _halfGap = gapWidth / 2.0f;
                     if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
                         ult::halfGap.store(_halfGap, std::memory_order_release);
                 
                     // Calculate text dimensions for buttons without gaps
-                    static const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    static const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                    const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                    const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
                 
                     // Update widths to include the half-gap padding on each side
-                    static const float _backWidth = backTextWidth + gapWidth;
+                    const float _backWidth = backTextWidth + gapWidth;
                     if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
                         ult::backWidth.store(_backWidth, std::memory_order_release);
-                    static const float _selectWidth = selectTextWidth + gapWidth;
+                    const float _selectWidth = selectTextWidth + gapWidth;
                     if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
                         ult::selectWidth.store(_selectWidth, std::memory_order_release);
                 
-                    static const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
+                    const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
@@ -5381,17 +5429,25 @@ namespace tsl {
                     }
                 }
                 
+                // Build current bottom line
+                const std::string currentBottomLine = 
+                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                    (!m_noClickableItems 
+                        ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
+                        : "");
+                
+                // Determine if we should use cached bottom text (first frame of new overlay)
+                const bool useCachedBottom = !g_cachedBottom.disabled && 
+                                              !g_cachedBottom.bottomText.empty() && 
+                                              g_cachedBottom.bottomText != currentBottomLine;
+                
+                const std::string& menuBottomLine = useCachedBottom ? g_cachedBottom.bottomText : currentBottomLine;
+                
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
-                    const std::string menuBottomLine = 
-                        "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
-                        (!m_noClickableItems 
-                            ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
-                            : "");
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
                     renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
                 }
-                
                 
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
@@ -5402,6 +5458,21 @@ namespace tsl {
                     else
                         renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
                 }
+                
+                // Update top cache after rendering for next frame
+                g_cachedTop.title = m_title;
+                g_cachedTop.subtitle = m_subtitle;
+                g_cachedTop.titleColor = {0xF, 0xF, 0xF, 0xF}; // HeaderOverlayFrame uses default white
+                g_cachedTop.widgetDrawn = false;  // HeaderOverlayFrame doesn't use widgets
+                g_cachedTop.useDynamicLogo = false; // HeaderOverlayFrame doesn't use dynamic logo
+                g_cachedTop.disabled = false;
+                
+                // Update bottom cache after rendering for next frame
+                g_cachedBottom.bottomText = currentBottomLine;
+                g_cachedBottom.backWidth = ult::backWidth.load(std::memory_order_acquire);
+                g_cachedBottom.selectWidth = ult::selectWidth.load(std::memory_order_acquire);
+                g_cachedBottom.nextPageWidth = 0.0f;  // HeaderOverlayFrame doesn't use next page
+                g_cachedBottom.disabled = false;
             }
             
 
@@ -7517,18 +7588,24 @@ namespace tsl {
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
                     triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerEnterSound.store(true, std::memory_order_release);
+
+                    if (m_value == ult::CAPITAL_ON_STR)
+                        triggerOffSound.store(true, std::memory_order_release);
+                    else if (m_value == ult::CAPITAL_OFF_STR)
+                        triggerOnSound.store(true, std::memory_order_release);
+                    else
+                        triggerEnterSound.store(true, std::memory_order_release);
                     
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) [[unlikely]] {
                     m_clickAnimationProgress = 0;
                 }
-                if (keys & KEY_B) {
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerExitSound.store(true, std::memory_order_release);
-                    
-                }
+                //if (keys & KEY_B) {
+                //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                //    triggerExitSound.store(true, std::memory_order_release);
+                //    
+                //}
                 return Element::onClick(keys);
             }
         
@@ -8365,11 +8442,11 @@ namespace tsl {
                     
                     return true;
                 }
-                if (keys & KEY_B) {
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerExitSound.store(true, std::memory_order_release);
-                    
-                }
+                //if (keys & KEY_B) {
+                //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                //    triggerExitSound.store(true, std::memory_order_release);
+                //    
+                //}
 
                 #if IS_LAUNCHER_DIRECTIVE
                 // Handle SCRIPT_KEY for executing script logic
@@ -8823,15 +8900,25 @@ namespace tsl {
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
-                
+                static bool triggerOnce = true;
+
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
                 if (event == TouchEvent::Release) {
+                    triggerOnce = true;
+                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerOffSound.store(true, std::memory_order_release);
                     touchInSliderBounds = false;
                     return false;
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
+                    if (triggerOnce){
+                        triggerOnce = false;
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerOnSound.store(true, std::memory_order_release);
+                    }
+
                     touchInSliderBounds = true;
                     //if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
                     s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
@@ -9139,8 +9226,12 @@ namespace tsl {
                 if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
                     if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                         if (keysHeld & KEY_LEFT && this->m_value > 0) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerNavigationSound.store(true, std::memory_order_release);
                             this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
                         } else if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerNavigationSound.store(true, std::memory_order_release);
                             this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
                         } else {
                             return false;
@@ -9162,15 +9253,25 @@ namespace tsl {
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
+                static bool triggerOnce = true;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
                 if (event == TouchEvent::Release) {
+                    triggerOnce = true;
+                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                    triggerOffSound.store(true, std::memory_order_release);
                     touchInSliderBounds = false;
                     return false;
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
+                    if (triggerOnce){
+                        triggerOnce = false;
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerOnSound.store(true, std::memory_order_release);
+                    }
+
                     touchInSliderBounds = true;
                     //if (currY > this->getTopBound() && currY < this->getBottomBound()) {
                     s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
@@ -9184,6 +9285,8 @@ namespace tsl {
                     }
         
                     if (newValue != this->m_value) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerNavigationSound.store(true, std::memory_order_release);
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
                     }
@@ -9580,10 +9683,10 @@ namespace tsl {
                     return true;
                 }
 
-                if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerExitSound.store(true, std::memory_order_release);
-                }
+                //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
+                //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                //    triggerExitSound.store(true, std::memory_order_release);
+                //}
             
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
@@ -9717,14 +9820,23 @@ namespace tsl {
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
+                static bool triggerOnce = true;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
-                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))
+                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+
                     return false;
-        
+                }
+                
                 if ((touchInCircle || touchInSliderBounds)) {
                     touchInSliderBounds = true;
+
+                    if (triggerOnce) {
+                        triggerOnce = false;
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerOnSound.store(true, std::memory_order_release);
+                    }
                     
                     const s16 newIndex = std::max(static_cast<s16>(0), std::min(static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1)), static_cast<s16>(m_numSteps - 1)));
                     const s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
@@ -9736,11 +9848,19 @@ namespace tsl {
                         if (m_executeOnEveryTick) {
                             updateAndExecute(false);
                         }
+                        if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerNavigationSound.store(true, std::memory_order_release);
+                        }
                     } else {
                         if (event == TouchEvent::Release) {
+                            triggerOnce = true;
                             updateAndExecute();
                             if (event == TouchEvent::Release)
                                 touchInSliderBounds = false;
+
+                            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                            triggerOffSound.store(true, std::memory_order_release);
                         }
                     }
         
@@ -10075,10 +10195,10 @@ namespace tsl {
                     return true;
                 }
             
-                if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerExitSound.store(true, std::memory_order_release);
-                }
+                //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
+                //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                //    triggerExitSound.store(true, std::memory_order_release);
+                //}
 
                 // Handle SCRIPT_KEY press
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
@@ -10960,7 +11080,7 @@ namespace tsl {
 
             ult::isHidden.store(false);
             this->onShow();
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerRumbleClick.store(true, std::memory_order_release);
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
@@ -11330,6 +11450,10 @@ namespace tsl {
                     if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                         if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                             this->goBack();
+                            if (this->m_guiStack.size() >= 1) {
+                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                triggerExitSound.store(true, std::memory_order_release);
+                            }
                             //ult::simulatedBackComplete = true;
                         }
                         return;
@@ -11357,9 +11481,20 @@ namespace tsl {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
+                        if (this->m_guiStack.size() >= 1) {
+                            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                            triggerExitSound.store(true, std::memory_order_release);
+                        }
                         //ult::simulatedBackComplete = true;
                     }
                     return;
+                }
+            } else {
+                if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
+                    if (this->m_guiStack.size() >= 1) {
+                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                        triggerExitSound.store(true, std::memory_order_release);
+                    }
                 }
             }
         #endif
@@ -12155,8 +12290,8 @@ namespace tsl {
             if (this->m_guiStack.empty()) {
                 this->close();
             } else {
-                triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                triggerExitSound.store(true, std::memory_order_release);
+                //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                //triggerExitSound.store(true, std::memory_order_release);
             }
 
         }
@@ -12676,13 +12811,15 @@ namespace tsl {
                         } else if (triggerRumbleClick.exchange(false)) {
                             rumbleClick();
                         }
-                    
-                        processRumbleStop(nowTick, nowNs);
-                        processRumbleDoubleClick(nowTick, nowNs);
+                        
+                        //const u64 _nowNs = armTicksToNs(armGetSystemTick());
+
+                        processRumbleStop(nowNs);
+                        processRumbleDoubleClick(nowNs);
                     }
                     
                     // Flush any pending sound triggers when effects are off
-                    if (!ult::useSoundEffects) {
+                    if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
                         triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
                         triggerEnterSound.exchange(false, std::memory_order_acq_rel);
                         triggerExitSound.exchange(false, std::memory_order_acq_rel);
@@ -12955,7 +13092,7 @@ namespace tsl {
                                     eventClose(&captureButtonPressEvent);
 
                                     ult::launchingOverlay.store(true, std::memory_order_release);
-                                    tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct");
+                                    tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct --comboReturn");
                                     tsl::Overlay::get()->close();
                                     eventFire(&shData->comboEvent);
                                     launchComboHasTriggered.store(true, std::memory_order_release);
@@ -13000,6 +13137,7 @@ namespace tsl {
                                 }
         
                                 if (overlayFileName == "ovlmenu.ovl") {
+                                    finalArgs += " --comboReturn";
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
                                         ult::ULTRAHAND_PROJECT_NAME,
@@ -13262,7 +13400,9 @@ namespace tsl {
         {"skipCombo", 9, 2},
         {"lastTitleID", 11, 3}, 
         {"foregroundFix", 13, 4},
-        {"package", 7, 5}
+        {"package", 7, 5},
+        {"lastSelectedItem", 16, 6},
+        {"comboReturn", 11, 7} // new option
     };
 
 
@@ -13347,18 +13487,20 @@ namespace tsl {
     
         bool skipCombo = false;
     #if IS_LAUNCHER_DIRECTIVE
+        bool comboReturn = false;
         bool directMode = true;
     #else
         bool directMode = false;
     #endif
         bool usingPackageLauncher = false;
+        
     
         for (u8 arg = 0; arg < argc; arg++) {
             const char* s = argv[arg];
             if (s[0] != '-' || s[1] != '-') continue;
             const char* opt = s + 2;
     
-            for (u8 i = 0; i < 5; i++) {
+            for (u8 i = 0; i < 7; i++) { // now 6 instead of 5
                 if (memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
                     switch (options[i].action) {
                         case 1: // direct
@@ -13382,12 +13524,23 @@ namespace tsl {
                             break;
                         case 4: // foregroundFix
                             if (++arg < argc) {
-                                ult::resetForegroundCheck.store(ult::resetForegroundCheck.load(std::memory_order_acquire) ||
-                                                               (argv[arg][0] == '1'), std::memory_order_release);
+                                ult::resetForegroundCheck.store(
+                                    ult::resetForegroundCheck.load(std::memory_order_acquire) ||
+                                    (argv[arg][0] == '1'), std::memory_order_release);
                             }
                             break;
                         case 5: // package
                             usingPackageLauncher = true;
+                            break;
+                        case 6: // lastSelectedItem
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            lastMode = "returning";
+                            #endif
+                            break;
+                        case 7: // comboReturn
+                            #if IS_LAUNCHER_DIRECTIVE
+                            comboReturn = true;
+                            #endif
                             break;
                     }
                 }
@@ -13415,11 +13568,15 @@ namespace tsl {
     #endif
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
-    
+        
+
+         bool shouldFireEvent = false;
+
     #if IS_LAUNCHER_DIRECTIVE
+       
         {
             bool inOverlay;
-            bool shouldFireEvent = false;
+            
             auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
             bool needsUpdate = false;
     
@@ -13453,6 +13610,7 @@ namespace tsl {
     #else
         if (skipCombo) {
             eventFire(&shData.comboEvent);
+            shouldFireEvent = true;
         }
     #endif
     
@@ -13564,7 +13722,7 @@ namespace tsl {
                     if (!comboBreakout && !(notification && notification->isActive()))
                         overlay->clearScreen();
                 }
-    
+                
                 while (shData.running.load(std::memory_order_acquire)) {
                     {
                         
@@ -13581,6 +13739,34 @@ namespace tsl {
                             }
                             shData.keysDownPending = 0;
                         }
+                        #if IS_LAUNCHER_DIRECTIVE
+                        if (shouldFireEvent) {
+                            shouldFireEvent = false;
+                            
+                            if (!comboReturn) {
+                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                triggerExitSound.store(true, std::memory_order_release);
+                            //} else {
+                            //    triggerRumbleClick.store(true, std::memory_order_release);
+                            }
+                        }
+                        #else
+                        if (!directMode && shouldFireEvent) {
+                            shouldFireEvent = false;
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            if (lastMode == "returning") {
+                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                triggerExitSound.store(true, std::memory_order_release);
+                            } else {
+                                //triggerRumbleClick.store(true, std::memory_order_release);
+                                triggerEnterSound.store(true, std::memory_order_release);
+                            }
+                            #else
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerEnterSound.store(true, std::memory_order_release);
+                            #endif
+                        }
+                        #endif
                     }
     
     #if IS_STATUS_MONITOR_DIRECTIVE
@@ -13648,7 +13834,7 @@ namespace tsl {
             eventClose(&shData.comboEvent);
 
 
-            if (!launchComboHasTriggered.load(std::memory_order_acquire)) {
+            if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
                 AudioPlayer::playExitSound();
                 if (ult::useHapticFeedback && rumbleInitialized) {
                     // Start first pulse
