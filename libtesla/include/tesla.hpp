@@ -196,6 +196,7 @@ inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 
 
+
 // Sound triggering variables
 inline std::atomic<bool> triggerNavigationSound{false};
 inline std::atomic<bool> triggerEnterSound{false};
@@ -208,21 +209,22 @@ inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
 
 // Haptic variables
-inline bool rumbleInitialized = false;
-inline HidVibrationDeviceHandle vibHandheld;
-inline HidVibrationDeviceHandle vibPlayer1Left;
-inline HidVibrationDeviceHandle vibPlayer1Right;
+// ===== Internal state (per-file, used only in this header) =====
+static bool rumbleInitialized = false;
+static HidVibrationDeviceHandle vibHandheld;
+static HidVibrationDeviceHandle vibPlayer1Left;
+static HidVibrationDeviceHandle vibPlayer1Right;
+static u64 rumbleStartTick = 0;
+static u64 doubleClickTick = 0;
+static u8 doubleClickPulse = 0;
 
+// ===== Shared flags (accessible from other translation units) =====
 inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
-
 inline std::atomic<bool> rumbleActive{false};
 inline std::atomic<bool> doubleClickActive{false};
 
-static inline u64 rumbleStartTick = 0;
-static inline u64 doubleClickTick = 0;
-static inline u8 doubleClickPulse = 0;
-
+// ===== Constants =====
 static constexpr u64 RUMBLE_DURATION_NS = 30000000ULL;
 static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30000000ULL;
 static constexpr u64 DOUBLE_CLICK_GAP_NS = 100000000ULL;
@@ -243,7 +245,8 @@ static constexpr HidVibrationValue clickHandheld = {
 
 static constexpr HidVibrationValue vibrationStop{0};
 
-static void initController(HidNpadIdType npad, HidVibrationDeviceHandle* handles, int count) {
+// ===== Functions =====
+static inline void initController(HidNpadIdType npad, HidVibrationDeviceHandle* handles, int count) {
     const u32 styleMask = hidGetNpadStyleSet(npad);
     if (styleMask) {
         hidInitializeVibrationDevices(handles, count, npad, (HidNpadStyleTag)styleMask);
@@ -354,7 +357,6 @@ static inline void processRumbleDoubleClick(u64 nowNs) {
             break;
     }
 }
-
 
 namespace tsl {
 

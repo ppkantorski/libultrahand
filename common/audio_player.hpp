@@ -3,13 +3,13 @@
 #include <cstdio>
 #include <algorithm>
 #include <vector>
-#include <string>
+#include <atomic>
 #include <cstring>
 #include <mutex>
 
 class AudioPlayer {
 public:
-    enum class SoundType {
+    enum class SoundType : uint8_t {  // <- uint8_t saves space
         Navigate,
         Enter,
         Exit,
@@ -30,14 +30,17 @@ public:
     static bool initialize();
     static void exit();
     static void playSound(SoundType type);
-    static void playNavigateSound();
-    static void playEnterSound();
-    static void playExitSound();
-    static void playWallSound();
-    static void playOnSound();
-    static void playOffSound();
-    static void playSettingsSound();
-    static void playMoveSound();
+    
+    // Inline wrappers - same API, zero overhead
+    static inline void playNavigateSound() { playSound(SoundType::Navigate); }
+    static inline void playEnterSound() { playSound(SoundType::Enter); }
+    static inline void playExitSound() { playSound(SoundType::Exit); }
+    static inline void playWallSound() { playSound(SoundType::Wall); }
+    static inline void playOnSound() { playSound(SoundType::On); }
+    static inline void playOffSound() { playSound(SoundType::Off); }
+    static inline void playSettingsSound() { playSound(SoundType::Settings); }
+    static inline void playMoveSound() { playSound(SoundType::Move); }
+    
     static void setMasterVolume(float volume);
     static void setEnabled(bool enabled);
     static bool isEnabled();
@@ -46,13 +49,12 @@ public:
     
 private:
     static bool m_initialized;
-    static bool m_enabled;
+    static std::atomic<bool> m_enabled;  // <- atomic for lock-free reads
     static float m_masterVolume;
-    static std::vector<CachedSound> m_cachedSounds;
+    static std::vector<CachedSound> m_cachedSounds;  // Keep vector, it's fine
     static std::mutex m_audioMutex;
     static bool m_lastDockedState;
     
-    // DECLARE but don't define in header - definition goes in .cpp
     inline static constexpr const char* m_soundPaths[static_cast<size_t>(SoundType::Count)] = {
         "sdmc:/config/ultrahand/sounds/tick.wav",
         "sdmc:/config/ultrahand/sounds/enter.wav",
@@ -64,7 +66,7 @@ private:
         "sdmc:/config/ultrahand/sounds/move.wav"
     };
     
-    static void playAudioBuffer(void* buffer, uint32_t bufferSize);
+    //static void playAudioBuffer(void* buffer, uint32_t bufferSize);
     static bool loadSoundFromWav(SoundType type, const char* path);
     static void reloadAllSounds();
 };
