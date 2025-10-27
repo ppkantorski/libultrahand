@@ -196,6 +196,7 @@ inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 
 
+// Sound triggering variables
 inline std::atomic<bool> triggerNavigationSound{false};
 inline std::atomic<bool> triggerEnterSound{false};
 inline std::atomic<bool> triggerExitSound{false};
@@ -206,6 +207,7 @@ inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
 
+// Haptic variables
 inline bool rumbleInitialized = false;
 inline HidVibrationDeviceHandle vibHandheld;
 inline HidVibrationDeviceHandle vibPlayer1Left;
@@ -217,9 +219,9 @@ inline std::atomic<bool> triggerRumbleDoubleClick{false};
 inline std::atomic<bool> rumbleActive{false};
 inline std::atomic<bool> doubleClickActive{false};
 
-inline u64 rumbleStartTick = 0;
-inline u64 doubleClickTick = 0;
-inline u8 doubleClickPulse = 0;
+static inline u64 rumbleStartTick = 0;
+static inline u64 doubleClickTick = 0;
+static inline u8 doubleClickPulse = 0;
 
 static constexpr u64 RUMBLE_DURATION_NS = 30000000ULL;
 static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30000000ULL;
@@ -242,7 +244,7 @@ static constexpr HidVibrationValue clickHandheld = {
 static constexpr HidVibrationValue vibrationStop{0};
 
 static void initController(HidNpadIdType npad, HidVibrationDeviceHandle* handles, int count) {
-    u32 styleMask = hidGetNpadStyleSet(npad);
+    const u32 styleMask = hidGetNpadStyleSet(npad);
     if (styleMask) {
         hidInitializeVibrationDevices(handles, count, npad, (HidNpadStyleTag)styleMask);
     }
@@ -4965,39 +4967,39 @@ namespace tsl {
                                 // Fast path: check first char + length for unique combinations
                                 switch (firstChar) {
                                     case 'g': // green
-                                        if (len == 5 && m_colorSelection == "green") {
+                                        if (len == 5 && m_colorSelection.compare("green") == 0) {
                                             drawColor = {0x0, 0xF, 0x0, 0xF};
                                         }
                                         break;
                                     case 'r': // red
-                                        if (len == 3 && m_colorSelection == "red") {
+                                        if (len == 3 && m_colorSelection.compare("red") == 0) {
                                             drawColor = RGB888("#F7253E");
                                         }
                                         break;
                                     case 'b': // blue
-                                        if (len == 4 && m_colorSelection == "blue") {
+                                        if (len == 4 && m_colorSelection.compare("blue") == 0) {
                                             drawColor = {0x7, 0x7, 0xF, 0xF};
                                         }
                                         break;
                                     case 'y': // yellow
-                                        if (len == 6 && m_colorSelection == "yellow") {
+                                        if (len == 6 && m_colorSelection.compare("yellow") == 0) {
                                             drawColor = {0xF, 0xF, 0x0, 0xF};
                                         }
                                         break;
                                     case 'o': // orange
-                                        if (len == 6 && m_colorSelection == "orange") {
+                                        if (len == 6 && m_colorSelection.compare("orange") == 0) {
                                             drawColor = {0xFF, 0xA5, 0x00, 0xFF};
                                         }
                                         break;
                                     case 'p': // pink or purple
-                                        if (len == 4 && m_colorSelection == "pink") {
+                                        if (len == 4 && m_colorSelection.compare("pink") == 0) {
                                             drawColor = {0xFF, 0x69, 0xB4, 0xFF};
-                                        } else if (len == 6 && m_colorSelection == "purple") {
+                                        } else if (len == 6 && m_colorSelection.compare("purple") == 0) {
                                             drawColor = {0x80, 0x00, 0x80, 0xFF};
                                         }
                                         break;
                                     case 'w': // white
-                                        if (len == 5 && m_colorSelection == "white") {
+                                        if (len == 5 && m_colorSelection.compare("white") == 0) {
                                             drawColor = {0xF, 0xF, 0xF, 0xF};
                                         }
                                         break;
@@ -5139,7 +5141,7 @@ namespace tsl {
                             !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
                             !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
                             (ult::inMainMenu.load(std::memory_order_acquire) ?
-                                ((m_menuMode == "packages" ?
+                                (((m_menuMode.compare("packages") == 0) ?
                                     (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
                                     (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
                                 ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ?
@@ -5175,14 +5177,14 @@ namespace tsl {
                         : "") +
                     (!interpreterIsRunningNow
                         ? (!ult::usePageSwap
-                            ? (m_menuMode == "packages"
+                            ? ((m_menuMode.compare("packages") == 0)
                                 ? "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : m_menuMode == "overlays"
+                                : (m_menuMode.compare("overlays") == 0)
                                     ? "\uE0EE" + ult::GAP_2 + ult::PACKAGES
                                     : "")
-                            : (m_menuMode == "packages"
+                            : ((m_menuMode.compare("packages") == 0)
                                 ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : m_menuMode == "overlays"
+                                : (m_menuMode.compare("overlays") == 0)
                                     ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES
                                     : ""))
                         : "") +
@@ -5369,7 +5371,7 @@ namespace tsl {
                 
                 if (FullMode == true) {
                     renderer->fillScreen(a(defaultBackgroundColor));
-                    if (lastMode.empty() || lastMode == "returning")
+                    if (lastMode.empty() || (lastMode.compare("returning") == 0))
                         renderer->drawWallpaper();
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
@@ -7496,6 +7498,7 @@ namespace tsl {
         public:
             u32 width, height;
             u64 m_touchStartTime_ns;
+            bool isLocked = false;
         
         #if IS_LAUNCHER_DIRECTIVE
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
@@ -7589,9 +7592,9 @@ namespace tsl {
                 if (keys & KEY_A) [[likely]] {
                     triggerRumbleClick.store(true, std::memory_order_release);
 
-                    if (m_value == ult::CAPITAL_ON_STR)
+                    if (isLocked || m_value.find(ult::CAPITAL_ON_STR) != std::string::npos)
                         triggerOffSound.store(true, std::memory_order_release);
-                    else if (m_value == ult::CAPITAL_OFF_STR)
+                    else if (m_value.find(ult::CAPITAL_OFF_STR) != std::string::npos)
                         triggerOnSound.store(true, std::memory_order_release);
                     else
                         triggerEnterSound.store(true, std::memory_order_release);
@@ -7727,6 +7730,7 @@ namespace tsl {
             std::string m_scrollText;
             std::string m_ellipsisText;
             u16 m_listItemHeight;  // Changed from u32 to u16
+
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
             struct {
@@ -9029,9 +9033,9 @@ namespace tsl {
                 
                     std::string valuePart;
                     if (!m_usingNamedStepTrackbar) {
-                        valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? 
-                                   ult::to_string(this->m_value) + this->m_units : 
-                                   ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                        valuePart = (m_units.compare("%") == 0 || m_units.compare("°C") == 0 || m_units.compare("°F") == 0)
+                                    ? ult::to_string(m_value) + m_units
+                                    : ult::to_string(m_value) + (m_units.empty() ? "" : " ") + m_units;
                     } else {
                         valuePart = this->m_selection;
                     }
@@ -9471,9 +9475,9 @@ namespace tsl {
                 
                     std::string valuePart;
                     if (!m_usingNamedStepTrackbar) {
-                        valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? 
-                                   ult::to_string(this->m_value) + this->m_units : 
-                                   ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                        valuePart = (m_units.compare("%") == 0 || m_units.compare("°C") == 0 || m_units.compare("°F") == 0)
+                                    ? ult::to_string(m_value) + m_units
+                                    : ult::to_string(m_value) + (m_units.empty() ? "" : " ") + m_units;
                     } else {
                         valuePart = this->m_selection;
                     }
@@ -9914,9 +9918,11 @@ namespace tsl {
                 std::string labelPart = this->m_label;
                 ult::removeTag(labelPart);
             
-                if (!m_usingNamedStepTrackbar)
-                    m_valuePart = (this->m_units == "%" || this->m_units == "°C" || this->m_units == "°F") ? ult::to_string(this->m_value) + this->m_units : ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
-                else
+                if (!m_usingNamedStepTrackbar) {
+                    m_valuePart = (this->m_units.compare("%") == 0 || this->m_units.compare("°C") == 0 || this->m_units.compare("°F") == 0) 
+                                  ? ult::to_string(this->m_value) + this->m_units 
+                                  : ult::to_string(this->m_value) + (this->m_units.empty() ? "" : " ") + this->m_units;
+                } else
                     m_valuePart = this->m_selection;
             
                 const auto valueWidth = renderer->getTextDimensions(m_valuePart, false, 16).first;
@@ -11081,6 +11087,9 @@ namespace tsl {
             ult::isHidden.store(false);
             this->onShow();
             triggerRumbleClick.store(true, std::memory_order_release);
+
+            // reinitialize audio for changes from handheld to docked and vise versa
+            AudioPlayer::reloadIfDockedChanged();
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
@@ -13105,7 +13114,7 @@ namespace tsl {
                                     finalArgs = modeArg;
                                 } else {
                                     // Only check overlay-specific launch args for non-ovlmenu entries
-                                    if (overlayFileName != "ovlmenu.ovl") {
+                                    if (overlayFileName.compare("ovlmenu.ovl") != 0) {
                                         // OPTIMIZED: Single INI read for both values
                                         auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
                                         std::string useArgs = "";
@@ -13136,7 +13145,7 @@ namespace tsl {
                                     finalArgs += " --direct";
                                 }
         
-                                if (overlayFileName == "ovlmenu.ovl") {
+                                if (overlayFileName.compare("ovlmenu.ovl") == 0) {
                                     finalArgs += " --comboReturn";
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
@@ -13763,7 +13772,7 @@ namespace tsl {
                         if (!directMode && shouldFireEvent) {
                             shouldFireEvent = false;
                             #if IS_STATUS_MONITOR_DIRECTIVE
-                            if (lastMode == "returning") {
+                            if (lastMode.compare("returning") == 0) {
                                 triggerRumbleDoubleClick.store(true, std::memory_order_release);
                                 triggerExitSound.store(true, std::memory_order_release);
                             } else {

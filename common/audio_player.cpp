@@ -4,8 +4,10 @@
 bool AudioPlayer::m_initialized = false;
 bool AudioPlayer::m_enabled = true;
 float AudioPlayer::m_masterVolume = 0.6f;
+bool AudioPlayer::m_lastDockedState = false;
 std::vector<AudioPlayer::CachedSound> AudioPlayer::m_cachedSounds;
 std::mutex AudioPlayer::m_audioMutex;
+
 
 bool AudioPlayer::initialize() {
     std::lock_guard<std::mutex> lock(m_audioMutex);
@@ -20,20 +22,11 @@ bool AudioPlayer::initialize() {
     m_initialized = true;
     m_cachedSounds.resize(static_cast<uint32_t>(SoundType::Count));
     
-    // Load sounds
-    static const char* paths[] = {
-        "sdmc:/config/ultrahand/sounds/tick.wav",
-        "sdmc:/config/ultrahand/sounds/enter.wav",
-        "sdmc:/config/ultrahand/sounds/exit.wav",
-        "sdmc:/config/ultrahand/sounds/wall.wav",
-        "sdmc:/config/ultrahand/sounds/on.wav",
-        "sdmc:/config/ultrahand/sounds/off.wav",
-        "sdmc:/config/ultrahand/sounds/settings.wav",
-        "sdmc:/config/ultrahand/sounds/move.wav"
-    };
+    // Store initial dock state
+    m_lastDockedState = isDocked();
     
-    for (uint32_t i = 0; i < static_cast<uint32_t>(SoundType::Count); ++i)
-        loadSoundFromWav(static_cast<SoundType>(i), paths[i]);
+    // Load all sounds
+    reloadAllSounds();
     
     return true;
 }
@@ -50,6 +43,31 @@ void AudioPlayer::exit() {
         audoutExit();
         m_initialized = false;
     }
+}
+
+void AudioPlayer::reloadAllSounds() {
+    // Must be called with m_audioMutex locked
+    for (uint32_t i = 0; i < static_cast<uint32_t>(SoundType::Count); ++i) {
+        loadSoundFromWav(static_cast<SoundType>(i), m_soundPaths[i]);
+    }
+}
+
+bool AudioPlayer::reloadIfDockedChanged() {
+    if (!m_initialized) return false;
+    
+    const bool currentDocked = isDocked();
+    
+    // Only reload if dock status actually changed
+    if (currentDocked == m_lastDockedState) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(m_audioMutex);
+    
+    m_lastDockedState = currentDocked;
+    reloadAllSounds();
+    
+    return true;
 }
 
 bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
@@ -113,7 +131,13 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
 
     fseek(f, dPos, SEEK_SET);
     s16* out = (s16*)buf;
-    const float scale = std::clamp(m_masterVolume, 0.0f, 1.0f);
+    
+    // Apply master volume and dock adjustment
+    float effectiveVolume = m_masterVolume;
+    if (m_lastDockedState) {
+        effectiveVolume *= 0.5f; // 50% volume when docked
+    }
+    const float scale = std::clamp(effectiveVolume, 0.0f, 1.0f);
 
     if (bits == 8) {
         std::vector<u8> tmp(inSamp);
@@ -123,7 +147,6 @@ bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
             return false;
         }
     
-        // Precompute scale as 32-bit integer multiplier
         const int32_t scaleInt = static_cast<int32_t>(scale * 256.0f);
     
         for (uint32_t i = 0; i < inSamp; ++i) {
@@ -169,14 +192,12 @@ void AudioPlayer::playSound(SoundType type) {
 
     std::lock_guard<std::mutex> lock(m_audioMutex);
 
-    // Drain any released buffers before playing
     AudioOutBuffer* releasedBuffers = nullptr;
     u32 releasedCount = 0;
     audoutGetReleasedAudioOutBuffer(&releasedBuffers, &releasedCount);
 
-    // Use a static buffer that persists after function returns
     static AudioOutBuffer audioBuffer = {};
-    audioBuffer = {}; // Reset it
+    audioBuffer = {};
     audioBuffer.buffer = cached.buffer;
     audioBuffer.buffer_size = cached.bufferSize;
     audioBuffer.data_size = cached.dataSize;
@@ -192,14 +213,12 @@ void AudioPlayer::playAudioBuffer(void* buffer, uint32_t sz) {
     
     std::lock_guard<std::mutex> lock(m_audioMutex);
     
-    // Drain any released buffers
     AudioOutBuffer* releasedBuffers = nullptr;
     u32 releasedCount = 0;
     audoutGetReleasedAudioOutBuffer(&releasedBuffers, &releasedCount);
     
-    // Use a static buffer that persists after function returns
     static AudioOutBuffer audioBuffer = {};
-    audioBuffer = {}; // Reset it
+    audioBuffer = {};
     audioBuffer.next = nullptr;
     audioBuffer.buffer = buffer;
     audioBuffer.buffer_size = sz;
@@ -212,7 +231,7 @@ void AudioPlayer::playAudioBuffer(void* buffer, uint32_t sz) {
 
 void AudioPlayer::setMasterVolume(float v) { 
     std::lock_guard<std::mutex> lock(m_audioMutex);
-    m_masterVolume = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); 
+    m_masterVolume = std::clamp(v, 0.0f, 1.0f);
 }
 
 void AudioPlayer::setEnabled(bool e) { 
@@ -223,6 +242,20 @@ void AudioPlayer::setEnabled(bool e) {
 bool AudioPlayer::isEnabled() { 
     std::lock_guard<std::mutex> lock(m_audioMutex);
     return m_enabled; 
+}
+
+bool AudioPlayer::isDocked() {
+    Result rc = apmInitialize();
+    if (R_FAILED(rc)) return false;
+    
+    ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
+    rc = apmGetPerformanceMode(&perfMode);
+    
+    apmExit();
+    
+    if (R_FAILED(rc)) return false;
+    
+    return (perfMode == ApmPerformanceMode_Boost);
 }
 
 void AudioPlayer::playNavigateSound() { playSound(SoundType::Navigate); }
