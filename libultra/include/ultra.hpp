@@ -43,5 +43,7 @@
 #include "download_funcs.hpp"
 #include "mod_funcs.hpp"
 #include "tsl_utils.hpp"
+#include "audio_player.hpp"
+#include "haptics.hpp"
 
 #endif // ULTRA_HPP

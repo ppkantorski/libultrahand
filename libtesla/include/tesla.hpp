@@ -67,7 +67,6 @@
 #include <map>
 //#include <barrier>
 
-#include "audio_player.hpp"
 
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
@@ -208,157 +207,11 @@ inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
 
-// Haptic variables
+// Haptic triggering variables
 inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
 
-// ===== Internal state (per-file, used only in this header) =====
-static bool rumbleInitialized = false;
-static HidVibrationDeviceHandle vibHandheld;
-static HidVibrationDeviceHandle vibPlayer1Left;
-static HidVibrationDeviceHandle vibPlayer1Right;
-static u64 rumbleStartTick = 0;
-static u64 doubleClickTick = 0;
-static u8 doubleClickPulse = 0;
-
-// ===== Shared flags (accessible from other translation units) =====
-inline std::atomic<bool> rumbleActive{false};
-inline std::atomic<bool> doubleClickActive{false};
-
-// ===== Constants =====
-static constexpr u64 RUMBLE_DURATION_NS = 30000000ULL;
-static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30000000ULL;
-static constexpr u64 DOUBLE_CLICK_GAP_NS = 100000000ULL;
-
-static constexpr HidVibrationValue clickDocked = {
-    .amp_low  = 0.20f,
-    .freq_low = 100.0f,
-    .amp_high = 0.80f,
-    .freq_high = 300.0f
-};
-
-static constexpr HidVibrationValue clickHandheld = {
-    .amp_low  = 0.25f,
-    .freq_low = 100.0f,
-    .amp_high = 1.0f,
-    .freq_high = 300.0f
-};
-
-static constexpr HidVibrationValue vibrationStop{0};
-
-// ===== Functions =====
-static inline void initController(HidNpadIdType npad, HidVibrationDeviceHandle* handles, int count) {
-    const u32 styleMask = hidGetNpadStyleSet(npad);
-    if (styleMask) {
-        hidInitializeVibrationDevices(handles, count, npad, (HidNpadStyleTag)styleMask);
-    }
-}
-
-static inline void initRumble() {
-    if (rumbleInitialized) return;
-    
-    initController(HidNpadIdType_Handheld, &vibHandheld, 1);
-    
-    HidVibrationDeviceHandle handles[2];
-    initController(HidNpadIdType_No1, handles, 2);
-    vibPlayer1Left = handles[0];
-    vibPlayer1Right = handles[1];
-    
-    rumbleInitialized = true;
-}
-
-static inline void deinitRumble() {
-    rumbleInitialized = false;
-}
-
-static inline void checkAndReinitRumble() {
-    static u32 lastHandheldStyle = 0;
-    static u32 lastPlayer1Style = 0;
-    
-    const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
-    const u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
-    
-    if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
-        rumbleInitialized = false;
-        initRumble();
-        lastHandheldStyle = currentHandheldStyle;
-        lastPlayer1Style = currentPlayer1Style;
-    }
-}
-
-static inline void sendVibration(const HidVibrationValue* value) {
-    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-        hidSendVibrationValue(vibHandheld, value);
-    
-    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-        hidSendVibrationValue(vibPlayer1Left, value);
-        hidSendVibrationValue(vibPlayer1Right, value);
-    }
-}
-
-static inline void rumbleClick() {
-    if (!rumbleInitialized) {
-        initRumble();
-        if (!rumbleInitialized) return;
-    }
-    
-    sendVibration(hidGetNpadStyleSet(HidNpadIdType_Handheld) ? &clickHandheld : &clickDocked);
-    rumbleActive = true;
-    rumbleStartTick = armGetSystemTick();
-}
-
-static inline void rumbleDoubleClick() {
-    if (!rumbleInitialized) {
-        initRumble();
-        if (!rumbleInitialized) return;
-    }
-
-    sendVibration(hidGetNpadStyleSet(HidNpadIdType_Handheld) ? &clickHandheld : &clickDocked);
-    doubleClickActive = true;
-    doubleClickPulse = 1;
-    doubleClickTick = armGetSystemTick();
-}
-
-static inline void processRumbleStop(u64 nowNs) {
-    if (rumbleActive && nowNs - armTicksToNs(rumbleStartTick) >= RUMBLE_DURATION_NS) {
-        sendVibration(&vibrationStop);
-        rumbleActive = false;
-    }
-}
-
-static inline void processRumbleDoubleClick(u64 nowNs) {
-    if (!doubleClickActive) return;
-
-    const u64 elapsed = nowNs - armTicksToNs(doubleClickTick);
-    const HidVibrationValue* value = hidGetNpadStyleSet(HidNpadIdType_Handheld) ? &clickHandheld : &clickDocked;
-
-    switch (doubleClickPulse) {
-        case 1:
-            if (elapsed >= DOUBLE_CLICK_PULSE_DURATION_NS) {
-                sendVibration(&vibrationStop);
-                doubleClickPulse = 2;
-                doubleClickTick = armGetSystemTick();
-            }
-            break;
-
-        case 2:
-            if (elapsed >= DOUBLE_CLICK_GAP_NS) {
-                sendVibration(value);
-                doubleClickPulse = 3;
-                doubleClickTick = armGetSystemTick();
-            }
-            break;
-
-        case 3:
-            if (elapsed >= DOUBLE_CLICK_PULSE_DURATION_NS) {
-                sendVibration(&vibrationStop);
-                doubleClickActive = false;
-                doubleClickPulse = 0;
-            }
-            break;
-    }
-}
 
 namespace tsl {
 
@@ -11092,7 +10945,7 @@ namespace tsl {
             triggerRumbleClick.store(true, std::memory_order_release);
 
             // reinitialize audio for changes from handheld to docked and vise versa
-            AudioPlayer::reloadIfDockedChanged();
+            ult::AudioPlayer::reloadIfDockedChanged();
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
@@ -12788,21 +12641,21 @@ namespace tsl {
                         triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
                         triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel);
                     } else {
-                        checkAndReinitRumble();
-                    
+                        ult::checkAndReinitRumble();
+                        
                         if (triggerRumbleDoubleClick.exchange(false)) {
-                            if (!doubleClickActive.load(std::memory_order_acquire)) {
-                                rumbleDoubleClick();
+                            if (!ult::doubleClickActive.load(std::memory_order_acquire)) {
+                                ult::rumbleDoubleClick();
                             }
                             triggerRumbleClick.exchange(false);
                         } else if (triggerRumbleClick.exchange(false)) {
-                            rumbleClick();
+                            ult::rumbleClick();
                         }
                         
                         //const u64 _nowNs = armTicksToNs(armGetSystemTick());
 
-                        processRumbleStop(nowNs);
-                        processRumbleDoubleClick(nowNs);
+                        ult::processRumbleStop(nowNs);
+                        ult::processRumbleDoubleClick(nowNs);
                     }
                     
                     // Flush any pending sound triggers when effects are off
@@ -12817,26 +12670,26 @@ namespace tsl {
                         triggerMoveSound.exchange(false, std::memory_order_acq_rel);
                     } else {
                         if (triggerNavigationSound.exchange(false)) {
-                            AudioPlayer::playNavigateSound();
+                            ult::AudioPlayer::playNavigateSound();
                         } else if (triggerEnterSound.exchange(false)) {
-                            AudioPlayer::playEnterSound();
+                            ult::AudioPlayer::playEnterSound();
                         } else if (triggerExitSound.exchange(false)) {
-                            AudioPlayer::playExitSound();
+                            ult::AudioPlayer::playExitSound();
                         } else if (triggerWallSound.exchange(false)) {
-                            AudioPlayer::playWallSound();
+                            ult::AudioPlayer::playWallSound();
                         } else if (triggerOnSound.exchange(false)) {
-                            AudioPlayer::playOnSound();
+                            ult::AudioPlayer::playOnSound();
                         } else if (triggerOffSound.exchange(false)) {
-                            AudioPlayer::playOffSound();
+                            ult::AudioPlayer::playOffSound();
                         } else if (triggerSettingsSound.exchange(false)) {
-                            AudioPlayer::playSettingsSound();
+                            ult::AudioPlayer::playSettingsSound();
                         } else if (triggerMoveSound.exchange(false)) {
-                            AudioPlayer::playMoveSound();
+                            ult::AudioPlayer::playMoveSound();
                         }
                     }
 
                     //else if (triggerNavigationSound.exchange(false)) {
-                    //    AudioPlayer::playSlideSound();
+                    //    ult::AudioPlayer::playSlideSound();
                     //}
                     
                     // Combine inputs from both controllers
@@ -13830,50 +13683,9 @@ namespace tsl {
 
 
             if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
-                AudioPlayer::playExitSound();
-                if (ult::useHapticFeedback && rumbleInitialized) {
-                    // Start first pulse
-                    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &clickHandheld);
-                    
-                    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &clickDocked);
-                        hidSendVibrationValue(vibPlayer1Right, &clickDocked);
-                    }
-                    
-                    // First pulse duration
-                    svcSleepThread(DOUBLE_CLICK_PULSE_DURATION_NS);
-                    
-                    // Stop first pulse
-                    //HidVibrationValue stop{0};
-                    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &vibrationStop);
-                    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &vibrationStop);
-                        hidSendVibrationValue(vibPlayer1Right, &vibrationStop);
-                    }
-                    
-                    // Gap between pulses
-                    svcSleepThread(DOUBLE_CLICK_GAP_NS);
-                
-                    // Second pulse
-                    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &clickHandheld);
-                    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &clickDocked);
-                        hidSendVibrationValue(vibPlayer1Right, &clickDocked);
-                    }
-                
-                    // Second pulse duration
-                    svcSleepThread(DOUBLE_CLICK_PULSE_DURATION_NS);
-                
-                    // Stop second pulse
-                    if (hidGetNpadStyleSet(HidNpadIdType_Handheld))
-                        hidSendVibrationValue(vibHandheld, &vibrationStop);
-                    if (hidGetNpadStyleSet(HidNpadIdType_No1)) {
-                        hidSendVibrationValue(vibPlayer1Left, &vibrationStop);
-                        hidSendVibrationValue(vibPlayer1Right, &vibrationStop);
-                    }
+                ult::AudioPlayer::playExitSound();
+                if (ult::useHapticFeedback && ult::rumbleInitialized) {
+                    ult::rumbleDoubleClickStandalone();
                 }
             }
 
@@ -13947,8 +13759,8 @@ extern "C" {
         });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
 
-        initRumble();
-        AudioPlayer::initialize();
+        ult::initRumble();
+        ult::AudioPlayer::initialize();
 
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();
@@ -13972,7 +13784,7 @@ extern "C" {
         eventClose(&tsl::notificationEvent);
 
         //deinitRumble();
-        AudioPlayer::exit();
+        ult::AudioPlayer::exit();
 
         smExit();
         //socketExit();
