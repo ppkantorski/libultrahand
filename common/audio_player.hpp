@@ -51,7 +51,7 @@ private:
     static bool m_initialized;
     static std::atomic<bool> m_enabled;  // <- atomic for lock-free reads
     static float m_masterVolume;
-    static std::vector<CachedSound> m_cachedSounds;  // Keep vector, it's fine
+    static std::vector<CachedSound> m_cachedSounds;
     static std::mutex m_audioMutex;
     static bool m_lastDockedState;
     

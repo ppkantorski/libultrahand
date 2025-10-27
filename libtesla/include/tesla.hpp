@@ -209,6 +209,10 @@ inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
 
 // Haptic variables
+inline std::atomic<bool> triggerRumbleClick{false};
+inline std::atomic<bool> triggerRumbleDoubleClick{false};
+
+
 // ===== Internal state (per-file, used only in this header) =====
 static bool rumbleInitialized = false;
 static HidVibrationDeviceHandle vibHandheld;
@@ -219,8 +223,6 @@ static u64 doubleClickTick = 0;
 static u8 doubleClickPulse = 0;
 
 // ===== Shared flags (accessible from other translation units) =====
-inline std::atomic<bool> triggerRumbleClick{false};
-inline std::atomic<bool> triggerRumbleDoubleClick{false};
 inline std::atomic<bool> rumbleActive{false};
 inline std::atomic<bool> doubleClickActive{false};
 
@@ -4871,8 +4873,7 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
                     tsl::initializeThemeVars();
                 }
                 
@@ -5574,8 +5575,7 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
+                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
                     tsl::initializeThemeVars();
                 }
             
@@ -6090,22 +6090,17 @@ namespace tsl {
                     return handleJumpToItem(oldFocus); // needs to be handled 2x for proper rendering
                 }
                 
-                if (jumpToBottom.load(std::memory_order_acquire)) {
-                    jumpToBottom.store(false, std::memory_order_release);
+                if (jumpToBottom.exchange(false, std::memory_order_acq_rel))
                     return handleJumpToBottom(oldFocus);
-                }
-                if (jumpToTop.load(std::memory_order_acquire)) {
-                    jumpToTop.store(false, std::memory_order_release);
+                
+                if (jumpToTop.exchange(false, std::memory_order_acq_rel))
                     return handleJumpToTop(oldFocus);
-                }
-                if (skipDown.load(std::memory_order_acquire)) {
-                    skipDown.store(false, std::memory_order_release);
+                
+                if (skipDown.exchange(false, std::memory_order_acq_rel))
                     return handleSkipDown(oldFocus);
-                }
-                if (skipUp.load(std::memory_order_acquire)) {
-                    skipUp.store(false, std::memory_order_release);
+                
+                if (skipUp.exchange(false, std::memory_order_acq_rel))
                     return handleSkipUp(oldFocus);
-                }
 
             
                 if (direction == FocusDirection::None) {
@@ -9144,8 +9139,7 @@ namespace tsl {
                 }
 
 
-                if (!ult::onTrackBar.load(std::memory_order_acquire))
-                    ult::onTrackBar.store(true, std::memory_order_release);
+                ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
             }
 
             /**
@@ -10384,6 +10378,13 @@ namespace tsl {
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
     
+    struct NotificationFile {
+        std::string filename;
+        std::string fullPath;
+        time_t creationTime;
+        int priority;
+    };
+
     class NotificationPrompt {
     public:
         NotificationPrompt()
@@ -11448,14 +11449,11 @@ namespace tsl {
         
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
-                if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                    ult::simulatedSelect.store(false, std::memory_order_release);
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
                     keysDown |= KEY_A;
-                }
-                if (ult::simulatedBack.load(std::memory_order_acquire)) {
-                    ult::simulatedBack.store(false, std::memory_order_release);
+                
+                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
                     keysDown |= KEY_B;
-                }
 
                 if (!overrideBackButton) {
                     if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
@@ -11471,22 +11469,15 @@ namespace tsl {
                     }
                 }
             } else {
-                if (ult::simulatedSelect.load(std::memory_order_acquire))
-                    ult::simulatedSelect.store(false, std::memory_order_release);
-                if (ult::simulatedBack.load(std::memory_order_acquire))
-                    ult::simulatedBack.store(false, std::memory_order_release);
+                ult::simulatedSelect.exchange(false, std::memory_order_acq_rel);
+                ult::simulatedBack.exchange(false, std::memory_order_acq_rel);
             }
         #else
-            if (ult::simulatedSelect.load(std::memory_order_acquire)) {
-                ult::simulatedSelect.store(false, std::memory_order_release);
+            if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
                 keysDown |= KEY_A;
-            }
-
-            if (ult::simulatedBack.load(std::memory_order_acquire)) {
-                ult::simulatedBack.store(false, std::memory_order_release);
+            
+            if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
                 keysDown |= KEY_B;
-                //ult::simulatedBack = false;
-            }
 
             if (!overrideBackButton) {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
@@ -11559,12 +11550,9 @@ namespace tsl {
                         currentGui->removeFocus();
                         currentGui->requestFocus(topElement, FocusDirection::None);
                     }
-                }
-                else if (ult::longTouchAndRelease.load(std::memory_order_acquire)) {
-                    ult::longTouchAndRelease.store(false, std::memory_order_release);
+                } else if (ult::longTouchAndRelease.exchange(false, std::memory_order_acq_rel)) {
                     hasScrolled = true;
-                } else if (ult::shortTouchAndRelease.load(std::memory_order_acquire)) { // cant be handled correctly without knowing where it is going after release
-                    ult::shortTouchAndRelease.store(false, std::memory_order_release);
+                } else if (ult::shortTouchAndRelease.exchange(false, std::memory_order_acq_rel)) {
                     hasScrolled = true;
                 }
             }
@@ -12294,8 +12282,7 @@ namespace tsl {
                 this->m_guiStack.pop();
             }
         
-            if (tsl::elm::skipDeconstruction.load(std::memory_order_acquire))
-                tsl::elm::skipDeconstruction.store(false, std::memory_order_release);
+            tsl::elm::skipDeconstruction.exchange(false, std::memory_order_acq_rel);
             
             // Close overlay if stack is empty
             if (this->m_guiStack.empty()) {
@@ -12577,6 +12564,7 @@ namespace tsl {
             std::string text;
             int fontSize;
             int priority;
+            time_t creationTime;
 
             
             while (shData->running.load(std::memory_order_acquire)) {
@@ -12648,32 +12636,15 @@ namespace tsl {
                     // Process notification files every 300ms
                     {
                         std::lock_guard<std::mutex> jsonLock(notificationJsonMutex);
-                        //static u64 lastNotifCheck = 0;
-                    
+                        
                         if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
                             lastNotifCheck = nowTick;
-                    
+                            
                             DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
                             if (dir) {
                                 
                                 if (ult::useNotifications) {
-                                    std::string filename, fullPath, prioStr;
-                                    
-                                    struct dirent* entry;
-                                    
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                    
-                                    //static std::vector<std::string> shownFiles;
-                                    
-                                    // Structure to hold file info with creation time
-                                    struct NotificationFile {
-                                        std::string filename;
-                                        std::string fullPath;
-                                        time_t creationTime;
-                                        int priority;
-                                    };
-                                    
-                                    std::vector<NotificationFile> notificationFiles;
                                     
                                     // --- Prune missing files from shownFiles ---
                                     for (auto it = shownFiles.begin(); it != shownFiles.end();) {
@@ -12685,40 +12656,49 @@ namespace tsl {
                                         }
                                     }
                                     
-                                    //static std::string text;
-                                    //static int fontSize;
-                                    //static int priority;
+                                    // Reuse existing variables - track best file as we scan
+                                    static std::string bestFilename;
+                                    static std::string bestFullPath;
+                                    static time_t bestCreationTime;
+                                    static int bestPriority;
                                     
-                                    // --- Collect notification files with creation time ---
+                                    bestFilename.clear();
+                                    bestFullPath.clear();
+                                    bestPriority = -1;
+                                    bestCreationTime = 0;
+                                    bool foundAny = false;
+                                    
+                                    struct dirent* entry;
+                                    
+                                    // --- Find the best notification file in one pass ---
                                     while ((entry = readdir(dir)) != nullptr) {
                                         if (entry->d_type != DT_REG) continue;
                                         
-                                        filename = entry->d_name;
-                                        const size_t filenameLen = filename.size();
+                                        const char* fname = entry->d_name;
+                                        const size_t filenameLen = strlen(fname);
                                         
                                         // Must end with ".notify"
-                                        if (filenameLen <= 7 || filename.compare(filenameLen - 7, 7, ".notify") != 0)
+                                        if (filenameLen <= 7 || strcmp(fname + filenameLen - 7, ".notify") != 0)
                                             continue;
                                         
                                         // Skip if already shown
-                                        if (std::find(shownFiles.begin(), shownFiles.end(), filename) != shownFiles.end())
+                                        if (std::find(shownFiles.begin(), shownFiles.end(), fname) != shownFiles.end())
                                             continue;
                                         
                                         // --- Build path ---
-                                        fullPath.clear();
+                                        static std::string fullPath;
                                         fullPath = notifPath;
-                                        fullPath += filename;
+                                        fullPath += fname;
                                         
                                         // --- Get file creation/modification time ---
                                         struct stat fileStat;
-                                        time_t creationTime = 0;
+                                        creationTime = 0;
                                         if (stat(fullPath.c_str(), &fileStat) == 0) {
-                                            // Use modification time as creation time (more universally supported)
                                             creationTime = fileStat.st_mtime;
                                         }
                                         
                                         // --- Read priority from JSON ---
-                                        priority = 20; // default
+                                        priority = 20; // default (reuse existing variable)
                                         std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
                                             ult::readJsonFromFile(fullPath), ult::JsonDeleter());
                                         if (root) {
@@ -12729,34 +12709,30 @@ namespace tsl {
                                             }
                                         }
                                         
-                                        // Add to collection
-                                        notificationFiles.push_back({filename, fullPath, creationTime, priority});
+                                        // --- Is this better than current best? ---
+                                        const bool isBetter = !foundAny || 
+                                                       (priority > bestPriority) ||
+                                                       (priority == bestPriority && creationTime < bestCreationTime);
+                                        
+                                        if (isBetter) {
+                                            bestFilename = fname;
+                                            bestFullPath = fullPath;
+                                            bestCreationTime = creationTime;
+                                            bestPriority = priority;
+                                            foundAny = true;
+                                        }
                                     }
                                     
                                     closedir(dir);
                                     
-                                    // --- Sort files by priority (higher first), then creation time (older first) ---
-                                    std::sort(notificationFiles.begin(), notificationFiles.end(),
-                                             [](const NotificationFile& a, const NotificationFile& b) {
-                                                 // Primary sort: Higher priority first
-                                                 if (a.priority != b.priority) {
-                                                     return a.priority > b.priority;
-                                                 }
-                                                 // Secondary sort: Older creation time first (FIFO within same priority)
-                                                 return a.creationTime < b.creationTime;
-                                             });
-                                    
-                                    // --- Process the first file (highest priority, oldest first) ---
-                                    if (!notificationFiles.empty()) {
-                                        const auto& notifFile = notificationFiles.front();
-                                        
-                                        // --- Load JSON (safe outside notification lock) ---
-                                        text = ult::getStringFromJsonFile(notifFile.fullPath, "text");
+                                    // --- Process the best file ---
+                                    if (foundAny) {
+                                        text = ult::getStringFromJsonFile(bestFullPath, "text");
                                         if (!text.empty()) {
-                                            fontSize = 28; // default
+                                            fontSize = 28; // default (reuse existing variable)
                                             
                                             std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                                ult::readJsonFromFile(notifFile.fullPath), ult::JsonDeleter());
+                                                ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
                                             if (root) {
                                                 cJSON* croot = reinterpret_cast<cJSON*>(root.get());
                                                 cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
@@ -12767,18 +12743,18 @@ namespace tsl {
                                             
                                             // --- Show notification safely ---
                                             if (notification) {
-                                                notification->show(text, fontSize, notifFile.priority, notifFile.filename);
+                                                notification->show(text, fontSize, bestPriority, bestFilename);
                                             }
                                             
                                             // Mark file as shown
-                                            shownFiles.push_back(notifFile.filename);
+                                            shownFiles.push_back(bestFilename);
                                         }
                                     }
                                     
                                 } else {
                                     // --- Notifications disabled: delete all files ---
                                     struct dirent* entry;
-                                    std::string fullPath;
+                                    static std::string fullPath;
                                     
                                     while ((entry = readdir(dir)) != nullptr) {
                                         if (entry->d_type != DT_REG) continue;
@@ -13667,8 +13643,7 @@ namespace tsl {
                             overlay->loop(true); // Draw prompts while hidden
                         }
     
-                        if (mainComboHasTriggered.load(std::memory_order_acquire)) {
-                            mainComboHasTriggered.store(false, std::memory_order_acquire);
+                        if (mainComboHasTriggered.exchange(false, std::memory_order_acq_rel)) {
                             comboBreakout = true;
                             exitAfterPrompt = false;
                             break;
