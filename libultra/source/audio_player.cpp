@@ -1,3 +1,25 @@
+/********************************************************************************
+ * File: download_funcs.cpp
+ * Author: ppkantorski
+ * Description:
+ *   This source file provides implementations for the functions declared in
+ *   audio_player.hpp. These functions handle audio playback for the Ultrahand
+ *   Overlay using libnx’s audout service. AudioPlayer supports loading and
+ *   caching WAV sounds, managing playback threads, and adjusting output
+ *   behavior based on docked or handheld state. Thread safety is ensured
+ *   through atomic operations and mutex locking.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2025 ppkantorski
+ ********************************************************************************/
+
+
 #include "audio_player.hpp"
 
 namespace ult {

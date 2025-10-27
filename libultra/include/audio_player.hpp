@@ -1,3 +1,22 @@
+/********************************************************************************
+ * File: audio_player.hpp
+ * Author: ppkantorski
+ * Description:
+ *   This header defines the AudioPlayer class and related structures used for
+ *   handling sound playback within the Ultrahand Overlay. It provides interfaces
+ *   for loading, caching, and playing WAV audio through libnx’s audout service,
+ *   along with basic sound type management and synchronization support.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *   Licensed under both GPLv2 and CC-BY-4.0
+ *   Copyright (c) 2025 ppkantorski
+ ********************************************************************************/
+
 #pragma once
 #include <switch.h>
 #include <cstdio>

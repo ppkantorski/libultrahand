@@ -1,3 +1,24 @@
+/********************************************************************************
+ * File: haptics.cpp
+ * Author: ppkantorski
+ * Description:
+ *   This source file provides implementations for the functions declared in
+ *   haptics.hpp. These functions manage haptic feedback for the Ultrahand Overlay
+ *   using libnx’s vibration interfaces. It includes routines for initializing
+ *   rumble devices, sending vibration patterns, and handling single or double
+ *   click feedback with timing control. Thread safety is maintained through
+ *   atomic operations and synchronization mechanisms.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2025 ppkantorski
+ ********************************************************************************/
+
 #include "haptics.hpp"
 
 namespace ult {
