@@ -212,6 +212,21 @@ inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
 
+static inline void triggerNavigationFeedback() {
+    triggerRumbleClick.store(true, std::memory_order_release);
+    triggerNavigationSound.store(true, std::memory_order_release);
+}
+
+static inline void triggerEnterFeedback() {
+    triggerRumbleClick.store(true, std::memory_order_release);
+    triggerEnterSound.store(true, std::memory_order_release);
+}
+
+static inline void triggerExitFeedback() {
+    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+    triggerExitSound.store(true, std::memory_order_release);
+}
+
 
 namespace tsl {
 
@@ -415,124 +430,99 @@ namespace tsl {
     static Color trackBarFullColor = RGB888("00FFDD");
     static Color trackBarEmptyColor = RGB888("404040");
     
-    static void initializeThemeVars() { // NOTE: This needs to be called once in your application.
-        // Fetch all theme settings at once from the INI file
+    static void initializeThemeVars() {
         auto themeData = ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH);
-        if (themeData.count(ult::THEME_STR) > 0) {
-            auto& themeSection = themeData[ult::THEME_STR];
-            
-            // Fetch and process each theme setting using a helper to simplify fetching and fallback
-            auto getValue = [&](const std::string& key) {
-                return themeSection.count(key) ? themeSection[key] : ult::defaultThemeSettingsMap[key];
-            };
-            
-            // Convert hex color to Color and manage default values and conversion
-            auto getColor = [&](const std::string& key, size_t alpha = 15) {
-                //std::string hexColor = getValue(key);
-                return RGB888(getValue(key), alpha);
-            };
-            
-            auto getAlpha = [&](const std::string& key) {
-                std::string alphaStr = getValue(key);
-                return !alphaStr.empty() ? ult::stoi(alphaStr) : ult::stoi(ult::defaultThemeSettingsMap[key]);
-            };
-            
-            //disableColorfulLogo = (getValue("disable_colorful_logo") == ult::TRUE_STR);
-            
-            #if IS_LAUNCHER_DIRECTIVE
-            logoColor1 = getColor("logo_color_1");
-            logoColor2 = getColor("logo_color_2");
-            #endif
-
-            defaultBackgroundAlpha = getAlpha("bg_alpha");
-            defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
-            defaultTextColor = getColor("text_color");
-            notificationTextColor = getColor("notification_text_color");
-            headerTextColor = getColor("header_text_color");
-            headerSeparatorColor = getColor("header_separator_color");
-            starColor = getColor("star_color");
-            selectionStarColor = getColor("selection_star_color");
-            buttonColor = getColor("bottom_button_color");
-            bottomTextColor = getColor("bottom_text_color");
-            bottomSeparatorColor = getColor("bottom_separator_color");
-            topSeparatorColor = getColor("top_separator_color");
-            defaultOverlayColor = getColor("default_overlay_color");
-            defaultPackageColor = getColor("default_package_color");
-            defaultScriptColor = getColor("default_script_color");
-
-            clockColor = getColor("clock_color");
-            temperatureColor = getColor("temperature_color");
-            batteryColor = getColor("battery_color");
-            batteryChargingColor = getColor("battery_charging_color");
-            batteryLowColor = getColor("battery_low_color");
-            widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
-            widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
-            
-            overlayTextColor = getColor("overlay_text_color");
-            ultOverlayTextColor = getColor("ult_overlay_text_color");
-            packageTextColor = getColor("package_text_color");
-            ultPackageTextColor = getColor("ult_package_text_color");
-
-            bannerVersionTextColor = getColor("banner_version_text_color");
-            overlayVersionTextColor = getColor("overlay_version_text_color");
-            ultOverlayVersionTextColor = getColor("ult_overlay_version_text_color");
-            packageVersionTextColor =getColor("package_version_text_color");
-            ultPackageVersionTextColor = getColor("ult_package_version_text_color");
-            onTextColor = getColor("on_text_color");
-            offTextColor = getColor("off_text_color");
-            
-            #if IS_LAUNCHER_DIRECTIVE
-            dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
-            dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
-            #endif
-
-            //disableSelectionBG = (getValue("disable_selection_bg") == ult::TRUE_STR);
-            //disableSelectionValueColor = (getValue("disable_selection_value_color") == ult::TRUE_STR);
-            invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
-
-            selectionBGAlpha = getAlpha("selection_bg_alpha");
-            selectionBGColor = getColor("selection_bg_color", selectionBGAlpha);
-            
-            highlightColor1 = getColor("highlight_color_1");
-            highlightColor2 = getColor("highlight_color_2");
-            highlightColor3 = getColor("highlight_color_3");
-            highlightColor4 = getColor("highlight_color_4");
-            
-            clickAlpha = getAlpha("click_alpha");
-            clickColor = getColor("click_color", clickAlpha);
-
-            progressAlpha = getAlpha("progress_alpha");
-            progressColor = getColor("progress_color", progressAlpha);
-
-            trackBarColor = getColor("trackbar_color");
-            
-            separatorAlpha = getAlpha("separator_alpha");
-            separatorColor = getColor("separator_color", separatorAlpha);
-
-            textSeparatorColor = getColor("text_separator_color");
-            
-            selectedTextColor = getColor("selection_text_color");
-            selectedValueTextColor = getColor("selection_value_text_color");
-            inprogressTextColor = getColor("inprogress_text_color");
-            invalidTextColor = getColor("invalid_text_color");
-            clickTextColor = getColor("click_text_color");
-            
-            tableBGAlpha = getAlpha("table_bg_alpha");
-            tableBGColor = getColor("table_bg_color", tableBGAlpha);
-            sectionTextColor = getColor("table_section_text_color");
-            infoTextColor = getColor("table_info_text_color");
-            warningTextColor = getColor("warning_text_color");
-
-            healthyRamTextColor = getColor("healthy_ram_text_color");
-            neutralRamTextColor = getColor("neutral_ram_text_color");
-            badRamTextColor = getColor("bad_ram_text_color");
-
-            trackBarSliderColor = getColor("trackbar_slider_color");
-            trackBarSliderBorderColor = getColor("trackbar_slider_border_color");
-            trackBarSliderMalleableColor = getColor("trackbar_slider_malleable_color");
-            trackBarFullColor = getColor("trackbar_full_color");
-            trackBarEmptyColor = getColor("trackbar_empty_color");
-        }
+        if (themeData.count(ult::THEME_STR) == 0) return;
+        
+        auto& themeSection = themeData[ult::THEME_STR];
+        
+        auto getValue = [&](const char* key) -> const std::string& {
+            auto it = themeSection.find(key);
+            return it != themeSection.end() ? it->second : ult::defaultThemeSettingsMap[key];
+        };
+        
+        auto getColor = [&](const char* key, size_t alpha = 15) {
+            return RGB888(getValue(key), alpha);
+        };
+        
+        auto getAlpha = [&](const char* key) {
+            const auto& alphaStr = getValue(key);
+            return ult::stoi(alphaStr);
+        };
+        
+        #if IS_LAUNCHER_DIRECTIVE
+        logoColor1 = getColor("logo_color_1");
+        logoColor2 = getColor("logo_color_2");
+        dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
+        dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
+        #endif
+    
+        defaultBackgroundAlpha = getAlpha("bg_alpha");
+        defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
+        defaultTextColor = getColor("text_color");
+        notificationTextColor = getColor("notification_text_color");
+        headerTextColor = getColor("header_text_color");
+        headerSeparatorColor = getColor("header_separator_color");
+        starColor = getColor("star_color");
+        selectionStarColor = getColor("selection_star_color");
+        buttonColor = getColor("bottom_button_color");
+        bottomTextColor = getColor("bottom_text_color");
+        bottomSeparatorColor = getColor("bottom_separator_color");
+        topSeparatorColor = getColor("top_separator_color");
+        defaultOverlayColor = getColor("default_overlay_color");
+        defaultPackageColor = getColor("default_package_color");
+        defaultScriptColor = getColor("default_script_color");
+        clockColor = getColor("clock_color");
+        temperatureColor = getColor("temperature_color");
+        batteryColor = getColor("battery_color");
+        batteryChargingColor = getColor("battery_charging_color");
+        batteryLowColor = getColor("battery_low_color");
+        widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
+        widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
+        overlayTextColor = getColor("overlay_text_color");
+        ultOverlayTextColor = getColor("ult_overlay_text_color");
+        packageTextColor = getColor("package_text_color");
+        ultPackageTextColor = getColor("ult_package_text_color");
+        bannerVersionTextColor = getColor("banner_version_text_color");
+        overlayVersionTextColor = getColor("overlay_version_text_color");
+        ultOverlayVersionTextColor = getColor("ult_overlay_version_text_color");
+        packageVersionTextColor = getColor("package_version_text_color");
+        ultPackageVersionTextColor = getColor("ult_package_version_text_color");
+        onTextColor = getColor("on_text_color");
+        offTextColor = getColor("off_text_color");
+        invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
+        selectionBGAlpha = getAlpha("selection_bg_alpha");
+        selectionBGColor = getColor("selection_bg_color", selectionBGAlpha);
+        highlightColor1 = getColor("highlight_color_1");
+        highlightColor2 = getColor("highlight_color_2");
+        highlightColor3 = getColor("highlight_color_3");
+        highlightColor4 = getColor("highlight_color_4");
+        clickAlpha = getAlpha("click_alpha");
+        clickColor = getColor("click_color", clickAlpha);
+        progressAlpha = getAlpha("progress_alpha");
+        progressColor = getColor("progress_color", progressAlpha);
+        trackBarColor = getColor("trackbar_color");
+        separatorAlpha = getAlpha("separator_alpha");
+        separatorColor = getColor("separator_color", separatorAlpha);
+        textSeparatorColor = getColor("text_separator_color");
+        selectedTextColor = getColor("selection_text_color");
+        selectedValueTextColor = getColor("selection_value_text_color");
+        inprogressTextColor = getColor("inprogress_text_color");
+        invalidTextColor = getColor("invalid_text_color");
+        clickTextColor = getColor("click_text_color");
+        tableBGAlpha = getAlpha("table_bg_alpha");
+        tableBGColor = getColor("table_bg_color", tableBGAlpha);
+        sectionTextColor = getColor("table_section_text_color");
+        infoTextColor = getColor("table_info_text_color");
+        warningTextColor = getColor("warning_text_color");
+        healthyRamTextColor = getColor("healthy_ram_text_color");
+        neutralRamTextColor = getColor("neutral_ram_text_color");
+        badRamTextColor = getColor("bad_ram_text_color");
+        trackBarSliderColor = getColor("trackbar_slider_color");
+        trackBarSliderBorderColor = getColor("trackbar_slider_border_color");
+        trackBarSliderMalleableColor = getColor("trackbar_slider_malleable_color");
+        trackBarFullColor = getColor("trackbar_full_color");
+        trackBarEmptyColor = getColor("trackbar_empty_color");
     }
     
     #if !IS_LAUNCHER_DIRECTIVE
@@ -6359,11 +6349,7 @@ namespace tsl {
                         const float viewBottom = m_offset + getHeight();
                         
                         if (itemTop < m_offset || itemBottom > viewBottom) {
-                            float emergencySpeed = 0.6f;
-                            
-                            if (itemBottom < m_offset || itemTop > viewBottom) {
-                                emergencySpeed = 0.9f;
-                            }
+                            const float emergencySpeed = (itemBottom < m_offset || itemTop > viewBottom) ? 0.9f : 0.6f;
                             
                             m_offset += diff * emergencySpeed;
                             m_scrollVelocity = diff * 0.3f;
@@ -6426,10 +6412,10 @@ namespace tsl {
                         const float viewCenter = m_offset + (getHeight() / 2.0f);
                         float accumHeight = 0.0f;
                         
-                        float itemHeight, itemCenter;
+                        //float itemHeight, itemCenter;
                         for (size_t i = 0; i < m_items.size(); ++i) {
-                            itemHeight = m_items[i]->getHeight();
-                            itemCenter = accumHeight + (itemHeight / 2.0f);
+                            const float itemHeight = m_items[i]->getHeight();
+                            const float itemCenter = accumHeight + (itemHeight / 2.0f);
                             
                             if (itemCenter >= viewCenter) {
                                 m_focusedIndex = i;
@@ -6514,8 +6500,9 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;  // This resets it for THIS function
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    triggerNavigationFeedback();
                     return result;
                 }
                 
@@ -6594,8 +6581,9 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     triggerShakeOnce = true;  // This resets it for THIS function
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    triggerNavigationFeedback();
                     return result;
                 }
                 
@@ -6989,8 +6977,9 @@ namespace tsl {
                 // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    triggerNavigationFeedback();
                 }
             
                 return newFocus ? newFocus : oldFocus;
@@ -7035,8 +7024,9 @@ namespace tsl {
                 // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerNavigationSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    triggerNavigationFeedback();
                 }
             
                 return newFocus ? newFocus : oldFocus;
@@ -7110,8 +7100,9 @@ namespace tsl {
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
             
                     if (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //triggerNavigationSound.store(true, std::memory_order_release);
+                        triggerNavigationFeedback();
                         return newFocus;
                     } else {
                         return handleJumpToBottom(oldFocus);
@@ -7122,8 +7113,9 @@ namespace tsl {
                     m_nextOffset = targetViewportTop;
             
                     if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //triggerNavigationSound.store(true, std::memory_order_release);
+                        triggerNavigationFeedback();
                     }
             
                     // Focus last visible focusable item
@@ -7148,8 +7140,9 @@ namespace tsl {
                         m_focusedIndex = lastVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerNavigationSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationSound.store(true, std::memory_order_release);
+                            triggerNavigationFeedback();
                             return newFocus;
                         }
                     }
@@ -7224,8 +7217,9 @@ namespace tsl {
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
             
                     if (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //triggerNavigationSound.store(true, std::memory_order_release);
+                        triggerNavigationFeedback();
                         return newFocus;
                     } else {
                         return handleJumpToTop(oldFocus);
@@ -7236,8 +7230,9 @@ namespace tsl {
                     m_nextOffset = targetViewportTop;
             
                     if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //triggerNavigationSound.store(true, std::memory_order_release);
+                        triggerNavigationFeedback();
                     }
             
                     // Focus first visible focusable item
@@ -7263,8 +7258,9 @@ namespace tsl {
                         m_focusedIndex = firstVisibleFocusable;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerNavigationSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationSound.store(true, std::memory_order_release);
+                            triggerNavigationFeedback();
                             return newFocus;
                         }
                     }
@@ -9079,12 +9075,14 @@ namespace tsl {
                 if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
                     if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                         if (keysHeld & KEY_LEFT && this->m_value > 0) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerNavigationSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationSound.store(true, std::memory_order_release);
+                            triggerNavigationFeedback();
                             this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
                         } else if (keysHeld & KEY_RIGHT && this->m_value < 100) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerNavigationSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationSound.store(true, std::memory_order_release);
+                            triggerNavigationFeedback();
                             this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
                         } else {
                             return false;
@@ -9138,8 +9136,9 @@ namespace tsl {
                     }
         
                     if (newValue != this->m_value) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerNavigationSound.store(true, std::memory_order_release);
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //triggerNavigationSound.store(true, std::memory_order_release);
+                        triggerNavigationFeedback();
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
                     }
@@ -9521,8 +9520,9 @@ namespace tsl {
                 }
             
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerEnterSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerEnterSound.store(true, std::memory_order_release);
+                    triggerEnterFeedback();
                     
 
                     if (!m_unlockedTrackbar) {
@@ -9618,8 +9618,9 @@ namespace tsl {
                         static u64 lastNavigationSound_ns = 0;
                         if (currentTime_ns - lastNavigationSound_ns >= 150'000'000ULL) { // 100ms
                             if (this->m_value > m_minValue && this->m_value < m_maxValue) {
-                                triggerRumbleClick.store(true, std::memory_order_release);
-                                triggerNavigationSound.store(true, std::memory_order_release);
+                                //triggerRumbleClick.store(true, std::memory_order_release);
+                                //triggerNavigationSound.store(true, std::memory_order_release);
+                                triggerNavigationFeedback();
                                 
                             }
                             lastNavigationSound_ns = currentTime_ns;
@@ -9702,8 +9703,9 @@ namespace tsl {
                             updateAndExecute(false);
                         }
                         if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerNavigationSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationSound.store(true, std::memory_order_release);
+                            triggerNavigationFeedback();
                         }
                     } else {
                         if (event == TouchEvent::Release) {
@@ -10035,8 +10037,9 @@ namespace tsl {
             
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerEnterSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerEnterSound.store(true, std::memory_order_release);
+                    triggerEnterFeedback();
                     
 
                     if (!m_unlockedTrackbar) {
@@ -10087,14 +10090,16 @@ namespace tsl {
                         if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
                             const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
                             if (keysHeld & KEY_LEFT && this->m_index > 0) {
-                                triggerRumbleClick.store(true, std::memory_order_release);
-                                triggerNavigationSound.store(true, std::memory_order_release);
+                                //triggerRumbleClick.store(true, std::memory_order_release);
+                                //triggerNavigationSound.store(true, std::memory_order_release);
+                                triggerNavigationFeedback();
                                 
                                 this->m_index--;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
                             } else if (keysHeld & KEY_RIGHT && this->m_index < this->m_numSteps-1) {
-                                triggerRumbleClick.store(true, std::memory_order_release);
-                                triggerNavigationSound.store(true, std::memory_order_release);
+                                //triggerRumbleClick.store(true, std::memory_order_release);
+                                //triggerNavigationSound.store(true, std::memory_order_release);
+                                triggerNavigationFeedback();
                                 
                                 this->m_index++;
                                 this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
@@ -11313,8 +11318,9 @@ namespace tsl {
                         if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                             this->goBack();
                             if (this->m_guiStack.size() >= 1) {
-                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                                triggerExitSound.store(true, std::memory_order_release);
+                                //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                //triggerExitSound.store(true, std::memory_order_release);
+                                triggerExitFeedback();
                             }
                             //ult::simulatedBackComplete = true;
                         }
@@ -11337,8 +11343,9 @@ namespace tsl {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
                         if (this->m_guiStack.size() >= 1) {
-                            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                            triggerExitSound.store(true, std::memory_order_release);
+                            //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                            //triggerExitSound.store(true, std::memory_order_release);
+                            triggerExitFeedback();
                         }
                         //ult::simulatedBackComplete = true;
                     }
@@ -11347,8 +11354,9 @@ namespace tsl {
             } else {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (this->m_guiStack.size() >= 1) {
-                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                        triggerExitSound.store(true, std::memory_order_release);
+                        //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                        //triggerExitSound.store(true, std::memory_order_release);
+                        triggerExitFeedback();
                     }
                 }
             }
@@ -13592,8 +13600,9 @@ namespace tsl {
                             shouldFireEvent = false;
                             
                             if (!comboReturn) {
-                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                                triggerExitSound.store(true, std::memory_order_release);
+                                //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                //triggerExitSound.store(true, std::memory_order_release);
+                                triggerExitFeedback();
                             //} else {
                             //    triggerRumbleClick.store(true, std::memory_order_release);
                             }
@@ -13603,15 +13612,17 @@ namespace tsl {
                             shouldFireEvent = false;
                             #if IS_STATUS_MONITOR_DIRECTIVE
                             if (lastMode.compare("returning") == 0) {
-                                triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                                triggerExitSound.store(true, std::memory_order_release);
+                                //triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                                //triggerExitSound.store(true, std::memory_order_release);
+                                triggerExitFeedback();
                             } else {
                                 //triggerRumbleClick.store(true, std::memory_order_release);
                                 triggerEnterSound.store(true, std::memory_order_release);
                             }
                             #else
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerEnterSound.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerEnterSound.store(true, std::memory_order_release);
+                            triggerEnterFeedback();
                             #endif
                         }
                         #endif
