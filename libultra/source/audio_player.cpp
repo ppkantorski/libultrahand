@@ -67,6 +67,30 @@ namespace ult {
             loadSoundFromWav(static_cast<SoundType>(i), m_soundPaths[i]);
         }
     }
+
+    void AudioPlayer::unloadAllSounds(SoundType excludeSound) {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        
+        if (!m_initialized) return;
+        
+        const uint32_t excludeIdx = static_cast<uint32_t>(excludeSound);
+        
+        // Free all cached sound buffers except the excluded one
+        for (uint32_t i = 0; i < m_cachedSounds.size(); ++i) {
+            // Skip the excluded sound
+            if (excludeSound != SoundType::Count && i == excludeIdx) {
+                continue;
+            }
+            
+            auto& cached = m_cachedSounds[i];
+            if (cached.buffer) {
+                free(cached.buffer);
+                cached.buffer = nullptr;
+            }
+            cached.bufferSize = 0;
+            cached.dataSize = 0;
+        }
+    }
     
     bool AudioPlayer::reloadIfDockedChanged() {
         if (!m_initialized) return false;

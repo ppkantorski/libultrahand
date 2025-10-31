@@ -206,6 +206,8 @@ inline std::atomic<bool> triggerOffSound{false};
 inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
+inline std::atomic<bool> clearSoundCacheNow{false};
+inline std::atomic<bool> reloadSoundCacheNow{false};
 
 // Haptic triggering variables
 inline std::atomic<bool> triggerRumbleClick{false};
@@ -7438,7 +7440,9 @@ namespace tsl {
                 if (keys & KEY_A) [[likely]] {
                     triggerRumbleClick.store(true, std::memory_order_release);
 
-                    if (isLocked || m_value.find(ult::CAPITAL_ON_STR) != std::string::npos)
+                    if (isLocked)
+                        triggerWallSound.store(true, std::memory_order_release);
+                    else if (m_value.find(ult::CAPITAL_ON_STR) != std::string::npos)
                         triggerOffSound.store(true, std::memory_order_release);
                     else if (m_value.find(ult::CAPITAL_OFF_STR) != std::string::npos)
                         triggerOnSound.store(true, std::memory_order_release);
@@ -12677,6 +12681,10 @@ namespace tsl {
                         triggerSettingsSound.exchange(false, std::memory_order_acq_rel);
                         triggerMoveSound.exchange(false, std::memory_order_acq_rel);
                     } else {
+                        if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                            ult::AudioPlayer::reloadAllSounds();
+                        }
+
                         if (triggerNavigationSound.exchange(false)) {
                             ult::AudioPlayer::playNavigateSound();
                         } else if (triggerEnterSound.exchange(false)) {
@@ -12693,6 +12701,11 @@ namespace tsl {
                             ult::AudioPlayer::playSettingsSound();
                         } else if (triggerMoveSound.exchange(false)) {
                             ult::AudioPlayer::playMoveSound();
+                        }
+                        
+                        if (clearSoundCacheNow.load(std::memory_order_acquire)) {
+                            ult::AudioPlayer::unloadAllSounds(ult::AudioPlayer::SoundType::Wall);
+                            clearSoundCacheNow.store(false, std::memory_order_release);
                         }
                     }
 

@@ -20,6 +20,101 @@
 #include "download_funcs.hpp"
 
 
+#include <unordered_set>
+
+// existing static vars:
+static std::mutex curlInitMutex;
+static std::atomic<bool> curlInitialized(false);
+
+// allocator tracking
+//static std::mutex curlAllocMutex;
+//static std::unordered_set<void*> curlAllocSet;
+//
+//// The callback signatures must match libcurl's typedefs exactly:
+//// curl_malloc_callback: void *fn(size_t size);
+//// curl_free_callback: void fn(void *ptr);
+//// curl_realloc_callback: void *fn(void *ptr, size_t size);
+//// curl_strdup_callback: char *fn(const char *str);
+//// curl_calloc_callback: void *fn(size_t nmemb, size_t size);
+//
+//static void *curl_track_malloc_cb(size_t size) {
+//    if (size == 0) return nullptr;
+//    void *p = std::malloc(size);
+//    if (!p) return nullptr;
+//    std::lock_guard<std::mutex> l(curlAllocMutex);
+//    curlAllocSet.insert(p);
+//    return p;
+//}
+//
+//static void curl_track_free_cb(void *ptr) {
+//    if (!ptr) return;
+//    std::lock_guard<std::mutex> l(curlAllocMutex);
+//    auto it = curlAllocSet.find(ptr);
+//    if (it != curlAllocSet.end()) {
+//        curlAllocSet.erase(it);
+//        std::free(ptr);
+//    } else {
+//        // free anyway if curl didn't hand us a tracked pointer (defensive)
+//        std::free(ptr);
+//    }
+//}
+//
+//static void *curl_track_realloc_cb(void *ptr, size_t size) {
+//    if (!ptr) {
+//        return curl_track_malloc_cb(size);
+//    }
+//    if (size == 0) {
+//        // some realloc variants free and return NULL
+//        curl_track_free_cb(ptr);
+//        return nullptr;
+//    }
+//    std::lock_guard<std::mutex> l(curlAllocMutex);
+//    auto it = curlAllocSet.find(ptr);
+//    if (it == curlAllocSet.end()) {
+//        // realloc a pointer we didn't track (maybe allocated elsewhere)
+//        void *np = std::realloc(ptr, size);
+//        if (np) {
+//            curlAllocSet.insert(np);
+//        }
+//        return np;
+//    }
+//    // tracked pointer: remove old, realloc, insert new (realloc may move)
+//    curlAllocSet.erase(it);
+//    void *np = std::realloc(ptr, size);
+//    if (np) {
+//        curlAllocSet.insert(np);
+//    } else {
+//        // failed, reinsert original to keep bookkeeping correct
+//        curlAllocSet.insert(ptr);
+//    }
+//    return np;
+//}
+//
+//static char *curl_track_strdup_cb(const char *s) {
+//    if (!s) return nullptr;
+//    size_t len = strlen(s) + 1;
+//    char *p = static_cast<char*>(curl_track_malloc_cb(len));
+//    if (p) memcpy(p, s, len);
+//    return p;
+//}
+//
+//static void *curl_track_calloc_cb(size_t nmemb, size_t size) {
+//    if (nmemb == 0 || size == 0) return nullptr;
+//    void *p = std::calloc(nmemb, size);
+//    if (!p) return nullptr;
+//    std::lock_guard<std::mutex> l(curlAllocMutex);
+//    curlAllocSet.insert(p);
+//    return p;
+//}
+//
+//static void freeAllTrackedAllocations() {
+//    std::lock_guard<std::mutex> l(curlAllocMutex);
+//    for (void *p : curlAllocSet) {
+//        std::free(p);
+//    }
+//    curlAllocSet.clear();
+//}
+
 namespace ult {
 
 size_t DOWNLOAD_READ_BUFFER = 16*1024;//64 * 1024;//4096*10;
@@ -46,7 +141,12 @@ static std::atomic<bool> curlInitialized(false);
 
 
 struct FileDeleter {
-    void operator()(FILE* f) const { if (f) fclose(f); }
+    void operator()(FILE* f) const { 
+        if (f) {
+            fflush(f);  // CRITICAL: Always flush before close
+            fclose(f); 
+        }
+    }
 };
 
 // Definition of CurlDeleter
@@ -71,8 +171,8 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
     if (!ptr || !stream) return 0;
     auto& file = *static_cast<std::ofstream*>(stream);
-    //size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), size * nmemb);
+    const size_t totalBytes = size * nmemb;
+    file.write(static_cast<const char*>(ptr), totalBytes);
     return totalBytes;
 }
 #endif
@@ -82,19 +182,55 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
     if (!ptr) return 1;
     
     auto percentage = static_cast<std::atomic<int>*>(ptr);
+    if (abortDownload.load(std::memory_order_acquire)) {
+        percentage->store(-1, std::memory_order_release);
+        return 1;  // Abort the download
+    }
+
 
     if (totalToDownload > 0) {
         //int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
         percentage->store(static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0), std::memory_order_release);
     }
 
-    if (abortDownload.load(std::memory_order_acquire)) {
-        percentage->store(-1, std::memory_order_release);
-        return 1;  // Abort the download
-    }
-
     return 0;  // Continue the download
 }
+
+//// initialize using curl_global_init_mem so curl uses our tracked allocators
+//void initializeCurl() {
+//    std::lock_guard<std::mutex> lock(curlInitMutex);
+//    if (curlInitialized.load(std::memory_order_acquire)) return;
+//
+//    CURLcode res = curl_global_init_mem(
+//        CURL_GLOBAL_DEFAULT,
+//        curl_track_malloc_cb,
+//        curl_track_free_cb,
+//        curl_track_realloc_cb,
+//        curl_track_strdup_cb,
+//        curl_track_calloc_cb
+//    );
+//
+//    if (res == CURLE_OK) {
+//        curlInitialized.store(true, std::memory_order_release);
+//    } else {
+//        // fallback to normal init if the mem wrapper fails for any reason
+//        curl_global_init(CURL_GLOBAL_DEFAULT);
+//        curlInitialized.store(true, std::memory_order_release);
+//    }
+//}
+//
+//// cleanup: call curl_global_cleanup and free any pointers our tracked allocs retained
+//void cleanupCurl() {
+//    std::lock_guard<std::mutex> lock(curlInitMutex);
+//    if (!curlInitialized.load(std::memory_order_acquire)) return;
+//
+//    // This frees libcurl global resources
+//    curl_global_cleanup();
+//    curlInitialized.store(false, std::memory_order_release);
+//
+//    // Free any leftover allocations that libcurl didn't free
+//    freeAllTrackedAllocations();
+//}
 
 // Global initialization function
 void initializeCurl() {
@@ -139,6 +275,7 @@ void cleanupCurl() {
         curlInitialized.store(false, std::memory_order_release);
     }
 }
+
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
@@ -208,7 +345,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 #endif
 
     // Ensure curl is initialized
-    initializeCurl();
+    //initializeCurl();
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
@@ -216,9 +353,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         if (!disableLogging)
             logMessage("Error initializing curl.");
         #endif
+    // Close file immediately
 #if USING_FSTREAM_DIRECTIVE
+        file.flush();
         file.close();
 #else
+        fflush(file.get());
         file.reset();
 #endif
         return false;
@@ -249,7 +389,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent);
-    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
+
+    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    curl_easy_setopt(curl.get(), CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
 
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
@@ -260,13 +403,24 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1L);   // 1 byte/s (virtually any progress)
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
 
+    // Extra reliability tweaks
+    curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);         // don't reuse connections
+    curl_easy_setopt(curl.get(), CURLOPT_FRESH_CONNECT, 1L);        // force new connection
+    curl_easy_setopt(curl.get(), CURLOPT_TCP_KEEPALIVE, 0L);        // avoid TCP keepalive stalls
+    curl_easy_setopt(curl.get(), CURLOPT_SSL_SESSIONID_CACHE, 0L);  // disable SSL session cache
+
+    curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
+
     CURLcode result = curl_easy_perform(curl.get());
 
 #if USING_FSTREAM_DIRECTIVE
+    file.flush();
     file.close();
 #else
+    fflush(file.get());
     file.reset();
 #endif
+    curl.reset();
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
@@ -286,6 +440,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         if (!noPercentagePolling) {
             downloadPercentage.store(-1, std::memory_order_release);
         }
+
+        //#if USING_LOGGING_DIRECTIVE
+        //if (!disableLogging && result == CURLE_ABORTED_BY_CALLBACK)
+        //    logMessage("Download aborted by user: " + url);
+        //#endif
+        //freeAllTrackedAllocations();
         return false;
     }
 

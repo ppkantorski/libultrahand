@@ -66,6 +66,8 @@ namespace ult {
         static bool isEnabled();
         static bool isDocked();
         static bool reloadIfDockedChanged();
+        static void reloadAllSounds();
+        static void unloadAllSounds(SoundType excludeSound = SoundType::Count);
         
     private:
         static bool m_initialized;
@@ -88,6 +90,6 @@ namespace ult {
         
         //static void playAudioBuffer(void* buffer, uint32_t bufferSize);
         static bool loadSoundFromWav(SoundType type, const char* path);
-        static void reloadAllSounds();
+        
     };
 }
