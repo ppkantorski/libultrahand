@@ -12375,6 +12375,8 @@ namespace tsl {
             // Clear any stale input from both controllers
             padUpdate(&pad_p1);
             padUpdate(&pad_handheld);
+
+            ult::initRumble(); // initialize rumble
             
             enum WaiterObject {
                 WaiterObject_HomeButton,
@@ -13435,6 +13437,8 @@ namespace tsl {
             ult::AudioPlayer::initialize();
         }
 
+
+
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
         
@@ -13795,7 +13799,7 @@ extern "C" {
         //});
         
 
-        ult::initRumble(); // initialize rumble
+        
 
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();

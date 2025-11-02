@@ -78,6 +78,8 @@ namespace ult {
     void initRumble() {
         if (rumbleInitialized) return;
     
+        // Try to initialize whatever is available
+        // Don't check if controllers exist - let initController handle it
         initController(HidNpadIdType_Handheld, &vibHandheld, 1);
     
         HidVibrationDeviceHandle handles[2];
@@ -85,7 +87,14 @@ namespace ult {
         vibPlayer1Left = handles[0];
         vibPlayer1Right = handles[1];
     
-        rumbleInitialized = true;
+        // Only mark as initialized if at least one controller was found
+        const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+        const u32 player1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
+        
+        if (handheldStyle || player1Style) {
+            rumbleInitialized = true;
+        }
+        // If neither exist, stay uninitialized so we retry later
     }
     
     void deinitRumble() {
@@ -99,6 +108,14 @@ namespace ult {
         const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
     
+        // If not initialized but controllers exist, try to init
+        // This handles the boot race condition where HID reports controllers
+        // but vibration subsystem isn't ready yet
+        if (!rumbleInitialized && (currentHandheldStyle || currentPlayer1Style)) {
+            initRumble();
+        }
+    
+        // Reinit if controller configuration changed
         if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
             rumbleInitialized = false;
             initRumble();
