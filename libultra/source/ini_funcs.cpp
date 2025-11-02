@@ -2404,7 +2404,7 @@ namespace ult {
             }
 
             // Clear strings to reuse capacity
-            strLine.clear();
+            //strLine.clear();
             currentSection.clear();
         }
     

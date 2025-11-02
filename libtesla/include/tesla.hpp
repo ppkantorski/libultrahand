@@ -10954,7 +10954,8 @@ namespace tsl {
             triggerRumbleClick.store(true, std::memory_order_release);
 
             // reinitialize audio for changes from handheld to docked and vise versa
-            ult::AudioPlayer::reloadIfDockedChanged();
+            if (ult::expandedMemory && ult::useSoundEffects)
+                ult::AudioPlayer::reloadIfDockedChanged();
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
@@ -11187,19 +11188,18 @@ namespace tsl {
             // CRITICAL: Initialize to TRUE because stacks are added in init()!
             static std::atomic<bool> screenshotStacksAdded{true};
             static std::atomic<bool> notificationCacheNeedsClearing{false};
-            
+
             auto& renderer = gfx::Renderer::get();
             renderer.startFrame();
         
             // Handle main UI rendering
             if (!promptOnly) {
+
                 // In normal mode, ensure screenshots are enabled
                 // Only re-add if they were removed AND force-disable is not set
                 if (!screenshotStacksAdded.load(std::memory_order_acquire) &&
                     !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
-                    bool expected = false;
-                    if (screenshotStacksAdded.compare_exchange_strong(expected, true, 
-                                                                     std::memory_order_acq_rel)) {
+                    if (!screenshotStacksAdded.exchange(true, std::memory_order_acq_rel)) {
                         renderer.addScreenshotStacks(false);
                     }
                 }
@@ -11215,9 +11215,7 @@ namespace tsl {
                     !screenshotsAreDisabled.load(std::memory_order_acquire) &&
                     !screenshotsAreForceDisabled.load(std::memory_order_acquire)) {
 
-                    bool expected = true;
-                    if (screenshotStacksAdded.compare_exchange_strong(expected, false, 
-                                                                     std::memory_order_acq_rel)) {
+                    if (screenshotStacksAdded.exchange(false, std::memory_order_acq_rel)) {
                         renderer.removeScreenshotStacks(false);
                     }
                 }
@@ -11231,9 +11229,7 @@ namespace tsl {
                     notification->draw(&renderer, promptOnly);
 
                     // Only set flag if it's not already set
-                    bool expected = false;
-                    notificationCacheNeedsClearing.compare_exchange_strong(expected, true, 
-                                                                  std::memory_order_acq_rel);
+                    notificationCacheNeedsClearing.exchange(true, std::memory_order_acq_rel);
 
                 } else if (notificationCacheNeedsClearing.exchange(false, std::memory_order_acq_rel)) {
                     tsl::gfx::FontManager::clearNotificationCache();
@@ -12671,41 +12667,47 @@ namespace tsl {
                     }
                     
                     // Flush any pending sound triggers when effects are off
-                    if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
-                        triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
-                        triggerEnterSound.exchange(false, std::memory_order_acq_rel);
-                        triggerExitSound.exchange(false, std::memory_order_acq_rel);
-                        triggerWallSound.exchange(false, std::memory_order_acq_rel);
-                        triggerOnSound.exchange(false, std::memory_order_acq_rel);
-                        triggerOffSound.exchange(false, std::memory_order_acq_rel);
-                        triggerSettingsSound.exchange(false, std::memory_order_acq_rel);
-                        triggerMoveSound.exchange(false, std::memory_order_acq_rel);
-                    } else {
-                        if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
-                            ult::AudioPlayer::reloadAllSounds();
-                        }
 
-                        if (triggerNavigationSound.exchange(false)) {
-                            ult::AudioPlayer::playNavigateSound();
-                        } else if (triggerEnterSound.exchange(false)) {
-                            ult::AudioPlayer::playEnterSound();
-                        } else if (triggerExitSound.exchange(false)) {
-                            ult::AudioPlayer::playExitSound();
-                        } else if (triggerWallSound.exchange(false)) {
-                            ult::AudioPlayer::playWallSound();
-                        } else if (triggerOnSound.exchange(false)) {
-                            ult::AudioPlayer::playOnSound();
-                        } else if (triggerOffSound.exchange(false)) {
-                            ult::AudioPlayer::playOffSound();
-                        } else if (triggerSettingsSound.exchange(false)) {
-                            ult::AudioPlayer::playSettingsSound();
-                        } else if (triggerMoveSound.exchange(false)) {
-                            ult::AudioPlayer::playMoveSound();
-                        }
-                        
-                        if (clearSoundCacheNow.load(std::memory_order_acquire)) {
-                            ult::AudioPlayer::unloadAllSounds(ult::AudioPlayer::SoundType::Wall);
-                            clearSoundCacheNow.store(false, std::memory_order_release);
+                    if (ult::expandedMemory) {
+                        if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
+                            triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
+                            triggerEnterSound.exchange(false, std::memory_order_acq_rel);
+                            triggerExitSound.exchange(false, std::memory_order_acq_rel);
+                            triggerWallSound.exchange(false, std::memory_order_acq_rel);
+                            triggerOnSound.exchange(false, std::memory_order_acq_rel);
+                            triggerOffSound.exchange(false, std::memory_order_acq_rel);
+                            triggerSettingsSound.exchange(false, std::memory_order_acq_rel);
+                            triggerMoveSound.exchange(false, std::memory_order_acq_rel);
+                        } else {
+                            if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                                ult::AudioPlayer::reloadAllSounds();
+                            }
+
+                            if (triggerNavigationSound.exchange(false)) {
+                                ult::AudioPlayer::playNavigateSound();
+                            } else if (triggerEnterSound.exchange(false)) {
+                                ult::AudioPlayer::playEnterSound();
+                            } else if (triggerExitSound.exchange(false)) {
+                                ult::AudioPlayer::playExitSound();
+                            } else if (triggerWallSound.exchange(false)) {
+                                ult::AudioPlayer::playWallSound();
+                            } else if (triggerOnSound.exchange(false)) {
+                                ult::AudioPlayer::playOnSound();
+                            } else if (triggerOffSound.exchange(false)) {
+                                ult::AudioPlayer::playOffSound();
+                            } else if (triggerSettingsSound.exchange(false)) {
+                                ult::AudioPlayer::playSettingsSound();
+                            } else if (triggerMoveSound.exchange(false)) {
+                                ult::AudioPlayer::playMoveSound();
+                            }
+
+                            if (clearSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                                //ult::AudioPlayer::unloadAllSounds(ult::AudioPlayer::SoundType::Wall);
+                                ult::AudioPlayer::unloadAllSounds({ult::AudioPlayer::SoundType::Wall});
+                                //ult::AudioPlayer::unloadAllSounds();
+                                //clearSoundCacheNow.store(false, std::memory_order_release);
+                                clearSoundCacheNow.notify_all();
+                            }
                         }
                     }
 
@@ -13427,6 +13429,12 @@ namespace tsl {
     #if !IS_LAUNCHER_DIRECTIVE
         tsl::initializeUltrahandSettings();
     #endif
+
+        // Initialize the audio service
+        if (ult::useSoundEffects && ult::expandedMemory) {
+            ult::AudioPlayer::initialize();
+        }
+
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
         
@@ -13751,40 +13759,43 @@ extern "C" {
      *
      */
     void __appInit(void) {
-        tsl::hlp::doWithSmSession([]{
-            
-            ASSERT_FATAL(fsInitialize());
-            ASSERT_FATAL(hidInitialize());                          // Controller inputs and Touch
-            if (hosversionAtLeast(16,0,0)) {
-                ASSERT_FATAL(plInitialize(PlServiceType_User));     // Font data. Use pl:u for 16.0.0+
-            } else {
-                ASSERT_FATAL(plInitialize(PlServiceType_System));   // Use pl:s for 15.0.1 and below to prevent qlaunch/overlaydisp session exhaustion
-            }
-            ASSERT_FATAL(pmdmntInitialize());                       // PID querying
-            ASSERT_FATAL(hidsysInitialize());                       // Focus control
-            ASSERT_FATAL(setsysInitialize());                       // Settings querying
-            
-            // Time initializations
-            ASSERT_FATAL(timeInitialize()); // CUSTOM MODIFICATION
-            __libnx_init_time();            // CUSTOM MODIFICATION
-            timeExit(); // CUSTOM MODIFICATION
-
-            #if USING_WIDGET_DIRECTIVE
-            ult::powerInit();
-            i2cInitialize();
-            #endif
-
-            fsdevMountSdmc();
-            splInitialize();
-            spsmInitialize();
-            //i2cInitialize();
-            //ASSERT_FATAL(socketInitializeDefault());
-            //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-        });
         ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
 
-        ult::initRumble();
-        ult::AudioPlayer::initialize();
+        //tsl::hlp::doWithSmSession([]{
+        
+        ASSERT_FATAL(fsInitialize());
+        ASSERT_FATAL(hidInitialize());                          // Controller inputs and Touch
+        if (hosversionAtLeast(16,0,0)) {
+            ASSERT_FATAL(plInitialize(PlServiceType_User));     // Font data. Use pl:u for 16.0.0+
+        } else {
+            ASSERT_FATAL(plInitialize(PlServiceType_System));   // Use pl:s for 15.0.1 and below to prevent qlaunch/overlaydisp session exhaustion
+        }
+        ASSERT_FATAL(pmdmntInitialize());                       // PID querying
+        ASSERT_FATAL(hidsysInitialize());                       // Focus control
+        ASSERT_FATAL(setsysInitialize());                       // Settings querying
+        
+        // Time initializations
+        if R_SUCCEEDED(timeInitialize()) {
+            __libnx_init_time();
+            timeExit();
+        }
+
+        #if USING_WIDGET_DIRECTIVE
+        ult::powerInit();
+        i2cInitialize();
+        #endif
+
+        fsdevMountSdmc();
+        splInitialize();
+        spsmInitialize();
+        //i2cInitialize();
+        //ASSERT_FATAL(socketInitializeDefault());
+        //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
+
+        //});
+        
+
+        ult::initRumble(); // initialize rumble
 
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();
@@ -13808,9 +13819,10 @@ extern "C" {
         eventClose(&tsl::notificationEvent);
 
         //deinitRumble();
-        ult::AudioPlayer::exit();
+        if (ult::expandedMemory)
+            ult::AudioPlayer::exit();
 
-        smExit();
+        
         //socketExit();
         //nifmExit();
         spsmExit();
@@ -13828,6 +13840,7 @@ extern "C" {
         pmdmntExit();
         hidsysExit();
         setsysExit();
+        smExit();
 
         // Final cleanup
         tsl::gfx::FontManager::cleanup();

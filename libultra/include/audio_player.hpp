@@ -67,14 +67,15 @@ namespace ult {
         static bool isDocked();
         static bool reloadIfDockedChanged();
         static void reloadAllSounds();
-        static void unloadAllSounds(SoundType excludeSound = SoundType::Count);
+        static void unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds = {});
+        static std::mutex m_audioMutex;
         
     private:
         static bool m_initialized;
         static std::atomic<bool> m_enabled;  // <- atomic for lock-free reads
         static float m_masterVolume;
         static std::vector<CachedSound> m_cachedSounds;
-        static std::mutex m_audioMutex;
+        
         static bool m_lastDockedState;
         
         inline static constexpr const char* m_soundPaths[static_cast<size_t>(SoundType::Count)] = {
