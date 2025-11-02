@@ -206,7 +206,7 @@ inline std::atomic<bool> triggerOffSound{false};
 inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
-inline std::atomic<bool> clearSoundCacheNow{false};
+//inline std::atomic<bool> clearSoundCacheNow{false};
 inline std::atomic<bool> reloadSoundCacheNow{false};
 
 // Haptic triggering variables
@@ -12703,13 +12703,13 @@ namespace tsl {
                                 ult::AudioPlayer::playMoveSound();
                             }
 
-                            if (clearSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
-                                //ult::AudioPlayer::unloadAllSounds(ult::AudioPlayer::SoundType::Wall);
-                                ult::AudioPlayer::unloadAllSounds({ult::AudioPlayer::SoundType::Wall});
-                                //ult::AudioPlayer::unloadAllSounds();
-                                //clearSoundCacheNow.store(false, std::memory_order_release);
-                                clearSoundCacheNow.notify_all();
-                            }
+                            //if (clearSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
+                            //    //ult::AudioPlayer::unloadAllSounds(ult::AudioPlayer::SoundType::Wall);
+                            //    ult::AudioPlayer::unloadAllSounds({ult::AudioPlayer::SoundType::Wall});
+                            //    //ult::AudioPlayer::unloadAllSounds();
+                            //    //clearSoundCacheNow.store(false, std::memory_order_release);
+                            //    clearSoundCacheNow.notify_all();
+                            //}
                         }
                     }
 

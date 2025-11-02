@@ -264,19 +264,31 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
 
     //curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
-    //curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
 
     CURLcode result = curl_easy_perform(curl.get());
+
+    // Detect if download was aborted
+    const bool wasAborted = (result == CURLE_ABORTED_BY_CALLBACK || 
+                             abortDownload.load(std::memory_order_acquire));
 
 #if USING_FSTREAM_DIRECTIVE
     file.flush();
     file.close();
 #else
-    fflush(file.get());
+    // Skip flush if aborted (may have incomplete data in buffer)
+    //if (!wasAborted) {
+    //    fflush(file.get());
+    //}
     file.reset();
     writeBuffer.reset();
 #endif
 
+    // CRITICAL: For aborted downloads, give curl time to clean up network/SSL state
+    // before destroying the handle. This prevents memory leaks in the global heap.
+    if (wasAborted) {
+        svcSleepThread(100'000'000ULL); // 100ms
+    }
 
     curl.reset();
     //cleanupCurl();
@@ -285,7 +297,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
-        if (result == CURLE_OPERATION_TIMEDOUT) {
+        if (result == CURLE_ABORTED_BY_CALLBACK) {
+            if (!disableLogging)
+                logMessage("Download aborted by user: " + url);
+        } else if (result == CURLE_OPERATION_TIMEDOUT) {
             if (!disableLogging)
                 logMessage("Download timed out: " + url);
         } else if (result == CURLE_COULDNT_CONNECT) {
@@ -297,7 +312,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         }
         #endif
         deleteFileOrDirectory(tempFilePath);
-        // Only update percentage if we're tracking it
         if (!noPercentagePolling) {
             downloadPercentage.store(-1, std::memory_order_release);
         }
