@@ -4060,13 +4060,13 @@ namespace tsl {
              * @param direction Direction to shake highlight in
              */
             void inline shakeHighlight(FocusDirection direction) {
+                this->m_highlightShaking = true;
+                this->m_highlightShakingDirection = direction;
+                this->m_highlightShakingStartTime = armTicksToNs(armGetSystemTick()); // Changed
                 if (direction != FocusDirection::None && m_isItem) {
                     triggerRumbleClick.store(true, std::memory_order_release);
                     triggerWallSound.store(true, std::memory_order_release);
                 }
-                this->m_highlightShaking = true;
-                this->m_highlightShakingDirection = direction;
-                this->m_highlightShakingStartTime = armTicksToNs(armGetSystemTick()); // Changed
             }
             
             /**
@@ -11288,8 +11288,7 @@ namespace tsl {
 
             // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
-            auto topElement = currentGui->getTopElement();
-
+            
 
             const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
         #if !IS_STATUS_MONITOR_DIRECTIVE
@@ -11372,6 +11371,8 @@ namespace tsl {
                 lastGuiPtr = currentGui.get();  // or just currentGui
             }
             
+            auto topElement = currentGui->getTopElement();
+
             const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
 
             if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
@@ -13295,7 +13296,7 @@ namespace tsl {
             ult::HEX_BUFFER_SIZE = 8192;
             ult::UNZIP_READ_BUFFER = 262144;
             ult::UNZIP_WRITE_BUFFER = 131072;
-            ult::DOWNLOAD_READ_BUFFER = 262144;
+            ult::DOWNLOAD_READ_BUFFER = 262144/2;
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
         }
     

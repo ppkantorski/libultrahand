@@ -51,15 +51,15 @@ static std::atomic<bool> curlInitialized(false);
 // Definition of CurlDeleter
 struct CurlDeleter {
     void operator()(CURL* curl) const noexcept {
-        if (curl)
+        if (curl) {
             curl_easy_cleanup(curl);
+        }
     }
 };
 
 struct FileDeleter {
     void operator()(FILE* f) const { 
         if (f) {
-            fflush(f);  // CRITICAL: Always flush before close
             fclose(f); 
         }
     }
@@ -264,33 +264,45 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
 
     //curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
-    curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
+    //curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
+    //curl_easy_setopt(curl.get(), CURLOPT_CLOSESOCKETDATA, NULL); // ensure no dangling sockets
+    //curl_easy_setopt(curl.get(), CURLOPT_TCP_NODELAY, 1L);
 
     CURLcode result = curl_easy_perform(curl.get());
 
     // Detect if download was aborted
-    const bool wasAborted = (result == CURLE_ABORTED_BY_CALLBACK || 
-                             abortDownload.load(std::memory_order_acquire));
+    //const bool wasAborted = (result == CURLE_ABORTED_BY_CALLBACK || 
+    //                         abortDownload.load(std::memory_order_acquire));
+
 
 #if USING_FSTREAM_DIRECTIVE
-    file.flush();
     file.close();
 #else
-    // Skip flush if aborted (may have incomplete data in buffer)
-    //if (!wasAborted) {
-    //    fflush(file.get());
-    //}
     file.reset();
     writeBuffer.reset();
 #endif
 
+    curl.reset();
+
+    // Always cleanup global state
+    //curl_global_cleanup();
+    //
+    //// Sleep to let cleanup finish
+    //for (int i = 0; i < 10; ++i) {
+    //    svcSleepThread(50'000'000ULL);
+    //}
+    //
+    //// Explicitly reinitialize for next download
+    //curl_global_init(CURL_GLOBAL_DEFAULT);
+    
     // CRITICAL: For aborted downloads, give curl time to clean up network/SSL state
     // before destroying the handle. This prevents memory leaks in the global heap.
-    if (wasAborted) {
-        svcSleepThread(100'000'000ULL); // 100ms
-    }
+    //if (wasAborted) {
+    //    for (int i = 0; i < 10; ++i) {
+    //        svcSleepThread(50'000'000ULL); // 50ms x 10 = 500ms total
+    //    }
+    //}
 
-    curl.reset();
     //cleanupCurl();
 
     //socketExit();
