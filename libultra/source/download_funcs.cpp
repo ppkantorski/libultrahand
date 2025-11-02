@@ -22,7 +22,8 @@
 
 namespace ult {
 
-size_t DOWNLOAD_READ_BUFFER = 16*1024;//64 * 1024;//4096*10;
+// Base loader definitions
+size_t DOWNLOAD_READ_BUFFER = 8*1024;//64 * 1024;//4096*10;
 size_t DOWNLOAD_WRITE_BUFFER = 8*1024;//64 * 1024;
 size_t UNZIP_READ_BUFFER = 32*1024;//131072*2;//4096*4;
 size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
@@ -31,6 +32,9 @@ size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
 // Path to the CA certificate
 //const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
 //const std::string cacertURL = "https://curl.se/ca/cacert.pem";
+
+// User agent string for curl requests
+static constexpr const char* userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
 // Shared atomic flag to indicate whether to abort the download operation
 std::atomic<bool> abortDownload(false);
@@ -44,6 +48,13 @@ static std::mutex curlInitMutex;
 static std::atomic<bool> curlInitialized(false);
 
 
+// Definition of CurlDeleter
+struct CurlDeleter {
+    void operator()(CURL* curl) const noexcept {
+        if (curl)
+            curl_easy_cleanup(curl);
+    }
+};
 
 struct FileDeleter {
     void operator()(FILE* f) const { 
@@ -53,13 +64,6 @@ struct FileDeleter {
         }
     }
 };
-
-// Definition of CurlDeleter
-void CurlDeleter::operator()(CURL* curl) const {
-    if (curl) {
-        curl_easy_cleanup(curl);
-    }
-}
 
 // Callback function to write received data to a file.
 #if !USING_FSTREAM_DIRECTIVE
@@ -76,8 +80,8 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
     if (!ptr || !stream) return 0;
     auto& file = *static_cast<std::ofstream*>(stream);
-    //size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), size * nmemb);
+    const size_t totalBytes = size * nmemb;
+    file.write(static_cast<const char*>(ptr), totalBytes);
     return totalBytes;
 }
 #endif
@@ -102,30 +106,30 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 }
 
 // Global initialization function
-void initializeCurl() {
-    std::lock_guard<std::mutex> lock(curlInitMutex);
-    if (!curlInitialized.load(std::memory_order_acquire)) {
-        const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-        if (res != CURLE_OK) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
-            #endif
-            // Handle error appropriately, possibly exit the program
-        } else {
-            curlInitialized.store(true, std::memory_order_release);
-        }
-    }
-}
+//void initializeCurl() {
+//    std::lock_guard<std::mutex> lock(curlInitMutex);
+//    if (!curlInitialized.load(std::memory_order_acquire)) {
+//        const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+//        if (res != CURLE_OK) {
+//            #if USING_LOGGING_DIRECTIVE
+//            if (!disableLogging)
+//                logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
+//            #endif
+//            // Handle error appropriately, possibly exit the program
+//        } else {
+//            curlInitialized.store(true, std::memory_order_release);
+//        }
+//    }
+//}
 
 // Global cleanup function
-void cleanupCurl() {
-    std::lock_guard<std::mutex> lock(curlInitMutex);
-    if (curlInitialized.load(std::memory_order_acquire)) {
-        curl_global_cleanup();
-        curlInitialized.store(false, std::memory_order_release);
-    }
-}
+//void cleanupCurl() {
+//    std::lock_guard<std::mutex> lock(curlInitMutex);
+//    if (curlInitialized.load(std::memory_order_acquire)) {
+//        curl_global_cleanup();
+//        curlInitialized.store(false, std::memory_order_release);
+//    }
+//}
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
@@ -199,13 +203,13 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     // Ensure curl is initialized
     //initializeCurl();
 
-    if (!R_SUCCEEDED(socketInitializeDefault())) {
-        #if USING_LOGGING_DIRECTIVE
-        if (!disableLogging)
-            logMessage("Failed to initialize socket.");
-        #endif
-        return false;
-    }    
+    //if (!R_SUCCEEDED(socketInitializeDefault())) {
+    //    #if USING_LOGGING_DIRECTIVE
+    //    if (!disableLogging)
+    //        logMessage("Failed to initialize socket.");
+    //    #endif
+    //    return false;
+    //}
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
@@ -260,6 +264,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
 
     //curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
+    //curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
 
     CURLcode result = curl_easy_perform(curl.get());
 
@@ -272,10 +277,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     writeBuffer.reset();
 #endif
 
+
     curl.reset();
     //cleanupCurl();
 
-    socketExit();
+    //socketExit();
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
