@@ -533,6 +533,8 @@ namespace ult {
     std::string FAILED_TO_OPEN = "Failed to open file";
     std::string LAUNCH_COMBOS = "Launch Combos";
     std::string NOTIFICATIONS = "Notifications";
+    std::string SOUND_EFFECTS = "Sound Effects";
+    std::string HAPTIC_FEEDBACK = "Haptic Feedback";
     std::string OPAQUE_SCREENSHOTS = "Opaque Screenshots";
 
     std::string PACKAGE_INFO = "Package Info";
@@ -741,6 +743,8 @@ namespace ult {
 
         LAUNCH_COMBOS = "Launch Combos";
         NOTIFICATIONS = "Notifications";
+        SOUND_EFFECTS = "Sound Effects";
+        HAPTIC_FEEDBACK = "Haptic Feedback";
         OPAQUE_SCREENSHOTS = "Opaque Screenshots";
         ON = "On";
         OFF = "Off";
@@ -949,6 +953,8 @@ namespace ult {
 
             {"LAUNCH_COMBOS", &LAUNCH_COMBOS},
             {"NOTIFICATIONS", &NOTIFICATIONS},
+            {"SOUND_EFFECTS", &SOUND_EFFECTS},
+            {"HAPTIC_FEEDBACK", &HAPTIC_FEEDBACK},
             {"OPAQUE_SCREENSHOTS", &OPAQUE_SCREENSHOTS},
 
             {"PACKAGE_INFO", &PACKAGE_INFO},

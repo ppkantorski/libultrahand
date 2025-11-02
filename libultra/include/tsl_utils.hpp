@@ -410,6 +410,8 @@ namespace ult {
 
     extern std::string LAUNCH_COMBOS;
     extern std::string NOTIFICATIONS;
+    extern std::string SOUND_EFFECTS;
+    extern std::string HAPTIC_FEEDBACK;
     extern std::string OPAQUE_SCREENSHOTS;
 
     extern std::string PACKAGE_INFO;
