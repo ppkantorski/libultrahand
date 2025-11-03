@@ -11003,7 +11003,8 @@ namespace tsl {
             ult::isHidden.store(true);
             this->onHide();
         #endif
-            triggerRumbleClick.store(true, std::memory_order_release);
+            if (!ult::runningInterpreter.load(std::memory_order_acquire))
+                triggerRumbleClick.store(true, std::memory_order_release);
         }
         
         /**
@@ -11349,7 +11350,7 @@ namespace tsl {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
-                        if (this->m_guiStack.size() >= 1) {
+                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
                             //triggerRumbleDoubleClick.store(true, std::memory_order_release);
                             //triggerExitSound.store(true, std::memory_order_release);
                             triggerExitFeedback();
@@ -11360,7 +11361,7 @@ namespace tsl {
                 }
             } else {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    if (this->m_guiStack.size() >= 1) {
+                    if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
                         //triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         //triggerExitSound.store(true, std::memory_order_release);
                         triggerExitFeedback();
