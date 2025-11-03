@@ -119,9 +119,10 @@ namespace ult {
         if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
             rumbleInitialized = false;
             initRumble();
-            lastHandheldStyle = currentHandheldStyle;
-            lastPlayer1Style = currentPlayer1Style;
         }
+        // Update last style tracking regardless
+        lastHandheldStyle = currentHandheldStyle;
+        lastPlayer1Style = currentPlayer1Style;
     }
     
     void rumbleClick() {
