@@ -30,6 +30,8 @@ namespace ult {
     
     std::mutex logMutex2; // Mutex for thread-safe logging (defined here, declared as extern in header)
 
+    static std::vector<std::string> fileList;
+
     // RAII wrapper for FILE* to ensure proper cleanup
     class FileGuard {
     private:
@@ -400,13 +402,15 @@ namespace ult {
      */
     void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource) {
         //logMessage("pathPattern: "+pathPattern);
-        std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
+        fileList = getFilesListByWildcards(pathPattern);
         
         for (auto& path : fileList) {
             //logMessage("path: "+path);
             deleteFileOrDirectory(path, logSource);
             path = "";
         }
+        fileList.clear();
+        fileList.shrink_to_fit();
     }
 
     // Helper function to reverse a log file safely
@@ -774,7 +778,7 @@ namespace ult {
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
         const std::string& logSource, const std::string& logDestination) {
         
-        std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
+        fileList = getFilesListByWildcards(sourcePathPattern);
         
         //std::string fileListAsString;
         //for (const std::string& filePath : fileList)
@@ -803,6 +807,9 @@ namespace ult {
             sourceFileOrDirectory = "";
         }
         //logMessage("post loop");
+
+        fileList.clear();
+        fileList.shrink_to_fit();
     }
     
     /**
@@ -1271,7 +1278,7 @@ namespace ult {
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
         const std::string& logSource, const std::string& logDestination) {
-        std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
+        fileList = getFilesListByWildcards(sourcePathPattern);
         long long totalSize = 0;
         for (const std::string& path : fileList) {
             totalSize += getTotalSize(path);
@@ -1282,6 +1289,9 @@ namespace ult {
             copyFileOrDirectory(sourcePath, toDirectory, &totalBytesCopied, totalSize, logSource, logDestination);
             sourcePath = "";
         }
+
+        fileList.clear();
+        fileList.shrink_to_fit();
         //copyPercentage.store(-1, std::memory_order_release);  // Reset after operation
     }
 
@@ -1298,7 +1308,7 @@ namespace ult {
      *                   Default is "sdmc:/". You can specify a different target path if needed.
      */
     void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode) {
-        std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
+        fileList = getFilesListFromDirectory(sourcePath);
         std::string updatedPath;
         long long totalSize = 0;
         long long totalBytesCopied = 0;
@@ -1325,6 +1335,8 @@ namespace ult {
             path = "";
         }
         //fileList.clear();
+        fileList.clear();
+        fileList.shrink_to_fit();
     }
     
     /**
@@ -1339,8 +1351,8 @@ namespace ult {
      */
     void createFlagFiles(const std::string& wildcardPattern, const std::string& outputDir) {
         // 1) Gather all matches from the wildcard pattern
-        std::vector<std::string> allMatches = ult::getFilesListByWildcards(wildcardPattern);
-        if (allMatches.empty()) {
+        fileList = ult::getFilesListByWildcards(wildcardPattern);
+        if (fileList.empty()) {
             return; // No matches, nothing to do
         }
     
@@ -1353,7 +1365,7 @@ namespace ult {
             outputPrefix.push_back('/');
         
         std::string baseName, outFile;
-        for (auto& fullPath : allMatches) {
+        for (auto& fullPath : fileList) {
             baseName = ult::getNameFromPath(fullPath);
             if (baseName.empty()) {
                 fullPath = "";
@@ -1371,6 +1383,8 @@ namespace ult {
         #endif
             fullPath = "";
         }
+        fileList.clear();
+        fileList.shrink_to_fit();
     }
     
     /**

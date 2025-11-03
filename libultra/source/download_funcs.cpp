@@ -131,6 +131,8 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 //    }
 //}
 
+std::unique_ptr<char[]> globalWriteBuffer;
+
 /**
  * @brief Downloads a file from a URL to a specified destination.
  *
@@ -190,11 +192,12 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     // ADD THIS: Set up write buffer for better performance
-    std::unique_ptr<char[]> writeBuffer;
+    //std::unique_ptr<char[]> globalWriteBuffer;
     if (DOWNLOAD_WRITE_BUFFER > 0) {
-        writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
+        //if (!globalWriteBuffer)
+        globalWriteBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
         // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
-        setvbuf(file.get(), writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
+        setvbuf(file.get(), globalWriteBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
     }
 
     //setvbuf(file.get(), NULL, _IOFBF, DOWNLOAD_WRITE_BUFFER);
@@ -221,7 +224,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         file.close();
 #else
         file.reset();
-        writeBuffer.reset();
+        globalWriteBuffer.reset();
 #endif
         return false;
     }
@@ -279,7 +282,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     file.close();
 #else
     file.reset();
-    writeBuffer.reset();
+    globalWriteBuffer.reset();
 #endif
 
     curl.reset();
@@ -617,7 +620,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     
     // Single large buffer for extraction - reused for all files
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
-    std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
+    //std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
+    
+    globalWriteBuffer = std::make_unique<char[]>(bufferSize);
+
     char filenameBuffer[512]; // Stack allocated for filename reading
     
     // Progress tracking variables - OPTIMIZED for smooth byte-based tracking
@@ -752,14 +758,14 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         fileBytesProcessed = 0;
         
         
-        while ((bytesRead = unzReadCurrentFile(zipFile, buffer.get(), bufferSize)) > 0) {
+        while ((bytesRead = unzReadCurrentFile(zipFile, globalWriteBuffer.get(), bufferSize)) > 0) {
             if (abortUnzip.load(std::memory_order_relaxed)) {
                 extractSuccess = false;
                 break; // RAII will handle cleanup
             }
             
             // Write data to file
-            if (outputFile.write(buffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
+            if (outputFile.write(globalWriteBuffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
                 extractSuccess = false;
                 break;
             }
@@ -838,6 +844,8 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         // Move to next file
         result = unzGoToNextFile(zipFile);
     }
+
+    globalWriteBuffer.reset();
 
     // Check final abort state
     if (abortUnzip.load(std::memory_order_relaxed)) {
