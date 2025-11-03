@@ -11003,8 +11003,7 @@ namespace tsl {
             ult::isHidden.store(true);
             this->onHide();
         #endif
-            if (!ult::runningInterpreter.load(std::memory_order_acquire))
-                triggerRumbleClick.store(true, std::memory_order_release);
+            triggerRumbleClick.store(true, std::memory_order_release);
         }
         
         /**
