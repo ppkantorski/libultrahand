@@ -12385,7 +12385,7 @@ namespace tsl {
             padUpdate(&pad_p1);
             padUpdate(&pad_handheld);
 
-            ult::initRumble(); // initialize rumble
+            //ult::initRumble(); // initialize rumble
             
             enum WaiterObject {
                 WaiterObject_HomeButton,
