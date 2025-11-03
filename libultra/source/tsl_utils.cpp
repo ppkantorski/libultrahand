@@ -1319,10 +1319,128 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
+    //void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
+    //    const size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
+    //    const size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
+    //    
+    //    wallpaperData.resize(compressedDataSize);
+    //    
+    //    if (!isFileOrDirectory(filePath)) {
+    //        wallpaperData.clear();
+    //        return;
+    //    }
+    //    
+    //    #if !USING_FSTREAM_DIRECTIVE
+    //        FILE* file = fopen(filePath.c_str(), "rb");
+    //        if (!file) {
+    //            wallpaperData.clear();
+    //            return;
+    //        }
+    //        
+    //        std::vector<uint8_t> buffer;
+    //        //if (reducedMemory) {
+    //        //    // Reuse wallpaperData to avoid double allocation
+    //        //    buffer.swap(wallpaperData);
+    //        //    buffer.resize(originalDataSize);
+    //        //} else {
+    //        buffer.resize(originalDataSize);
+    //        //}
+    //        
+    //        const size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
+    //        fclose(file);
+    //        
+    //        if (bytesRead != originalDataSize) {
+    //            wallpaperData.clear();
+    //            return;
+    //        }
+    //        
+    //    #else
+    //        std::ifstream file(filePath, std::ios::binary);
+    //        if (!file) {
+    //            wallpaperData.clear();
+    //            return;
+    //        }
+    //        
+    //        std::vector<uint8_t> buffer;
+    //        //if (reducedMemory) {
+    //        //    buffer.swap(wallpaperData);
+    //        //    buffer.resize(originalDataSize);
+    //        //} else {
+    //        buffer.resize(originalDataSize);
+    //        //}
+    //        
+    //        file.read(reinterpret_cast<char*>(buffer.data()), originalDataSize);
+    //        if (!file) {
+    //            wallpaperData.clear();
+    //            return;
+    //        }
+    //    #endif
+    //    
+    //    // Compress RGBA8888 to RGBA4444
+    //    //if (reducedMemory) {
+    //    //    // In-place compression to save memory
+    //    //    size_t writeIndex = 0;
+    //    //    for (size_t i = 0; i < originalDataSize; i += 8, writeIndex += 4) {
+    //    //        uint8_t r1 = buffer[i] >> 4;
+    //    //        uint8_t g1 = buffer[i + 1] >> 4;
+    //    //        uint8_t b1 = buffer[i + 2] >> 4;
+    //    //        uint8_t a1 = buffer[i + 3] >> 4;
+    //    //
+    //    //        uint8_t r2 = buffer[i + 4] >> 4;
+    //    //        uint8_t g2 = buffer[i + 5] >> 4;
+    //    //        uint8_t b2 = buffer[i + 6] >> 4;
+    //    //        uint8_t a2 = buffer[i + 7] >> 4;
+    //    //
+    //    //        buffer[writeIndex]     = (r1 << 4) | g1;
+    //    //        buffer[writeIndex + 1] = (b1 << 4) | a1;
+    //    //        buffer[writeIndex + 2] = (r2 << 4) | g2;
+    //    //        buffer[writeIndex + 3] = (b2 << 4) | a2;
+    //    //    }
+    //    //    buffer.resize(compressedDataSize);
+    //    //    wallpaperData.swap(buffer);
+    //    //} else {
+    //    uint8_t* input = buffer.data();
+    //    uint8_t* output = wallpaperData.data();
+    //    //uint8_t r1, g1, b1, a1;
+    //    //uint8_t r2, g2, b2, a2;
+    //    
+    //    //for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
+    //    //    // Read 2 RGBA pixels (8 bytes)
+    //    //    const uint8_t r1 = input[i] >> 4;
+    //    //    const uint8_t g1 = input[i + 1] >> 4;
+    //    //    const uint8_t b1 = input[i + 2] >> 4;
+    //    //    const uint8_t a1 = input[i + 3] >> 4;
+    //    //    
+    //    //    const uint8_t r2 = input[i + 4] >> 4;
+    //    //    const uint8_t g2 = input[i + 5] >> 4;
+    //    //    const uint8_t b2 = input[i + 6] >> 4;
+    //    //    const uint8_t a2 = input[i + 7] >> 4;
+    //    //    
+    //    //    // Pack them into 4 bytes (2 bytes per pixel)
+    //    //    output[j]     = (r1 << 4) | g1;
+    //    //    output[j + 1] = (b1 << 4) | a1;
+    //    //    output[j + 2] = (r2 << 4) | g2;
+    //    //    output[j + 3] = (b2 << 4) | a2;
+    //    //}
+    //    
+    //    for (size_t i = 0, j = 0; i < originalDataSize; i += 16, j += 8) {
+    //        output[j]     = ((input[i]     >> 4) << 4) | (input[i + 1] >> 4);
+    //        output[j + 1] = ((input[i + 2] >> 4) << 4) | (input[i + 3] >> 4);
+    //        output[j + 2] = ((input[i + 4] >> 4) << 4) | (input[i + 5] >> 4);
+    //        output[j + 3] = ((input[i + 6] >> 4) << 4) | (input[i + 7] >> 4);
+    //        output[j + 4] = ((input[i + 8] >> 4) << 4) | (input[i + 9] >> 4);
+    //        output[j + 5] = ((input[i + 10] >> 4) << 4) | (input[i + 11] >> 4);
+    //        output[j + 6] = ((input[i + 12] >> 4) << 4) | (input[i + 13] >> 4);
+    //        output[j + 7] = ((input[i + 14] >> 4) << 4) | (input[i + 15] >> 4);
+    //    }
+    //    //}
+    //}
+
+
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        const size_t originalDataSize = width * height * 4; // Original size in bytes (4 bytes per pixel)
-        const size_t compressedDataSize = originalDataSize / 2; // RGBA4444 uses half the space
-        
+        const size_t originalDataSize   = width * height * 4;
+        const size_t compressedDataSize = originalDataSize / 2;
+    
         wallpaperData.resize(compressedDataSize);
     
         if (!isFileOrDirectory(filePath)) {
@@ -1330,112 +1448,45 @@ namespace ult {
             return;
         }
     
-        #if !USING_FSTREAM_DIRECTIVE
-            FILE* file = fopen(filePath.c_str(), "rb");
-            if (!file) {
-                wallpaperData.clear();
-                return;
-            }
-    
-            std::vector<uint8_t> buffer;
-            //if (reducedMemory) {
-            //    // Reuse wallpaperData to avoid double allocation
-            //    buffer.swap(wallpaperData);
-            //    buffer.resize(originalDataSize);
-            //} else {
-            buffer.resize(originalDataSize);
-            //}
-
-            const size_t bytesRead = fread(buffer.data(), 1, originalDataSize, file);
-            fclose(file);
-    
-            if (bytesRead != originalDataSize) {
-                wallpaperData.clear();
-                return;
-            }
-    
-        #else
-            std::ifstream file(filePath, std::ios::binary);
-            if (!file) {
-                wallpaperData.clear();
-                return;
-            }
-    
-            std::vector<uint8_t> buffer;
-            //if (reducedMemory) {
-            //    buffer.swap(wallpaperData);
-            //    buffer.resize(originalDataSize);
-            //} else {
-            buffer.resize(originalDataSize);
-            //}
-
-            file.read(reinterpret_cast<char*>(buffer.data()), originalDataSize);
-            if (!file) {
-                wallpaperData.clear();
-                return;
-            }
-        #endif
-    
-        // Compress RGBA8888 to RGBA4444
-        //if (reducedMemory) {
-        //    // In-place compression to save memory
-        //    size_t writeIndex = 0;
-        //    for (size_t i = 0; i < originalDataSize; i += 8, writeIndex += 4) {
-        //        uint8_t r1 = buffer[i] >> 4;
-        //        uint8_t g1 = buffer[i + 1] >> 4;
-        //        uint8_t b1 = buffer[i + 2] >> 4;
-        //        uint8_t a1 = buffer[i + 3] >> 4;
-        //
-        //        uint8_t r2 = buffer[i + 4] >> 4;
-        //        uint8_t g2 = buffer[i + 5] >> 4;
-        //        uint8_t b2 = buffer[i + 6] >> 4;
-        //        uint8_t a2 = buffer[i + 7] >> 4;
-        //
-        //        buffer[writeIndex]     = (r1 << 4) | g1;
-        //        buffer[writeIndex + 1] = (b1 << 4) | a1;
-        //        buffer[writeIndex + 2] = (r2 << 4) | g2;
-        //        buffer[writeIndex + 3] = (b2 << 4) | a2;
-        //    }
-        //    buffer.resize(compressedDataSize);
-        //    wallpaperData.swap(buffer);
-        //} else {
-        uint8_t* input = buffer.data();
-        uint8_t* output = wallpaperData.data();
-        //uint8_t r1, g1, b1, a1;
-        //uint8_t r2, g2, b2, a2;
-        
-        //for (size_t i = 0, j = 0; i < originalDataSize; i += 8, j += 4) {
-        //    // Read 2 RGBA pixels (8 bytes)
-        //    const uint8_t r1 = input[i] >> 4;
-        //    const uint8_t g1 = input[i + 1] >> 4;
-        //    const uint8_t b1 = input[i + 2] >> 4;
-        //    const uint8_t a1 = input[i + 3] >> 4;
-        //    
-        //    const uint8_t r2 = input[i + 4] >> 4;
-        //    const uint8_t g2 = input[i + 5] >> 4;
-        //    const uint8_t b2 = input[i + 6] >> 4;
-        //    const uint8_t a2 = input[i + 7] >> 4;
-        //    
-        //    // Pack them into 4 bytes (2 bytes per pixel)
-        //    output[j]     = (r1 << 4) | g1;
-        //    output[j + 1] = (b1 << 4) | a1;
-        //    output[j + 2] = (r2 << 4) | g2;
-        //    output[j + 3] = (b2 << 4) | a2;
-        //}
-
-        for (size_t i = 0, j = 0; i < originalDataSize; i += 16, j += 8) {
-            output[j]     = ((input[i]     >> 4) << 4) | (input[i + 1] >> 4);
-            output[j + 1] = ((input[i + 2] >> 4) << 4) | (input[i + 3] >> 4);
-            output[j + 2] = ((input[i + 4] >> 4) << 4) | (input[i + 5] >> 4);
-            output[j + 3] = ((input[i + 6] >> 4) << 4) | (input[i + 7] >> 4);
-            output[j + 4] = ((input[i + 8] >> 4) << 4) | (input[i + 9] >> 4);
-            output[j + 5] = ((input[i + 10] >> 4) << 4) | (input[i + 11] >> 4);
-            output[j + 6] = ((input[i + 12] >> 4) << 4) | (input[i + 13] >> 4);
-            output[j + 7] = ((input[i + 14] >> 4) << 4) | (input[i + 15] >> 4);
+        FILE* file = fopen(filePath.c_str(), "rb");
+        if (!file) {
+            wallpaperData.clear();
+            return;
         }
-        //}
-    }
+    
+        constexpr size_t chunkBytes = 64 * 1024; // 64 KB chunks
+        uint8_t chunkBuffer[chunkBytes];
+    
+        size_t totalRead = 0;
+        size_t writeIndex = 0;
+        
+        size_t remaining, toRead, bytesRead;
 
+        while (totalRead < originalDataSize) {
+            // Determine how much to read this iteration
+            remaining = originalDataSize - totalRead;
+            toRead = remaining < chunkBytes ? remaining : chunkBytes;
+    
+            bytesRead = fread(chunkBuffer, 1, toRead, file);
+            if (bytesRead == 0 || bytesRead % 8 != 0) { // must be multiple of 2 pixels
+                fclose(file);
+                wallpaperData.clear();
+                return;
+            }
+    
+            // Compress each 2-pixel group in the chunk
+            for (size_t i = 0; i < bytesRead; i += 8, writeIndex += 4) {
+                wallpaperData[writeIndex]     = (chunkBuffer[i]     & 0xF0) | (chunkBuffer[i + 1] >> 4);
+                wallpaperData[writeIndex + 1] = (chunkBuffer[i + 2] & 0xF0) | (chunkBuffer[i + 3] >> 4);
+                wallpaperData[writeIndex + 2] = (chunkBuffer[i + 4] & 0xF0) | (chunkBuffer[i + 5] >> 4);
+                wallpaperData[writeIndex + 3] = (chunkBuffer[i + 6] & 0xF0) | (chunkBuffer[i + 7] >> 4);
+            }
+    
+            totalRead += bytesRead;
+        }
+    
+        fclose(file);
+    }
 
 
     void loadWallpaperFileWhenSafe() {
