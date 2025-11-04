@@ -13452,7 +13452,7 @@ namespace tsl {
         overlay->changeTo(overlay->loadInitialGui());
         
 
-         bool shouldFireEvent = false;
+        bool shouldFireEvent = false;
 
     #if IS_LAUNCHER_DIRECTIVE
        
@@ -13490,6 +13490,12 @@ namespace tsl {
             }
         }
     #else
+        if (directMode) {
+            auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
+            configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+            ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
+        }
+
         if (skipCombo) {
             eventFire(&shData.comboEvent);
             shouldFireEvent = true;
