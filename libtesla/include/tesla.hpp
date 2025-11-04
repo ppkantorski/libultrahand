@@ -13490,10 +13490,20 @@ namespace tsl {
             }
         }
     #else
-        if (directMode) {
+        {
+            
             auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
-            configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
-            ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
+
+            auto projectIt = configData.find(ult::ULTRAHAND_PROJECT_NAME);
+            if (projectIt != configData.end()) {
+                auto overlayIt = projectIt->second.find(ult::IN_OVERLAY_STR);
+                const bool inOverlay = (overlayIt == projectIt->second.end() || overlayIt->second != ult::FALSE_STR);
+
+                if (inOverlay && directMode) {
+                    configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+                    ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
+                }
+            }
         }
 
         if (skipCombo) {
