@@ -13728,7 +13728,7 @@ namespace tsl {
 
 
             if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
-                if (!disableSound.load(std::memory_order_acquire))
+                if (!disableSound.load(std::memory_order_acquire) && ult::useSoundEffects)
                     ult::AudioPlayer::playExitSound();
                 if (ult::useHapticFeedback) {
                     ult::rumbleDoubleClickStandalone();
