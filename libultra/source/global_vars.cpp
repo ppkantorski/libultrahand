@@ -84,6 +84,7 @@ namespace ult {
     const std::string OLD_NX_OVLLOADER_ZIP_URL      = GITHUB_BASE_URL + "nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL = GITHUB_BASE_URL + "nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
     const std::string UPDATER_PAYLOAD_URL           = GITHUB_RAW_BASE_URL + "Ultrahand-Overlay/main/payloads/ultrahand_updater.bin";
+    const std::string SOUND_EFFECTS_URL             = GITHUB_RAW_BASE_URL + "Ultrahand-Overlay/main/sounds/sounds.zip";
 
     // Launch options
     const std::string LAUNCH_ARGS_STR       = "launch_args";

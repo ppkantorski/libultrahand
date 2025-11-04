@@ -82,6 +82,7 @@ namespace ult {
     extern const std::string OLD_NX_OVLLOADER_ZIP_URL;
     extern const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL;
     extern const std::string UPDATER_PAYLOAD_URL;
+    extern const std::string SOUND_EFFECTS_URL;
     
     extern const std::string LAUNCH_ARGS_STR;
     extern const std::string USE_LAUNCH_ARGS_STR;

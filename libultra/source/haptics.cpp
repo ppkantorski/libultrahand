@@ -24,7 +24,7 @@
 namespace ult {
     
     // ===== Internal state (private to this file) =====
-    bool rumbleInitialized = false;
+    //bool rumbleInitialized = false;
     static HidVibrationDeviceHandle vibHandheld;
     static HidVibrationDeviceHandle vibPlayer1Left;
     static HidVibrationDeviceHandle vibPlayer1Right;
@@ -76,7 +76,7 @@ namespace ult {
     
     // ===== Public API =====
     void initRumble() {
-        if (rumbleInitialized) return;
+        //if (rumbleInitialized) return;
     
         // Try to initialize whatever is available
         // Don't check if controllers exist - let initController handle it
@@ -88,18 +88,17 @@ namespace ult {
         vibPlayer1Right = handles[1];
     
         // Only mark as initialized if at least one controller was found
-        const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
-        const u32 player1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
+        hidGetNpadStyleSet(HidNpadIdType_Handheld);
+        hidGetNpadStyleSet(HidNpadIdType_No1);
         
-        if (handheldStyle || player1Style) {
-            rumbleInitialized = true;
-        }
+        //rumbleInitialized = (handheldStyle || player1Style);
+        
         // If neither exist, stay uninitialized so we retry later
     }
     
-    void deinitRumble() {
-        rumbleInitialized = false;
-    }
+    //void deinitRumble() {
+    //    rumbleInitialized = false;
+    //}
     
     void checkAndReinitRumble() {
         static u32 lastHandheldStyle = 0;
@@ -111,13 +110,13 @@ namespace ult {
         // If not initialized but controllers exist, try to init
         // This handles the boot race condition where HID reports controllers
         // but vibration subsystem isn't ready yet
-        if (!rumbleInitialized && (currentHandheldStyle || currentPlayer1Style)) {
-            initRumble();
-        }
+        //if (!rumbleInitialized && (currentHandheldStyle || currentPlayer1Style)) {
+        //    initRumble();
+        //}
     
         // Reinit if controller configuration changed
         if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
-            rumbleInitialized = false;
+            //rumbleInitialized = false;
             initRumble();
         }
         // Update last style tracking regardless
@@ -126,10 +125,10 @@ namespace ult {
     }
     
     void rumbleClick() {
-        if (!rumbleInitialized) {
-            initRumble();
-            if (!rumbleInitialized) return;
-        }
+        //if (!rumbleInitialized) {
+        //    initRumble();
+        //    if (!rumbleInitialized) return;
+        //}
     
         sendVibration(hidGetNpadStyleSet(HidNpadIdType_Handheld) ? &clickHandheld : &clickDocked);
         rumbleActive.store(true, std::memory_order_release);
@@ -137,10 +136,10 @@ namespace ult {
     }
     
     void rumbleDoubleClick() {
-        if (!rumbleInitialized) {
-            initRumble();
-            if (!rumbleInitialized) return;
-        }
+        //if (!rumbleInitialized) {
+        //    initRumble();
+        //    if (!rumbleInitialized) return;
+        //}
     
         sendVibration(hidGetNpadStyleSet(HidNpadIdType_Handheld) ? &clickHandheld : &clickDocked);
         doubleClickActive.store(true, std::memory_order_release);
