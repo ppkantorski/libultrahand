@@ -4946,7 +4946,7 @@ namespace tsl {
             #endif
                 
                 renderer->drawString(renderTitle, false, 20, 52-2, 32, (defaultOverlayColor));
-                renderer->drawString(renderSubtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
+                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
                 
                 // Update top cache after rendering for next frame
                 g_cachedTop.title = m_title;
@@ -5264,7 +5264,7 @@ namespace tsl {
                 const std::string& renderSubtitle = useCachedTop ? g_cachedTop.subtitle : m_subtitle;
                 
                 renderer->drawString(renderTitle, false, 20, 50, 32, (defaultOverlayColor));
-                renderer->drawString(renderSubtitle, false, 20, y+2+23+2, 15, (bannerVersionTextColor));
+                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
