@@ -8318,7 +8318,7 @@ namespace tsl {
                         this->setState(this->m_state);
                     
                     this->m_stateChangedListener(this->m_state);
-                    
+                    this->triggerClickAnimation();
                     
                     return true;
                 }
