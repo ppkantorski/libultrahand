@@ -3839,33 +3839,59 @@ namespace tsl {
              * @brief End the current frame
              * @warning Don't call this before calling \ref startFrame once
              */
+            //inline void endFrame() {
+            //#if IS_STATUS_MONITOR_DIRECTIVE
+            //    if (isRendering) {
+            //        static u32 lastFPS = 0;
+            //        static u64 cachedIntervalNs = 1000000000ULL / 60; // Default to 60 FPS
+            //
+            //        u32 fps = TeslaFPS;
+            //        if (__builtin_expect(fps != lastFPS, 0)) {
+            //            cachedIntervalNs = (fps > 0) ? (1000000000ULL / fps) : cachedIntervalNs;
+            //            lastFPS = fps;
+            //        }
+            //
+            //        // Frame pacing before VSync
+            //        leventWait(&renderingStopEvent, cachedIntervalNs);
+            //    }
+            //#endif
+            //
+            //    // Then hardware sync
+            //    this->waitForVSync();
+            //    framebufferEnd(&this->m_framebuffer);
+            //    this->m_currentFramebuffer = nullptr;
+            //
+            //    if (tsl::clearGlyphCacheNow.exchange(false)) {
+            //        tsl::gfx::FontManager::clearCache();
+            //    }
+            //}
+
             inline void endFrame() {
             #if IS_STATUS_MONITOR_DIRECTIVE
                 if (isRendering) {
                     static u32 lastFPS = 0;
-                    static u64 cachedIntervalNs = 1000000000ULL / 60; // Default to 60 FPS
-            
+                    static u64 cachedIntervalNs = 1000000000ULL / 60;
+                    
                     u32 fps = TeslaFPS;
                     if (__builtin_expect(fps != lastFPS, 0)) {
                         cachedIntervalNs = (fps > 0) ? (1000000000ULL / fps) : cachedIntervalNs;
                         lastFPS = fps;
                     }
-            
-                    // Frame pacing before VSync
+                    
+                    // Just wait - touch thread will signal if needed
                     leventWait(&renderingStopEvent, cachedIntervalNs);
                 }
             #endif
             
-                // Then hardware sync
                 this->waitForVSync();
                 framebufferEnd(&this->m_framebuffer);
                 this->m_currentFramebuffer = nullptr;
             
-                if (tsl::clearGlyphCacheNow.exchange(false)) {
+                if (tsl::clearGlyphCacheNow.exchange(false, std::memory_order_acq_rel)) {
                     tsl::gfx::FontManager::clearCache();
                 }
             }
-
+            
 
         };
 
