@@ -135,11 +135,11 @@ struct KeyPairEqual {
 
 u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
-volatile bool triggerExitNow = false;
-volatile bool isRendering = false;
-volatile bool delayUpdate = false;
-volatile bool pendingExit = false;
-volatile bool wasRendering = false;
+std::atomic<bool> triggerExitNow{false};
+std::atomic<bool> isRendering{false};
+std::atomic<bool> delayUpdate{false};
+std::atomic<bool> pendingExit{false};
+std::atomic<bool> wasRendering{false};
 
 LEvent renderingStopEvent;
 bool FullMode = true;
