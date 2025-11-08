@@ -454,7 +454,7 @@ int main(int arg, char **argv)
    #define STBTT_fmod(x,y)    fmod(x,y)
    #endif
 
-#ifndef STBTT_cos
+   #ifndef STBTT_cos
    static inline double STBTT_cos_impl(double x) {
       static constexpr double PI = 3.14159265358979323846;
       static constexpr double TWO_PI = 6.28318530717958647692;
@@ -477,13 +477,13 @@ int main(int arg, char **argv)
       
       // Horner's method for faster polynomial evaluation (fewer operations)
       // 5-term minimax polynomial for [0, π/2] - accurate to ~10^-8
-      double x2 = x * x;
+      const double x2 = x * x;
       return sign * (1.0 + x2 * (-0.5 + x2 * (0.04166666666666666 + x2 * (-0.001388888888888889 + x2 * (0.0000248015873015873 - x2 * 0.0000002755731922398589)))));
    }
    
    #define STBTT_cos(x)  STBTT_cos_impl(x)
    #define STBTT_acos(x) (1.5707963267948966 - STBTT_cos(x))
-#endif
+   #endif
 
    #ifndef STBTT_fabs
    #include <math.h>
