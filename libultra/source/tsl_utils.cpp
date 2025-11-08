@@ -315,6 +315,8 @@ namespace ult {
     std::atomic<float> nextPageWidth;
     std::atomic<bool> inMainMenu{false};
     std::atomic<bool> inHiddenMode{false};
+    std::atomic<bool> inSettingsMenu{false};
+    std::atomic<bool> inSubSettingsMenu{false};
     std::atomic<bool> inOverlaysPage{false};
     std::atomic<bool> inPackagesPage{false};
     

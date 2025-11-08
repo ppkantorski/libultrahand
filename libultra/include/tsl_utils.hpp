@@ -183,6 +183,8 @@ namespace ult {
     extern std::atomic<float> nextPageWidth;
     extern std::atomic<bool> inMainMenu;
     extern std::atomic<bool> inHiddenMode;
+    extern std::atomic<bool> inSettingsMenu;
+    extern std::atomic<bool> inSubSettingsMenu;
     extern std::atomic<bool> inOverlaysPage;
     extern std::atomic<bool> inPackagesPage;
     

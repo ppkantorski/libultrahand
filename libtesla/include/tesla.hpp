@@ -4743,7 +4743,8 @@ namespace tsl {
                     }
             #endif
             
-                    if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) || ult::inHiddenMode.load(std::memory_order_acquire))) {
+                    if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) ||
+                        (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
                         renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
                     }
                     
@@ -4797,7 +4798,8 @@ namespace tsl {
                                         break;
                                     case 'r': // red
                                         if (len == 3 && m_colorSelection.compare("red") == 0) {
-                                            drawColor = RGB888("#F7253E");
+                                            //drawColor = RGB888("#F7253E");
+                                            drawColor = {0xF, 0x2, 0x4, 0xF};
                                         }
                                         break;
                                     case 'b': // blue
@@ -4812,14 +4814,17 @@ namespace tsl {
                                         break;
                                     case 'o': // orange
                                         if (len == 6 && m_colorSelection.compare("orange") == 0) {
-                                            drawColor = {0xFF, 0xA5, 0x00, 0xFF};
+                                            //drawColor = {0xFF, 0xA5, 0x00, 0xFF};
+                                            drawColor = {0xF, 0xA, 0x0, 0xF};
                                         }
                                         break;
                                     case 'p': // pink or purple
                                         if (len == 4 && m_colorSelection.compare("pink") == 0) {
-                                            drawColor = {0xFF, 0x69, 0xB4, 0xFF};
+                                            //drawColor = {0xFF, 0x69, 0xB4, 0xFF};
+                                            drawColor = {0xF, 0x6, 0xB, 0xF};
                                         } else if (len == 6 && m_colorSelection.compare("purple") == 0) {
-                                            drawColor = {0x80, 0x00, 0x80, 0xFF};
+                                            //drawColor = {0x80, 0x00, 0x80, 0xFF};
+                                            drawColor = {0x8, 0x0, 0x8, 0xF};
                                         }
                                         break;
                                     case 'w': // white
