@@ -1293,20 +1293,20 @@ namespace ult {
     
     
     
-    float calculateAmplitude(float x, float peakDurationFactor) {
-        //const float phasePeriod = 360.0f * peakDurationFactor;  // One full phase period
-    
-        // Convert x from radians to degrees and calculate phase within the period
-        const int phase = static_cast<int>(x * RAD_TO_DEG) % static_cast<int>(360.0f * peakDurationFactor);
-    
-        // Check if the phase is odd using bitwise operation
-        if (phase & 1) {
-            return 1.0f;  // Flat amplitude (maximum positive)
-        } else {
-            // Calculate the sinusoidal amplitude for the remaining period
-            return (APPROXIMATE_cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
-        }
-    }
+    //float calculateAmplitude(float x, float peakDurationFactor) {
+    //    //const float phasePeriod = 360.0f * peakDurationFactor;  // One full phase period
+    //
+    //    // Convert x from radians to degrees and calculate phase within the period
+    //    const int phase = static_cast<int>(x * RAD_TO_DEG) % static_cast<int>(360.0f * peakDurationFactor);
+    //
+    //    // Check if the phase is odd using bitwise operation
+    //    if (phase & 1) {
+    //        return 1.0f;  // Flat amplitude (maximum positive)
+    //    } else {
+    //        // Calculate the sinusoidal amplitude for the remaining period
+    //        return (APPROXIMATE_cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
+    //    }
+    //}
             
     
     std::atomic<bool> refreshWallpaperNow(false);
@@ -1437,57 +1437,65 @@ namespace ult {
     //}
 
 
+    
+        
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
-        const size_t originalDataSize   = width * height * 4;
+        const size_t originalDataSize = width * height * 4;
         const size_t compressedDataSize = originalDataSize / 2;
-    
+        
         wallpaperData.resize(compressedDataSize);
-    
+        
         if (!isFileOrDirectory(filePath)) {
             wallpaperData.clear();
             return;
         }
-    
+        
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
             wallpaperData.clear();
             return;
         }
-    
-        constexpr size_t chunkBytes = 64 * 1024; // 64 KB chunks
-        uint8_t chunkBuffer[chunkBytes];
-    
-        size_t totalRead = 0;
-        size_t writeIndex = 0;
         
-        size_t remaining, toRead, bytesRead;
-
+        constexpr size_t chunkBytes = 128 * 1024;
+        uint8_t chunkBuffer[chunkBytes];
+        
+        size_t totalRead = 0;
+        uint8_t* dst = wallpaperData.data();
+        const uint8x8_t mask = vdup_n_u8(0xF0);
+        
         while (totalRead < originalDataSize) {
-            // Determine how much to read this iteration
-            remaining = originalDataSize - totalRead;
-            toRead = remaining < chunkBytes ? remaining : chunkBytes;
-    
-            bytesRead = fread(chunkBuffer, 1, toRead, file);
-            if (bytesRead == 0 || bytesRead % 8 != 0) { // must be multiple of 2 pixels
+            size_t remaining = originalDataSize - totalRead;
+            size_t toRead = remaining < chunkBytes ? remaining : chunkBytes;
+            
+            size_t bytesRead = fread(chunkBuffer, 1, toRead, file);
+            if (bytesRead == 0 || bytesRead % 8 != 0) {
                 fclose(file);
                 wallpaperData.clear();
                 return;
             }
-    
-            // Compress each 2-pixel group in the chunk
-            for (size_t i = 0; i < bytesRead; i += 8, writeIndex += 4) {
-                wallpaperData[writeIndex]     = (chunkBuffer[i]     & 0xF0) | (chunkBuffer[i + 1] >> 4);
-                wallpaperData[writeIndex + 1] = (chunkBuffer[i + 2] & 0xF0) | (chunkBuffer[i + 3] >> 4);
-                wallpaperData[writeIndex + 2] = (chunkBuffer[i + 4] & 0xF0) | (chunkBuffer[i + 5] >> 4);
-                wallpaperData[writeIndex + 3] = (chunkBuffer[i + 6] & 0xF0) | (chunkBuffer[i + 7] >> 4);
+            
+            const uint8_t* src = chunkBuffer;
+            size_t i = 0;
+            
+            // NEON: Process 16 bytes -> 8 bytes
+            for (; i + 16 <= bytesRead; i += 16) {
+                uint8x16_t data = vld1q_u8(src + i);
+                uint8x8x2_t sep = vuzp_u8(vget_low_u8(data), vget_high_u8(data));
+                vst1_u8(dst, vorr_u8(vand_u8(sep.val[0], mask), vshr_n_u8(sep.val[1], 4)));
+                dst += 8;
             }
-    
+            
+            // Scalar fallback
+            for (; i + 1 < bytesRead; i += 2) {
+                *dst++ = (src[i] & 0xF0) | (src[i + 1] >> 4);
+            }
+            
             totalRead += bytesRead;
         }
-    
+        
         fclose(file);
     }
-
+    
 
     void loadWallpaperFileWhenSafe() {
         if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {

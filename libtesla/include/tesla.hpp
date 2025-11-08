@@ -2228,18 +2228,20 @@ namespace tsl {
                 const s32 orig_x_left = orig_x + radius, orig_x_right = orig_x_end - radius;
                 const s32 orig_y_top = orig_y + radius, orig_y_bottom = orig_y_end - radius;
                 const s32 r2 = radius * radius;
-                const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
+                //const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
             
+                // ONLY CHANGE: Use SIMD for array initialization
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
-                for (s32 i = 0; i < 512; i += 8) {
-                    redArray[i] = redArray[i+1] = redArray[i+2] = redArray[i+3] = 
-                    redArray[i+4] = redArray[i+5] = redArray[i+6] = redArray[i+7] = red;
-                    greenArray[i] = greenArray[i+1] = greenArray[i+2] = greenArray[i+3] = 
-                    greenArray[i+4] = greenArray[i+5] = greenArray[i+6] = greenArray[i+7] = green;
-                    blueArray[i] = blueArray[i+1] = blueArray[i+2] = blueArray[i+3] = 
-                    blueArray[i+4] = blueArray[i+5] = blueArray[i+6] = blueArray[i+7] = blue;
-                    alphaArray[i] = alphaArray[i+1] = alphaArray[i+2] = alphaArray[i+3] = 
-                    alphaArray[i+4] = alphaArray[i+5] = alphaArray[i+6] = alphaArray[i+7] = alpha;
+                const uint8x16_t red_vec = vdupq_n_u8(color.r);
+                const uint8x16_t green_vec = vdupq_n_u8(color.g);
+                const uint8x16_t blue_vec = vdupq_n_u8(color.b);
+                const uint8x16_t alpha_vec = vdupq_n_u8(color.a);
+                
+                for (s32 i = 0; i < 512; i += 16) {
+                    vst1q_u8(&redArray[i], red_vec);
+                    vst1q_u8(&greenArray[i], green_vec);
+                    vst1q_u8(&blueArray[i], blue_vec);
+                    vst1q_u8(&alphaArray[i], alpha_vec);
                 }
                 
                 s32 orig_span_start, orig_span_end;
@@ -2515,80 +2517,57 @@ namespace tsl {
             static constexpr u8 expand4to8[16] = {
                 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
             };
-            
-
+                        
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
-                                           const s32 startRow, const s32 endRow, const u8 globalAlphaLimit) {
+                                       const s32 startRow, const s32 endRow, const u8 globalAlphaLimit) {
                 const s32 bytesPerRow = screenW * 2;
                 const s32 endX16 = screenW & ~15;
-                
-                // Create SIMD vector for alpha limit
                 const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
                 
-                // Pre-declare all variables outside loops
-                const u8 *rowPtr;
-                s32 baseY;
-                s32 x1;
-                const u8* ptr;
-                uint8x16x2_t packed;
-                uint8x16_t high1, low1, high2, low2;
-                uint8x16_t red, green, blue, alpha;
-                alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
-                s32 baseX;
-                s32 pixelX;
-                u32 offset;
-                Color color = {0}, src = {0}, end = {0};
-                const u16* framebuffer;
-                u8 p1, p2;
-                
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
-                    rowPtr = preprocessedData + (y1 * bytesPerRow);
-                    baseY = y + y1;
+                    const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
+                    const s32 baseY = y + y1;
                     
-                    x1 = 0;
+                    s32 x1 = 0;
                     
                     // SIMD processing for 16 pixels at once
                     for (; x1 < endX16; x1 += 16) {
-                        ptr = rowPtr + (x1 << 1);
-                        packed = vld2q_u8(ptr);
+                        const u8* ptr = rowPtr + (x1 << 1);
+                        uint8x16x2_t packed = vld2q_u8(ptr);
                         
                         // Expand 4-bit to 8-bit values
-                        high1 = vshrq_n_u8(packed.val[0], 4);
-                        low1  = vandq_u8(packed.val[0], mask_low);
-                        high2 = vshrq_n_u8(packed.val[1], 4);
-                        low2  = vandq_u8(packed.val[1], mask_low);
+                        uint8x16_t high1 = vshrq_n_u8(packed.val[0], 4);
+                        uint8x16_t low1  = vandq_u8(packed.val[0], mask_low);
+                        uint8x16_t high2 = vshrq_n_u8(packed.val[1], 4);
+                        uint8x16_t low2  = vandq_u8(packed.val[1], mask_low);
                         
-                        red   = vqtbl1q_u8(lut, high1);
-                        green = vqtbl1q_u8(lut, low1);
-                        blue  = vqtbl1q_u8(lut, high2);
-                        alpha = vqtbl1q_u8(lut, low2);
-                        
-                        // Apply alpha limit using SIMD min operation
-                        alpha = vminq_u8(alpha, alpha_limit_vec);
+                        uint8x16_t red   = vqtbl1q_u8(lut, high1);
+                        uint8x16_t green = vqtbl1q_u8(lut, low1);
+                        uint8x16_t blue  = vqtbl1q_u8(lut, high2);
+                        uint8x16_t alpha = vminq_u8(vqtbl1q_u8(lut, low2), alpha_limit_vec);
                         
                         // Store to arrays and process individually
+                        alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
                         vst1q_u8(red_vals, red);
                         vst1q_u8(green_vals, green); 
                         vst1q_u8(blue_vals, blue);
                         vst1q_u8(alpha_vals, alpha);
                         
-                        baseX = x + x1;
+                        const s32 baseX = x + x1;
+                        const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
                         
                         // Process 16 pixels with minimal function call overhead
                         for (int i = 0; i < 16; ++i) {
                             // Skip transparent pixels
                             if (alpha_vals[i] == 0) continue;
                             
-                            pixelX = baseX + i;
-                            offset = this->getPixelOffset(pixelX, baseY);
+                            u32 offset = this->getPixelOffset(baseX + i, baseY);
                             
                             if (offset != UINT32_MAX) {
-                                color = {red_vals[i], green_vals[i], blue_vals[i], alpha_vals[i]};
+                                Color color = {red_vals[i], green_vals[i], blue_vals[i], alpha_vals[i]};
+                                Color src = Color(framebuffer[offset]);
                                 
-                                framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                                src = Color(framebuffer[offset]);
-                                
-                                end = {
+                                Color end = {
                                     blendColor(src.r, color.r, color.a),
                                     blendColor(src.g, color.g, color.a), 
                                     blendColor(src.b, color.b, color.a),
@@ -2602,8 +2581,8 @@ namespace tsl {
                     
                     // Handle remaining pixels (less than 16) with pre-computed alpha limit
                     for (; x1 < screenW; ++x1) {
-                        p1 = rowPtr[x1 << 1];
-                        p2 = rowPtr[(x1 << 1) + 1];
+                        u8 p1 = rowPtr[x1 << 1];
+                        u8 p2 = rowPtr[(x1 << 1) + 1];
                         
                         u8 alpha = expand4to8[p2 & 0x0F];
                         alpha = (alpha < globalAlphaLimit) ? alpha : globalAlphaLimit;
@@ -2852,41 +2831,39 @@ namespace tsl {
                                                   const std::vector<std::string>* specialSymbols = nullptr,
                                                   const u32 highlightStartChar = 0,
                                                   const u32 highlightEndChar = 0,
-                                                  const bool useNotificationCache = false) { // NEW parameter
+                                                  const bool useNotificationCache = false) {
                 
                 // Thread-safe translation cache access
-                std::string text;
-                #if defined(UI_OVERRIDE_PATH)// && (!defined(IS_STATUS_MONITOR) || (IS_STATUS_MONITOR == 0))
+                const std::string* text = &originalString;
+                std::string translatedText;
+                
+                #if defined(UI_OVERRIDE_PATH)
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalString);
                     if (translatedIt != ult::translationCache.end()) {
-                        text = translatedIt->second;
-                    } else {
-                        // Don't insert anything, just fallback to original string
-                        text = originalString;
+                        translatedText = translatedIt->second;
+                        text = &translatedText;
                     }
                 }
-                #else
-                text = originalString;
                 #endif
                 
-                if (text.empty() || fontSize == 0) return {0, 0};
+                if (text->empty() || fontSize == 0) return {0, 0};
                 
                 const float maxWidthLimit = maxWidth > 0 ? x + maxWidth : std::numeric_limits<float>::max();
                 
-                // Check if highlighting is enabled (both highlight color and delimiters must be provided)
+                // Check if highlighting is enabled
                 const bool highlightingEnabled = highlightColor && highlightStartChar != 0 && highlightEndChar != 0;
                 
-                // Get font metrics for consistent line height using a standard character
-                // This ensures consistent line spacing regardless of which specific characters are used
+                // Get font metrics once
                 const auto fontMetrics = FontManager::getFontMetricsForCharacter('A', fontSize);
                 const s32 lineHeight = static_cast<s32>(fontMetrics.lineHeight);
                 
                 // Fast ASCII check with early exit
                 bool isAsciiOnly = true;
-                const char* textPtr = text.data();
-                const char* textEnd = textPtr + text.size();
+                const char* textPtr = text->data();
+                const char* textEnd = textPtr + text->size();
+                
                 for (const char* p = textPtr; p < textEnd; ++p) {
                     if (static_cast<unsigned char>(*p) > 127) {
                         isAsciiOnly = false;
@@ -2894,61 +2871,50 @@ namespace tsl {
                     }
                 }
                 
-                s32 maxX = x, currX = x, currY = y;  // Changed to s32 for consistency
-                s32 maxY = y + lineHeight;           // Initialize with at least one line height
+                s32 maxX = x, currX = x, currY = y;
+                s32 maxY = y + lineHeight;
                 bool inHighlight = false;
                 const Color* currentColor = &defaultColor;
                 
-                // Pre-declare variables used in loops to avoid repeated allocations
-                u32 currCharacter;
-                ssize_t codepointWidth;
-                std::shared_ptr<FontManager::Glyph> glyph;
-                bool symbolProcessed;
-                size_t remainingLength;
-                u32 symChar;
-                ssize_t symWidth;
-                size_t i;
-                
-                // Main processing loop with pointer arithmetic for ASCII optimization
+                // Main processing loop
                 if (isAsciiOnly && !specialSymbols) {
                     // Fast ASCII-only path
                     for (const char* p = textPtr; p < textEnd && currX < maxWidthLimit; ++p) {
-                        currCharacter = static_cast<u32>(*p);
+                        u32 currCharacter = static_cast<u32>(*p);
                         
-                        // Handle highlighting with configurable delimiters
+                        // Handle highlighting
                         if (highlightingEnabled) {
                             if (currCharacter == highlightStartChar) {
                                 inHighlight = true;
+                                currentColor = &defaultColor;
                             } else if (currCharacter == highlightEndChar) {
                                 inHighlight = false;
+                                currentColor = &defaultColor;
+                            } else {
+                                currentColor = inHighlight ? highlightColor : &defaultColor;
                             }
-                            currentColor = (currCharacter == highlightStartChar || currCharacter == highlightEndChar) ? 
-                                          &defaultColor : (inHighlight ? highlightColor : &defaultColor);
                         }
                         
                         // Handle newline
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += lineHeight;  // Use consistent line height
-                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
+                            currY += lineHeight;
+                            maxY = std::max(maxY, currY + lineHeight);
                             continue;
                         }
                         
-                        // Get glyph (now thread-safe)
-                        // Get glyph - UPDATED to use notification cache when requested
-                        if (useNotificationCache) {
-                            glyph = FontManager::getOrCreateNotificationGlyph(currCharacter, monospace, fontSize);
-                        } else {
-                            glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
-                        }
+                        // Get glyph
+                        std::shared_ptr<FontManager::Glyph> glyph = useNotificationCache ?
+                            FontManager::getOrCreateNotificationGlyph(currCharacter, monospace, fontSize) :
+                            FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        
                         if (!glyph) continue;
                         
-                        // Track maximum Y position reached using consistent line height
                         maxY = std::max(maxY, currY + lineHeight);
                         
                         // Render if needed
-                        if (draw && glyph->glyphBmp && currCharacter > 32) { // Space is 32
+                        if (draw && glyph->glyphBmp && currCharacter > 32) {
                             renderGlyph(glyph, currX, currY, *currentColor);
                         }
                         
@@ -2956,33 +2922,35 @@ namespace tsl {
                     }
                 } else {
                     // UTF-8 path with special symbols support
-                    auto itStr = text.cbegin();
-                    const auto itStrEnd = text.cend();
+                    auto itStr = text->cbegin();
+                    const auto itStrEnd = text->cend();
                     
                     while (itStr != itStrEnd && currX < maxWidthLimit) {
                         // Check for special symbols first
-                        symbolProcessed = false;
+                        bool symbolProcessed = false;
+                        
                         if (specialSymbols) {
-                            remainingLength = itStrEnd - itStr;
+                            size_t remainingLength = itStrEnd - itStr;
+                            
                             for (const auto& symbol : *specialSymbols) {
                                 if (remainingLength >= symbol.length() &&
                                     std::equal(symbol.begin(), symbol.end(), itStr)) {
                                     
                                     // Process special symbol
-                                    for (i = 0; i < symbol.length(); ) {
-                                        symWidth = decode_utf8(&symChar, 
+                                    for (size_t i = 0; i < symbol.length(); ) {
+                                        u32 symChar;
+                                        ssize_t symWidth = decode_utf8(&symChar, 
                                             reinterpret_cast<const u8*>(&symbol[i]));
                                         if (symWidth <= 0) break;
                                         
                                         if (symChar == '\n') {
                                             maxX = std::max(currX, maxX);
                                             currX = x;
-                                            currY += lineHeight;  // Use consistent line height
-                                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
+                                            currY += lineHeight;
+                                            maxY = std::max(maxY, currY + lineHeight);
                                         } else {
-                                            glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
+                                            auto glyph = FontManager::getOrCreateGlyph(symChar, monospace, fontSize);
                                             if (glyph) {
-                                                // Track maximum Y position reached using consistent line height
                                                 maxY = std::max(maxY, currY + lineHeight);
                                                 
                                                 if (draw && glyph->glyphBmp && symChar > 32) {
@@ -3003,6 +2971,9 @@ namespace tsl {
                         if (symbolProcessed) continue;
                         
                         // Decode character
+                        u32 currCharacter;
+                        ssize_t codepointWidth;
+                        
                         if (isAsciiOnly) {
                             currCharacter = static_cast<u32>(*itStr);
                             codepointWidth = 1;
@@ -3013,31 +2984,32 @@ namespace tsl {
                         
                         itStr += codepointWidth;
                         
-                        // Handle highlighting with configurable delimiters
+                        // Handle highlighting
                         if (highlightingEnabled) {
                             if (currCharacter == highlightStartChar) {
                                 inHighlight = true;
+                                currentColor = &defaultColor;
                             } else if (currCharacter == highlightEndChar) {
                                 inHighlight = false;
+                                currentColor = &defaultColor;
+                            } else {
+                                currentColor = inHighlight ? highlightColor : &defaultColor;
                             }
-                            currentColor = (currCharacter == highlightStartChar || currCharacter == highlightEndChar) ? 
-                                          &defaultColor : (inHighlight ? highlightColor : &defaultColor);
                         }
                         
                         // Handle newline
                         if (currCharacter == '\n') {
                             maxX = std::max(currX, maxX);
                             currX = x;
-                            currY += lineHeight;  // Use consistent line height
-                            maxY = std::max(maxY, currY + lineHeight);  // Update maxY for new line
+                            currY += lineHeight;
+                            maxY = std::max(maxY, currY + lineHeight);
                             continue;
                         }
                         
-                        // Get glyph (now thread-safe)
-                        glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
+                        // Get glyph
+                        auto glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
                         if (!glyph) continue;
                         
-                        // Track maximum Y position reached using consistent line height
                         maxY = std::max(maxY, currY + lineHeight);
                         
                         // Render if needed
@@ -3050,7 +3022,6 @@ namespace tsl {
                 }
                 
                 maxX = std::max(currX, maxX);
-                // Return consistent height based on proper font metrics
                 return {maxX - x, maxY - y};
             }
 
@@ -4151,7 +4122,7 @@ namespace tsl {
                 // Only recalculate progress if enough time has passed (reduce computation frequency)
                 if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
                     //double time_seconds = currentTime_ns / 1000000000.0;
-                    cachedProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
+                    cachedProgress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
                     lastTimeUpdate = currentTime_ns;
                 }
                 progress = cachedProgress;
@@ -4176,26 +4147,32 @@ namespace tsl {
                 y = 0;
                 if (this->m_highlightShaking) {
                     t_ns = currentTime_ns - this->m_highlightShakingStartTime;
-                    if (t_ns >= 100000000) // 100ms in nanoseconds
+                    const double t_ms = t_ns / 1000000.0;
+                    
+                    static constexpr double SHAKE_DURATION_MS = 200.0;
+                    
+                    if (t_ms >= SHAKE_DURATION_MS)
                         this->m_highlightShaking = false;
                     else {
-                        // Use faster random generation if available, or cache amplitude
-                        static int cachedAmplitude = std::rand() % 5 + 5;
-                        if (t_ns % 10000000 == 0) // Update amplitude less frequently
-                            cachedAmplitude = std::rand() % 5 + 5;
-                        amplitude = cachedAmplitude;
+                        // Generate random amplitude only once per shake using the start time as seed
+                        const double amplitude = 6.0 + ((this->m_highlightShakingStartTime / 1000000) % 5);
+                        const double progress = t_ms / SHAKE_DURATION_MS; // 0 to 1
                         
-                        const int shakeOffset = shakeAnimation(t_ns, amplitude);
+                        // Lighter damping so both bounces are visible
+                        const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
+                        
+                        // 2 full oscillations = 2 clear bounces
+                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double displacement = amplitude * oscillation * damping;
+                        const int offset = static_cast<int>(displacement);
+                        
                         switch (this->m_highlightShakingDirection) {
-                            case FocusDirection::Up:    y = -shakeOffset; break;
-                            case FocusDirection::Down:  y = shakeOffset; break;
-                            case FocusDirection::Left:  x = -shakeOffset; break;
-                            case FocusDirection::Right: x = shakeOffset; break;
+                            case FocusDirection::Up:    y = -offset; break;
+                            case FocusDirection::Down:  y = offset; break;
+                            case FocusDirection::Left:  x = -offset; break;
+                            case FocusDirection::Right: x = offset; break;
                             default: break;
                         }
-                        
-                        x = std::clamp(x, -amplitude, amplitude);
-                        y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
                 
@@ -4246,7 +4223,7 @@ namespace tsl {
                     //double time_seconds = currentTime_ns * 0.000000001; // Direct conversion like original
                     
                     // Match original calculation exactly but with higher precision
-                    cachedHighlightProgress = (std::cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
+                    cachedHighlightProgress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
                     
                     lastHighlightUpdate = currentTime_ns;
                 }
@@ -4283,26 +4260,32 @@ namespace tsl {
                 
                 if (this->m_highlightShaking) {
                     t_ns = currentTime_ns - this->m_highlightShakingStartTime;
-                    if (t_ns >= 100000000) // 100ms in nanoseconds
+                    const double t_ms = t_ns / 1000000.0;
+                    
+                    static constexpr double SHAKE_DURATION_MS = 200.0;
+                    
+                    if (t_ms >= SHAKE_DURATION_MS)
                         this->m_highlightShaking = false;
                     else {
-                        // Use cached amplitude like in drawClickAnimation
-                        static int cachedAmplitude = std::rand() % 5 + 5;
-                        if (t_ns % 10000000 == 0)
-                            cachedAmplitude = std::rand() % 5 + 5;
-                        amplitude = cachedAmplitude;
+                        // Generate random amplitude only once per shake using the start time as seed
+                        const double amplitude = 6.0 + ((this->m_highlightShakingStartTime / 1000000) % 5);
+                        const double progress = t_ms / SHAKE_DURATION_MS; // 0 to 1
                         
-                        const int shakeOffset = shakeAnimation(t_ns, amplitude);
+                        // Lighter damping so both bounces are visible
+                        const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
+                        
+                        // 2 full oscillations = 2 clear bounces
+                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double displacement = amplitude * oscillation * damping;
+                        const int offset = static_cast<int>(displacement);
+                        
                         switch (this->m_highlightShakingDirection) {
-                            case FocusDirection::Up:    y = -shakeOffset; break;
-                            case FocusDirection::Down:  y = shakeOffset; break;
-                            case FocusDirection::Left:  x = -shakeOffset; break;
-                            case FocusDirection::Right: x = shakeOffset; break;
+                            case FocusDirection::Up:    y = -offset; break;
+                            case FocusDirection::Down:  y = offset; break;
+                            case FocusDirection::Left:  x = -offset; break;
+                            case FocusDirection::Right: x = offset; break;
                             default: break;
                         }
-                        
-                        x = std::clamp(x, -amplitude, amplitude);
-                        y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
                 
@@ -4456,15 +4439,15 @@ namespace tsl {
              * @param a Amplitude
              * @return Damped sine wave output
              */
-            inline int shakeAnimation(u64 t_ns, float a) {
-                //float w = 0.2F;
-                //float tau = 0.05F;
-                
-                // Convert nanoseconds to microseconds for the calculation
-                const int t_us = t_ns / 1000;
-                
-                return roundf(a * exp(-(0.05F * t_us) * sin(0.2F * t_us)));
-            }
+           //inline int shakeAnimation(u64 t_ns, float a) {
+           //    //float w = 0.2F;
+           //    //float tau = 0.05F;
+           //    
+           //    // Convert nanoseconds to microseconds for the calculation
+           //    const int t_us = t_ns / 1000;
+           //    
+           //    return roundf(a * exp(-(0.05F * t_us) * sin(0.2F * t_us)));
+           //}
             
         private:
             friend class Gui;
@@ -4569,7 +4552,7 @@ namespace tsl {
                 float countOffset = 0;
                 for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                     const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
-                    const double rawProgress = std::cos(wavePhase - phaseShift);
+                    const double rawProgress = STBTT_cos(wavePhase - phaseShift);
                     
                     const double normalizedProgress = (rawProgress + 1.0) * 0.5;
                     const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
@@ -8952,7 +8935,7 @@ namespace tsl {
                 const double time_seconds = static_cast<double>(currentTime_ns) / 1000000000.0;
                 
                 // Standard cosine wave calculation with high precision
-                progress = (std::cos(2.0 * ult::_M_PI * std::fmod(time_seconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
+                progress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(time_seconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
             
                 // High precision floating point color interpolation
                 highlightColor = {
@@ -8967,32 +8950,33 @@ namespace tsl {
                 y = 0;
                 
                 if (this->m_highlightShaking) {
-                    //const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                    t_ns = currentTime_ns - this->m_highlightShakingStartTime; // Changed
-                    if (t_ns >= 100000000) // 100ms in nanoseconds
+                    t_ns = currentTime_ns - this->m_highlightShakingStartTime;
+                    const double t_ms = t_ns / 1000000.0;
+                    
+                    static constexpr double SHAKE_DURATION_MS = 200.0;
+                    
+                    if (t_ms >= SHAKE_DURATION_MS)
                         this->m_highlightShaking = false;
                     else {
-                        amplitude = std::rand() % 5 + 5;
+                        // Generate random amplitude only once per shake using the start time as seed
+                        const double amplitude = 6.0 + ((this->m_highlightShakingStartTime / 1000000) % 5);
+                        const double progress = t_ms / SHAKE_DURATION_MS; // 0 to 1
+                        
+                        // Lighter damping so both bounces are visible
+                        const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
+                        
+                        // 2 full oscillations = 2 clear bounces
+                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double displacement = amplitude * oscillation * damping;
+                        const int offset = static_cast<int>(displacement);
                         
                         switch (this->m_highlightShakingDirection) {
-                            case FocusDirection::Up:
-                                y -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Down:
-                                y += shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Left:
-                                x -= shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            case FocusDirection::Right:
-                                x += shakeAnimation(t_ns, amplitude); // Changed parameter
-                                break;
-                            default:
-                                break;
+                            case FocusDirection::Up:    y = -offset; break;
+                            case FocusDirection::Down:  y = offset; break;
+                            case FocusDirection::Left:  x = -offset; break;
+                            case FocusDirection::Right: x = offset; break;
+                            default: break;
                         }
-                        
-                        x = std::clamp(x, -amplitude, amplitude);
-                        y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
                 
@@ -9828,7 +9812,7 @@ namespace tsl {
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const double timeInSeconds = static_cast<double>(currentTime_ns) / 1000000000.0;
-                progress = ((std::cos(2.0 * ult::_M_PI * std::fmod(timeInSeconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
+                progress = ((STBTT_cos(2.0 * ult::_M_PI * std::fmod(timeInSeconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
                 
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
@@ -9886,30 +9870,32 @@ namespace tsl {
                 
                 if (this->m_highlightShaking) {
                     t_ns = currentTime_ns - this->m_highlightShakingStartTime;
-                    if (t_ns >= 100000000ULL)
+                    const double t_ms = t_ns / 1000000.0;
+                    
+                    static constexpr double SHAKE_DURATION_MS = 200.0;
+                    
+                    if (t_ms >= SHAKE_DURATION_MS)
                         this->m_highlightShaking = false;
                     else {
-                        amplitude = std::rand() % 5 + 5;
+                        // Generate random amplitude only once per shake using the start time as seed
+                        const double amplitude = 6.0 + ((this->m_highlightShakingStartTime / 1000000) % 5);
+                        const double progress = t_ms / SHAKE_DURATION_MS; // 0 to 1
+                        
+                        // Lighter damping so both bounces are visible
+                        const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
+                        
+                        // 2 full oscillations = 2 clear bounces
+                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double displacement = amplitude * oscillation * damping;
+                        const int offset = static_cast<int>(displacement);
                         
                         switch (this->m_highlightShakingDirection) {
-                            case FocusDirection::Up:
-                                y -= shakeAnimation(t_ns, amplitude);
-                                break;
-                            case FocusDirection::Down:
-                                y += shakeAnimation(t_ns, amplitude);
-                                break;
-                            case FocusDirection::Left:
-                                x -= shakeAnimation(t_ns, amplitude);
-                                break;
-                            case FocusDirection::Right:
-                                x += shakeAnimation(t_ns, amplitude);
-                                break;
-                            default:
-                                break;
+                            case FocusDirection::Up:    y = -offset; break;
+                            case FocusDirection::Down:  y = offset; break;
+                            case FocusDirection::Left:  x = -offset; break;
+                            case FocusDirection::Right: x = offset; break;
+                            default: break;
                         }
-                        
-                        x = std::clamp(x, -amplitude, amplitude);
-                        y = std::clamp(y, -amplitude, amplitude);
                     }
                 }
             
@@ -13483,50 +13469,52 @@ namespace tsl {
     #if IS_LAUNCHER_DIRECTIVE
        
         {
-            bool inOverlay;
-            
             auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
             bool needsUpdate = false;
-    
-            if (ult::firstBoot) {
-                configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+        
+            // Get reference to project section (create if missing)
+            auto& project = configData[ult::ULTRAHAND_PROJECT_NAME];
+        
+            // Determine current overlay state
+            bool inOverlay = true;
+            auto it = project.find(ult::IN_OVERLAY_STR);
+            if (it != project.end()) {
+                inOverlay = (it->second != ult::FALSE_STR);
+            }
+        
+            // Only update the overlay key once, for either firstBoot or skipCombo
+            if (ult::firstBoot || (inOverlay && skipCombo)) {
+                project[ult::IN_OVERLAY_STR] = ult::FALSE_STR;
                 needsUpdate = true;
+                if (inOverlay && skipCombo) {
+                    shouldFireEvent = true;
+                }
             }
-    
-            auto projectIt = configData.find(ult::ULTRAHAND_PROJECT_NAME);
-            if (projectIt != configData.end()) {
-                auto overlayIt = projectIt->second.find(ult::IN_OVERLAY_STR);
-                inOverlay = (overlayIt == projectIt->second.end() || overlayIt->second != ult::FALSE_STR);
-            } else {
-                inOverlay = true;
-            }
-    
-            if (inOverlay && skipCombo) {
-                configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
-                needsUpdate = true;
-                shouldFireEvent = true;
-            }
-    
+        
+            // Write INI only if we changed something
             if (needsUpdate) {
                 ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
             }
-    
+        
+            // Fire event if needed
             if (shouldFireEvent) {
                 eventFire(&shData.comboEvent);
             }
         }
     #else
         {
-            
             auto configData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
-
+        
             auto projectIt = configData.find(ult::ULTRAHAND_PROJECT_NAME);
             if (projectIt != configData.end()) {
-                auto overlayIt = projectIt->second.find(ult::IN_OVERLAY_STR);
-                const bool inOverlay = (overlayIt == projectIt->second.end() || overlayIt->second != ult::FALSE_STR);
-
+                auto& project = projectIt->second;
+        
+                auto overlayIt = project.find(ult::IN_OVERLAY_STR);
+                const bool inOverlay = (overlayIt == project.end() ||
+                                        overlayIt->second != ult::FALSE_STR);
+        
                 if (inOverlay && directMode) {
-                    configData[ult::ULTRAHAND_PROJECT_NAME][ult::IN_OVERLAY_STR] = ult::FALSE_STR;
+                    project[ult::IN_OVERLAY_STR] = ult::FALSE_STR;
                     ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, configData);
                 }
             }
@@ -13541,9 +13529,9 @@ namespace tsl {
         overlay->disableNextAnimation();
     
         {
-            Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
+            const Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
             s32 index = -1;
-    
+            
             bool exitAfterPrompt = false;
             bool comboBreakout = false;
             bool firstLoop = !ult::firstBoot;
