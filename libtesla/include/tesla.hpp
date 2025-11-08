@@ -1776,36 +1776,29 @@ namespace tsl {
                                               const u8 red[16], const u8 green[16], 
                                               const u8 blue[16], const u8 alpha[16], 
                                               const s32 count) {
-                // All variables moved outside the loop
-                const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
-                u32 offset;
-                u8 currentAlpha;
-                u8 invAlpha;
-                Color src = {0}, end = {0};
-                u32 currentX;
+                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
                 
                 for (s32 i = 0; i < count; ++i) {
                     // Early exit for transparent pixels
-                    currentAlpha = alpha[i];
-                    if (currentAlpha == 0)
+                    const u8 currentAlpha = alpha[i];
+                    if (currentAlpha == 0) [[unlikely]]
                         continue;
                     
-                    currentX = baseX + i;
-                    offset = this->getPixelOffset(currentX, baseY);
+                    const u32 offset = this->getPixelOffset(baseX + i, baseY);
                     if (offset == UINT32_MAX) [[unlikely]]
                         continue;
                     
-                    // Direct framebuffer access and color construction
-                    src = framebuffer[offset];
-                    invAlpha = 0xF - currentAlpha;
+                    // Direct framebuffer read
+                    const Color src = framebuffer[offset];
+                    const u8 invAlpha = 0xF - currentAlpha;
                     
-                    // Direct member assignment instead of constructor
-                    end.r = blendColor(src.r, red[i], currentAlpha);
-                    end.g = blendColor(src.g, green[i], currentAlpha);
-                    end.b = blendColor(src.b, blue[i], currentAlpha);
-                    end.a = (currentAlpha + (src.a * invAlpha >> 4));
-                    
-                    this->setPixelAtOffset(offset, end);
+                    // Direct framebuffer write - skip setPixelAtOffset call
+                    framebuffer[offset] = Color(
+                        blendColor(src.r, red[i], currentAlpha),
+                        blendColor(src.g, green[i], currentAlpha),
+                        blendColor(src.b, blue[i], currentAlpha),
+                        currentAlpha + ((src.a * invAlpha) >> 4)
+                    );
                 }
             }
 
@@ -2384,16 +2377,12 @@ namespace tsl {
                 }
             }
             
-                                    
+            
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
-                // Early exit for degenerate cases
-                //if (w <= 0 || h <= 0) return;
-                
                 // Calculate radius and bounds
                 const s32 radius = h >> 1;  // h / 2
-                //if (radius <= 0) return;
                 
-                // Get framebuffer bounds
+                // Get framebuffer bounds (if these are compile-time constants, mark them constexpr)
                 const s32 fb_width = cfg::FramebufferWidth;
                 const s32 fb_height = cfg::FramebufferHeight;
                 
@@ -2415,100 +2404,94 @@ namespace tsl {
                 // Choose drawing method based on alpha
                 const bool fullOpacity = (color.a == 0xF);
                 
-                // Pre-compute variables
-                s32 y_curr, x_curr;
-                s32 dy, dy_sq, x_offset_sq;
-                s32 x_offset, row_start, row_end;
-                //u32 pixel_offset;
+                // Cache for last computed x_offset (exploit vertical coherence)
+                s32 last_dy_abs = -1;
+                s32 cached_x_offset = 0;
                 
                 // Main drawing loop
-                for (y_curr = clip_top; y_curr < clip_bottom; ++y_curr) {
-                    dy = y_curr - center_y;
-                    dy_sq = dy * dy;
+                for (s32 y_curr = clip_top; y_curr < clip_bottom; ++y_curr) {
+                    const s32 dy = y_curr - center_y;
+                    const s32 dy_abs = (dy < 0) ? -dy : dy;
                     
-                    // Skip rows outside the shape
-                    if (dy_sq > radius_sq) continue;
+                    // Skip rows outside the shape (check before expensive sqrt)
+                    if (dy_abs > radius) continue;
                     
-                    // Calculate horizontal extent for this row
-                    x_offset_sq = radius_sq - dy_sq;
-                    
-                    // Fast integer square root with better rounding
-                    if (radius <= 32) {
-                        // Direct calculation for small values
-                        x_offset = 0;
-                        while (x_offset * x_offset <= x_offset_sq) {
-                            x_offset++;
-                        }
-                        // More intelligent step-back: only if we're significantly over
-                        // This reduces the "flat edge" appearance
-                        if (x_offset > 0) {
-                            s32 current_sq = x_offset * x_offset;
-                            s32 prev_sq = (x_offset - 1) * (x_offset - 1);
-                            // Only step back if we're closer to the previous value
-                            if (current_sq - x_offset_sq > x_offset_sq - prev_sq) {
-                                x_offset--;
-                            }
-                        }
+                    // Calculate x_offset (cache identical dy values using symmetry)
+                    s32 x_offset;
+                    if (dy_abs == last_dy_abs) {
+                        x_offset = cached_x_offset;
                     } else {
-                        // Newton's method for larger values (converges in ~4 iterations)
-                        x_offset = radius; // Initial guess
-                        for (int i = 0; i < 4; ++i) {
-                            x_offset = (x_offset + x_offset_sq / x_offset) >> 1;
+                        const s32 dy_sq = dy * dy;
+                        const s32 x_offset_sq = radius_sq - dy_sq;
+                        
+                        // Fast integer square root with original rounding logic
+                        if (radius <= 32) {
+                            x_offset = 0;
+                            while (x_offset * x_offset <= x_offset_sq) {
+                                x_offset++;
+                            }
+                            if (x_offset > 0) {
+                                const s32 current_sq = x_offset * x_offset;
+                                const s32 prev_sq = (x_offset - 1) * (x_offset - 1);
+                                if (current_sq - x_offset_sq > x_offset_sq - prev_sq) {
+                                    x_offset--;
+                                }
+                            }
+                        } else {
+                            x_offset = radius;
+                            for (int i = 0; i < 4; ++i) {
+                                x_offset = (x_offset + x_offset_sq / x_offset) >> 1;
+                            }
+                            while ((x_offset + 1) * (x_offset + 1) <= x_offset_sq) x_offset++;
+                            while (x_offset * x_offset > x_offset_sq) x_offset--;
                         }
-                        // Ensure we're close to the actual value
-                        while ((x_offset + 1) * (x_offset + 1) <= x_offset_sq) x_offset++;
-                        while (x_offset * x_offset > x_offset_sq) x_offset--;
+                        
+                        cached_x_offset = x_offset;
+                        last_dy_abs = dy_abs;
                     }
                     
-                    // Calculate row bounds
-                    row_start = rect_left - x_offset;
-                    row_end = rect_right + x_offset;
-                    
-                    // Clip to visible area
-                    row_start = std::max(row_start, clip_left);
-                    row_end = std::min(row_end, clip_right);
+                    // Calculate and clip row bounds
+                    const s32 row_start = std::max(rect_left - x_offset, clip_left);
+                    const s32 row_end = std::min(rect_right + x_offset, clip_right);
                     
                     if (row_start >= row_end) continue;
                     
                     // Draw the row
                     if (fullOpacity) {
-                        for (x_curr = row_start; x_curr < row_end; ++x_curr) {
-                    
+                        for (s32 x_curr = row_start; x_curr < row_end; ++x_curr) {
                             const u32 offset = this->getPixelOffset((u32)x_curr, (u32)y_curr);
-                            if (offset == UINT32_MAX) continue;
-                    
-                            this->setPixelAtOffset(offset, color);
+                            if (offset != UINT32_MAX) {
+                                this->setPixelAtOffset(offset, color);
+                            }
                         }
                     } else {
-                        for (x_curr = row_start; x_curr < row_end; ++x_curr) {
-                    
+                        for (s32 x_curr = row_start; x_curr < row_end; ++x_curr) {
                             const u32 offset = this->getPixelOffset((u32)x_curr, (u32)y_curr);
-                            if (offset == UINT32_MAX) continue;
-                    
-                            // you can keep using the existing blended helper which already checks UINT32_MAX
-                            this->setPixelBlendDst((u32)x_curr, (u32)y_curr, color);
+                            if (offset != UINT32_MAX) {
+                                this->setPixelBlendDst((u32)x_curr, (u32)y_curr, color);
+                            }
                         }
                     }
                 }
             }
                         
             // Struct for batch pixel processing with better alignment
-            struct alignas(64) PixelBatch {
-                s32 baseX, baseY;
-                u8 red[32], green[32], blue[32], alpha[32];  // Doubled for 32-pixel batches
-                s32 count;
-            };
-            
-            // Batch pixel setter - process multiple pixels at once if available
-            inline void setPixelBatchBlendSrc(const s32 baseX, const s32 baseY, const PixelBatch& batch) {
-                // If your graphics system supports batch operations, use them here
-                // Otherwise fall back to individual calls
-                for (s32 i = 0; i < batch.count; ++i) {
-                    setPixelBlendSrc(baseX + i, baseY, {
-                        batch.red[i], batch.green[i], batch.blue[i], batch.alpha[i]
-                    });
-                }
-            }
+            //struct alignas(64) PixelBatch {
+            //    s32 baseX, baseY;
+            //    u8 red[32], green[32], blue[32], alpha[32];  // Doubled for 32-pixel batches
+            //    s32 count;
+            //};
+            //
+            //// Batch pixel setter - process multiple pixels at once if available
+            //inline void setPixelBatchBlendSrc(const s32 baseX, const s32 baseY, const PixelBatch& batch) {
+            //    // If your graphics system supports batch operations, use them here
+            //    // Otherwise fall back to individual calls
+            //    for (s32 i = 0; i < batch.count; ++i) {
+            //        setPixelBlendSrc(baseX + i, baseY, {
+            //            batch.red[i], batch.green[i], batch.blue[i], batch.alpha[i]
+            //        });
+            //    }
+            //}
 
             // Fixed compilation errors - simplified SIMD version
             static constexpr uint8x16_t lut = {0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255};
@@ -3434,14 +3417,14 @@ namespace tsl {
             
             // Optimized glyph rendering
             inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color) {
-                if (!glyph->glyphBmp || color.a == 0) return;
+                if (!glyph->glyphBmp || color.a == 0) [[unlikely]] return;
                 
                 const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
                 const s32 yPos = static_cast<s32>(y + glyph->bounds[1]);
                 
                 // Quick bounds check
                 if (xPos >= cfg::FramebufferWidth || yPos >= cfg::FramebufferHeight ||
-                    xPos + glyph->width <= 0 || yPos + glyph->height <= 0) return;
+                    xPos + glyph->width <= 0 || yPos + glyph->height <= 0) [[unlikely]] return;
                 
                 // Calculate clipping
                 const s32 startX = std::max(0, -xPos);
@@ -3449,42 +3432,26 @@ namespace tsl {
                 const s32 endX = std::min(glyph->width, static_cast<s32>(cfg::FramebufferWidth) - xPos);
                 const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
                 
-                // Move variable declarations outside loops
-                const s32 simdEnd = std::min(endX, (startX + 7) & ~7);
-                s32 bmpX;
-                uint8_t alpha;
-                s32 pixelX;
-                //Color tmpColor = {0};
+                // Cache color components to avoid repeated member access
+                //const u8 r = color.r;
+                //const u8 g = color.g;
+                //const u8 b = color.b;
                 
-                // Render with optimized inner loop
+                // Render scanline by scanline
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
                 for (s32 bmpY = startY; bmpY < endY; ++bmpY) {
                     const s32 pixelY = yPos + bmpY;
-                    bmpX = startX;
                     
-                    // Process 8 pixels at once
-                    for (; bmpX < simdEnd; ++bmpX) {
-                        alpha = bmpPtr[bmpX] >> 4;
-                        if (alpha) {
-                            pixelX = xPos + bmpX;
-                            if (alpha == 0xF) {
-                                this->setPixel(pixelX, pixelY, color);
-                            } else {
-                                this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
-                            }
-                        }
-                    }
-                    
-                    // Process remaining pixels
-                    for (; bmpX < endX; ++bmpX) {
-                        alpha = bmpPtr[bmpX] >> 4;
-                        if (alpha) {
-                            pixelX = xPos + bmpX;
-                            if (alpha == 0xF) {
-                                this->setPixel(pixelX, pixelY, color);
-                            } else {
-                                this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
-                            }
+                    for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
+                        const u8 alpha = bmpPtr[bmpX] >> 4;
+                        if (alpha == 0) [[unlikely]] continue;
+                        
+                        const s32 pixelX = xPos + bmpX;
+                        
+                        if (alpha == 0xF) [[likely]] {
+                            this->setPixel(pixelX, pixelY, color);
+                        } else {
+                            this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                         }
                     }
                     bmpPtr += glyph->width;
