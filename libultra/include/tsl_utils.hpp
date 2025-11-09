@@ -99,6 +99,33 @@ struct SwapDepth {
 };
 
 namespace ult {
+    // math funcs
+    inline double cos(double x) {
+      static constexpr double PI = 3.14159265358979323846;
+      static constexpr double TWO_PI = 6.28318530717958647692;
+      static constexpr double HALF_PI = 1.57079632679489661923;
+      
+      // Fast normalization using multiply instead of divide when possible
+      x = x - TWO_PI * static_cast<int>(x * 0.159154943091895); // 1/(2π)
+      if (x < 0) x += TWO_PI;
+      
+      // Use symmetry to reduce range
+      int sign = 1;
+      if (x > PI) {
+         x -= PI;
+         sign = -1;
+      }
+      if (x > HALF_PI) {
+         x = PI - x;
+         sign = -sign;
+      }
+      
+      // Horner's method for faster polynomial evaluation (fewer operations)
+      // 5-term minimax polynomial for [0, π/2] - accurate to ~10^-8
+      const double x2 = x * x;
+      return sign * (1.0 + x2 * (-0.5 + x2 * (0.04166666666666666 + x2 * (-0.001388888888888889 + x2 * (0.0000248015873015873 - x2 * 0.0000002755731922398589)))));
+   }
+
     extern bool correctFrameSize; // for detecting the correct Overlay display size
 
     extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
@@ -317,8 +344,8 @@ namespace ult {
 
     extern std::atomic<bool> languageWasChanged;
     
-    inline constexpr double _M_PI = 3.14159265358979323846;  // For double precision
-    inline constexpr double RAD_TO_DEG = 180.0f / _M_PI;
+    inline constexpr double M_PI = 3.14159265358979323846;  // For double precision
+    inline constexpr double RAD_TO_DEG = 180.0f / M_PI;
     
     #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;

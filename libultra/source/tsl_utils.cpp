@@ -28,6 +28,7 @@ extern "C" { // assertion override
 }
 
 namespace ult {
+
     bool correctFrameSize; // for detecting the correct Overlay display size
 
     u16 DefaultFramebufferWidth = 448;            ///< Width of the framebuffer

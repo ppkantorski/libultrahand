@@ -4078,7 +4078,7 @@ namespace tsl {
                 // Only recalculate progress if enough time has passed (reduce computation frequency)
                 if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
                     //double time_seconds = currentTime_ns / 1000000000.0;
-                    cachedProgress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
+                    cachedProgress = (ult::cos(2.0 * ult::M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
                     lastTimeUpdate = currentTime_ns;
                 }
                 progress = cachedProgress;
@@ -4118,7 +4118,7 @@ namespace tsl {
                         const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
                         
                         // 2 full oscillations = 2 clear bounces
-                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double oscillation = ult::cos(ult::M_PI * 4.0 * progress);
                         const double displacement = amplitude * oscillation * damping;
                         const int offset = static_cast<int>(displacement);
                         
@@ -4179,7 +4179,7 @@ namespace tsl {
                     //double time_seconds = currentTime_ns * 0.000000001; // Direct conversion like original
                     
                     // Match original calculation exactly but with higher precision
-                    cachedHighlightProgress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
+                    cachedHighlightProgress = (ult::cos(2.0 * ult::M_PI * std::fmod(currentTime_ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
                     
                     lastHighlightUpdate = currentTime_ns;
                 }
@@ -4231,7 +4231,7 @@ namespace tsl {
                         const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
                         
                         // 2 full oscillations = 2 clear bounces
-                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double oscillation = ult::cos(ult::M_PI * 4.0 * progress);
                         const double displacement = amplitude * oscillation * damping;
                         const int offset = static_cast<int>(displacement);
                         
@@ -4502,13 +4502,13 @@ namespace tsl {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
                 const double timeBase = std::fmod(currentTimeCount, cycleDuration);
-                const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
-                static constexpr double phaseShift = ult::_M_PI / 2.0;
+                const double waveScale = 2.0 * ult::M_PI / cycleDuration;
+                static constexpr double phaseShift = ult::M_PI / 2.0;
                 
                 float countOffset = 0;
                 for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
                     const double wavePhase = waveScale * (timeBase + static_cast<double>(countOffset));
-                    const double rawProgress = STBTT_cos(wavePhase - phaseShift);
+                    const double rawProgress = ult::cos(wavePhase - phaseShift);
                     
                     const double normalizedProgress = (rawProgress + 1.0) * 0.5;
                     const double smoothedProgress = normalizedProgress * normalizedProgress * (3.0 - 2.0 * normalizedProgress);
@@ -8896,7 +8896,7 @@ namespace tsl {
                 const double time_seconds = static_cast<double>(currentTime_ns) / 1000000000.0;
                 
                 // Standard cosine wave calculation with high precision
-                progress = (STBTT_cos(2.0 * ult::_M_PI * std::fmod(time_seconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
+                progress = (ult::cos(2.0 * ult::M_PI * std::fmod(time_seconds, 1.0) - ult::M_PI / 2) + 1.0) / 2.0;
             
                 // High precision floating point color interpolation
                 highlightColor = {
@@ -8927,7 +8927,7 @@ namespace tsl {
                         const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
                         
                         // 2 full oscillations = 2 clear bounces
-                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double oscillation = ult::cos(ult::M_PI * 4.0 * progress);
                         const double displacement = amplitude * oscillation * damping;
                         const int offset = static_cast<int>(displacement);
                         
@@ -9773,7 +9773,7 @@ namespace tsl {
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
                 const double timeInSeconds = static_cast<double>(currentTime_ns) / 1000000000.0;
-                progress = ((STBTT_cos(2.0 * ult::_M_PI * std::fmod(timeInSeconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
+                progress = ((ult::cos(2.0 * ult::M_PI * std::fmod(timeInSeconds, 1.0) - ult::M_PI / 2) + 1.0) / 2.0);
                 
                 Color clickColor1 = highlightColor1;
                 Color clickColor2 = clickColor;
@@ -9846,7 +9846,7 @@ namespace tsl {
                         const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
                         
                         // 2 full oscillations = 2 clear bounces
-                        const double oscillation = STBTT_cos(ult::_M_PI * 4.0 * progress);
+                        const double oscillation = ult::cos(ult::M_PI * 4.0 * progress);
                         const double displacement = amplitude * oscillation * damping;
                         const int offset = static_cast<int>(displacement);
                         
