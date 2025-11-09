@@ -2493,19 +2493,17 @@ namespace tsl {
             //    }
             //}
 
-            // Fixed compilation errors - simplified SIMD version
-            static constexpr uint8x16_t lut = {0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255};
+            // RGBA4444 processing - no expansion needed
             const uint8x16_t mask_low = vdupq_n_u8(0x0F);
-            // Pre-computed lookup table for 4-bit to 8-bit conversion
-            static constexpr u8 expand4to8[16] = {
-                0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
-            };
-                        
+            
             inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
                                        const s32 startRow, const s32 endRow, const u8 globalAlphaLimit) {
-                const s32 bytesPerRow = screenW * 2;
-                const s32 endX16 = screenW & ~15;
+                static constexpr s32 bytesPerRow = 448 * 2;
+                static constexpr s32 endX16 = 448 & ~15;
                 const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
+                
+                // Get framebuffer once for entire chunk
+                Color* const framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
                 
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
                     const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
@@ -2516,70 +2514,60 @@ namespace tsl {
                     // SIMD processing for 16 pixels at once
                     for (; x1 < endX16; x1 += 16) {
                         const u8* ptr = rowPtr + (x1 << 1);
-                        uint8x16x2_t packed = vld2q_u8(ptr);
                         
-                        // Expand 4-bit to 8-bit values
+                        // Load and unpack RGBA4444 data - keep as 4-bit
+                        uint8x16x2_t packed = vld2q_u8(ptr);
                         uint8x16_t high1 = vshrq_n_u8(packed.val[0], 4);
                         uint8x16_t low1  = vandq_u8(packed.val[0], mask_low);
                         uint8x16_t high2 = vshrq_n_u8(packed.val[1], 4);
-                        uint8x16_t low2  = vandq_u8(packed.val[1], mask_low);
+                        uint8x16_t low2  = vminq_u8(vandq_u8(packed.val[1], mask_low), alpha_limit_vec);
                         
-                        uint8x16_t red   = vqtbl1q_u8(lut, high1);
-                        uint8x16_t green = vqtbl1q_u8(lut, low1);
-                        uint8x16_t blue  = vqtbl1q_u8(lut, high2);
-                        uint8x16_t alpha = vminq_u8(vqtbl1q_u8(lut, low2), alpha_limit_vec);
-                        
-                        // Store to arrays and process individually
+                        // Store results directly
                         alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
-                        vst1q_u8(red_vals, red);
-                        vst1q_u8(green_vals, green); 
-                        vst1q_u8(blue_vals, blue);
-                        vst1q_u8(alpha_vals, alpha);
+                        vst1q_u8(red_vals, high1);
+                        vst1q_u8(green_vals, low1); 
+                        vst1q_u8(blue_vals, high2);
+                        vst1q_u8(alpha_vals, low2);
                         
                         const s32 baseX = x + x1;
-                        const u16* framebuffer = static_cast<const u16*>(this->getCurrentFramebuffer());
                         
-                        // Process 16 pixels with minimal function call overhead
+                        // Optimized pixel loop with direct framebuffer access
                         for (int i = 0; i < 16; ++i) {
-                            // Skip transparent pixels
-                            if (alpha_vals[i] == 0) continue;
+                            const u8 a = alpha_vals[i];
+                            if (a == 0) continue;
                             
-                            u32 offset = this->getPixelOffset(baseX + i, baseY);
+                            const u32 offset = this->getPixelOffset(baseX + i, baseY);
+                            if (offset == UINT32_MAX) continue;
                             
-                            if (offset != UINT32_MAX) {
-                                Color color = {red_vals[i], green_vals[i], blue_vals[i], alpha_vals[i]};
-                                Color src = Color(framebuffer[offset]);
-                                
-                                Color end = {
-                                    blendColor(src.r, color.r, color.a),
-                                    blendColor(src.g, color.g, color.a), 
-                                    blendColor(src.b, color.b, color.a),
-                                    src.a
-                                };
+                            const Color src = framebuffer[offset];
                             
-                                this->setPixelAtOffset(offset, end);
-                            }
+                            framebuffer[offset] = {
+                                blendColor(src.r, red_vals[i], a),
+                                blendColor(src.g, green_vals[i], a),
+                                blendColor(src.b, blue_vals[i], a),
+                                src.a
+                            };
                         }
                     }
                     
-                    // Handle remaining pixels (less than 16) with pre-computed alpha limit
+                    // Handle remaining pixels
                     for (; x1 < screenW; ++x1) {
-                        u8 p1 = rowPtr[x1 << 1];
-                        u8 p2 = rowPtr[(x1 << 1) + 1];
-                        
-                        u8 alpha = expand4to8[p2 & 0x0F];
-                        alpha = (alpha < globalAlphaLimit) ? alpha : globalAlphaLimit;
+                        const u8 p1 = rowPtr[x1 << 1];
+                        const u8 p2 = rowPtr[(x1 << 1) + 1];
+                        const u8 alpha = std::min(static_cast<u8>(p2 & 0x0F), globalAlphaLimit);
                         
                         setPixelBlendSrc(x + x1, baseY, {
-                            expand4to8[p1 >> 4], expand4to8[p1 & 0x0F],
-                            expand4to8[p2 >> 4], alpha
+                            static_cast<u8>(p1 >> 4),
+                            static_cast<u8>(p1 & 0x0F),
+                            static_cast<u8>(p2 >> 4),
+                            alpha
                         });
                     }
                 }
                 
                 ult::inPlotBarrier.arrive_and_wait();
             }
-
+            
 
             /**
              * @brief Draws a scaled RGBA8888 bitmap from memory
@@ -2913,7 +2901,7 @@ namespace tsl {
                         bool symbolProcessed = false;
                         
                         if (specialSymbols) {
-                            size_t remainingLength = itStrEnd - itStr;
+                            const size_t remainingLength = itStrEnd - itStr;
                             
                             for (const auto& symbol : *specialSymbols) {
                                 if (remainingLength >= symbol.length() &&
@@ -2922,7 +2910,7 @@ namespace tsl {
                                     // Process special symbol
                                     for (size_t i = 0; i < symbol.length(); ) {
                                         u32 symChar;
-                                        ssize_t symWidth = decode_utf8(&symChar, 
+                                        const ssize_t symWidth = decode_utf8(&symChar, 
                                             reinterpret_cast<const u8*>(&symbol[i]));
                                         if (symWidth <= 0) break;
                                         
@@ -3220,7 +3208,7 @@ namespace tsl {
                 
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15 + 2 - 2, 1, 64 + 2, topSeparatorColor);
+                    drawRect(239, 15 + 2 - 2, 1, 64 + 2, aWithOpacity(topSeparatorColor));
                     if (!ult::hideWidgetBackdrop) {
                         drawUniformRoundedRect(
                             247, 15 + 2 - 2,
@@ -3432,10 +3420,8 @@ namespace tsl {
                 const s32 endX = std::min(glyph->width, static_cast<s32>(cfg::FramebufferWidth) - xPos);
                 const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
                 
-                // Cache color components to avoid repeated member access
-                //const u8 r = color.r;
-                //const u8 g = color.g;
-                //const u8 b = color.b;
+                // Pre-compute alpha limit once using global opacity
+                const u8 alphaLimit = static_cast<u8>(0xF * Renderer::s_opacity);
                 
                 // Render scanline by scanline
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
@@ -3443,8 +3429,11 @@ namespace tsl {
                     const s32 pixelY = yPos + bmpY;
                     
                     for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
-                        const u8 alpha = bmpPtr[bmpX] >> 4;
+                        u8 alpha = bmpPtr[bmpX] >> 4;
                         if (alpha == 0) [[unlikely]] continue;
+                        
+                        // Apply global opacity limit
+                        alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                         
                         const s32 pixelX = xPos + bmpX;
                         
@@ -3457,7 +3446,7 @@ namespace tsl {
                     bmpPtr += glyph->width;
                 }
             }
-
+            
 
             /**
              * @brief Adds the layer from screenshot and recording stacks
@@ -8427,7 +8416,7 @@ namespace tsl {
                 
                 // Draw separator if needed
                 if (this->m_hasSeparator) {
-                    renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, (headerSeparatorColor));
+                    renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, aWithOpacity(headerSeparatorColor));
                 }
                 
                 // Determine text position
