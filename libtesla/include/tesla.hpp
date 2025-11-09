@@ -2886,7 +2886,7 @@ namespace tsl {
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
-                            renderGlyph(glyph, currX, currY, *currentColor);
+                            renderGlyph(glyph, currX, currY, *currentColor, useNotificationCache);
                         }
                         
                         currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
@@ -2925,7 +2925,7 @@ namespace tsl {
                                                 maxY = std::max(maxY, currY + lineHeight);
                                                 
                                                 if (draw && glyph->glyphBmp && symChar > 32) {
-                                                    renderGlyph(glyph, currX, currY, *highlightColor);
+                                                    renderGlyph(glyph, currX, currY, *highlightColor, useNotificationCache);
                                                 }
                                                 currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                                             }
@@ -2985,7 +2985,7 @@ namespace tsl {
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
-                            renderGlyph(glyph, currX, currY, *currentColor);
+                            renderGlyph(glyph, currX, currY, *currentColor, useNotificationCache);
                         }
                         
                         currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
@@ -3404,7 +3404,7 @@ namespace tsl {
             }
             
             // Optimized glyph rendering
-            inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color) {
+            inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color, bool skipAlphaLimit = false) {
                 if (!glyph->glyphBmp || color.a == 0) [[unlikely]] return;
                 
                 const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
@@ -3421,7 +3421,7 @@ namespace tsl {
                 const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
                 
                 // Pre-compute alpha limit once using global opacity
-                const u8 alphaLimit = static_cast<u8>(0xF * Renderer::s_opacity);
+                const u8 alphaLimit = skipAlphaLimit ? 0xF : static_cast<u8>(0xF * Renderer::s_opacity);
                 
                 // Render scanline by scanline
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
