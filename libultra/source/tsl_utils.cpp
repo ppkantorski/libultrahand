@@ -864,7 +864,7 @@ namespace ult {
         }
 
         
-        static std::unordered_map<std::string, std::string*> configMap = {
+        std::unordered_map<std::string, std::string*> configMap = {
             #if IS_LAUNCHER_DIRECTIVE
             {"ENGLISH", &ENGLISH},
             {"SPANISH", &SPANISH},
@@ -1148,41 +1148,47 @@ namespace ult {
 
     // Unified function to apply replacements
     void applyLangReplacements(std::string& text, bool isValue) {
-        // Static maps for replacements
-        #if IS_LAUNCHER_DIRECTIVE
-        const std::unordered_map<std::string, std::string*> launcherReplacements = {
-            {"Reboot To", &REBOOT_TO},
-            {"Boot Entry", &BOOT_ENTRY},
-            {"Reboot", &REBOOT},
-            {"Shutdown", &SHUTDOWN}
-        };
-        #endif
-    
-        const std::unordered_map<std::string, std::string*> valueReplacements = {
-            {"On", &ON},
-            {"Off", &OFF}
-        };
-    
-        // Determine which map to use
-        const std::unordered_map<std::string, std::string*>* replacements = nullptr;
-    
-        if (!isValue) {
-            #if IS_LAUNCHER_DIRECTIVE
-            replacements = &launcherReplacements;
-            #else
-            return;
-            #endif
-        } else {
-            replacements = &valueReplacements;
-        }
-    
-        // Perform the direct replacement
-        if (replacements) {
-            auto it = replacements->find(text);
-            if (it != replacements->end()) {
-                text = *(it->second);
+        if (isValue) {
+            // Direct comparison for value replacements
+            if (text.length() == 2) {
+                if (text[0] == 'O') {
+                    if (text[1] == 'n') {
+                        text = ON;
+                        return;
+                    } else if (text[1] == 'f' && text == "Off") {
+                        text = OFF;
+                        return;
+                    }
+                }
             }
         }
+        #if IS_LAUNCHER_DIRECTIVE
+        else {
+            // Direct comparison for launcher replacements
+            switch (text.length()) {
+                case 6:
+                    if (text == "Reboot") {
+                        text = REBOOT;
+                    }
+                    break;
+                case 8:
+                    if (text == "Shutdown") {
+                        text = SHUTDOWN;
+                    }
+                    break;
+                case 9:
+                    if (text == "Reboot To") {
+                        text = REBOOT_TO;
+                    }
+                    break;
+                case 10:
+                    if (text == "Boot Entry") {
+                        text = BOOT_ENTRY;
+                    }
+                    break;
+            }
+        }
+        #endif
     }
     
     

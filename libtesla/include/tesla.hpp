@@ -172,7 +172,7 @@ inline std::atomic<bool> jumpToBottom{false};
 inline std::atomic<bool> skipUp{false};
 inline std::atomic<bool> skipDown{false};
 inline u32 offsetWidthVar = 112;
-inline std::string g_overlayFilename;;
+//inline std::string g_overlayFilename;;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 
@@ -7830,7 +7830,7 @@ namespace tsl {
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                 
                 #if IS_LAUNCHER_DIRECTIVE
-                if (touchDurationInSeconds >= 0.7f) [[unlikely]] {
+                if (touchDurationInSeconds >= 0.8f) [[unlikely]] {
                     ult::longTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : STAR_KEY;
                 }
@@ -13294,8 +13294,8 @@ namespace tsl {
         }
     
         if (argc > 0) {
-            g_overlayFilename = ult::getNameFromPath(argv[0]);
-            lastOverlayFilename = g_overlayFilename;
+            //g_overlayFilename = ult::getNameFromPath(argv[0]);
+            lastOverlayFilename = ult::getNameFromPath(argv[0]);
     
             lastOverlayMode.clear();
             bool skip;
@@ -13364,7 +13364,7 @@ namespace tsl {
                     switch (options[i].action) {
                         case 1: // direct
                             directMode = true;
-                            g_overlayFilename = "";
+                            //g_overlayFilename = "";
                             jumpItemName = "";
                             jumpItemValue = "";
                             jumpItemExactMatch.store(true, std::memory_order_release);

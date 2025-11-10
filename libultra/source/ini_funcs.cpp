@@ -490,159 +490,105 @@ namespace ult {
     std::map<std::string, std::string> getKeyValuePairsFromSection(const std::string& configIniPath, const std::string& sectionName) {
         auto fileMutex = getFileMutex(configIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
-
+    
         std::map<std::string, std::string> sectionData;
     
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
-            // logMessage("Failed to open the file: " + configIniPath);
-            return sectionData;  // Return empty map if file cannot be opened
+            return sectionData;
         }
         
         char buffer[1024];
         std::string line;
-        //line.reserve(1024); // Reserve to match buffer size
+        line.reserve(256);
         
-        std::string currentSection;
-        //currentSection.reserve(64); // Reserve for section names
-        
-        size_t delimiterPos;
         std::string key, value;
-        //key.reserve(128); // Reserve for key names
-        //value.reserve(256); // Reserve for values
+        key.reserve(64);
+        value.reserve(128);
         
-        bool inTargetSection = false;  // To track if we're in the desired section
-
-        size_t len;
-
+        bool inTargetSection = false;
+        size_t len, delimiterPos;
+    
         while (fgets(buffer, sizeof(buffer), file)) {
-            // More efficient newline removal
+            // Remove newline characters
             len = strlen(buffer);
             if (len > 0 && buffer[len-1] == '\n') {
-                buffer[len-1] = '\0';
-                if (len > 1 && buffer[len-2] == '\r') {
-                    buffer[len-2] = '\0';
+                buffer[--len] = '\0';
+                if (len > 0 && buffer[len-1] == '\r') {
+                    buffer[--len] = '\0';
                 }
             }
             
-            line.assign(buffer); // More efficient than string constructor
+            line.assign(buffer);
             trim(line);
-    
-            if (line.empty()) {
-                line.clear(); // Clear even for empty lines
-                continue; // Skip empty lines
-            }
-    
+            
+            if (line.empty()) continue;
+            
             if (line[0] == '[' && line.back() == ']') {
-                // More efficient section name extraction
-                currentSection.assign(line, 1, line.size() - 2);
-                // Check if this is the section we're interested in
-                inTargetSection = (currentSection == sectionName);
+                // Compare section directly without extraction
+                inTargetSection = (line.size() - 2 == sectionName.size() && 
+                                 line.compare(1, line.size() - 2, sectionName) == 0);
                 
-                // Early exit optimization: if we were in target section and hit a new section, we're done
                 if (!inTargetSection && !sectionData.empty()) {
-                    // Clear before breaking
-                    line.clear();
-                    currentSection.clear();
-                    break; // Found target section and processed it, no need to continue
+                    break;
                 }
-
-                // Clear strings to reuse capacity
-                line.clear();
-                currentSection.clear();
             } else if (inTargetSection) {
-                // Look for key-value pairs within the target section
                 delimiterPos = line.find('=');
                 if (delimiterPos != std::string::npos) {
-                    key.assign(line, 0, delimiterPos); // More efficient than substr
+                    key.assign(line, 0, delimiterPos);
                     trim(key);
-                    value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
+                    value.assign(line, delimiterPos + 1, std::string::npos);
                     trim(value);
-                    sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
-
-                    // Clear strings after moving to reuse capacity
-                    //key.clear();
-                    //value.clear();
+                    sectionData[std::move(key)] = std::move(value);
                 }
-                line.clear();
-            } else {
-                line.clear(); // Clear line when not in target section
             }
         }
-    
+        
         fclose(file);
     #else
         std::ifstream configFile(configIniPath);
         if (!configFile) {
-            // logMessage("Failed to open the file: " + configIniPath);
-            return sectionData;  // Return empty map if file cannot be opened
+            return sectionData;
         }
     
         std::string line;
-        //line.reserve(1024); // Reserve for typical line length
+        line.reserve(256);
         
-        std::string currentSection;
-        //currentSection.reserve(64); // Reserve for section names
-        
-        size_t delimiterPos;
         std::string key, value;
-        //key.reserve(128); // Reserve for key names
-        //value.reserve(256); // Reserve for values
+        key.reserve(64);
+        value.reserve(128);
         
-        bool inTargetSection = false;  // To track if we're in the desired section
+        bool inTargetSection = false;
+        size_t delimiterPos;
     
         while (getline(configFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
             
             trim(line);
-    
-            if (line.empty()) {
-                line.clear(); // Clear even for empty lines
-                continue; // Skip empty lines
-            }
-    
+            
+            if (line.empty()) continue;
+            
             if (line[0] == '[' && line.back() == ']') {
-                // More efficient section name extraction
-                currentSection.assign(line, 1, line.size() - 2);
-                // Check if this is the section we're interested in
-                inTargetSection = (currentSection == sectionName);
+                inTargetSection = (line.size() - 2 == sectionName.size() && 
+                                 line.compare(1, line.size() - 2, sectionName) == 0);
                 
-                // Early exit optimization: if we were in target section and hit a new section, we're done
                 if (!inTargetSection && !sectionData.empty()) {
-                    // Clear before breaking
-                    line.clear();
-                    currentSection.clear();
-                    break; // Found target section and processed it, no need to continue
+                    break;
                 }
-
-                // Clear strings to reuse capacity
-                line.clear();
-                currentSection.clear();
             } else if (inTargetSection) {
-                // Look for key-value pairs within the target section
                 delimiterPos = line.find('=');
                 if (delimiterPos != std::string::npos) {
-                    key.assign(line, 0, delimiterPos); // More efficient than substr
+                    key.assign(line, 0, delimiterPos);
                     trim(key);
-                    value.assign(line, delimiterPos + 1, std::string::npos); // More efficient than substr
+                    value.assign(line, delimiterPos + 1, std::string::npos);
                     trim(value);
-                    sectionData[std::move(key)] = std::move(value);  // Move semantics to avoid copies
-
-                    // Clear strings after moving to reuse capacity
-                    //key.clear();
-                    //value.clear();
+                    sectionData[std::move(key)] = std::move(value);
                 }
-                line.clear();
-            } else {
-                line.clear(); // Clear line when not in target section
             }
         }
-        
-        configFile.close();
     #endif
     
         return sectionData;
