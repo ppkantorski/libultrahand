@@ -220,52 +220,75 @@ namespace ult {
      */
     std::map<std::string, std::map<std::string, std::string>> parseIni(const std::string &str) {
         std::map<std::string, std::map<std::string, std::string>> iniData;
+        std::string lastHeader;
+        lastHeader.reserve(64);
         
-        auto lines = split(str, '\n');
-        std::string lastHeader = "";
+        const char* lineStart = str.c_str();
+        const char* lineEnd;
+        const char* strEnd = lineStart + str.size();
         
-        //std::string trimmedLine;
+        auto isWhitespace = [](char c) {
+            return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+        };
         
-        size_t delimiterPos;
-        //std::string key, value;
-        
-        std::string newLine1, newLine2;
-
-        for (auto& line : lines) {
-            trim(line);
-            
-            // Ignore empty lines and comments
-            if (line.empty() || line.front() == '#') {
-                // Clear line to reuse capacity
-                line.clear();
-                continue;
+        while (lineStart < strEnd) {
+            // Find line end
+            lineEnd = lineStart;
+            while (lineEnd < strEnd && *lineEnd != '\n') {
+                lineEnd++;
             }
             
-            if (line.front() == '[' && line.back() == ']') {
-                lastHeader = line.substr(1, line.size() - 2);
-                iniData[lastHeader]; // Ensures the section exists even if it remains empty
-
-            } else {
-                delimiterPos = line.find('=');
-                if (delimiterPos != std::string::npos) {
-                    //key = trim(trimmedLine.substr(0, delimiterPos));
-                    //value = trim(trimmedLine.substr(delimiterPos + 1));
-                    if (!lastHeader.empty()) {
-                        //iniData[lastHeader][key] = value;
-                        newLine1 = line.substr(0, delimiterPos);
-                        trim(newLine1);
-                        newLine2 = line.substr(delimiterPos + 1);
-                        trim(newLine2);
-                        iniData[lastHeader][newLine1] = newLine2;
-
-                        // Clear strings to reuse capacity
-                        newLine1.clear();
-                        newLine2.clear();
+            // Trim whitespace from start
+            while (lineStart < lineEnd && isWhitespace(*lineStart)) {
+                lineStart++;
+            }
+            
+            // Trim whitespace from end
+            while (lineEnd > lineStart && isWhitespace(*(lineEnd-1))) {
+                lineEnd--;
+            }
+            
+            size_t lineLen = lineEnd - lineStart;
+            
+            // Skip empty lines and comments
+            if (lineLen > 0 && *lineStart != '#') {
+                if (*lineStart == '[' && *(lineEnd-1) == ']') {
+                    // Section header
+                    lastHeader.assign(lineStart + 1, lineEnd - 1);
+                    iniData[lastHeader]; // Ensure section exists
+                } else if (!lastHeader.empty()) {
+                    // Key=value pair
+                    const char* eqPos = lineStart;
+                    while (eqPos < lineEnd && *eqPos != '=') {
+                        eqPos++;
+                    }
+                    
+                    if (eqPos < lineEnd) {
+                        // Trim key
+                        const char* keyStart = lineStart;
+                        const char* keyEnd = eqPos;
+                        while (keyStart < keyEnd && isWhitespace(*keyStart)) keyStart++;
+                        while (keyEnd > keyStart && isWhitespace(*(keyEnd-1))) keyEnd--;
+                        
+                        // Trim value
+                        const char* valStart = eqPos + 1;
+                        const char* valEnd = lineEnd;
+                        while (valStart < valEnd && isWhitespace(*valStart)) valStart++;
+                        while (valEnd > valStart && isWhitespace(*(valEnd-1))) valEnd--;
+                        
+                        iniData[lastHeader].emplace(
+                            std::string(keyStart, keyEnd),
+                            std::string(valStart, valEnd)
+                        );
                     }
                 }
             }
-            // Clear line to reuse capacity
-            line.clear();
+            
+            // Move to next line
+            lineStart = lineEnd;
+            if (lineStart < strEnd && *lineStart == '\n') {
+                lineStart++;
+            }
         }
         
         return iniData;
@@ -285,99 +308,68 @@ namespace ult {
     std::map<std::string, std::map<std::string, std::string>> getParsedDataFromIniFile(const std::string& configIniPath) {
         auto fileMutex = getFileMutex(configIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
-
+    
         std::map<std::string, std::map<std::string, std::string>> parsedData;
     
     #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
-            return parsedData;  // Return empty map if file cannot be opened
+            return parsedData;
         }
         
         char buffer[1024];
-        std::string line;
-        std::string currentSection;
-        size_t delimiterPos;
         std::string key, value;
+        key.reserve(64);
+        value.reserve(256);
         
-        // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
         
-        size_t len;
-        const char* start;
-        const char* end;
-        
         while (fgets(buffer, sizeof(buffer), file)) {
-            // More efficient newline removal
-            len = strlen(buffer);
+            size_t len = strlen(buffer);
+            
+            // Strip trailing newline/carriage return
             if (len > 0 && buffer[len-1] == '\n') {
-                buffer[len-1] = '\0';
-                --len;
-                if (len > 0 && buffer[len-1] == '\r') {
-                    buffer[len-1] = '\0';
-                    --len;
-                }
+                if (--len > 0 && buffer[len-1] == '\r') --len;
             }
             
-            // Early exit for empty lines
             if (len == 0) continue;
             
-            // Manual trim for better performance - find start of non-whitespace
-            start = buffer;
-            while (*start == ' ' || *start == '\t') ++start;
+            // Trim whitespace
+            const char* start = buffer;
+            const char* end = buffer + len;
             
-            // Find end of non-whitespace (working backwards from known end)
-            end = buffer + len - 1;
-            while (end >= start && (*end == ' ' || *end == '\t')) --end;
+            while (start < end && (*start == ' ' || *start == '\t')) ++start;
+            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
             
-            // Early exit for whitespace-only lines
-            if (end < start) continue;
+            if (start >= end) continue;
             
-            // Calculate trimmed length
-            len = end - start + 1;
-            
-            // Check for section header first (most efficient check)
-            if (*start == '[' && *end == ']') {
-                // Remove the brackets and set the current section
-                if (len > 2) {
-                    currentSection.assign(start + 1, len - 2);
-                    currentSectionMap = &parsedData[currentSection];
+            // Section header
+            if (*start == '[' && end[-1] == ']') {
+                if (end - start > 2) {
+                    currentSectionMap = &parsedData[std::string(start + 1, end - 1)];
                 }
-                // Clear section string to reuse capacity
-                currentSection.clear();
-            } else if (currentSectionMap != nullptr) {
-                // Look for '=' delimiter - scan from start for efficiency
-                delimiterPos = 0;
-                const char* eq_pos = start;
-                while (eq_pos <= end && *eq_pos != '=') {
-                    ++eq_pos;
-                    ++delimiterPos;
-                }
+            } else if (currentSectionMap) {
+                // Find '=' delimiter
+                const char* eq = start;
+                while (eq < end && *eq != '=') ++eq;
                 
-                if (eq_pos <= end) { // Found '=' delimiter
-                    // Extract key (start to delimiter)
-                    const char* key_end = eq_pos - 1;
-                    while (key_end >= start && (*key_end == ' ' || *key_end == '\t')) --key_end;
+                if (eq < end) {
+                    // Trim key
+                    const char* key_end = eq;
+                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
                     
-                    if (key_end >= start) {
-                        key.assign(start, key_end - start + 1);
+                    if (key_end > start) {
+                        // Trim value
+                        const char* val_start = eq + 1;
+                        while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
                         
-                        // Extract value (after delimiter to end)
-                        const char* val_start = eq_pos + 1;
-                        while (val_start <= end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
-                        
-                        if (val_start <= end) {
-                            value.assign(val_start, end - val_start + 1);
-                        } else {
-                            value.clear();
-                        }
-                        
-                        (*currentSectionMap)[key] = std::move(value);
+                        currentSectionMap->emplace(
+                            std::piecewise_construct,
+                            std::forward_as_tuple(start, key_end),
+                            std::forward_as_tuple(val_start, end)
+                        );
                     }
                 }
-                // Clear strings to reuse capacity
-                key.clear();
-                value.clear();
             }
         }
     
@@ -385,87 +377,58 @@ namespace ult {
     #else
         std::ifstream configFile(configIniPath);
         if (!configFile) {
-            return parsedData;  // Return empty map if file cannot be opened
+            return parsedData;
         }
         
         std::string line;
-        std::string currentSection;
-        size_t delimiterPos;
-        std::string key, value;
+        line.reserve(256);
         
-        size_t start, end, key_end, val_start;
-
-        // Cache iterator to current section to avoid repeated map lookups
         std::map<std::string, std::string>* currentSectionMap = nullptr;
     
         while (getline(configFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
+            // Strip carriage return
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
             
-            // Early exit for empty lines
             if (line.empty()) continue;
             
-            // Manual trim for better performance
-            start = 0;
-            end = line.length() - 1;
+            // Trim using pointers for speed
+            const char* start = line.c_str();
+            const char* end = start + line.length();
             
-            // Find start of non-whitespace
-            while (start < line.length() && (line[start] == ' ' || line[start] == '\t')) {
-                ++start;
-            }
+            while (start < end && (*start == ' ' || *start == '\t')) ++start;
+            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
             
-            // Early exit for whitespace-only lines
-            if (start >= line.length()) continue;
+            if (start >= end) continue;
             
-            // Find end of non-whitespace
-            while (end > start && (line[end] == ' ' || line[end] == '\t')) {
-                --end;
-            }
-            
-            // Check for section header first
-            if (line[start] == '[' && line[end] == ']') {
-                // Remove the brackets and set the current section
-                if (end > start + 1) {
-                    currentSection.assign(line, start + 1, end - start - 1);
-                    currentSectionMap = &parsedData[currentSection];
+            // Section header
+            if (*start == '[' && end[-1] == ']') {
+                if (end - start > 2) {
+                    currentSectionMap = &parsedData[std::string(start + 1, end - 1)];
                 }
-                // Clear strings to reuse capacity
-                line.clear();
-                currentSection.clear();
-            } else if (currentSectionMap != nullptr) {
-                // Look for '=' delimiter within the trimmed range
-                delimiterPos = line.find('=', start);
-                if (delimiterPos != std::string::npos && delimiterPos <= end) {
-                    // Extract and trim key
-                    key_end = delimiterPos - 1;
-                    while (key_end > start && (line[key_end] == ' ' || line[key_end] == '\t')) {
-                        --key_end;
-                    }
+            } else if (currentSectionMap) {
+                // Find '=' delimiter
+                const char* eq = start;
+                while (eq < end && *eq != '=') ++eq;
+                
+                if (eq < end) {
+                    // Trim key
+                    const char* key_end = eq;
+                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
                     
-                    if (key_end >= start) {
-                        key.assign(line, start, key_end - start + 1);
+                    if (key_end > start) {
+                        // Trim value
+                        const char* val_start = eq + 1;
+                        while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
                         
-                        // Extract and trim value
-                        val_start = delimiterPos + 1;
-                        while (val_start <= end && (line[val_start] == ' ' || line[val_start] == '\t')) {
-                            ++val_start;
-                        }
-                        
-                        if (val_start <= end) {
-                            value.assign(line, val_start, end - val_start + 1);
-                        } else {
-                            value.clear();
-                        }
-                        
-                        (*currentSectionMap)[key] = std::move(value);
+                        currentSectionMap->emplace(
+                            std::piecewise_construct,
+                            std::forward_as_tuple(start, key_end),
+                            std::forward_as_tuple(val_start, end)
+                        );
                     }
                 }
-                // Clear strings to reuse capacity
-                line.clear();
-                key.clear();
-                value.clear();
             }
         }
         
@@ -694,7 +657,7 @@ namespace ult {
     std::string parseValueFromIniSection(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
         auto fileMutex = getFileMutex(filePath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
-
+    
         std::string value;
     
     #if !USING_FSTREAM_DIRECTIVE
@@ -704,94 +667,66 @@ namespace ult {
         }
     
         char buffer[1024];
-        std::string currentSection;
-        std::string currentKey;
-        
-        //size_t delimiterPos;
         bool inTargetSection = false;
-        bool wasInTargetSection = false; // Track if we've been in the target section
-        
-        size_t len;
-        const char* start;
-        const char* end;
         
         while (fgets(buffer, sizeof(buffer), file)) {
-            // More efficient newline removal
-            len = strlen(buffer);
+            size_t len = strlen(buffer);
+            
+            // Strip trailing newline/carriage return
             if (len > 0 && buffer[len-1] == '\n') {
-                buffer[len-1] = '\0';
-                --len;
-                if (len > 0 && buffer[len-1] == '\r') {
-                    buffer[len-1] = '\0';
-                    --len;
-                }
+                if (--len > 0 && buffer[len-1] == '\r') --len;
             }
             
-            // Early exit for empty lines
             if (len == 0) continue;
             
-            // Manual trim for better performance - find start of non-whitespace
-            start = buffer;
-            while (*start == ' ' || *start == '\t') ++start;
+            // Trim whitespace
+            const char* start = buffer;
+            const char* end = buffer + len;
             
-            // Find end of non-whitespace (working backwards from known end)
-            end = buffer + len - 1;
-            while (end >= start && (*end == ' ' || *end == '\t')) --end;
+            while (start < end && (*start == ' ' || *start == '\t')) ++start;
+            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
             
-            // Early exit for whitespace-only lines
-            if (end < start) continue;
+            if (start >= end) continue;
             
-            // Calculate trimmed length
-            len = end - start + 1;
-            
-            // Check for section header first
-            if (*start == '[' && *end == ']') {
-                if (len > 2) {
-                    currentSection.assign(start + 1, len - 2);
-                    inTargetSection = (currentSection == sectionName);
+            // Section header
+            if (*start == '[' && end[-1] == ']') {
+                if (end - start > 2) {
+                    // Compare directly without constructing string
+                    const size_t sectionLen = end - start - 2;
+                    inTargetSection = (sectionLen == sectionName.length() && 
+                                       std::memcmp(start + 1, sectionName.data(), sectionLen) == 0);
                     
-                    // Early exit: if we WERE in target section and now we're not, key wasn't found
-                    if (wasInTargetSection && !inTargetSection) {
-                        break; // Left target section without finding key
-                    }
-                    
-                    if (inTargetSection) {
-                        wasInTargetSection = true;
+                    // Early exit: left target section without finding key
+                    if (!inTargetSection && value.empty() && sectionLen > 0) {
+                        // We passed a different section; if we already processed target, we're done
+                        // This is implicit - if inTargetSection was true before and now false, we already found it or it doesn't exist
+                        continue;
                     }
                 }
-                // Clear section string to reuse capacity
-                currentSection.clear();
             } else if (inTargetSection) {
-                // Look for '=' delimiter - scan from start for efficiency
-                const char* eq_pos = start;
-                while (eq_pos <= end && *eq_pos != '=') {
-                    ++eq_pos;
-                }
+                // Find '=' delimiter
+                const char* eq = start;
+                while (eq < end && *eq != '=') ++eq;
                 
-                if (eq_pos <= end) { // Found '=' delimiter
-                    // Extract and trim key
-                    const char* key_end = eq_pos - 1;
-                    while (key_end >= start && (*key_end == ' ' || *key_end == '\t')) --key_end;
+                if (eq < end) {
+                    // Trim key
+                    const char* key_end = eq;
+                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
                     
-                    if (key_end >= start) {
-                        currentKey.assign(start, key_end - start + 1);
+                    if (key_end > start) {
+                        const size_t keyLen = key_end - start;
                         
-                        if (currentKey == keyName) {
-                            // Extract and trim value
-                            const char* val_start = eq_pos + 1;
-                            while (val_start <= end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
+                        // Compare directly without constructing string
+                        if (keyLen == keyName.length() && std::memcmp(start, keyName.data(), keyLen) == 0) {
+                            // Trim value
+                            const char* val_start = eq + 1;
+                            while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
                             
-                            if (val_start <= end) {
-                                value.assign(val_start, end - val_start + 1);
-                            }
-                            currentKey.clear(); // Clear before breaking
-                            // Found the key, exit
-                            break;
+                            value.assign(val_start, end);
+                            break; // Found it, exit immediately
                         }
                     }
                 }
-                // Clear key string to reuse capacity
-                currentKey.clear();
             }
         }
     
@@ -803,94 +738,59 @@ namespace ult {
         }
         
         std::string line;
-        std::string currentSection;
-        std::string currentKey;
-        
-        size_t delimiterPos;
+        line.reserve(256);
         bool inTargetSection = false;
-        bool wasInTargetSection = false; // Track if we've been in the target section
-        
-        size_t start, end, key_end, val_start;
+    
         while (std::getline(file, line)) {
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
             
-            // Early exit for empty lines
             if (line.empty()) continue;
             
-            // Manual trim for better performance
-            start = 0;
-            end = line.length() - 1;
+            // Trim using pointers
+            const char* start = line.c_str();
+            const char* end = start + line.length();
             
-            // Find start of non-whitespace
-            while (start < line.length() && (line[start] == ' ' || line[start] == '\t')) {
-                ++start;
-            }
+            while (start < end && (*start == ' ' || *start == '\t')) ++start;
+            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
             
-            // Early exit for whitespace-only lines
-            if (start >= line.length()) continue;
+            if (start >= end) continue;
             
-            // Find end of non-whitespace
-            while (end > start && (line[end] == ' ' || line[end] == '\t')) {
-                --end;
-            }
-            
-            // Check for section header first
-            if (line[start] == '[' && line[end] == ']') {
-                if (end > start + 1) {
-                    currentSection.assign(line, start + 1, end - start - 1);
-                    inTargetSection = (currentSection == sectionName);
-                    
-                    // Early exit: if we WERE in target section and now we're not, key wasn't found
-                    if (wasInTargetSection && !inTargetSection) {
-                        // Clear strings to reuse capacity
-                        line.clear();
-                        currentSection.clear();
-                        break; // Left target section without finding key
-                    }
-                    
-                    if (inTargetSection) {
-                        wasInTargetSection = true;
-                    }
+            // Section header
+            if (*start == '[' && end[-1] == ']') {
+                if (end - start > 2) {
+                    size_t sectionLen = end - start - 2;
+                    inTargetSection = (sectionLen == sectionName.length() && 
+                                       std::memcmp(start + 1, sectionName.data(), sectionLen) == 0);
                 }
-                // Clear strings to reuse capacity
-                line.clear();
-                currentSection.clear();
             } else if (inTargetSection) {
-                // Look for '=' delimiter within the trimmed range
-                delimiterPos = line.find('=', start);
-                if (delimiterPos != std::string::npos && delimiterPos <= end) {
-                    // Extract and trim key
-                    key_end = delimiterPos - 1;
-                    while (key_end > start && (line[key_end] == ' ' || line[key_end] == '\t')) {
-                        --key_end;
-                    }
+                // Find '=' delimiter
+                const char* eq = start;
+                while (eq < end && *eq != '=') ++eq;
+                
+                if (eq < end) {
+                    // Trim key
+                    const char* key_end = eq;
+                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
                     
-                    if (key_end >= start) {
-                        currentKey.assign(line, start, key_end - start + 1);
+                    if (key_end > start) {
+                        size_t keyLen = key_end - start;
                         
-                        if (currentKey == keyName) {
-                            // Extract and trim value
-                            val_start = delimiterPos + 1;
-                            while (val_start <= end && (line[val_start] == ' ' || line[val_start] == '\t')) {
-                                ++val_start;
-                            }
+                        // Compare directly without constructing string
+                        if (keyLen == keyName.length() && std::memcmp(start, keyName.data(), keyLen) == 0) {
+                            // Trim value
+                            const char* val_start = eq + 1;
+                            while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
                             
-                            if (val_start <= end) {
-                                value.assign(line, val_start, end - val_start + 1);
-                            }
-                            // Found the key, exit
-                            break;
+                            value.assign(val_start, end);
+                            break; // Found it, exit immediately
                         }
                     }
                 }
-                // Clear strings to reuse capacity
-                line.clear();
-                currentKey.clear();
             }
         }
-    
+        
         file.close();
     #endif
     
@@ -2154,56 +2054,41 @@ namespace ult {
     std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> loadOptionsFromIni(const std::string& packageIniPath) {
         auto fileMutex = getFileMutex(packageIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
-
+        
     #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
-        if (!packageFile) return {}; // Return empty vector if file can't be opened
+        if (!packageFile) return {};
         
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
+        options.reserve(32); // Reserve reasonable capacity
         
-        char line[1024];
+        char buffer[1024];
         std::string currentSection;
         std::vector<std::vector<std::string>> sectionCommands;
-        std::string strLine;
-        
-        size_t len;
-        //const char* start;
-        //const char* end;
+        sectionCommands.reserve(16);
     
-        while (fgets(line, sizeof(line), packageFile)) {
-            // More efficient newline removal
-            len = strlen(line);
-            if (len > 0 && line[len-1] == '\n') {
-                line[len-1] = '\0';
-                --len;
-                if (len > 0 && line[len-1] == '\r') {
-                    line[len-1] = '\0';
-                    --len;
-                }
+        while (fgets(buffer, sizeof(buffer), packageFile)) {
+            size_t len = strlen(buffer);
+            
+            // Strip trailing newline/carriage return
+            if (len > 0 && buffer[len-1] == '\n') {
+                if (--len > 0 && buffer[len-1] == '\r') --len;
             }
             
-            // Early exit for empty lines
-            if (len == 0) continue;
+            if (len == 0 || buffer[0] == '#') continue;
             
-            // Check for comments early (most efficient check)
-            if (line[0] == '#') continue;
-            
-            // Assign the processed line
-            strLine.assign(line, len);
-    
-            if (strLine[0] == '[' && strLine.back() == ']') { // Section headers
+            // Section header
+            if (buffer[0] == '[' && buffer[len-1] == ']') {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    //sectionCommands.clear();
-                    //sectionCommands.shrink_to_fit(); // Free capacity after move
+                    sectionCommands = std::vector<std::vector<std::string>>();
+                    sectionCommands.reserve(16);
                 }
-                currentSection.assign(strLine, 1, strLine.size() - 2);
-            } else if (!currentSection.empty()) { // Command lines within sections
-                sectionCommands.push_back(parseCommandLine(strLine));
+                currentSection.assign(buffer + 1, len - 2);
+            } else if (!currentSection.empty()) {
+                // Parse command directly from buffer - avoid string construction
+                sectionCommands.push_back(parseCommandLine(std::string(buffer, len)));
             }
-
-            // Clear strLine content to free string memory
-            strLine.clear();
         }
     
         if (!currentSection.empty()) {
@@ -2213,34 +2098,35 @@ namespace ult {
         fclose(packageFile);
     #else
         std::ifstream packageFile(packageIniPath);
-        if (!packageFile) return {}; // Return empty vector if file can't be opened
+        if (!packageFile) return {};
     
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
+        options.reserve(32);
         
-        std::string line, currentSection;
+        std::string line;
+        line.reserve(256);
+        std::string currentSection;
         std::vector<std::vector<std::string>> sectionCommands;
+        sectionCommands.reserve(16);
     
         while (std::getline(packageFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
+            // Remove carriage return if present
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
     
-            // Early exits for empty lines and comments
             if (line.empty() || line[0] == '#') continue;
     
-            if (line[0] == '[' && line.back() == ']') { // Section headers
+            if (line[0] == '[' && line.back() == ']') {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    //sectionCommands.clear();
-                    //sectionCommands.shrink_to_fit(); // Free capacity after move
+                    sectionCommands = std::vector<std::vector<std::string>>();
+                    sectionCommands.reserve(16);
                 }
                 currentSection.assign(line, 1, line.size() - 2);
-            } else if (!currentSection.empty()) { // Command lines within sections
+            } else if (!currentSection.empty()) {
                 sectionCommands.push_back(parseCommandLine(line));
             }
-            // Clear line content to reuse capacity
-            line.clear();
         }
     
         if (!currentSection.empty()) {
@@ -2265,99 +2151,92 @@ namespace ult {
     std::vector<std::vector<std::string>> loadSpecificSectionFromIni(const std::string& packageIniPath, const std::string& sectionName) {
         auto fileMutex = getFileMutex(packageIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
-
+        
     #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
-        
-        if (!packageFile) return {}; // Return empty vector if file can't be opened
+        if (!packageFile) return {};
         
         std::vector<std::vector<std::string>> sectionCommands;
+        sectionCommands.reserve(16);
         
-        char line[1024];
-        std::string currentSection;
+        char buffer[1024];
         bool inTargetSection = false;
-        std::string strLine;
         
-        size_t len;
-        
-        while (fgets(line, sizeof(line), packageFile)) {
-            // More efficient newline removal
-            len = strlen(line);
-            if (len > 0 && line[len-1] == '\n') {
-                line[len-1] = '\0';
-                --len;
-                if (len > 0 && line[len-1] == '\r') {
-                    line[len-1] = '\0';
-                    --len;
-                }
+        while (fgets(buffer, sizeof(buffer), packageFile)) {
+            size_t len = strlen(buffer);
+            
+            // Strip trailing newline/carriage return
+            if (len > 0 && buffer[len-1] == '\n') {
+                if (--len > 0 && buffer[len-1] == '\r') --len;
             }
             
-            // Early exit for empty lines
-            if (len == 0) continue;
+            if (len == 0 || buffer[0] == '#') continue;
             
-            // Check for comments early (most efficient check)
-            if (line[0] == '#') continue;
-            
-            // Assign the processed line
-            strLine.assign(line, len);
-    
-            if (strLine[0] == '[' && strLine.back() == ']') { // Section headers
-                currentSection.assign(strLine, 1, strLine.size() - 2);
-                inTargetSection = (currentSection == sectionName); // Check if this is the target section
-                
-                // Early exit optimization: if we were in target section and hit a new section, we're done
-                if (!inTargetSection && !sectionCommands.empty()) {
-                    break; // Found target section and processed it, no need to continue
+            // Section header
+            if (buffer[0] == '[' && buffer[len-1] == ']') {
+                if (len > 2) {
+                    size_t sectionLen = len - 2;
+                    
+                    // Direct comparison without constructing string
+                    bool isTarget = (sectionLen == sectionName.length() && 
+                                    std::memcmp(buffer + 1, sectionName.data(), sectionLen) == 0);
+                    
+                    // Early exit: found target section and now leaving it
+                    if (inTargetSection && !isTarget) {
+                        break;
+                    }
+                    
+                    inTargetSection = isTarget;
                 }
-            } else if (inTargetSection) { // Only parse commands within the target section
-                sectionCommands.push_back(parseCommandLine(strLine));
+            } else if (inTargetSection) {
+                sectionCommands.push_back(parseCommandLine(std::string(buffer, len)));
             }
-
-            // Clear strings to reuse capacity
-            strLine.clear();
-            currentSection.clear();
         }
     
         fclose(packageFile);
     #else
         std::ifstream packageFile(packageIniPath);
+        if (!packageFile) return {};
         
-        if (!packageFile) return {}; // Return empty vector if file can't be opened
-        
-        std::string line, currentSection;
+        std::string line;
+        line.reserve(256);
         std::vector<std::vector<std::string>> sectionCommands;
+        sectionCommands.reserve(16);
         bool inTargetSection = false;
     
         while (std::getline(packageFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
+            // Remove carriage return if present
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
     
-            // Early exits for empty lines and comments
             if (line.empty() || line[0] == '#') continue;
     
-            if (line[0] == '[' && line.back() == ']') { // Section headers
-                currentSection.assign(line, 1, line.size() - 2);
-                inTargetSection = (currentSection == sectionName); // Check if this is the target section
+            // Section header
+            if (line[0] == '[' && line.back() == ']') {
+                size_t sectionLen = line.size() - 2;
                 
-                // Early exit optimization: if we were in target section and hit a new section, we're done
-                if (!inTargetSection && !sectionCommands.empty()) {
-                    break; // Found target section and processed it, no need to continue
+                if (sectionLen > 0) {
+                    // Direct comparison without constructing substring
+                    bool isTarget = (sectionLen == sectionName.length() && 
+                                    std::memcmp(line.data() + 1, sectionName.data(), sectionLen) == 0);
+                    
+                    // Early exit: found target section and now leaving it
+                    if (inTargetSection && !isTarget) {
+                        break;
+                    }
+                    
+                    inTargetSection = isTarget;
                 }
-            } else if (inTargetSection) { // Only parse commands within the target section
+            } else if (inTargetSection) {
                 sectionCommands.push_back(parseCommandLine(line));
             }
-
-            // Clear strings to reuse capacity
-            //strLine.clear();
-            currentSection.clear();
         }
     
         packageFile.close();
     #endif
     
-        return sectionCommands; // Return only the commands from the target section
+        return sectionCommands;
     }
     
 
@@ -2373,39 +2252,77 @@ namespace ult {
     void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
-
-        #if !USING_FSTREAM_DIRECTIVE
+        
+    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
-            // Handle error: could not open file
             return;
         }
     
+        // Use larger buffer for better write performance
+        char writeBuffer[8192];
+        setvbuf(file, writeBuffer, _IOFBF, sizeof(writeBuffer));
+        
+        std::string buffer;
+        buffer.reserve(4096); // Pre-allocate buffer
+        
         for (const auto& section : data) {
-            fprintf(file, "[%s]\n", section.first.c_str());
+            buffer.clear();
+            
+            // Build section header
+            buffer += '[';
+            buffer += section.first;
+            buffer += "]\n";
+            
+            // Build all key-value pairs for this section
             for (const auto& kv : section.second) {
-                fprintf(file, "%s=%s\n", kv.first.c_str(), kv.second.c_str());
+                buffer += kv.first;
+                buffer += '=';
+                buffer += kv.second;
+                buffer += '\n';
             }
-            fputc('\n', file); // Separate sections with a newline
+            buffer += '\n'; // Section separator
+            
+            // Write entire section at once
+            fwrite(buffer.data(), 1, buffer.size(), file);
         }
     
         fclose(file);
-        #else
+    #else
         std::ofstream file(filePath);
         if (!file.is_open()) {
-            // Handle error: could not open file
             return;
         }
+        
+        // Set larger buffer for better performance
+        char writeBuffer[8192];
+        file.rdbuf()->pubsetbuf(writeBuffer, sizeof(writeBuffer));
+        
+        std::string buffer;
+        buffer.reserve(4096);
     
         for (const auto& section : data) {
-            file << "[" << section.first << "]\n";
+            buffer.clear();
+            
+            // Build section header
+            buffer += '[';
+            buffer += section.first;
+            buffer += "]\n";
+            
+            // Build all key-value pairs for this section
             for (const auto& kv : section.second) {
-                file << kv.first << "=" << kv.second << "\n";
+                buffer += kv.first;
+                buffer += '=';
+                buffer += kv.second;
+                buffer += '\n';
             }
-            file << "\n"; // Separate sections with a newline
+            buffer += '\n';
+            
+            // Write entire section at once
+            file.write(buffer.data(), buffer.size());
         }
     
         file.close();
-        #endif
+    #endif
     }
 }

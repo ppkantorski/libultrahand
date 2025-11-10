@@ -13254,7 +13254,7 @@ namespace tsl {
         u8 action;
     };
     
-    static const struct option_entry options[] = {
+    static constexpr struct option_entry options[] = {
         {"direct", 6, 1},
         {"skipCombo", 9, 2},
         {"lastTitleID", 11, 3}, 

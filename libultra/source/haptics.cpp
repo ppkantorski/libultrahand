@@ -103,23 +103,25 @@ namespace ult {
     void checkAndReinitRumble() {
         static u32 lastHandheldStyle = 0;
         static u32 lastPlayer1Style = 0;
+        static bool everWorked = false;
     
         const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 currentPlayer1Style = hidGetNpadStyleSet(HidNpadIdType_No1);
     
-        // If not initialized but controllers exist, try to init
-        // This handles the boot race condition where HID reports controllers
-        // but vibration subsystem isn't ready yet
-        //if (!rumbleInitialized && (currentHandheldStyle || currentPlayer1Style)) {
-        //    initRumble();
-        //}
+        // If it's never worked and controllers exist, keep trying to init
+        bool shouldInit = !everWorked && (currentHandheldStyle || currentPlayer1Style);
+        
+        // Or if controller config changed
+        shouldInit |= (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style);
     
-        // Reinit if controller configuration changed
-        if (currentHandheldStyle != lastHandheldStyle || currentPlayer1Style != lastPlayer1Style) {
-            //rumbleInitialized = false;
+        if (shouldInit) {
             initRumble();
+            // Mark as working if we have any active controller
+            if (currentHandheldStyle || currentPlayer1Style) {
+                everWorked = true;
+            }
         }
-        // Update last style tracking regardless
+        
         lastHandheldStyle = currentHandheldStyle;
         lastPlayer1Style = currentPlayer1Style;
     }
