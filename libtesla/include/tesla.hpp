@@ -3227,7 +3227,7 @@ namespace tsl {
                             (ult::extendedWidgetBackdrop
                                 ? tsl::cfg::FramebufferWidth - 255
                                 : tsl::cfg::FramebufferWidth - 215),
-                            64 + 2, widgetBackdropColor
+                            64 + 2, a(widgetBackdropColor)
                         );
                     }
                 }
