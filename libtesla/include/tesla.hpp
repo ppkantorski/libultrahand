@@ -2673,10 +2673,12 @@ namespace tsl {
                 
                 const u8* __restrict__ src = bmp;
                 
-                s32 px;
-
+                // Pre-compute alpha limit once using global opacity
+                const u8 alphaLimit = static_cast<u8>(0xF * Renderer::s_opacity);
+                
                 // Completely unroll small bitmaps for maximum speed
                 if (w <= 8 && h <= 8) [[likely]] {
+                    s32 px;
                     // Specialized path for small bitmaps (icons, etc.)
                     for (s32 py = 0; py < h; ++py) {
                         const s32 rowY = y + py;
@@ -2696,76 +2698,86 @@ namespace tsl {
                         }
                         
                         pixel8: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel7: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel6: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel5: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel4: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel3: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel2: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px++, rowY, a(c)); src += 4;
                         }
                         pixel1: {
+                            u8 alpha = src[3] >> 4;
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                             const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
+                                           static_cast<u8>(src[2] >> 4), alpha};
                             setPixelBlendSrc(px, rowY, a(c)); src += 4;
                         }
                     }
                     return;
                 }
                 
-                // Fallback to vectorized version for larger bitmaps
-                const s32 vectorWidth = w & ~7; // Process 8 pixels at a time
-                const s32 remainder = w & 7;
-                
+                // Optimized scalar path for larger bitmaps
                 for (s32 py = 0; py < h; ++py) {
                     const s32 rowY = y + py;
-                    px = x;
+                    s32 px = x;
+                    const u8* rowEnd = src + (w * 4);
                     
-                    // Process 8 pixels at once (cache-friendly)
-                    for (s32 i = 0; i < vectorWidth; i += 8) {
-                        // Prefetch next cache line
-                        __builtin_prefetch(src + 64, 0, 3);
-                        
-                        // Process 8 pixels with minimal overhead
-                        for (int j = 0; j < 8; ++j) {
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
-                            setPixelBlendSrc(px++, rowY, (c));
-                            src += 4;
+                    // Prefetch first cache line
+                    __builtin_prefetch(src, 0, 3);
+                    
+                    // Process all pixels in the row
+                    while (src < rowEnd) {
+                        // Prefetch ahead every 16 pixels (64 bytes)
+                        if (((uintptr_t)src & 63) == 0) [[unlikely]] {
+                            __builtin_prefetch(src + 64, 0, 3);
                         }
-                    }
-                    
-                    // Handle remainder
-                    for (s32 i = 0; i < remainder; ++i) {
+                        
+                        u8 alpha = src[3] >> 4;
+                        alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                         const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                       static_cast<u8>(src[2] >> 4), static_cast<u8>(src[3] >> 4)};
-                        setPixelBlendSrc(px++, rowY, (c));
+                                       static_cast<u8>(src[2] >> 4), alpha};
+                        setPixelBlendSrc(px++, rowY, c);
                         src += 4;
                     }
                 }
