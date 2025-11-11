@@ -2205,25 +2205,26 @@ namespace tsl {
                 s32 start_x, end_x;
             };
 
-            // Define processChunk as a static member function
-            // Optimized processRoundedRectChunk - assumes bounds checking done by caller
+            // Optimized processRoundedRectChunk - Same output, faster execution
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h, 
                                                const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
-                // Original rectangle bounds
-                const s32 orig_x = x, orig_y = y;
-                const s32 orig_x_end = x + w, orig_y_end = y + h;
+                const s32 x_end = x + w;
+                const s32 y_end = y + h;
                 
-                // Calculate clipping bounds
                 const s32 clip_x = std::max(0, x);
-                const s32 clip_x_end = std::min(static_cast<s32>(cfg::FramebufferWidth), x + w);
+                const s32 clip_x_end = std::min(static_cast<s32>(cfg::FramebufferWidth), x_end);
                 
-                // Use ORIGINAL coordinates to determine corner regions
-                const s32 orig_x_left = orig_x + radius, orig_x_right = orig_x_end - radius;
-                const s32 orig_y_top = orig_y + radius, orig_y_bottom = orig_y_end - radius;
-                const s32 r2 = radius * radius;
-                //const u8 red = color.r, green = color.g, blue = color.b, alpha = color.a;
+                const s32 corner_x_left = x + radius;
+                const s32 corner_x_right = x_end - radius - 1;
+                const s32 corner_y_top = y + radius;
+                const s32 corner_y_bottom = y_end - radius - 1;
+                
+                const float r_float = static_cast<float>(radius);
+                const float r2_f = r_float * r_float;
+                const float aa_threshold = r2_f + 2.0f * r_float + 1.0f;
+                const u8 base_alpha = color.a;
             
-                // ONLY CHANGE: Use SIMD for array initialization
+                // SIMD arrays - pre-filled once
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
                 const uint8x16_t red_vec = vdupq_n_u8(color.r);
                 const uint8x16_t green_vec = vdupq_n_u8(color.g);
@@ -2237,50 +2238,111 @@ namespace tsl {
                     vst1q_u8(&alphaArray[i], alpha_vec);
                 }
                 
-                s32 orig_span_start, orig_span_end;
-                s32 dx;
-                for (s32 y_current = startRow; y_current < endRow; ++y_current) {
-                    // Skip if outside original rectangle bounds
-                    if (y_current < orig_y || y_current >= orig_y_end) continue;
+                for (s32 y_cur = startRow; y_cur < endRow; ++y_cur) {
+                    if (y_cur < y || y_cur >= y_end) continue;
                     
+                    // Determine corner region once per row
+                    const bool in_corner_rows = y_cur < corner_y_top || y_cur > corner_y_bottom;
                     
-                    
-                    if (y_current >= orig_y_top && y_current < orig_y_bottom) {
-                        // Middle section - full width
-                        orig_span_start = orig_x;
-                        orig_span_end = orig_x_end;
-                    } else {
-                        // Corner section
-                        const s32 dy_abs = (y_current < orig_y_top) ? (orig_y_top - y_current) : (y_current - orig_y_bottom);
-                        const s32 dy2 = dy_abs * dy_abs;
-                        if (dy2 > r2) continue;
-            
-                        // Compute dx using integer square root approximation
-                        dx = 0;
-                        const s32 t = r2 - dy2;
-                        while (dx * dx <= t) {
-                            dx++;
+                    if (!in_corner_rows) {
+                        // Pure middle section - fastest path
+                        const s32 span_start = std::max(x, clip_x);
+                        const s32 span_end = std::min(x_end, clip_x_end);
+                        
+                        if (span_start < span_end) {
+                            for (s32 xp = span_start; xp < span_end; xp += 512) {
+                                self->setPixelBlendDstBatch(xp, y_cur, redArray, greenArray, blueArray, alphaArray, 
+                                                           std::min(512, span_end - xp));
+                            }
                         }
-                        dx--; // Get the largest dx where dx^2 + dy2 <= r2
-            
-                        // Calculate the span for this row in the original rectangle
-                        orig_span_start = std::max(orig_x_left - dx, orig_x);
-                        orig_span_end = std::min(orig_x_right + dx, orig_x_end);
-                    }
-            
-                    // Clip the original span to visible bounds
-                    const s32 span_start = std::max(orig_span_start, clip_x);
-                    const s32 span_end = std::min(orig_span_end, clip_x_end);
-            
-                    if (span_start >= span_end) continue;
-            
-                    // Batch rendering
-                    for (s32 x_pos = span_start; x_pos < span_end; x_pos += 512) {
-                        self->setPixelBlendDstBatch(x_pos, y_current, redArray, greenArray, blueArray, alphaArray, std::min(512, span_end - x_pos));
+                    } else {
+                        // Corner rows - calculate dy once
+                        const float dy = (y_cur < corner_y_top) ? static_cast<float>(corner_y_top - y_cur) : 
+                                                                   static_cast<float>(y_cur - corner_y_bottom);
+                        const float dy_sq = dy * dy;
+                        
+                        // Early exit if beyond radius
+                        if (dy_sq > aa_threshold) continue;
+                        
+                        const s32 span_start = std::max(x, clip_x);
+                        const s32 span_end = std::min(x_end, clip_x_end);
+                        
+                        s32 xp = span_start;
+                        
+                        // Left corner/edge region
+                        if (xp <= corner_x_left) {
+                            const s32 left_end = std::min(corner_x_left + 1, span_end);
+                            
+                            for (; xp < left_end; ++xp) {
+                                const float dx = static_cast<float>(corner_x_left - xp);
+                                const float dist_sq = dx*dx + dy_sq;
+                                
+                                if (dist_sq <= r2_f) {
+                                    self->setPixelBlendDst(xp, y_cur, color);
+                                } else if (dist_sq <= aa_threshold) {
+                                    // Inline AA calculation
+                                    const float dx_half = dx - 0.5f;
+                                    const float dy_half = dy - 0.5f;
+                                    
+                                    float cov = 0.0f;
+                                    if (dx*dx + dy*dy <= r2_f) cov += 0.25f;
+                                    if (dx_half*dx_half + dy*dy <= r2_f) cov += 0.25f;
+                                    if (dx*dx + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    if (dx_half*dx_half + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    
+                                    const u8 aa = static_cast<u8>((base_alpha * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
+                                    if (aa > 0) {
+                                        Color c = color;
+                                        c.a = aa;
+                                        self->setPixelBlendDst(xp, y_cur, c);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Middle section - batch fast path
+                        const s32 mid_start = std::max(corner_x_left + 1, xp);
+                        const s32 mid_end = std::min(corner_x_right, span_end);
+                        
+                        if (mid_start < mid_end) {
+                            for (s32 batch_x = mid_start; batch_x < mid_end; batch_x += 512) {
+                                self->setPixelBlendDstBatch(batch_x, y_cur, redArray, greenArray, blueArray, alphaArray,
+                                                           std::min(512, mid_end - batch_x));
+                            }
+                            xp = mid_end;
+                        }
+                        
+                        // Right corner/edge region
+                        if (xp >= corner_x_right && xp < span_end) {
+                            for (; xp < span_end; ++xp) {
+                                const float dx = static_cast<float>(xp - corner_x_right);
+                                const float dist_sq = dx*dx + dy_sq;
+                                
+                                if (dist_sq <= r2_f) {
+                                    self->setPixelBlendDst(xp, y_cur, color);
+                                } else if (dist_sq <= aa_threshold) {
+                                    // Inline AA calculation
+                                    const float dx_half = dx - 0.5f;
+                                    const float dy_half = dy - 0.5f;
+                                    
+                                    float cov = 0.0f;
+                                    if (dx*dx + dy*dy <= r2_f) cov += 0.25f;
+                                    if (dx_half*dx_half + dy*dy <= r2_f) cov += 0.25f;
+                                    if (dx*dx + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    if (dx_half*dx_half + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    
+                                    const u8 aa = static_cast<u8>((base_alpha * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
+                                    if (aa > 0) {
+                                        Color c = color;
+                                        c.a = aa;
+                                        self->setPixelBlendDst(xp, y_cur, c);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-
 
 
             /**
