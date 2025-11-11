@@ -2247,19 +2247,16 @@ namespace tsl {
                                                const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
-                
                 const s32 clip_x = std::max(0, x);
                 const s32 clip_x_end = std::min(static_cast<s32>(cfg::FramebufferWidth), x_end);
-                
                 const s32 corner_x_left = x + radius;
                 const s32 corner_x_right = x_end - radius - 1;
                 const s32 corner_y_top = y + radius;
                 const s32 corner_y_bottom = y_end - radius - 1;
-                
-                const float r_float = static_cast<float>(radius);
-                const float r2_f = r_float * r_float;
-                const float aa_threshold = r2_f + 2.0f * r_float + 1.0f;
-                const u8 base_alpha = color.a;
+                const float r_f = static_cast<float>(radius);
+                const float r2 = r_f * r_f;
+                const float aa_thresh = r2 + 2.0f * r_f + 1.0f;
+                const u8 base_a = color.a;
             
                 // SIMD arrays - pre-filled once
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
@@ -2275,66 +2272,62 @@ namespace tsl {
                     vst1q_u8(&alphaArray[i], alpha_vec);
                 }
                 
-                for (s32 y_cur = startRow; y_cur < endRow; ++y_cur) {
-                    if (y_cur < y || y_cur >= y_end) continue;
+                for (s32 yc = startRow; yc < endRow; ++yc) {
+                    if (yc < y || yc >= y_end) continue;
                     
-                    // Determine corner region once per row
-                    const bool in_corner_rows = y_cur < corner_y_top || y_cur > corner_y_bottom;
+                    const bool in_corners = yc < corner_y_top || yc > corner_y_bottom;
                     
-                    if (!in_corner_rows) {
+                    if (!in_corners) {
                         // Pure middle section - fastest path
                         const s32 span_start = std::max(x, clip_x);
                         const s32 span_end = std::min(x_end, clip_x_end);
                         
                         if (span_start < span_end) {
                             for (s32 xp = span_start; xp < span_end; xp += 512) {
-                                self->setPixelBlendDstBatch(xp, y_cur, redArray, greenArray, blueArray, alphaArray, 
+                                self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray, 
                                                            std::min(512, span_end - xp));
                             }
                         }
                     } else {
-                        // Corner rows - calculate dy once
-                        const float dy = (y_cur < corner_y_top) ? static_cast<float>(corner_y_top - y_cur) : 
-                                                                   static_cast<float>(y_cur - corner_y_bottom);
+                        // Corner rows
+                        const float dy = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc) : 
+                                                                 static_cast<float>(yc - corner_y_bottom);
                         const float dy_sq = dy * dy;
                         
-                        // Early exit if beyond radius
-                        if (dy_sq > aa_threshold) continue;
+                        if (dy_sq > aa_thresh) continue;
                         
                         const s32 span_start = std::max(x, clip_x);
                         const s32 span_end = std::min(x_end, clip_x_end);
-                        
                         s32 xp = span_start;
                         
                         // Left corner/edge region
                         if (xp <= corner_x_left) {
                             const s32 left_end = std::min(corner_x_left + 1, span_end);
+                            const float dy_half = dy - 0.5f;
+                            const float dy_half_sq = dy_half * dy_half;
                             
                             for (; xp < left_end; ++xp) {
                                 const float dx = static_cast<float>(corner_x_left - xp);
-                                const float dist_sq = dx*dx + dy_sq;
+                                const float dx_sq = dx * dx;
+                                const float d2 = dx_sq + dy_sq;
                                 
-                                if (dist_sq <= r2_f) {
-                                    self->setPixelBlendDst(xp, y_cur, color);
-                                } else if (dist_sq <= aa_threshold) {
-                                    // Inline AA calculation - pre-compute squares
+                                if (d2 <= r2) {
+                                    self->setPixelBlendDst(xp, yc, color);
+                                } else if (d2 <= aa_thresh) {
                                     const float dx_half = dx - 0.5f;
-                                    const float dy_half = dy - 0.5f;
-                                    const float dx_sq = dx*dx;
-                                    const float dx_half_sq = dx_half*dx_half;
-                                    const float dy_half_sq = dy_half*dy_half;
+                                    const float dx_half_sq = dx_half * dx_half;
                                     
                                     float cov = 0.0f;
-                                    if (dx_sq + dy_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half_sq + dy_sq <= r2_f) cov += 0.25f;
-                                    if (dx_sq + dy_half_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half_sq + dy_half_sq <= r2_f) cov += 0.25f;
+                                    if (dx_sq + dy_sq <= r2) cov += 0.25f;
+                                    if (dx_half_sq + dy_sq <= r2) cov += 0.25f;
+                                    if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
+                                    if (dx_half_sq + dy_half_sq <= r2) cov += 0.25f;
                                     
-                                    const u8 aa = static_cast<u8>((base_alpha * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
+                                    const u8 aa = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
                                     if (aa > 0) {
                                         Color c = color;
                                         c.a = aa;
-                                        self->setPixelBlendDst(xp, y_cur, c);
+                                        self->setPixelBlendDst(xp, yc, c);
                                     }
                                 }
                             }
@@ -2346,7 +2339,7 @@ namespace tsl {
                         
                         if (mid_start < mid_end) {
                             for (s32 batch_x = mid_start; batch_x < mid_end; batch_x += 512) {
-                                self->setPixelBlendDstBatch(batch_x, y_cur, redArray, greenArray, blueArray, alphaArray,
+                                self->setPixelBlendDstBatch(batch_x, yc, redArray, greenArray, blueArray, alphaArray,
                                                            std::min(512, mid_end - batch_x));
                             }
                             xp = mid_end;
@@ -2354,31 +2347,31 @@ namespace tsl {
                         
                         // Right corner/edge region
                         if (xp >= corner_x_right && xp < span_end) {
+                            const float dy_half = dy - 0.5f;
+                            const float dy_half_sq = dy_half * dy_half;
+                            
                             for (; xp < span_end; ++xp) {
                                 const float dx = static_cast<float>(xp - corner_x_right);
-                                const float dist_sq = dx*dx + dy_sq;
+                                const float dx_sq = dx * dx;
+                                const float d2 = dx_sq + dy_sq;
                                 
-                                if (dist_sq <= r2_f) {
-                                    self->setPixelBlendDst(xp, y_cur, color);
-                                } else if (dist_sq <= aa_threshold) {
-                                    // Inline AA calculation - pre-compute squares
+                                if (d2 <= r2) {
+                                    self->setPixelBlendDst(xp, yc, color);
+                                } else if (d2 <= aa_thresh) {
                                     const float dx_half = dx - 0.5f;
-                                    const float dy_half = dy - 0.5f;
-                                    const float dx_sq = dx*dx;
-                                    const float dx_half_sq = dx_half*dx_half;
-                                    const float dy_half_sq = dy_half*dy_half;
+                                    const float dx_half_sq = dx_half * dx_half;
                                     
                                     float cov = 0.0f;
-                                    if (dx_sq + dy_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half_sq + dy_sq <= r2_f) cov += 0.25f;
-                                    if (dx_sq + dy_half_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half_sq + dy_half_sq <= r2_f) cov += 0.25f;
+                                    if (dx_sq + dy_sq <= r2) cov += 0.25f;
+                                    if (dx_half_sq + dy_sq <= r2) cov += 0.25f;
+                                    if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
+                                    if (dx_half_sq + dy_half_sq <= r2) cov += 0.25f;
                                     
-                                    const u8 aa = static_cast<u8>((base_alpha * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
+                                    const u8 aa = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
                                     if (aa > 0) {
                                         Color c = color;
                                         c.a = aa;
-                                        self->setPixelBlendDst(xp, y_cur, c);
+                                        self->setPixelBlendDst(xp, yc, c);
                                     }
                                 }
                             }
@@ -2479,141 +2472,114 @@ namespace tsl {
             
                                                 
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
-                // Calculate radius and bounds
-                const s32 radius = h >> 1;  // h / 2
-                
-                // Get framebuffer bounds
-                const s32 fb_width = cfg::FramebufferWidth;
-                const s32 fb_height = cfg::FramebufferHeight;
+                const s32 radius = h >> 1;
                 
                 // Calculate clipped drawing bounds
                 const s32 clip_left = std::max(0, x);
                 const s32 clip_top = std::max(0, y);
-                const s32 clip_right = std::min(fb_width, x + w);
-                const s32 clip_bottom = std::min(fb_height, y + h);
+                const s32 clip_right = std::min(static_cast<s32>(cfg::FramebufferWidth), x + w);
+                const s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), y + h);
                 
-                // Early exit if completely clipped
                 if (clip_left >= clip_right || clip_top >= clip_bottom) return;
                 
-                // Shape parameters
-                const float center_y_float = y + (h - 1) / 2.0f;
+                const float center_y = y + (h - 1) * 0.5f;
                 const s32 rect_left = x + radius;
                 const s32 rect_right = x + w - radius - 1;
-                const float r_float = static_cast<float>(radius);
-                const float r2_f = r_float * r_float;
-                const float aa_threshold = r2_f + 2.0f * r_float + 1.0f;
-                const u8 base_alpha = color.a;
+                const float r_f = static_cast<float>(radius);
+                const float r2 = r_f * r_f;
+                const float aa_thresh = r2 + 2.0f * r_f + 1.0f;
+                const u8 base_a = color.a;
+                const bool full_opacity = (base_a == 0xF);
+                const float corner_top = y + radius;
+                const float corner_bot = y + h - radius;
                 
-                // Corner circle centers
-                const float corner_y_top = y + radius;
-                const float corner_y_bottom = y + h - radius;
-                
-                const bool fullOpacity = (color.a == 0xF);
-                
-                // Main drawing loop
-                for (s32 y_curr = clip_top; y_curr < clip_bottom; ++y_curr) {
-                    const float dy_float = y_curr - center_y_float;
-                    const float dy_abs_float = (dy_float < 0) ? -dy_float : dy_float;
+                for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                    const float dy_abs = (yc < center_y) ? (center_y - yc) : (yc - center_y);
                     
-                    if (dy_abs_float > radius + 1) continue;
+                    if (dy_abs > radius + 1) continue;
                     
-                    // Determine which corner circles to use
-                    const bool top_half = y_curr < corner_y_top;
-                    const bool bottom_half = y_curr >= corner_y_bottom;
+                    const bool is_top = yc < corner_top;
+                    const bool is_bot = yc >= corner_bot;
                     
-                    if (!top_half && !bottom_half) {
-                        // Middle section - just fill the whole width
-                        const s32 row_start = std::max(x, clip_left);
-                        const s32 row_end = std::min(x + w, clip_right);
+                    if (!is_top && !is_bot) {
+                        // Middle section - full width fill
+                        const s32 x_start = std::max(x, clip_left);
+                        const s32 x_end = std::min(x + w, clip_right);
                         
-                        if (fullOpacity) {
-                            for (s32 x_curr = row_start; x_curr < row_end; ++x_curr) {
-                                const u32 offset = this->getPixelOffset((u32)x_curr, (u32)y_curr);
-                                if (offset != UINT32_MAX) {
-                                    this->setPixelAtOffset(offset, color);
-                                }
+                        if (full_opacity) {
+                            for (s32 xc = x_start; xc < x_end; ++xc) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) this->setPixelAtOffset(off, color);
                             }
                         } else {
-                            for (s32 x_curr = row_start; x_curr < row_end; ++x_curr) {
-                                const u32 offset = this->getPixelOffset((u32)x_curr, (u32)y_curr);
-                                if (offset != UINT32_MAX) {
-                                    this->setPixelBlendDst((u32)x_curr, (u32)y_curr, color);
-                                }
+                            for (s32 xc = x_start; xc < x_end; ++xc) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) this->setPixelBlendDst(xc, yc, color);
                             }
                         }
                     } else {
-                        // Corner rows - need circle calculations
-                        const float dy_corner = top_half ? (corner_y_top - y_curr) : (y_curr - corner_y_bottom);
-                        const float dy_corner_sq = dy_corner * dy_corner;
+                        // Corner rows
+                        const float dy = is_top ? (corner_top - yc) : (yc - corner_bot);
+                        const float dy_sq = dy * dy;
                         
-                        // Draw entire row with AA calculations at edges
-                        for (s32 x_curr = clip_left; x_curr < clip_right; ++x_curr) {
-                            bool in_shape = false;
-                            float coverage = 1.0f;
+                        for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                            float cov = 1.0f;
+                            bool draw = false;
                             
-                            // Check if we're in the corner regions
-                            if (x_curr < rect_left) {
+                            if (xc < rect_left) {
                                 // Left corner
-                                const float dx = rect_left - x_curr;
-                                const float dist_sq = dx*dx + dy_corner_sq;
+                                const float dx = rect_left - xc;
+                                const float d2 = dx*dx + dy_sq;
                                 
-                                if (dist_sq <= r2_f) {
-                                    in_shape = true;
-                                } else if (dist_sq <= aa_threshold) {
-                                    // Supersampling AA
-                                    const float dx_half = dx - 0.5f;
-                                    const float dy_half = dy_corner - 0.5f;
+                                if (d2 <= r2) {
+                                    draw = true;
+                                } else if (d2 <= aa_thresh) {
+                                    const float dxh = dx - 0.5f;
+                                    const float dyh = dy - 0.5f;
                                     
-                                    float cov = 0.0f;
-                                    if (dx*dx + dy_corner_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half*dx_half + dy_corner_sq <= r2_f) cov += 0.25f;
-                                    if (dx*dx + dy_half*dy_half <= r2_f) cov += 0.25f;
-                                    if (dx_half*dx_half + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    cov = 0.0f;
+                                    if (dx*dx + dy_sq <= r2) cov += 0.25f;
+                                    if (dxh*dxh + dy_sq <= r2) cov += 0.25f;
+                                    if (dx*dx + dyh*dyh <= r2) cov += 0.25f;
+                                    if (dxh*dxh + dyh*dyh <= r2) cov += 0.25f;
                                     
-                                    if (cov > 0.0f) {
-                                        in_shape = true;
-                                        coverage = cov;
-                                    }
+                                    draw = (cov > 0.0f);
                                 }
-                            } else if (x_curr >= rect_right) {
+                            } else if (xc >= rect_right) {
                                 // Right corner
-                                const float dx = x_curr - rect_right;
-                                const float dist_sq = dx*dx + dy_corner_sq;
+                                const float dx = xc - rect_right;
+                                const float d2 = dx*dx + dy_sq;
                                 
-                                if (dist_sq <= r2_f) {
-                                    in_shape = true;
-                                } else if (dist_sq <= aa_threshold) {
-                                    // Supersampling AA
-                                    const float dx_half = dx - 0.5f;
-                                    const float dy_half = dy_corner - 0.5f;
+                                if (d2 <= r2) {
+                                    draw = true;
+                                } else if (d2 <= aa_thresh) {
+                                    const float dxh = dx - 0.5f;
+                                    const float dyh = dy - 0.5f;
                                     
-                                    float cov = 0.0f;
-                                    if (dx*dx + dy_corner_sq <= r2_f) cov += 0.25f;
-                                    if (dx_half*dx_half + dy_corner_sq <= r2_f) cov += 0.25f;
-                                    if (dx*dx + dy_half*dy_half <= r2_f) cov += 0.25f;
-                                    if (dx_half*dx_half + dy_half*dy_half <= r2_f) cov += 0.25f;
+                                    cov = 0.0f;
+                                    if (dx*dx + dy_sq <= r2) cov += 0.25f;
+                                    if (dxh*dxh + dy_sq <= r2) cov += 0.25f;
+                                    if (dx*dx + dyh*dyh <= r2) cov += 0.25f;
+                                    if (dxh*dxh + dyh*dyh <= r2) cov += 0.25f;
                                     
-                                    if (cov > 0.0f) {
-                                        in_shape = true;
-                                        coverage = cov;
-                                    }
+                                    draw = (cov > 0.0f);
                                 }
                             } else {
-                                // Middle section of corner row
-                                in_shape = true;
+                                // Middle of corner row
+                                draw = true;
                             }
                             
-                            if (in_shape) {
-                                const u32 offset = this->getPixelOffset((u32)x_curr, (u32)y_curr);
-                                if (offset != UINT32_MAX) {
-                                    if (coverage >= 1.0f && fullOpacity) {
-                                        this->setPixelAtOffset(offset, color);
+                            if (draw) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    if (cov >= 1.0f && full_opacity) {
+                                        this->setPixelAtOffset(off, color);
                                     } else {
                                         Color c = color;
-                                        if (coverage < 1.0f) {
-                                            c.a = static_cast<u8>((base_alpha * static_cast<u8>(coverage * 15.0f + 0.5f)) / 15);
+                                        if (cov < 1.0f) {
+                                            c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
                                         }
-                                        this->setPixelBlendDst((u32)x_curr, (u32)y_curr, c);
+                                        this->setPixelBlendDst(xc, yc, c);
                                     }
                                 }
                             }
