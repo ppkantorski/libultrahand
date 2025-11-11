@@ -78,7 +78,7 @@ Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, 
 
 - [Status Monitor Overlay](https://github.com/ppkantorski/Status-Monitor-Overlay)
 
-- [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
+- [Edizon Overlay](https://github.com/proferabg/EdiZon-Overlay)
 
 - [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
 
