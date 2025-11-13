@@ -3850,14 +3850,12 @@ namespace tsl {
                     switch (setLanguage) {
                     case SetLanguage_ZHCN:
                     case SetLanguage_ZHHANS:
+                    case SetLanguage_ZHTW:
+                    case SetLanguage_ZHHANT:
                         TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseSimplified));
                         break;
                     case SetLanguage_KO:
                         TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_KO));
-                        break;
-                    case SetLanguage_ZHTW:
-                    case SetLanguage_ZHHANT:
-                        TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseTraditional));
                         break;
                     default:
                         this->m_hasLocalFont = false;
