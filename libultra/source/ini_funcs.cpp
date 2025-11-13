@@ -2260,11 +2260,11 @@ namespace ult {
         }
     
         // Use larger buffer for better write performance
-        char writeBuffer[8192];
+        char writeBuffer[4096];
         setvbuf(file, writeBuffer, _IOFBF, sizeof(writeBuffer));
         
         std::string buffer;
-        buffer.reserve(4096); // Pre-allocate buffer
+        buffer.reserve(2048); // Pre-allocate buffer
         
         for (const auto& section : data) {
             buffer.clear();
@@ -2295,11 +2295,11 @@ namespace ult {
         }
         
         // Set larger buffer for better performance
-        char writeBuffer[8192];
+        char writeBuffer[4096];
         file.rdbuf()->pubsetbuf(writeBuffer, sizeof(writeBuffer));
         
         std::string buffer;
-        buffer.reserve(4096);
+        buffer.reserve(2048);
     
         for (const auto& section : data) {
             buffer.clear();
