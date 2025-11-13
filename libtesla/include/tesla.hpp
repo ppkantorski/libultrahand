@@ -10521,7 +10521,7 @@ namespace tsl {
                     size_t start = 0;
                     while (start < text.size() && lines.size() < 8) {
                         // Look for escaped "\n"
-                        const size_t pos = text.find("\\n", start);
+                        const size_t pos = text.find("\n", start);
             
                         if (pos == std::string::npos) {
                             // No more "\n", take the rest
@@ -10530,12 +10530,12 @@ namespace tsl {
                         } else {
                             // Extract line up to the escape sequence
                             lines.emplace_back(text.substr(start, pos - start));
-                            start = pos + 2; // Skip past "\n"
+                            start = pos + 1; // Skip past "\n"
                         }
                     }
             
                     const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', copy.fontSize);
-                    const s32 startY = y + (copy.promptHeight - static_cast<int>(lines.size()) * fm.lineHeight) / 2 + fm.ascent;
+                    const s32 startY = y + (copy.promptHeight - (static_cast<int>(lines.size()) * fm.lineHeight)) / 2 + fm.ascent;
             
                     for (size_t i = 0; i < lines.size(); ++i) {
                         const std::string& line = lines[i];
@@ -10738,23 +10738,6 @@ namespace tsl {
             //pending_event_fire_.store(false, std::memory_order_release);
         }
     
-        //void forceCompleteTransition() {
-        //    std::lock_guard<std::mutex> lg(state_mutex_);
-        //    current_state_ = NotificationState{};
-        //    while (!pending_queue_.empty()) pending_queue_.pop();
-        //    is_active_ = false;
-        //    //pending_event_fire_.store(false, std::memory_order_release);
-        //}
-        //
-        //void freezeState() {
-        //    generation_++;
-        //    enabled_.store(false, std::memory_order_release);
-        //    {
-        //        std::lock_guard<std::mutex> lg(state_mutex_);
-        //        is_active_ = false;
-        //    }
-        //    //pending_event_fire_.store(false, std::memory_order_release);
-        //}
     
     private:
         static constexpr size_t MAX_NOTIFS = 30;
@@ -12542,7 +12525,7 @@ namespace tsl {
             int priority;
             time_t creationTime;
 
-            const bool usingHOS21orHigher = !(hosversionBefore(21,0,0));
+            const bool usingHOS21orHigher = !(hosversionBefore(20,0,0));
             
             while (shData->running.load(std::memory_order_acquire)) {
 
