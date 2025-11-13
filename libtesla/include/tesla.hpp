@@ -229,6 +229,38 @@ static inline void triggerExitFeedback() {
     triggerExitSound.store(true, std::memory_order_release);
 }
 
+/**
+ * @brief Quickly checks if an overlay file explicitly supports HOS 21+.
+ *
+ * This function reads only the last 8 bytes of the file to look for the "H21+" signature.
+ * It returns true if found, false otherwise.
+ */
+static inline bool hasHOS21Support(const std::string& filePath) {
+    FILE* f = fopen(filePath.c_str(), "rb");
+    if (!f)
+        return false;
+
+    // Jump to 8 bytes before EOF (enough to catch both ULTR + H21+ combos)
+    if (fseek(f, -8, SEEK_END) != 0) {
+        fclose(f);
+        return false;
+    }
+
+    uint32_t sigs[2] = {0, 0};
+    size_t readCount = fread(sigs, sizeof(uint32_t), 2, f);
+    fclose(f);
+
+    if (readCount == 0)
+        return false;
+
+    constexpr uint32_t HOS21_SIGNATURE = 0x2B313248; // "H21+" (little-endian)
+
+    // Check both last and second-to-last 4 bytes
+    return (sigs[0] == HOS21_SIGNATURE || sigs[1] == HOS21_SIGNATURE);
+}
+
+static bool usingHOS21orHigher = false;
+
 
 namespace tsl {
 
@@ -12523,7 +12555,7 @@ namespace tsl {
             int priority;
             time_t creationTime;
 
-            const bool usingHOS21orHigher = !(hosversionBefore(20,0,0));
+            
             
             while (shData->running.load(std::memory_order_acquire)) {
 
@@ -13019,7 +13051,7 @@ namespace tsl {
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
                                 // Check HOS21 support before doing anything
-                                if (usingHOS21orHigher && !ult::hasHOS21Support(overlayPath)) {
+                                if (usingHOS21orHigher && !hasHOS21Support(overlayPath)) {
                                     // Skip launch if not supported
                                     const auto forceSupportStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
@@ -13895,6 +13927,7 @@ extern "C" {
         ASSERT_FATAL(fsInitialize());
         ASSERT_FATAL(hidInitialize());                          // Controller inputs and Touch
         if (hosversionAtLeast(16,0,0)) {
+            usingHOS21orHigher = hosversionAtLeast(21,0,0);     // Detect if using HOS 21+
             ASSERT_FATAL(plInitialize(PlServiceType_User));     // Font data. Use pl:u for 16.0.0+
         } else {
             ASSERT_FATAL(plInitialize(PlServiceType_System));   // Use pl:s for 15.0.1 and below to prevent qlaunch/overlaydisp session exhaustion
@@ -13922,7 +13955,6 @@ extern "C" {
         //ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
 
         //});
-        
 
         
 

@@ -499,6 +499,7 @@ namespace ult {
     std::string USER_GUIDE = "User Guide";
     std::string SHOW_HIDDEN = "Show Hidden";
     std::string SHOW_DELETE = "Show Delete";
+    std::string SHOW_UNSUPPORTED = "Show Unsupported";
     std::string PAGE_SWAP = "Page Swap";
     std::string RIGHT_SIDE_MODE = "Right-side Mode";
     std::string OVERLAY_VERSIONS = "Overlay Versions";
@@ -573,6 +574,7 @@ namespace ult {
     std::string REBOOT_IS_REQUIRED = "Reboot is required.";
     std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
+    std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
 
 
     //std::string PACKAGE_VERSIONS = "Package Versions";
@@ -708,6 +710,7 @@ namespace ult {
         USER_GUIDE = "User Guide";
         SHOW_HIDDEN = "Show Hidden";
         SHOW_DELETE = "Show Delete";
+        SHOW_UNSUPPORTED = "Show Unsupported";
         PAGE_SWAP = "Page Swap";
         RIGHT_SIDE_MODE = "Right-side Mode";
         OVERLAY_VERSIONS = "Overlay Versions";
@@ -797,6 +800,7 @@ namespace ult {
         REBOOT_IS_REQUIRED = "Reboot is required.";
         HOLD_A_TO_DELETE = "Hold  to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
+        FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
 
         //EMPTY = "Empty";
     
@@ -918,6 +922,7 @@ namespace ult {
             {"USER_GUIDE", &USER_GUIDE},
             {"SHOW_HIDDEN", &SHOW_HIDDEN},
             {"SHOW_DELETE", &SHOW_DELETE},
+            {"SHOW_UNSUPPORTED", &SHOW_UNSUPPORTED},
             {"PAGE_SWAP", &PAGE_SWAP},
             {"RIGHT_SIDE_MODE", &RIGHT_SIDE_MODE},
             {"OVERLAY_VERSIONS", &OVERLAY_VERSIONS},
@@ -993,6 +998,7 @@ namespace ult {
             {"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
             {"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
+            {"FORCED_SUPPORT_WARNING", &FORCED_SUPPORT_WARNING},
 
             //{"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
