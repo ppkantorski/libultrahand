@@ -507,7 +507,7 @@ namespace ult {
     //std::string VERSION_LABELS = "Version Labels";
     std::string KEY_COMBO = "Key Combo";
     std::string MODE = "Mode";
-    std::string MODES = "Modes";
+    std::string LAUNCH_MODES = "Launch Modes";
     std::string LANGUAGE = "Language";
     std::string OVERLAY_INFO = "Overlay Info";
     std::string SOFTWARE_UPDATE = "Software Update";
@@ -716,7 +716,7 @@ namespace ult {
         //VERSION_LABELS = "Version Labels";
         KEY_COMBO = "Key Combo";
         MODE = "Mode";
-        MODES = "Modes";
+        LAUNCH_MODES = "Launch Modes";
         LANGUAGE = "Language";
         OVERLAY_INFO = "Overlay Info";
         SOFTWARE_UPDATE = "Software Update";
@@ -926,7 +926,7 @@ namespace ult {
             //{"VERSION_LABELS", &VERSION_LABELS},
             {"KEY_COMBO", &KEY_COMBO},
             {"MODE", &MODE},
-            {"MODES", &MODES},
+            {"LAUNCH_MODES", &LAUNCH_MODES},
             {"LANGUAGE", &LANGUAGE},
             {"OVERLAY_INFO", &OVERLAY_INFO},
             {"SOFTWARE_UPDATE", &SOFTWARE_UPDATE},
@@ -1465,6 +1465,8 @@ namespace ult {
             wallpaperData.clear();
             return;
         }
+
+        setvbuf(file, nullptr, _IOFBF, 256 * 1024);
         
         constexpr size_t chunkBytes = 128 * 1024;
         uint8_t chunkBuffer[chunkBytes];
@@ -1474,11 +1476,11 @@ namespace ult {
         const uint8x8_t mask = vdup_n_u8(0xF0);
         
         while (totalRead < originalDataSize) {
-            size_t remaining = originalDataSize - totalRead;
-            size_t toRead = remaining < chunkBytes ? remaining : chunkBytes;
+            const size_t remaining = originalDataSize - totalRead;
+            const size_t toRead = remaining < chunkBytes ? remaining : chunkBytes;
             
-            size_t bytesRead = fread(chunkBuffer, 1, toRead, file);
-            if (bytesRead == 0 || bytesRead % 8 != 0) {
+            const size_t bytesRead = fread(chunkBuffer, 1, toRead, file);
+            if (bytesRead == 0) {
                 fclose(file);
                 wallpaperData.clear();
                 return;

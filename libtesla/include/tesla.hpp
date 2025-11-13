@@ -2473,8 +2473,6 @@ namespace tsl {
                                                 
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
                 const s32 radius = h >> 1;
-                
-                // Calculate clipped drawing bounds
                 const s32 clip_left = std::max(0, x);
                 const s32 clip_top = std::max(0, y);
                 const s32 clip_right = std::min(static_cast<s32>(cfg::FramebufferWidth), x + w);
@@ -2482,103 +2480,118 @@ namespace tsl {
                 
                 if (clip_left >= clip_right || clip_top >= clip_bottom) return;
                 
-                const float center_y = y + (h - 1) * 0.5f;
-                const s32 rect_left = x + radius;
-                const s32 rect_right = x + w - radius - 1;
+                const s32 x_end = x + w;
+                const s32 y_end = y + h;
+                const s32 corner_x_left = x + radius;
+                const s32 corner_x_right = x_end - radius - 1;
+                const s32 corner_y_top = y + radius;
+                const s32 corner_y_bottom = y_end - radius - 1;
                 const float r_f = static_cast<float>(radius);
                 const float r2 = r_f * r_f;
                 const float aa_thresh = r2 + 2.0f * r_f + 1.0f;
                 const u8 base_a = color.a;
                 const bool full_opacity = (base_a == 0xF);
-                const float corner_top = y + radius;
-                const float corner_bot = y + h - radius;
                 
                 for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
-                    const float dy_abs = (yc < center_y) ? (center_y - yc) : (yc - center_y);
+                    if (yc < y || yc >= y_end) continue;
                     
-                    if (dy_abs > radius + 1) continue;
+                    const bool in_corners = yc < corner_y_top || yc > corner_y_bottom;
                     
-                    const bool is_top = yc < corner_top;
-                    const bool is_bot = yc >= corner_bot;
-                    
-                    if (!is_top && !is_bot) {
-                        // Middle section - full width fill
-                        const s32 x_start = std::max(x, clip_left);
-                        const s32 x_end = std::min(x + w, clip_right);
+                    if (!in_corners) {
+                        const s32 span_start = std::max(x, clip_left);
+                        const s32 span_end = std::min(x_end, clip_right);
                         
-                        if (full_opacity) {
-                            for (s32 xc = x_start; xc < x_end; ++xc) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) this->setPixelAtOffset(off, color);
-                            }
-                        } else {
-                            for (s32 xc = x_start; xc < x_end; ++xc) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) this->setPixelBlendDst(xc, yc, color);
+                        for (s32 xc = span_start; xc < span_end; ++xc) {
+                            const u32 off = this->getPixelOffset(xc, yc);
+                            if (off != UINT32_MAX) {
+                                if (full_opacity) {
+                                    this->setPixelAtOffset(off, color);
+                                } else {
+                                    this->setPixelBlendDst(xc, yc, color);
+                                }
                             }
                         }
                     } else {
-                        // Corner rows
-                        const float dy = is_top ? (corner_top - yc) : (yc - corner_bot);
+                        const float dy = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc) : 
+                                                                 static_cast<float>(yc - corner_y_bottom);
                         const float dy_sq = dy * dy;
                         
-                        for (s32 xc = clip_left; xc < clip_right; ++xc) {
-                            float cov = 1.0f;
-                            bool draw = false;
+                        if (dy_sq > aa_thresh) continue;
+                        
+                        const float dy_half = dy - 0.5f;
+                        const float dy_half_sq = dy_half * dy_half;
+                        
+                        const s32 span_start = std::max(x, clip_left);
+                        const s32 span_end = std::min(x_end, clip_right);
+                        s32 xc = span_start;
+                        
+                        // Left corner/edge
+                        const s32 left_end = std::min(corner_x_left + 1, span_end);
+                        for (; xc < left_end; ++xc) {
+                            const float dx = static_cast<float>(corner_x_left - xc);
+                            const float dx_sq = dx * dx;
+                            const float d2 = dx_sq + dy_sq;
                             
-                            if (xc < rect_left) {
-                                // Left corner
-                                const float dx = rect_left - xc;
-                                const float d2 = dx*dx + dy_sq;
-                                
-                                if (d2 <= r2) {
-                                    draw = true;
-                                } else if (d2 <= aa_thresh) {
-                                    const float dxh = dx - 0.5f;
-                                    const float dyh = dy - 0.5f;
-                                    
-                                    cov = 0.0f;
-                                    if (dx*dx + dy_sq <= r2) cov += 0.25f;
-                                    if (dxh*dxh + dy_sq <= r2) cov += 0.25f;
-                                    if (dx*dx + dyh*dyh <= r2) cov += 0.25f;
-                                    if (dxh*dxh + dyh*dyh <= r2) cov += 0.25f;
-                                    
-                                    draw = (cov > 0.0f);
-                                }
-                            } else if (xc >= rect_right) {
-                                // Right corner
-                                const float dx = xc - rect_right;
-                                const float d2 = dx*dx + dy_sq;
-                                
-                                if (d2 <= r2) {
-                                    draw = true;
-                                } else if (d2 <= aa_thresh) {
-                                    const float dxh = dx - 0.5f;
-                                    const float dyh = dy - 0.5f;
-                                    
-                                    cov = 0.0f;
-                                    if (dx*dx + dy_sq <= r2) cov += 0.25f;
-                                    if (dxh*dxh + dy_sq <= r2) cov += 0.25f;
-                                    if (dx*dx + dyh*dyh <= r2) cov += 0.25f;
-                                    if (dxh*dxh + dyh*dyh <= r2) cov += 0.25f;
-                                    
-                                    draw = (cov > 0.0f);
-                                }
-                            } else {
-                                // Middle of corner row
-                                draw = true;
-                            }
-                            
-                            if (draw) {
+                            if (d2 <= r2) {
                                 const u32 off = this->getPixelOffset(xc, yc);
                                 if (off != UINT32_MAX) {
-                                    if (cov >= 1.0f && full_opacity) {
-                                        this->setPixelAtOffset(off, color);
-                                    } else {
+                                    if (full_opacity) this->setPixelAtOffset(off, color);
+                                    else this->setPixelBlendDst(xc, yc, color);
+                                }
+                            } else if (d2 <= aa_thresh) {
+                                const float dx_half = dx - 0.5f;
+                                float cov = 0.0f;
+                                if (dx_sq + dy_sq <= r2) cov += 0.25f;
+                                if (dx_half*dx_half + dy_sq <= r2) cov += 0.25f;
+                                if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
+                                if (dx_half*dx_half + dy_half_sq <= r2) cov += 0.25f;
+                                
+                                if (cov > 0.0f) {
+                                    const u32 off = this->getPixelOffset(xc, yc);
+                                    if (off != UINT32_MAX) {
                                         Color c = color;
-                                        if (cov < 1.0f) {
-                                            c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
-                                        }
+                                        c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
+                                        this->setPixelBlendDst(xc, yc, c);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Middle section
+                        const s32 mid_end = std::min(corner_x_right, span_end);
+                        for (; xc < mid_end; ++xc) {
+                            const u32 off = this->getPixelOffset(xc, yc);
+                            if (off != UINT32_MAX) {
+                                if (full_opacity) this->setPixelAtOffset(off, color);
+                                else this->setPixelBlendDst(xc, yc, color);
+                            }
+                        }
+                        
+                        // Right corner/edge
+                        for (; xc < span_end; ++xc) {
+                            const float dx = static_cast<float>(xc - corner_x_right);
+                            const float dx_sq = dx * dx;
+                            const float d2 = dx_sq + dy_sq;
+                            
+                            if (d2 <= r2) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    if (full_opacity) this->setPixelAtOffset(off, color);
+                                    else this->setPixelBlendDst(xc, yc, color);
+                                }
+                            } else if (d2 <= aa_thresh) {
+                                const float dx_half = dx - 0.5f;
+                                float cov = 0.0f;
+                                if (dx_sq + dy_sq <= r2) cov += 0.25f;
+                                if (dx_half*dx_half + dy_sq <= r2) cov += 0.25f;
+                                if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
+                                if (dx_half*dx_half + dy_half_sq <= r2) cov += 0.25f;
+                                
+                                if (cov > 0.0f) {
+                                    const u32 off = this->getPixelOffset(xc, yc);
+                                    if (off != UINT32_MAX) {
+                                        Color c = color;
+                                        c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
                                         this->setPixelBlendDst(xc, yc, c);
                                     }
                                 }
@@ -2587,7 +2600,6 @@ namespace tsl {
                     }
                 }
             }
-
                         
             // Struct for batch pixel processing with better alignment
             //struct alignas(64) PixelBatch {
@@ -3536,31 +3548,24 @@ namespace tsl {
                 const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
                 const s32 yPos = static_cast<s32>(y + glyph->bounds[1]);
                 
-                // Quick bounds check
                 if (xPos >= cfg::FramebufferWidth || yPos >= cfg::FramebufferHeight ||
                     xPos + glyph->width <= 0 || yPos + glyph->height <= 0) [[unlikely]] return;
                 
-                // Calculate clipping
                 const s32 startX = std::max(0, -xPos);
                 const s32 startY = std::max(0, -yPos);
                 const s32 endX = std::min(glyph->width, static_cast<s32>(cfg::FramebufferWidth) - xPos);
                 const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
-                
-                // Pre-compute alpha limit once using global opacity
                 const u8 alphaLimit = skipAlphaLimit ? 0xF : static_cast<u8>(0xF * Renderer::s_opacity);
-                
-                // Render scanline by scanline
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
-                for (s32 bmpY = startY; bmpY < endY; ++bmpY) {
+                
+                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpPtr += glyph->width) {
                     const s32 pixelY = yPos + bmpY;
                     
                     for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
                         u8 alpha = bmpPtr[bmpX] >> 4;
                         if (alpha == 0) [[unlikely]] continue;
                         
-                        // Apply global opacity limit
                         alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                        
                         const s32 pixelX = xPos + bmpX;
                         
                         if (alpha == 0xF) [[likely]] {
@@ -3569,7 +3574,6 @@ namespace tsl {
                             this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
                         }
                     }
-                    bmpPtr += glyph->width;
                 }
             }
             
@@ -5110,7 +5114,7 @@ namespace tsl {
             #endif
                 
             #if IS_LAUNCHER_DIRECTIVE
-                std::string currentBottomLine =
+                const std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 +
                     (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
                     (!m_noClickableItems && !interpreterIsRunningNow
@@ -5138,7 +5142,7 @@ namespace tsl {
                             ? "\uE0EE" + ult::GAP_2 + m_pageRightName
                             : "");
             #else
-                std::string currentBottomLine =
+                const std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
                     (!m_noClickableItems
                         ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
@@ -7061,7 +7065,7 @@ namespace tsl {
                 if (lastFocusableIndex == m_items.size())
                     return oldFocus; // no focusable items
             
-                bool alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) &&
+                const bool alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) &&
                                        (std::abs(m_nextOffset - targetOffset) <= tolerance);
                 if (alreadyAtBottom)
                     return oldFocus;
@@ -7108,7 +7112,7 @@ namespace tsl {
                 if (firstFocusableIndex == m_items.size())
                     return oldFocus; // no focusable items
             
-                bool alreadyAtTop = (m_focusedIndex == firstFocusableIndex) &&
+                const bool alreadyAtTop = (m_focusedIndex == firstFocusableIndex) &&
                                     (std::abs(m_nextOffset - targetOffset) <= tolerance);
                 if (alreadyAtTop)
                     return oldFocus;
@@ -8488,6 +8492,7 @@ namespace tsl {
                 this->width = 0;
                 this->height = 0;
                 m_isItem = false;
+                isLocked = true;
             }
             
             virtual ~DummyListItem() {}
@@ -12537,6 +12542,7 @@ namespace tsl {
             int priority;
             time_t creationTime;
 
+            const bool usingHOS21orHigher = !(hosversionBefore(21,0,0));
             
             while (shData->running.load(std::memory_order_acquire)) {
 
@@ -13027,9 +13033,20 @@ namespace tsl {
                     #else
                             if (!overlayPath.empty() && (shData->keysHeld) && (nowNs - startNs) >= FAST_SWAP_THRESHOLD_NS) {
                     #endif
+
                                 const std::string& modeArg = comboInfo.launchArg;
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
+                                // Check HOS21 support before doing anything
+                                if (usingHOS21orHigher && !ult::hasHOS21Support(overlayPath)) {
+                                    // Skip launch if not supported
+                                    const auto forceSupportStatus = ult::parseValueFromIniSection(
+                                        ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
+                                    if (forceSupportStatus != ult::TRUE_STR) {
+                                        continue;
+                                    }
+                                }
+
                                 // hideHidden check
                                 if (hideHidden) {
                                     const auto hideStatus = ult::parseValueFromIniSection(

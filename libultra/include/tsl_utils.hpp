@@ -126,6 +126,38 @@ namespace ult {
       return sign * (1.0 + x2 * (-0.5 + x2 * (0.04166666666666666 + x2 * (-0.001388888888888889 + x2 * (0.0000248015873015873 - x2 * 0.0000002755731922398589)))));
    }
 
+    
+    
+    /**
+     * @brief Quickly checks if an overlay file explicitly supports HOS 21+.
+     *
+     * This function reads only the last 8 bytes of the file to look for the "H21+" signature.
+     * It returns true if found, false otherwise.
+     */
+    static inline bool hasHOS21Support(const std::string& filePath) {
+        FILE* f = fopen(filePath.c_str(), "rb");
+        if (!f)
+            return false;
+    
+        // Jump to 8 bytes before EOF (enough to catch both ULTR + H21+ combos)
+        if (fseek(f, -8, SEEK_END) != 0) {
+            fclose(f);
+            return false;
+        }
+    
+        uint32_t sigs[2] = {0, 0};
+        size_t readCount = fread(sigs, sizeof(uint32_t), 2, f);
+        fclose(f);
+    
+        if (readCount == 0)
+            return false;
+
+        constexpr uint32_t HOS21_SIGNATURE = 0x2B313248; // "H21+" (little-endian)
+    
+        // Check both last and second-to-last 4 bytes
+        return (sigs[0] == HOS21_SIGNATURE || sigs[1] == HOS21_SIGNATURE);
+    }
+
     extern bool correctFrameSize; // for detecting the correct Overlay display size
 
     extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
@@ -409,7 +441,7 @@ namespace ult {
     //extern std::string VERSION_LABELS;
     extern std::string KEY_COMBO;
     extern std::string MODE;
-    extern std::string MODES;
+    extern std::string LAUNCH_MODES;
     extern std::string LANGUAGE;
     extern std::string OVERLAY_INFO;
     extern std::string SOFTWARE_UPDATE;
