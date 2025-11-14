@@ -323,7 +323,7 @@ static inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch
     return ((packed_version >> 40) & 0xFFFFFF) >= static_cast<u32>((major << 16) | (minor << 8) | patch);
 }
 
-static bool usingAMS110orHigher = false;
+static bool requiresLNY2 = false;
 
 
 namespace tsl {
@@ -13115,7 +13115,7 @@ namespace tsl {
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
                                 // Check HOS21 support before doing anything
-                                if (usingAMS110orHigher && !usingLNY2(overlayPath)) {
+                                if (requiresLNY2 && !usingLNY2(overlayPath)) {
                                     // Skip launch if not supported
                                     const auto forceSupportStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
@@ -14020,7 +14020,7 @@ extern "C" {
 
         //});
 
-        usingAMS110orHigher = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
+        requiresLNY2 = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
         
 
         #if IS_STATUS_MONITOR_DIRECTIVE
