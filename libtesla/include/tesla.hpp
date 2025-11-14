@@ -230,36 +230,67 @@ static inline void triggerExitFeedback() {
 }
 
 /**
- * @brief Quickly checks if an overlay file explicitly supports HOS 21+.
+ * @brief Checks if an NRO file uses new libnx (has LNY2 tag).
  *
- * This function reads only the last 8 bytes of the file to look for the "H21+" signature.
- * It returns true if found, false otherwise.
+ * @param filePath The path to the NRO file.
+ * @return true if the file uses new libnx (LNY2 present), false otherwise.
  */
-static inline bool hasHOS21Support(const std::string& filePath) {
-    FILE* f = fopen(filePath.c_str(), "rb");
-    if (!f)
-        return false;
+static inline bool usesNewLibNX(const std::string& filePath) {
+    FILE* file = fopen(filePath.c_str(), "rb");
+    if (!file) return false;
 
-    // Jump to 8 bytes before EOF (enough to catch both ULTR + H21+ combos)
-    if (fseek(f, -8, SEEK_END) != 0) {
-        fclose(f);
-        return false;
-    }
+    // Read header + MOD0 section in one I/O operation
+    // We need up to: 0x24 (header) + potential offset to MOD0 + 60 bytes (MOD0 data)
+    // Most NRO files have MOD0 within first 512KB, so read a reasonable chunk
+    constexpr size_t READ_SIZE = 8192;  // 8KB should cover most cases
+    uint8_t buffer[READ_SIZE];
+    
+    const size_t bytesRead = fread(buffer, 1, READ_SIZE, file);
+    fclose(file);  // Close immediately after single read
+    
+    if (bytesRead < 0x24) return false;
 
-    uint32_t sigs[2] = {0, 0};
-    size_t readCount = fread(sigs, sizeof(uint32_t), 2, f);
-    fclose(f);
+    // Calculate MOD0 offset from buffer
+    const uint32_t mod0_rel = *reinterpret_cast<const uint32_t*>(buffer + 0x4);
+    const uint32_t text_offset = *reinterpret_cast<const uint32_t*>(buffer + 0x20);
+    
+    if (text_offset == 0 || mod0_rel == 0) return false;
+    
+    const uint32_t mod0_offset = text_offset + mod0_rel;
+    
+    // Check if MOD0 section is within our read buffer
+    if (mod0_offset + 60 > bytesRead) return false;
 
-    if (readCount == 0)
-        return false;
+    const uint8_t* mod0_ptr = buffer + mod0_offset;
+    
+    // Check MOD0 magic and LNY2 tag with single comparison chain
+    if (std::memcmp(mod0_ptr, "MOD0", 4) != 0) return false;
+    if (std::memcmp(mod0_ptr + 52, "LNY2", 4) != 0) return false;
 
-    constexpr uint32_t HOS21_SIGNATURE = 0x2B313248; // "H21+" (little-endian)
-
-    // Check both last and second-to-last 4 bytes
-    return (sigs[0] == HOS21_SIGNATURE || sigs[1] == HOS21_SIGNATURE);
+    // Check version >= 1
+    const uint32_t libnxVersion = *reinterpret_cast<const uint32_t*>(mod0_ptr + 56);
+    return (libnxVersion >= 1);
 }
 
-static bool usingHOS21orHigher = false;
+
+/**
+ * @brief Checks if the current AMS version is at least the specified version.
+ *
+ * @param major Minimum major version required
+ * @param minor Minimum minor version required  
+ * @param patch Minimum patch version required
+ * @return true if current AMS version >= specified version, false otherwise
+ */
+static inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch) {
+    u64 packed_version;
+    if (R_FAILED(splGetConfig((SplConfigItem)65000, &packed_version))) {
+        return false;
+    }
+    
+    return ((packed_version >> 40) & 0xFFFFFF) >= static_cast<u32>((major << 16) | (minor << 8) | patch);
+}
+
+static bool usingAMS110orHigher = false;
 
 
 namespace tsl {
@@ -13051,7 +13082,7 @@ namespace tsl {
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
                                 // Check HOS21 support before doing anything
-                                if (usingHOS21orHigher && !hasHOS21Support(overlayPath)) {
+                                if (usingAMS110orHigher && !usesNewLibNX(overlayPath)) {
                                     // Skip launch if not supported
                                     const auto forceSupportStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
@@ -13927,7 +13958,6 @@ extern "C" {
         ASSERT_FATAL(fsInitialize());
         ASSERT_FATAL(hidInitialize());                          // Controller inputs and Touch
         if (hosversionAtLeast(16,0,0)) {
-            usingHOS21orHigher = hosversionAtLeast(21,0,0);     // Detect if using HOS 21+
             ASSERT_FATAL(plInitialize(PlServiceType_User));     // Font data. Use pl:u for 16.0.0+
         } else {
             ASSERT_FATAL(plInitialize(PlServiceType_System));   // Use pl:s for 15.0.1 and below to prevent qlaunch/overlaydisp session exhaustion
@@ -13956,6 +13986,7 @@ extern "C" {
 
         //});
 
+        usingAMS110orHigher = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
         
 
         #if IS_STATUS_MONITOR_DIRECTIVE
