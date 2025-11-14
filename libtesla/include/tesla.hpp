@@ -229,49 +229,82 @@ static inline void triggerExitFeedback() {
     triggerExitSound.store(true, std::memory_order_release);
 }
 
+
 /**
  * @brief Checks if an NRO file uses new libnx (has LNY2 tag).
  *
  * @param filePath The path to the NRO file.
  * @return true if the file uses new libnx (LNY2 present), false otherwise.
  */
-static inline bool usesNewLibNX(const std::string& filePath) {
+static inline bool usingLNY2(const std::string& filePath) {
     FILE* file = fopen(filePath.c_str(), "rb");
-    if (!file) return false;
-
-    // Read header + MOD0 section in one I/O operation
-    // We need up to: 0x24 (header) + potential offset to MOD0 + 60 bytes (MOD0 data)
-    // Most NRO files have MOD0 within first 512KB, so read a reasonable chunk
-    constexpr size_t READ_SIZE = 8192;  // 8KB should cover most cases
-    uint8_t buffer[READ_SIZE];
+    if (!file)
+        return false;
     
-    const size_t bytesRead = fread(buffer, 1, READ_SIZE, file);
-    fclose(file);  // Close immediately after single read
+    // --- Get file size ---
+    fseek(file, 0, SEEK_END);
+    const long fileSize = ftell(file);
+    if (fileSize < (long)(sizeof(NroStart) + sizeof(NroHeader))) {
+        fclose(file);
+        return false;
+    }
+    const size_t fileSz = (size_t)fileSize;
+    fseek(file, 0, SEEK_SET);
     
-    if (bytesRead < 0x24) return false;
-
-    // Calculate MOD0 offset from buffer
-    const uint32_t mod0_rel = *reinterpret_cast<const uint32_t*>(buffer + 0x4);
-    const uint32_t text_offset = *reinterpret_cast<const uint32_t*>(buffer + 0x20);
+    // --- Read front chunk (header + MOD0 area) ---
+    constexpr size_t FRONT_READ_SIZE = 8192;
+    const size_t frontReadSize = (fileSz < FRONT_READ_SIZE) ? fileSz : FRONT_READ_SIZE;
+    uint8_t* frontBuf = (uint8_t*)malloc(frontReadSize);
+    if (!frontBuf) {
+        fclose(file);
+        return false;
+    }
     
-    if (text_offset == 0 || mod0_rel == 0) return false;
+    if (fread(frontBuf, 1, frontReadSize, file) != frontReadSize) {
+        free(frontBuf);
+        fclose(file);
+        return false;
+    }
     
-    const uint32_t mod0_offset = text_offset + mod0_rel;
+    // --- Extract offsets directly (no NroHeader copy needed) ---
+    const uint32_t mod0_rel   = *reinterpret_cast<const uint32_t*>(frontBuf + 0x4);
+    const uint32_t text_offset = *reinterpret_cast<const uint32_t*>(frontBuf + 0x20);
     
-    // Check if MOD0 section is within our read buffer
-    if (mod0_offset + 60 > bytesRead) return false;
-
-    const uint8_t* mod0_ptr = buffer + mod0_offset;
+    bool isNew = false;
     
-    // Check MOD0 magic and LNY2 tag with single comparison chain
-    if (std::memcmp(mod0_ptr, "MOD0", 4) != 0) return false;
-    if (std::memcmp(mod0_ptr + 52, "LNY2", 4) != 0) return false;
-
-    // Check version >= 1
-    const uint32_t libnxVersion = *reinterpret_cast<const uint32_t*>(mod0_ptr + 56);
-    return (libnxVersion >= 1);
+    // --- MOD0 detection ---
+    if (text_offset < fileSz && mod0_rel != 0 && text_offset <= fileSz - mod0_rel) {
+        const uint32_t mod0_offset = text_offset + mod0_rel;
+        
+        // --- MOD0 is inside front buffer ---
+        if (mod0_offset <= frontReadSize - 60) {
+            const uint8_t* mod0_ptr = frontBuf + mod0_offset;
+            if (memcmp(mod0_ptr, "MOD0", 4) == 0 &&
+                memcmp(mod0_ptr + 52, "LNY2", 4) == 0)
+            {
+                const uint32_t libnx = *reinterpret_cast<const uint32_t*>(mod0_ptr + 56);
+                isNew = (libnx >= 1);
+            }
+        }
+        // --- MOD0 must be read separately ---
+        else if (mod0_offset <= fileSz - 60) {
+            uint8_t mod0Buf[60];
+            fseek(file, mod0_offset, SEEK_SET);
+            if (fread(mod0Buf, 1, 60, file) == 60) {
+                if (memcmp(mod0Buf, "MOD0", 4) == 0 &&
+                    memcmp(mod0Buf + 52, "LNY2", 4) == 0)
+                {
+                    const uint32_t libnx = *reinterpret_cast<const uint32_t*>(mod0Buf + 56);
+                    isNew = (libnx >= 1);
+                }
+            }
+        }
+    }
+    
+    free(frontBuf);
+    fclose(file);
+    return isNew;
 }
-
 
 /**
  * @brief Checks if the current AMS version is at least the specified version.
@@ -13082,13 +13115,14 @@ namespace tsl {
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
                                 // Check HOS21 support before doing anything
-                                if (usingAMS110orHigher && !usesNewLibNX(overlayPath)) {
+                                if (usingAMS110orHigher && !usingLNY2(overlayPath)) {
                                     // Skip launch if not supported
                                     const auto forceSupportStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
                                     if (forceSupportStatus != ult::TRUE_STR) {
                                         continue;
                                     }
+                                    continue;
                                 }
 
                                 // hideHidden check
