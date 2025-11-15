@@ -12513,7 +12513,8 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundEventPoller(void *args) {
-        
+            requiresLNY2 = amsVersionAtLeast(1,10,0);     // Detect if using HOS 21+
+
             tsl::hlp::loadEntryKeyCombos();
             ult::launchingOverlay.store(false, std::memory_order_release);
         
@@ -14020,7 +14021,7 @@ extern "C" {
 
         //});
 
-        requiresLNY2 = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
+        //requiresLNY2 = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
         
 
         #if IS_STATUS_MONITOR_DIRECTIVE
