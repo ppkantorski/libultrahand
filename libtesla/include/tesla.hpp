@@ -2287,10 +2287,10 @@ namespace tsl {
                 while (cx >= cy) {
                     // Draw horizontal spans for all 4 corners simultaneously
                     // Upper-left corner (quadrant 2) - two horizontal lines
-                    for (s32 i = leftCornerX - cx; i <= leftCornerX; i++) {
+                    for (s32 i = leftCornerX - cx; i < leftCornerX; i++) {  // Changed <= to 
                         this->setPixelBlendDst(i, topCornerY - cy, highlightColor);
                     }
-                    for (s32 i = leftCornerX - cy; i <= leftCornerX; i++) {
+                    for (s32 i = leftCornerX - cy; i < leftCornerX; i++) {  // Changed <= to 
                         this->setPixelBlendDst(i, topCornerY - cx, highlightColor);
                     }
                     
@@ -2303,10 +2303,10 @@ namespace tsl {
                     }
                     
                     // Upper-right corner (quadrant 1) - two horizontal lines
-                    for (s32 i = rightCornerX; i <= rightCornerX + cx; i++) {
+                    for (s32 i = rightCornerX + 1; i <= rightCornerX + cx; i++) {  // Changed rightCornerX to rightCornerX + 1
                         this->setPixelBlendDst(i, topCornerY - cy, highlightColor);
                     }
-                    for (s32 i = rightCornerX; i <= rightCornerX + cy; i++) {
+                    for (s32 i = rightCornerX + 1; i <= rightCornerX + cy; i++) {  // Changed rightCornerX to rightCornerX + 1
                         this->setPixelBlendDst(i, topCornerY - cx, highlightColor);
                     }
                     
@@ -2337,7 +2337,6 @@ namespace tsl {
                 s32 start_x, end_x;
             };
 
-            // Optimized processRoundedRectChunk - Same output, faster execution
             // Optimized processRoundedRectChunk - Same output, faster execution
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h, 
                                                const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
@@ -4974,7 +4973,7 @@ namespace tsl {
                         }
                     }
                     
-                    renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, (logoColor2));
+                    renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, logoColor2);
                     
                 } else {
                     if (useCachedTop) {
@@ -4992,7 +4991,7 @@ namespace tsl {
                     fontSize = 32;
             
                     if (renderSubtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(renderTitle, false, x, y, fontSize, (defaultScriptColor));
+                        renderer->drawString(renderTitle, false, x, y, fontSize, defaultScriptColor);
                     } else {
                         tsl::Color drawColor = defaultPackageColor; // Default to green
                         
@@ -5057,21 +5056,21 @@ namespace tsl {
                             drawColor = renderTitleColor;
                         }
                         
-                        renderer->drawString(renderTitle, false, x, y, fontSize, (drawColor));
+                        renderer->drawString(renderTitle, false, x, y, fontSize, drawColor);
                         y += 2;
                     }
                 }
                 
                 static const std::vector<std::string> specialChars2 = {""};
                 if (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 20, y+25, 15, (bannerVersionTextColor), textSeparatorColor);
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 20, y+25, 15, bannerVersionTextColor, textSeparatorColor);
                 } else {
                     std::string subtitle = renderSubtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
                         subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
                     }
-                    renderer->drawStringWithColoredSections(subtitle, false, specialChars2, 20, y+23, 15, (bannerVersionTextColor), textSeparatorColor);
+                    renderer->drawStringWithColoredSections(subtitle, false, specialChars2, 20, y+23, 15, bannerVersionTextColor, textSeparatorColor);
                 }
                 
                 // Update top cache after rendering for next frame
@@ -5113,8 +5112,8 @@ namespace tsl {
                 }
             #endif
                 
-                renderer->drawString(renderTitle, false, 20, 52-2, 32, (defaultOverlayColor));
-                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
+                renderer->drawString(renderTitle, false, 20, 52-2, 32, defaultOverlayColor);
+                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, bannerVersionTextColor);
                 
                 // Update top cache after rendering for next frame
                 g_cachedTop.title = m_title;
@@ -5431,8 +5430,8 @@ namespace tsl {
                 const std::string& renderTitle = useCachedTop ? g_cachedTop.title : m_title;
                 const std::string& renderSubtitle = useCachedTop ? g_cachedTop.subtitle : m_subtitle;
                 
-                renderer->drawString(renderTitle, false, 20, 50, 32, (defaultOverlayColor));
-                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, (bannerVersionTextColor));
+                renderer->drawString(renderTitle, false, 20, 50, 32, defaultOverlayColor);
+                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, bannerVersionTextColor);
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -5490,7 +5489,7 @@ namespace tsl {
                 // Render the text with special character handling
                 if (!deactivateOriginalFooter)  {
                     static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, (bottomTextColor), (buttonColor));
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, buttonStartX, 693, 23, bottomTextColor, buttonColor);
                 }
                 
                 if (this->m_contentElement != nullptr)
@@ -7612,7 +7611,7 @@ namespace tsl {
                                 : defaultTextColor));
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
-                        textColor, (m_focused ? starColor : selectionStarColor));
+                        textColor, m_focused ? starColor : selectionStarColor);
                 #else
                     renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
                         textColor, textSeparatorColor);
@@ -7872,20 +7871,20 @@ namespace tsl {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (starColor));
+                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), (textSeparatorColor));
+                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
                 #endif
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (starColor));
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), (textSeparatorColor));
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), textSeparatorColor);
                 #endif
                 }
             }
@@ -8156,7 +8155,7 @@ namespace tsl {
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 30 -3, tsl::cfg::FramebufferHeight-73-97);
                         else
                             renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
-                        renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, a(selectedTextColor));
+                        renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, selectedTextColor);
                         renderer->disableScissoring();
                         
                         // Handle scrolling with frame rate compensation
@@ -8259,7 +8258,7 @@ namespace tsl {
                             this->timeIn_ns = currentTime_ns;
                         }
                     } else {
-                        renderer->drawString(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, a(!useClickTextColor ? defaultTextColor : clickTextColor));
+                        renderer->drawString(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, !useClickTextColor ? defaultTextColor : clickTextColor);
                     }
                 } else {
                     // Render the text with special character handling
@@ -8683,21 +8682,21 @@ namespace tsl {
                             
                             renderer->drawStringWithColoredSections(m_scrollText, false, specialChars, 
                                 textX - static_cast<s32>(m_scrollOffset), textY, 16, 
-                                (headerTextColor), textSeparatorColor);
+                                headerTextColor, textSeparatorColor);
                             
                             renderer->disableScissoring();
                         } else {
                             // Draw normal or ellipsis text
                             //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
                             renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                                textX, textY, 16, (headerTextColor), textSeparatorColor);
+                                textX, textY, 16, headerTextColor, textSeparatorColor);
                         }
                         // If completely clipped, don't draw anything
                     } else {
                         // Draw normal or ellipsis text
                         //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
                         renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                            textX, textY, 16, (headerTextColor), textSeparatorColor);
+                            textX, textY, 16, headerTextColor, textSeparatorColor);
                     }
                     
                     handleScrolling();
@@ -8705,7 +8704,7 @@ namespace tsl {
                     // Draw normal or ellipsis text
                     //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
                     renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                        textX, textY, 16, (headerTextColor), textSeparatorColor);
+                        textX, textY, 16, headerTextColor, textSeparatorColor);
                 }
             }
             
@@ -9088,13 +9087,13 @@ namespace tsl {
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
                 
                     renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
-                                       ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+                                       ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
 
                     renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
                 } else {
                     // Original Style: Draw icon
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, tsl::style::color::ColorText);
                 }
 
 
@@ -9533,13 +9532,13 @@ namespace tsl {
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
                 
                     renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
-                                       ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+                                       ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
             
                     renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
                 } else {
                     // Original Style: Draw icon
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, a(tsl::style::color::ColorText));
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, tsl::style::color::ColorText);
                 }
             
                 if (m_lastBottomBound != this->getTopBound())
@@ -9978,7 +9977,7 @@ namespace tsl {
             
                 const auto valueWidth = renderer->getTextDimensions(m_valuePart, false, 16).first;
             
-                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, ((!this->m_focused || !ult::useSelectionText) ? (defaultTextColor) : (selectedTextColor)));
+                renderer->drawString(labelPart, false, xPos, this->getY() + 14 + 16, 16, (!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor);
                 renderer->drawString(m_valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, 
                     (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
@@ -12515,6 +12514,11 @@ namespace tsl {
         static void backgroundEventPoller(void *args) {
             requiresLNY2 = amsVersionAtLeast(1,10,0);     // Detect if using HOS 21+
 
+            // Initialize the audio service
+            if (ult::useSoundEffects && ult::expandedMemory) {
+                ult::AudioPlayer::initialize();
+            }
+
             tsl::hlp::loadEntryKeyCombos();
             ult::launchingOverlay.store(false, std::memory_order_release);
         
@@ -13632,16 +13636,10 @@ namespace tsl {
         tsl::hlp::doWithSmSession([&overlay]{
             overlay->initServices();
         });
+
     #if !IS_LAUNCHER_DIRECTIVE
         tsl::initializeUltrahandSettings();
     #endif
-
-        // Initialize the audio service
-        if (ult::useSoundEffects && ult::expandedMemory) {
-            ult::AudioPlayer::initialize();
-        }
-
-
 
         overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
