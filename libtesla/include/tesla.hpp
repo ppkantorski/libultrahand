@@ -2271,67 +2271,117 @@ namespace tsl {
                 const s32 topCornerY = startY;
                 const s32 bottomCornerY = startY + height;
                 
-                // Draw borders (unchanged for exact visual match)
-                this->drawRect(startX, startY - thickness, adjustedWidth, thickness, highlightColor); // Top border
-                this->drawRect(startX, startY + adjustedHeight, adjustedWidth, thickness, highlightColor); // Bottom border
-                this->drawRect(startX - thickness, startY, thickness, adjustedHeight, highlightColor); // Left border
-                this->drawRect(startX + adjustedWidth, startY, thickness, adjustedHeight, highlightColor); // Right border
+                // Draw borders
+                this->drawRect(startX, startY - thickness, adjustedWidth, thickness, highlightColor);
+                this->drawRect(startX, startY + adjustedHeight, adjustedWidth, thickness, highlightColor);
+                this->drawRect(startX - thickness, startY, thickness, adjustedHeight, highlightColor);
+                this->drawRect(startX + adjustedWidth, startY, thickness, adjustedHeight, highlightColor);
                 
-                // Optimized filled quarter circle drawing - all 4 corners in one pass
+                // Pre-calculate AA colors once
+                const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
+                const Color aaColor2 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 2)};  // 25%
+                
+                // Circle drawing with AA - optimized Bresenham
                 s32 cx = radius;
                 s32 cy = 0;
                 s32 radiusError = 0;
-                s32 xChange = 1 - (radius << 1);
+                const s32 diameter = radius << 1;
+                s32 xChange = 1 - diameter;
                 s32 yChange = 0;
+                s32 lastCx = cx;
                 
                 while (cx >= cy) {
-                    // Draw horizontal spans for all 4 corners simultaneously
-                    // Upper-left corner (quadrant 2) - two horizontal lines
-                    for (s32 i = leftCornerX - cx; i < leftCornerX; i++) {  // Changed <= to 
-                        this->setPixelBlendDst(i, topCornerY - cy, highlightColor);
+                    // Pre-calculate Y coordinates (hoist invariants)
+                    const s32 topY1 = topCornerY - cy;
+                    const s32 topY2 = topCornerY - cx;
+                    const s32 bottomY1 = bottomCornerY + cy;
+                    const s32 bottomY2 = bottomCornerY + cx;
+                    
+                    // Pre-calculate X bounds
+                    const s32 leftX1Start = leftCornerX - cx;
+                    const s32 leftX2Start = leftCornerX - cy;
+                    const s32 rightX1Start = rightCornerX + 1;
+                    const s32 rightX1End = rightCornerX + cx;
+                    const s32 rightX2End = rightCornerX + cy;
+                    
+                    // Draw filled spans - NOW PERFECTLY MIRRORED
+                    // Upper-left corner (exclusive)
+                    for (s32 i = leftX1Start; i < leftCornerX; i++) {
+                        this->setPixelBlendDst(i, topY1, highlightColor);
                     }
-                    for (s32 i = leftCornerX - cy; i < leftCornerX; i++) {  // Changed <= to 
-                        this->setPixelBlendDst(i, topCornerY - cx, highlightColor);
+                    for (s32 i = leftX2Start; i < leftCornerX; i++) {
+                        this->setPixelBlendDst(i, topY2, highlightColor);
                     }
                     
-                    // Lower-left corner (quadrant 3) - two horizontal lines
-                    for (s32 i = leftCornerX - cx; i <= leftCornerX; i++) {
-                        this->setPixelBlendDst(i, bottomCornerY + cy, highlightColor);
+                    // Lower-left corner (NOW exclusive like top)
+                    for (s32 i = leftX1Start; i < leftCornerX; i++) {
+                        this->setPixelBlendDst(i, bottomY1, highlightColor);
                     }
-                    for (s32 i = leftCornerX - cy; i <= leftCornerX; i++) {
-                        this->setPixelBlendDst(i, bottomCornerY + cx, highlightColor);
-                    }
-                    
-                    // Upper-right corner (quadrant 1) - two horizontal lines
-                    for (s32 i = rightCornerX + 1; i <= rightCornerX + cx; i++) {  // Changed rightCornerX to rightCornerX + 1
-                        this->setPixelBlendDst(i, topCornerY - cy, highlightColor);
-                    }
-                    for (s32 i = rightCornerX + 1; i <= rightCornerX + cy; i++) {  // Changed rightCornerX to rightCornerX + 1
-                        this->setPixelBlendDst(i, topCornerY - cx, highlightColor);
+                    for (s32 i = leftX2Start; i < leftCornerX; i++) {
+                        this->setPixelBlendDst(i, bottomY2, highlightColor);
                     }
                     
-                    // Lower-right corner (quadrant 4) - two horizontal lines
-                    for (s32 i = rightCornerX; i <= rightCornerX + cx; i++) {
-                        this->setPixelBlendDst(i, bottomCornerY + cy, highlightColor);
+                    // Upper-right corner (starts at +1)
+                    for (s32 i = rightX1Start; i <= rightX1End; i++) {
+                        this->setPixelBlendDst(i, topY1, highlightColor);
                     }
-                    for (s32 i = rightCornerX; i <= rightCornerX + cy; i++) {
-                        this->setPixelBlendDst(i, bottomCornerY + cx, highlightColor);
+                    for (s32 i = rightX1Start; i <= rightX2End; i++) {
+                        this->setPixelBlendDst(i, topY2, highlightColor);
                     }
                     
-                    // Bresenham circle algorithm step
+                    // Lower-right corner (NOW starts at +1 like top)
+                    for (s32 i = rightX1Start; i <= rightX1End; i++) {
+                        this->setPixelBlendDst(i, bottomY1, highlightColor);
+                    }
+                    for (s32 i = rightX1Start; i <= rightX2End; i++) {
+                        this->setPixelBlendDst(i, bottomY2, highlightColor);
+                    }
+                    
+                    // Add AA at step transitions
+                    if (__builtin_expect(cx != lastCx && cy > 0, 0)) {
+                        // Pre-calculate AA pixel positions
+                        const s32 cxAA = cx + 1;
+                        
+                        // Upper-left AA
+                        this->setPixelBlendDst(leftCornerX - cxAA, topY1, aaColor1);
+                        this->setPixelBlendDst(leftCornerX - cxAA, topY1 + 1, aaColor2);
+                        this->setPixelBlendDst(leftX2Start, topY2 - 1, aaColor1);
+                        this->setPixelBlendDst(leftX2Start + 1, topY2 - 1, aaColor2);
+                        
+                        // Upper-right AA
+                        this->setPixelBlendDst(rightCornerX + cxAA, topY1, aaColor1);
+                        this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1, aaColor2);
+                        this->setPixelBlendDst(rightX2End, topY2 - 1, aaColor1);
+                        this->setPixelBlendDst(rightX2End - 1, topY2 - 1, aaColor2);
+                        
+                        // Lower-left AA
+                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1, aaColor1);
+                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1 - 1, aaColor2);
+                        this->setPixelBlendDst(leftX2Start, bottomY2 + 1, aaColor1);
+                        this->setPixelBlendDst(leftX2Start + 1, bottomY2 + 1, aaColor2);
+                        
+                        // Lower-right AA
+                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1, aaColor1);
+                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1 - 1, aaColor2);
+                        this->setPixelBlendDst(rightX2End, bottomY2 + 1, aaColor1);
+                        this->setPixelBlendDst(rightX2End - 1, bottomY2 + 1, aaColor2);
+                    }
+                    
+                    lastCx = cx;
+                    
+                    // Bresenham iteration - optimized
                     cy++;
                     radiusError += yChange;
                     yChange += 2;
                     
-                    if (((radiusError << 1) + xChange) > 0) {
+                    if (__builtin_expect(((radiusError << 1) + xChange) > 0, 0)) {
                         cx--;
                         radiusError += xChange;
                         xChange += 2;
                     }
                 }
             }
-
-
+            
             // Pre-compute all horizontal spans for the entire shape
             struct HorizontalSpan {
                 s32 start_x, end_x;
