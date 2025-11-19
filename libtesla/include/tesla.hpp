@@ -3002,59 +3002,83 @@ namespace tsl {
                         
                         pixel8: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel7: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel6: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel5: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel4: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel3: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel2: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px++, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            px++; src += 4;
                         }
                         pixel1: {
                             u8 alpha = src[3] >> 4;
-                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                           static_cast<u8>(src[2] >> 4), alpha};
-                            setPixelBlendSrc(px, rowY, a(c)); src += 4;
+                            if (alpha > 0) {
+                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                               static_cast<u8>(src[2] >> 4), alpha};
+                                setPixelBlendSrc(px, rowY, a(c));
+                            }
+                            src += 4;
                         }
                     }
                     return;
@@ -3077,10 +3101,13 @@ namespace tsl {
                         }
                         
                         u8 alpha = src[3] >> 4;
-                        alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                        const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                       static_cast<u8>(src[2] >> 4), alpha};
-                        setPixelBlendSrc(px++, rowY, c);
+                        if (alpha > 0) {
+                            alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
+                            const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                           static_cast<u8>(src[2] >> 4), alpha};
+                            setPixelBlendSrc(px, rowY, c);
+                        }
+                        px++;
                         src += 4;
                     }
                 }
