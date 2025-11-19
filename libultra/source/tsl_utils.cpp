@@ -1827,9 +1827,81 @@ namespace ult {
     
     bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
     
+
+
+    
+    // Implementation
+    OverlayHeapSize getCurrentHeapSize() {
+        // Fast path: return cached value if already loaded
+        if (heapSizeCache.initialized) {
+            return heapSizeCache.cachedSize;
+        }
+        
+        // Slow path: read from file (only happens once)
+        FILE* f = fopen(ult::OVL_HEAP_CONFIG_PATH.c_str(), "rb");
+        if (!f) {
+            heapSizeCache.cachedSize = OverlayHeapSize::Size_6MB;
+            heapSizeCache.initialized = true;
+            return heapSizeCache.cachedSize;
+        }
+        
+        u64 size;
+        if (fread(&size, sizeof(size), 1, f) == 1) {
+            if (size == 0x400000 || size == 0x600000 || size == 0x800000 || size == 0xA00000) {
+                heapSizeCache.cachedSize = static_cast<OverlayHeapSize>(size);
+            }
+        }
+        
+        fclose(f);
+        heapSizeCache.initialized = true;
+        return heapSizeCache.cachedSize;
+    }
+    
+    //OverlayHeapSize currentHeapSize = getCurrentHeapSize();
+    OverlayHeapSize currentHeapSize = OverlayHeapSize::Size_6MB;
+    
+    bool setOverlayHeapSize(OverlayHeapSize heapSize) {
+        ult::createDirectory(ult::NX_OVLLOADER_PATH);
+        
+        FILE* f = fopen(ult::OVL_HEAP_CONFIG_PATH.c_str(), "wb");
+        if (!f) return false;
+        
+        const u64 size = static_cast<u64>(heapSize);
+        const bool success = (fwrite(&size, sizeof(size), 1, f) == 1);
+        fclose(f);
+        
+        // Update cache on successful write
+        if (success) {
+            heapSizeCache.cachedSize = heapSize;
+            heapSizeCache.initialized = true;
+        }
+        
+        return success;
+    }
+    
+    
+    // Implementation
+    bool requestOverlayExit() {
+        ult::createDirectory(ult::NX_OVLLOADER_PATH);
+        
+        FILE* f = fopen(ult::OVL_EXIT_FLAG_PATH.c_str(), "wb");
+        if (!f) return false;
+        
+        // Write a single byte (flag file just needs to exist)
+        u8 flag = 1;
+        bool success = (fwrite(&flag, 1, 1, f) == 1);
+        fclose(f);
+        
+        return success;
+    }
+
+
     const std::string loaderInfo = envGetLoaderInfo();
-    const std::string loaderTitle = extractTitle(loaderInfo);
-    const bool expandedMemory = (loaderTitle == "nx-ovlloader+");
+    std::string loaderTitle = extractTitle(loaderInfo);
+
+    bool expandedMemory = false;
+    bool furtherExpandedMemory = false;
+    bool limitedMemory = false;
     
     std::string versionLabel;
     
@@ -1863,9 +1935,10 @@ namespace ult {
     
     
     // Number of renderer threads to use
-    const unsigned numThreads = expandedMemory ? 4 : 0;
+    const unsigned numThreads = 4;//expandedMemory ? 4 : 0;
     std::vector<std::thread> renderThreads(numThreads);
-    const s32 bmpChunkSize = (numThreads > 0) ? ((720 + numThreads - 1) / numThreads) : 0;
+
+    const s32 bmpChunkSize = ((720 + numThreads - 1) / numThreads);
     std::atomic<s32> currentRow;
     
     //std::atomic<unsigned int> barrierCounter{0};

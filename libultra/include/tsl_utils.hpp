@@ -721,9 +721,37 @@ namespace ult {
     
     extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
     
+
+
+    // nx-ovlloader settings
+    enum class OverlayHeapSize : u64 {
+        Size_4MB = 0x400000,
+        Size_6MB = 0x600000,
+        Size_8MB = 0x800000,
+        Size_10MB = 0xA00000
+    };
+    
+    // Static cache
+    static struct {
+        bool initialized = false;
+        OverlayHeapSize cachedSize = OverlayHeapSize::Size_6MB;
+    } heapSizeCache;
+    
+    // Implementation
+    OverlayHeapSize getCurrentHeapSize();
+    
+    extern OverlayHeapSize currentHeapSize;
+    
+    bool setOverlayHeapSize(OverlayHeapSize heapSize);
+    
+    // Implementation
+    bool requestOverlayExit();
+
     extern const std::string loaderInfo;
-    extern const std::string loaderTitle;
-    extern const bool expandedMemory;
+    extern std::string loaderTitle;
+    extern bool expandedMemory;
+    extern bool furtherExpandedMemory;
+    extern bool limitedMemory;
     
     extern std::string versionLabel;
     

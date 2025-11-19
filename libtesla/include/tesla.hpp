@@ -326,6 +326,11 @@ static inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch
 static bool requiresLNY2 = false;
 
 
+
+
+
+
+
 namespace tsl {
 
     // Booleans
@@ -2183,78 +2188,105 @@ namespace tsl {
             }
             
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
-                s32 x = radius;
-                s32 y = 0;
-                s32 radiusError = 0;
-                s32 xChange = 1 - (radius << 1);
-                s32 yChange = 0;
-                s32 prevX = x;
-                const u8 base_alpha = color.a;
+                const float r_f = static_cast<float>(radius);
+                const float r2 = r_f * r_f;
+                const u8 base_a = color.a;
+                const bool full_opacity = (base_a == 0xFF);
                 
-                while (x >= y) {
-                    if (filled) {
-                        for (s32 i = centerX - x; i <= centerX + x; i++) {
-                            this->setPixelBlendDst(i, centerY + y, color);
-                            this->setPixelBlendDst(i, centerY - y, color);
-                        }
-                        
-                        for (s32 i = centerX - y; i <= centerX + y; i++) {
-                            this->setPixelBlendDst(i, centerY + x, color);
-                            this->setPixelBlendDst(i, centerY - x, color);
-                        }
-                        
-                        // Add AA pixel when x steps down (smooths the jaggy)
-                        if (x < prevX) {
-                            Color aa = color;
-                            aa.a = base_alpha >> 1; // 50% alpha
-                            
-                            // Smooth horizontal spans
-                            this->setPixelBlendDst(centerX + x + 1, centerY + y, aa);
-                            this->setPixelBlendDst(centerX - x - 1, centerY + y, aa);
-                            this->setPixelBlendDst(centerX + x + 1, centerY - y, aa);
-                            this->setPixelBlendDst(centerX - x - 1, centerY - y, aa);
-                            
-                            // Smooth vertical spans
-                            this->setPixelBlendDst(centerX + y, centerY + x + 1, aa);
-                            this->setPixelBlendDst(centerX - y, centerY + x + 1, aa);
-                            this->setPixelBlendDst(centerX + y, centerY - x - 1, aa);
-                            this->setPixelBlendDst(centerX - y, centerY - x - 1, aa);
-                        }
-                    } else {
-                        this->setPixelBlendDst(centerX + x, centerY + y, color);
-                        this->setPixelBlendDst(centerX + y, centerY + x, color);
-                        this->setPixelBlendDst(centerX - y, centerY + x, color);
-                        this->setPixelBlendDst(centerX - x, centerY + y, color);
-                        this->setPixelBlendDst(centerX - x, centerY - y, color);
-                        this->setPixelBlendDst(centerX - y, centerY - x, color);
-                        this->setPixelBlendDst(centerX + y, centerY - x, color);
-                        this->setPixelBlendDst(centerX + x, centerY - y, color);
-                        
-                        // AA for outline jaggies
-                        if (x < prevX) {
-                            Color aa = color;
-                            aa.a = base_alpha >> 1;
-                            
-                            this->setPixelBlendDst(centerX + x + 1, centerY + y, aa);
-                            this->setPixelBlendDst(centerX - x - 1, centerY + y, aa);
-                            this->setPixelBlendDst(centerX + x + 1, centerY - y, aa);
-                            this->setPixelBlendDst(centerX - x - 1, centerY - y, aa);
-                            this->setPixelBlendDst(centerX + y, centerY + x + 1, aa);
-                            this->setPixelBlendDst(centerX - y, centerY + x + 1, aa);
-                            this->setPixelBlendDst(centerX + y, centerY - x - 1, aa);
-                            this->setPixelBlendDst(centerX - y, centerY - x - 1, aa);
-                        }
-                    }
+                const s32 bound = radius + 2;
+                const s32 clip_left = std::max(0, centerX - bound);
+                const s32 clip_right = std::min(static_cast<s32>(cfg::FramebufferWidth), centerX + bound);
+                const s32 clip_top = std::max(0, centerY - bound);
+                const s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
+                
+                // 8-sample pattern (better than 4-sample, captures diagonals better)
+                const float offset = 0.353553f; // sqrt(2)/4, keeps samples equidistant
+                const float samples[8][2] = {
+                    {-offset, -offset}, {offset, -offset},  // Diagonal
+                    {-offset, offset},  {offset, offset},   // Diagonal
+                    {-0.5f, 0.0f},     {0.5f, 0.0f},       // Horizontal edge
+                    {0.0f, -0.5f},     {0.0f, 0.5f}        // Vertical edge
+                };
+                
+                for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                    const float py = static_cast<float>(yc - centerY) + 0.5f;
+                    const float py_sq = py * py;
                     
-                    prevX = x;
-                    y++;
-                    radiusError += yChange;
-                    yChange += 2;
-                    
-                    if (((radiusError << 1) + xChange) > 0) {
-                        x--;
-                        radiusError += xChange;
-                        xChange += 2;
+                    for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                        const float px = static_cast<float>(xc - centerX) + 0.5f;
+                        const float px_sq = px * px;
+                        const float center_d2 = px_sq + py_sq;
+                        
+                        // Quick reject for pixels far from edge
+                        if (filled) {
+                            if (center_d2 <= r2 - r_f) {
+                                // Definitely inside
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    if (full_opacity) this->setPixelAtOffset(off, color);
+                                    else this->setPixelBlendDst(xc, yc, color);
+                                }
+                                continue;
+                            } else if (center_d2 > r2 + r_f) {
+                                // Definitely outside
+                                continue;
+                            }
+                            
+                            // On the edge - use 8-sample supersampling
+                            u32 inside_count = 0;
+                            for (u32 s = 0; s < 8; ++s) {
+                                const float sx = px + samples[s][0];
+                                const float sy = py + samples[s][1];
+                                if (sx*sx + sy*sy <= r2) {
+                                    inside_count++;
+                                }
+                            }
+                            
+                            if (inside_count > 0) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    Color c = color;
+                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8); // +4 for rounding
+                                    this->setPixelBlendDst(xc, yc, c);
+                                }
+                            }
+                        } else {
+                            // Outline
+                            const float inner_r2 = (r_f - 1.0f) * (r_f - 1.0f);
+                            
+                            if (center_d2 >= inner_r2 + r_f && center_d2 <= r2 - r_f) {
+                                // Definitely in ring
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    if (full_opacity) this->setPixelAtOffset(off, color);
+                                    else this->setPixelBlendDst(xc, yc, color);
+                                }
+                                continue;
+                            } else if (center_d2 < inner_r2 - r_f || center_d2 > r2 + r_f) {
+                                // Definitely outside ring
+                                continue;
+                            }
+                            
+                            // On edge - use 8-sample supersampling
+                            u32 inside_count = 0;
+                            for (u32 s = 0; s < 8; ++s) {
+                                const float sx = px + samples[s][0];
+                                const float sy = py + samples[s][1];
+                                const float sd2 = sx*sx + sy*sy;
+                                if (sd2 >= inner_r2 && sd2 <= r2) {
+                                    inside_count++;
+                                }
+                            }
+                            
+                            if (inside_count > 0) {
+                                const u32 off = this->getPixelOffset(xc, yc);
+                                if (off != UINT32_MAX) {
+                                    Color c = color;
+                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8);
+                                    this->setPixelBlendDst(xc, yc, c);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -9610,6 +9642,8 @@ namespace tsl {
          */
         class TrackBarV2 : public Element {
         public:
+            using SimpleValueChangeCallback = std::function<void(s16 value, s16 index)>;
+
             u64 lastUpdate_ns;
         
             Color highlightColor = {0xf, 0xf, 0xf, 0xf};
@@ -9693,6 +9727,12 @@ namespace tsl {
             }
         
             inline void updateAndExecute(bool updateIni = true) {
+                if (m_simpleCallback) {
+                    m_simpleCallback(m_value, m_index);
+                    return;
+                }
+
+
                 if (m_packagePath.empty()) {
                     return;
                 }
@@ -10156,7 +10196,7 @@ namespace tsl {
                 
                 ult::onTrackBar.store(true, std::memory_order_release);
             
-                if (m_clickActive) {
+                if (m_clickActive && m_useClickAnimation) {
                     const u64 elapsedTime_ns = currentTime_ns - m_clickStartTime_ns;
             
                     auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (static_cast<float>(elapsedTime_ns) / 500000000.0f));
@@ -10195,7 +10235,15 @@ namespace tsl {
             void setValueChangedListener(std::function<void(u8)> valueChangedListener) {
                 this->m_valueChangedListener = valueChangedListener;
             }
+
+            void setSimpleCallback(SimpleValueChangeCallback callback) {
+                m_simpleCallback = std::move(callback);
+            }
         
+            inline void disableClickAnimation() {
+                m_useClickAnimation = false;
+            }
+
         protected:
             std::string m_label;
             std::string m_packagePath;
@@ -10235,6 +10283,10 @@ namespace tsl {
             u64 m_prevKeysHeld = 0;
             bool m_wasLastHeld = false;
             bool m_drawFrameless = false;
+
+            bool m_useClickAnimation = true;
+
+            SimpleValueChangeCallback m_simpleCallback = nullptr;
         };
         
         
@@ -10390,7 +10442,17 @@ namespace tsl {
              */
             virtual void setProgress(u8 value) override {
                 value = std::min(value, u8(this->m_numSteps - 1));
-                this->m_value = value * (100 / (this->m_numSteps - 1));
+                this->m_index = value;
+                
+                // If using simple callback (modern API), use minValue/maxValue range
+                // Otherwise use legacy 0-100 range for config.ini compatibility
+                if (m_simpleCallback) {
+                    const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
+                    this->m_value = static_cast<s16>(std::round(m_minValue + m_index * stepSize));
+                } else {
+                    // Legacy behavior for command system
+                    this->m_value = value * (100 / (this->m_numSteps - 1));
+                }
             }
             
         //protected:
@@ -13547,14 +13609,23 @@ namespace tsl {
         leventClear(&renderingStopEvent);
     #endif
 
+        ult::currentHeapSize = ult::getCurrentHeapSize();
+        ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
+        ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
+            ult::furtherExpandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_10MB;
+            
+            ult::loaderTitle += !ult::furtherExpandedMemory ? "+" : "×";
             ult::COPY_BUFFER_SIZE = 262144;
             ult::HEX_BUFFER_SIZE = 8192;
             ult::UNZIP_READ_BUFFER = 262144;
             ult::UNZIP_WRITE_BUFFER = 131072;
             ult::DOWNLOAD_READ_BUFFER = 262144/2;
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
+        } else if (ult::limitedMemory) {
+            ult::loaderTitle += "-";
         }
     
         if (argc > 0) {
@@ -14070,7 +14141,8 @@ extern "C" {
         //});
 
         //requiresLNY2 = amsVersionAtLeast(1,9,0);     // Detect if using HOS 21+
-        
+        //ult::currentHeapSize = ult::getCurrentHeapSize();
+        //ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
 
         #if IS_STATUS_MONITOR_DIRECTIVE
         Service *plSrv = plGetServiceSession();

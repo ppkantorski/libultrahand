@@ -39,6 +39,11 @@ namespace ult {
     
     extern const std::string ROOT_PATH;
     extern const std::string SETTINGS_PATH;
+    
+    extern const std::string NX_OVLLOADER_PATH;
+    extern const std::string OVL_HEAP_CONFIG_PATH;
+    extern const std::string OVL_EXIT_FLAG_PATH;
+
     extern const std::string ULTRAHAND_CONFIG_INI_PATH;
     extern const std::string TESLA_CONFIG_INI_PATH;
     extern const std::string LANG_PATH;
