@@ -4,6 +4,15 @@
  * Description:
  *   This source file contains the implementation of debugging functions for the
  *   Ultrahand Overlay project.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2023-2025 ppkantorski
  ********************************************************************************/
 
 #include "debug_funcs.hpp"

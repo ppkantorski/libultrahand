@@ -14,7 +14,7 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2024-2025 ppkantorski
  ********************************************************************************/
 
 #include <mod_funcs.hpp>
