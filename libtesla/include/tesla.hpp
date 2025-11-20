@@ -12644,6 +12644,7 @@ namespace tsl {
             }, ULTRAHAND_CONFIG_FILE);
         }
         
+        static auto currentUnderscanPixels = std::make_pair(0, 0);
 
         /**
          * @brief Background event polling loop thread
@@ -12811,7 +12812,7 @@ namespace tsl {
                     }
                     
                     if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
-                        const auto currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
+                        currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
                     
                         if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
                             // Update layer dimensions without destroying state

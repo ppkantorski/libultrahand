@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include "tsl_utils.hpp"
 
 namespace ult {
     class AudioPlayer {
@@ -64,7 +65,7 @@ namespace ult {
         static void setMasterVolume(float volume);
         static void setEnabled(bool enabled);
         static bool isEnabled();
-        static bool isDocked();
+        //static bool isDocked();
         static bool reloadIfDockedChanged();
         static void reloadAllSounds();
         static void unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds = {});

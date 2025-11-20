@@ -133,29 +133,14 @@ namespace ult {
     u16 activeHeaderHeight = 97;
 
     bool consoleIsDocked() {
-        Result rc;
+        Result rc = apmInitialize();
+        if (R_FAILED(rc)) return false;
+        
         ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
-    
-        // Initialize the APM service
-        rc = apmInitialize();
-        if (R_FAILED(rc)) {
-            return false;  // Fail early if initialization fails
-        }
-    
-        // Get the current performance mode
         rc = apmGetPerformanceMode(&perfMode);
-        apmExit();  // Clean up the APM service
-    
-        if (R_FAILED(rc)) {
-            return false;  // Fail early if performance mode check fails
-        }
-    
-        // Check if the performance mode indicates docked state
-        if (perfMode == ApmPerformanceMode_Boost) {
-            return true;  // System is docked (boost mode active)
-        }
-    
-        return false;  // Not docked (normal mode or handheld)
+        apmExit();
+        
+        return R_SUCCEEDED(rc) && (perfMode == ApmPerformanceMode_Boost);
     }
     
     //static bool pminfoInitialized = false;

@@ -41,7 +41,7 @@ namespace ult {
         
         m_initialized = true;
         m_cachedSounds.resize(static_cast<uint32_t>(SoundType::Count));
-        m_lastDockedState = isDocked();
+        m_lastDockedState = ult::consoleIsDocked();
         reloadAllSounds();
         
         return true;
@@ -98,7 +98,7 @@ namespace ult {
     bool AudioPlayer::reloadIfDockedChanged() {
         if (!m_initialized) return false;
         
-        const bool currentDocked = isDocked();
+        const bool currentDocked = ult::consoleIsDocked();
         if (currentDocked == m_lastDockedState) return false;
         
         std::lock_guard<std::mutex> lock(m_audioMutex);
@@ -299,14 +299,14 @@ namespace ult {
         return m_enabled.load(std::memory_order_relaxed);
     }
     
-    bool AudioPlayer::isDocked() {
-        Result rc = apmInitialize();
-        if (R_FAILED(rc)) return false;
-        
-        ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
-        rc = apmGetPerformanceMode(&perfMode);
-        apmExit();
-        
-        return R_SUCCEEDED(rc) && (perfMode == ApmPerformanceMode_Boost);
-    }
+   //bool AudioPlayer::isDocked() {
+   //    Result rc = apmInitialize();
+   //    if (R_FAILED(rc)) return false;
+   //    
+   //    ApmPerformanceMode perfMode = ApmPerformanceMode_Invalid;
+   //    rc = apmGetPerformanceMode(&perfMode);
+   //    apmExit();
+   //    
+   //    return R_SUCCEEDED(rc) && (perfMode == ApmPerformanceMode_Boost);
+   //}
 }
