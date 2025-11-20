@@ -572,8 +572,8 @@ namespace ult {
 
     std::string ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
     std::string NEW_UPDATE_IS_AVAILABLE = "New update is available!";
-    std::string REBOOT_IS_REQUIRED = "Reboot is required.";
-    std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
+    //std::string REBOOT_IS_REQUIRED = "Reboot is required.";
+    //std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
 
@@ -799,8 +799,8 @@ namespace ult {
 
         ULTRAHAND_HAS_STARTED = "Ultrahand has started.";
         NEW_UPDATE_IS_AVAILABLE = "New update is available!";
-        REBOOT_IS_REQUIRED = "Reboot is required.";
-        HOLD_A_TO_DELETE = "Hold  to Delete";
+        //REBOOT_IS_REQUIRED = "Reboot is required.";
+        //HOLD_A_TO_DELETE = "Hold  to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
         FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
 
@@ -998,8 +998,8 @@ namespace ult {
 
             {"ULTRAHAND_HAS_STARTED", &ULTRAHAND_HAS_STARTED},
             {"NEW_UPDATE_IS_AVAILABLE", &NEW_UPDATE_IS_AVAILABLE},
-            {"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
-            {"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
+            //{"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
+            //{"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
             {"FORCED_SUPPORT_WARNING", &FORCED_SUPPORT_WARNING},
 

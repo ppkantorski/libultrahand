@@ -13634,11 +13634,13 @@ namespace tsl {
 
     #if IS_STATUS_MONITOR_DIRECTIVE
         leventClear(&renderingStopEvent);
-    #endif
+        // Status monitor will load heap settings directly in main, so bypass here in loop
+    #else
 
         ult::currentHeapSize = ult::getCurrentHeapSize();
         ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
         ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
@@ -13654,6 +13656,7 @@ namespace tsl {
         } else if (ult::limitedMemory) {
             ult::loaderTitle += "-";
         }
+    #endif
     
         if (argc > 0) {
             //g_overlayFilename = ult::getNameFromPath(argv[0]);

@@ -478,8 +478,8 @@ namespace ult {
 
     extern std::string ULTRAHAND_HAS_STARTED;
     extern std::string NEW_UPDATE_IS_AVAILABLE;
-    extern std::string REBOOT_IS_REQUIRED;
-    extern std::string HOLD_A_TO_DELETE;
+    //extern std::string REBOOT_IS_REQUIRED;
+    //extern std::string HOLD_A_TO_DELETE;
     extern std::string SELECTION_IS_EMPTY;
     extern std::string FORCED_SUPPORT_WARNING;
 
