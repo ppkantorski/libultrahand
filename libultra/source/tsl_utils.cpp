@@ -321,7 +321,7 @@ namespace ult {
     //bool progressAnimation = false;
     bool disableTransparency = false;
     //bool useCustomWallpaper = false;
-    bool useMemoryExpansion = false;
+    //bool useMemoryExpansion = false;
     bool useOpaqueScreenshots = false;
     
     std::atomic<bool> onTrackBar(false);

@@ -232,7 +232,7 @@ namespace ult {
     //bool progressAnimation = false;
     extern bool disableTransparency;
     //bool useCustomWallpaper = false;
-    extern bool useMemoryExpansion;
+    //extern bool useMemoryExpansion;
     extern bool useOpaqueScreenshots;
     
     extern std::atomic<bool> onTrackBar;

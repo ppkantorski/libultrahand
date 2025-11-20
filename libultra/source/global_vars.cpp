@@ -63,7 +63,7 @@ namespace ult {
     std::string THEME_CONFIG_INI_PATH             = BASE_CONFIG_PATH + THEME_FILENAME;
     std::string WALLPAPER_PATH                    = BASE_CONFIG_PATH + WALLPAPER_FILENAME;
     const std::string DOWNLOADS_PATH              = BASE_CONFIG_PATH + "downloads/";
-    const std::string EXPANSION_PATH              = BASE_CONFIG_PATH + "expansion/";
+    //const std::string EXPANSION_PATH              = BASE_CONFIG_PATH + "expansion/";
     const std::string FUSE_DATA_INI_PATH          = BASE_CONFIG_PATH + FUSE_FILENAME;
     const std::string PACKAGE_PATH                = SWITCH_PATH + ".packages/";
     const std::string OVERLAY_PATH                = SWITCH_PATH + ".overlays/";

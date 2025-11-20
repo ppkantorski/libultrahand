@@ -68,7 +68,7 @@ namespace ult {
     extern const std::string PACKAGE_FILENAME;
     
     extern const std::string DOWNLOADS_PATH;
-    extern const std::string EXPANSION_PATH;
+    //extern const std::string EXPANSION_PATH;
     extern const std::string FUSE_DATA_INI_PATH;
     extern const std::string PACKAGE_PATH;
     extern const std::string OVERLAY_PATH;
