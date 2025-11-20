@@ -2419,143 +2419,125 @@ namespace tsl {
                 s32 start_x, end_x;
             };
             
+            // Helper function - defined outside, compiler will inline
+            static inline void sampleAndBlendArcPixel(Renderer* self, s32 xp, s32 yc, 
+                                                      int px2, int cx2, int sx, int py2, int cy2, int sy,
+                                                      long long r2_scaled, const Color& color, u8 base_a)
+            {
+                int hits = 0;
+                long long dx1 = px2 + sx - cx2;
+                long long dx2 = px2 - sx - cx2;
+                long long dy1 = py2 + sy - cy2;
+                long long dy2 = py2 - sy - cy2;
+                
+                if (dx1*dx1 + dy1*dy1 <= r2_scaled) ++hits;
+                if (dx1*dx1 + dy2*dy2 <= r2_scaled) ++hits;
+                if (dx2*dx2 + dy1*dy1 <= r2_scaled) ++hits;
+                if (dx2*dx2 + dy2*dy2 <= r2_scaled) ++hits;
+                
+                if (hits == 4) {
+                    self->setPixelBlendDst(xp, yc, color);
+                } else if (hits > 0) {
+                    u8 a = (base_a * hits + 2) >> 2;
+                    if (a) {
+                        Color c = color;
+                        c.a = a;
+                        self->setPixelBlendDst(xp, yc, c);
+                    }
+                }
+            }
+            
             static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h,
                                                 const s32 radius, const Color& color,
                                                 const s32 startRow, const s32 endRow)
             {
-                if (radius <= 0) return; // degenerate case handling
+                if (radius <= 0) return;
             
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
             
-                const s32 clip_x = std::max(0, x);
+                const s32 clip_x     = std::max(0, x);
                 const s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
             
-                const s32 left_arc_end = x + radius - 1;
+                const s32 left_arc_end    = x + radius - 1;
                 const s32 right_arc_start = x_end - radius;
-                const s32 top_arc_end = y + radius - 1;
+                const s32 top_arc_end     = y + radius - 1;
                 const s32 bottom_arc_start = y_end - radius;
             
-                // 2x-scaled integer centers
-                const int cx2_left = 2 * (x + radius);
+                const int cx2_left  = 2 * (x + radius);
                 const int cx2_right = 2 * (x_end - radius);
-                const int cy2_top = 2 * (y + radius);
+                const int cy2_top    = 2 * (y + radius);
                 const int cy2_bottom = 2 * (y_end - radius);
             
-                // radius scaled by 2
-                const long long r2_scaled = 4LL * radius * radius; // (2r)^2
+                const long long r2_scaled = 4LL * radius * radius;
+                const long long reject_threshold = (2LL*radius + 2)*(2LL*radius + 2);
             
                 const u8 base_a = color.a;
             
-                // SIMD arrays
-                alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
-                const uint8x16_t red_vec = vdupq_n_u8(color.r);
-                const uint8x16_t green_vec = vdupq_n_u8(color.g);
-                const uint8x16_t blue_vec = vdupq_n_u8(color.b);
-                const uint8x16_t alpha_vec = vdupq_n_u8(color.a);
+                // Pre-compute sample offsets (constant per corner)
+                const int sx_left   = ((x + radius)     & 1) ? -1 : 1;
+                const int sx_right  = ((x_end - radius) & 1) ? -1 : 1;
+                const int sy_top    = ((y + radius)     & 1) ? -1 : 1;
+                const int sy_bottom = ((y_end - radius) & 1) ? -1 : 1;
             
+                alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
+                const uint8x16_t rv = vdupq_n_u8(color.r);
+                const uint8x16_t gv = vdupq_n_u8(color.g);
+                const uint8x16_t bv = vdupq_n_u8(color.b);
+                const uint8x16_t av = vdupq_n_u8(color.a);
                 for (int i = 0; i < 512; i += 16) {
-                    vst1q_u8(redArray + i, red_vec);
-                    vst1q_u8(greenArray + i, green_vec);
-                    vst1q_u8(blueArray + i, blue_vec);
-                    vst1q_u8(alphaArray + i, alpha_vec);
+                    vst1q_u8(redArray + i, rv);
+                    vst1q_u8(greenArray + i, gv);
+                    vst1q_u8(blueArray + i, bv);
+                    vst1q_u8(alphaArray + i, av);
                 }
             
-                // For each scanline
                 for (s32 yc = startRow; yc < endRow; ++yc) {
                     if (yc < y || yc >= y_end) continue;
             
-                    const bool in_vertical_arc_rows = (yc <= top_arc_end) || (yc >= bottom_arc_start);
-            
-                    if (!in_vertical_arc_rows) {
-                        // full-width fast fill
-                        const s32 xs = std::max(clip_x, x);
-                        const s32 xe = std::min(clip_x_end, x_end);
-                        if (xs < xe) {
-                            for (s32 xp = xs; xp < xe; xp += 512) {
-                                self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray,
-                                                            std::min(512, xe - xp));
-                            }
-                        }
+                    const bool is_top = (yc <= top_arc_end);
+                    const bool in_arc_rows = is_top || (yc >= bottom_arc_start);
+                    
+                    if (!in_arc_rows) {
+                        s32 xs = std::max(clip_x, x);
+                        s32 xe = std::min(clip_x_end, x_end);
+                        for (s32 xp = xs; xp < xe; xp += 512)
+                            self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray,
+                                                        std::min(512, xe - xp));
                         continue;
                     }
             
-                    // determine which vertical arc center to use
-                    const bool is_top = (yc <= top_arc_end);
                     const int cy2 = is_top ? cy2_top : cy2_bottom;
-            
-                    // compute scaled pixel-center Y: 2*(yc + 0.5) = 2*yc + 1
                     const int py2 = 2 * yc + 1;
+                    const int sy = is_top ? sy_top : sy_bottom;
             
-                    // quick rejection
+                    // Quick row reject
                     const long long dy = py2 - cy2;
-                    const long long aa_pad_sq = (2LL * radius + 2) * (2LL * radius + 2);
-                    if (dy * dy > aa_pad_sq) continue;
+                    if (dy * dy > reject_threshold) continue;
             
-                    // Subpixel sample offsets based on center parity
-                    const int sx_left = ((x + radius) & 1) ? -1 : 1;
-                    const int sx_right = ((x_end - radius) & 1) ? -1 : 1;
-                    const int sy = ((is_top ? (y + radius) : (y_end - radius)) & 1) ? -1 : 1;
-            
-                    // iterate across span
-                    s32 xp = std::max(clip_x, x);
                     const s32 xe = std::min(clip_x_end, x_end);
+                    s32 xp = std::max(clip_x, x);
             
-                    // LEFT arc columns: x .. x+radius-1 (left_arc_end)
+                    // Left arc
                     for (; xp <= left_arc_end && xp < xe; ++xp) {
-                        const int px2 = 2 * xp + 1;
-            
-                        int hits = 0;
-                        long long dx, dy_val, dist2;
-            
-                        dx = (px2 + sx_left) - cx2_left; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 + sx_left) - cx2_left; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 - sx_left) - cx2_left; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 - sx_left) - cx2_left; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-            
-                        if (hits == 4) {
-                            self->setPixelBlendDst(xp, yc, color);
-                        } else if (hits > 0) {
-                            const u8 aa = static_cast<u8>((base_a * hits + 2) / 4);
-                            if (aa) {
-                                Color c = color; c.a = aa;
-                                self->setPixelBlendDst(xp, yc, c);
-                            }
-                        }
+                        sampleAndBlendArcPixel(self, xp, yc, 2*xp + 1, cx2_left, sx_left, 
+                                               py2, cy2, sy, r2_scaled, color, base_a);
                     }
             
-                    // middle flat region columns: left_arc_end+1 .. right_arc_start-1
-                    const s32 mid_start = std::max(x, left_arc_end + 1);
-                    const s32 mid_end = std::min(xe, right_arc_start);
+                    // Middle flat
+                    s32 mid_start = std::max(xp, left_arc_end + 1);
+                    s32 mid_end   = std::min(xe, right_arc_start);
                     if (mid_start < mid_end) {
-                        for (s32 bx = mid_start; bx < mid_end; bx += 512) {
+                        for (s32 bx = mid_start; bx < mid_end; bx += 512)
                             self->setPixelBlendDstBatch(bx, yc, redArray, greenArray, blueArray, alphaArray,
                                                         std::min(512, mid_end - bx));
-                        }
                     }
             
-                    // right arc: right_arc_start .. x_end-1
+                    // Right arc
                     xp = std::max(xp, right_arc_start);
                     for (; xp < xe; ++xp) {
-                        const int px2 = 2 * xp + 1;
-            
-                        int hits = 0;
-                        long long dx, dy_val, dist2;
-            
-                        dx = (px2 + sx_right) - cx2_right; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 + sx_right) - cx2_right; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 - sx_right) - cx2_right; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-                        dx = (px2 - sx_right) - cx2_right; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
-            
-                        if (hits == 4) {
-                            self->setPixelBlendDst(xp, yc, color);
-                        } else if (hits > 0) {
-                            const u8 aa = static_cast<u8>((base_a * hits + 2) / 4);
-                            if (aa) {
-                                Color c = color; c.a = aa;
-                                self->setPixelBlendDst(xp, yc, c);
-                            }
-                        }
+                        sampleAndBlendArcPixel(self, xp, yc, 2*xp + 1, cx2_right, sx_right,
+                                               py2, cy2, sy, r2_scaled, color, base_a);
                     }
                 }
             }
