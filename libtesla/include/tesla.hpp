@@ -2418,139 +2418,142 @@ namespace tsl {
             struct HorizontalSpan {
                 s32 start_x, end_x;
             };
-
-            // Optimized processRoundedRectChunk - Same output, faster execution
-            static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h, 
-                                               const s32 radius, const Color& color, const s32 startRow, const s32 endRow) {
+            
+            static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h,
+                                                const s32 radius, const Color& color,
+                                                const s32 startRow, const s32 endRow)
+            {
+                if (radius <= 0) return; // degenerate case handling
+            
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
+            
                 const s32 clip_x = std::max(0, x);
-                const s32 clip_x_end = std::min(static_cast<s32>(cfg::FramebufferWidth), x_end);
-                const s32 corner_x_left = x + radius;
-                const s32 corner_x_right = x_end - radius - 1;
-                const s32 corner_y_top = y + radius;
-                const s32 corner_y_bottom = y_end - radius - 1;
-                const float r_f = static_cast<float>(radius);
-                const float r2 = r_f * r_f;
-                const float aa_thresh = r2 + 2.0f * r_f + 1.0f;
+                const s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
+            
+                const s32 left_arc_end = x + radius - 1;
+                const s32 right_arc_start = x_end - radius;
+                const s32 top_arc_end = y + radius - 1;
+                const s32 bottom_arc_start = y_end - radius;
+            
+                // 2x-scaled integer centers
+                const int cx2_left = 2 * (x + radius);
+                const int cx2_right = 2 * (x_end - radius);
+                const int cy2_top = 2 * (y + radius);
+                const int cy2_bottom = 2 * (y_end - radius);
+            
+                // radius scaled by 2
+                const long long r2_scaled = 4LL * radius * radius; // (2r)^2
+            
                 const u8 base_a = color.a;
             
-                // SIMD arrays - pre-filled once
+                // SIMD arrays
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
                 const uint8x16_t red_vec = vdupq_n_u8(color.r);
                 const uint8x16_t green_vec = vdupq_n_u8(color.g);
                 const uint8x16_t blue_vec = vdupq_n_u8(color.b);
                 const uint8x16_t alpha_vec = vdupq_n_u8(color.a);
-                
-                for (s32 i = 0; i < 512; i += 16) {
-                    vst1q_u8(&redArray[i], red_vec);
-                    vst1q_u8(&greenArray[i], green_vec);
-                    vst1q_u8(&blueArray[i], blue_vec);
-                    vst1q_u8(&alphaArray[i], alpha_vec);
+            
+                for (int i = 0; i < 512; i += 16) {
+                    vst1q_u8(redArray + i, red_vec);
+                    vst1q_u8(greenArray + i, green_vec);
+                    vst1q_u8(blueArray + i, blue_vec);
+                    vst1q_u8(alphaArray + i, alpha_vec);
                 }
-                
+            
+                // For each scanline
                 for (s32 yc = startRow; yc < endRow; ++yc) {
                     if (yc < y || yc >= y_end) continue;
-                    
-                    const bool in_corners = yc < corner_y_top || yc > corner_y_bottom;
-                    
-                    if (!in_corners) {
-                        // Pure middle section - fastest path
-                        const s32 span_start = std::max(x, clip_x);
-                        const s32 span_end = std::min(x_end, clip_x_end);
-                        
-                        if (span_start < span_end) {
-                            for (s32 xp = span_start; xp < span_end; xp += 512) {
-                                self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray, 
-                                                           std::min(512, span_end - xp));
+            
+                    const bool in_vertical_arc_rows = (yc <= top_arc_end) || (yc >= bottom_arc_start);
+            
+                    if (!in_vertical_arc_rows) {
+                        // full-width fast fill
+                        const s32 xs = std::max(clip_x, x);
+                        const s32 xe = std::min(clip_x_end, x_end);
+                        if (xs < xe) {
+                            for (s32 xp = xs; xp < xe; xp += 512) {
+                                self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray,
+                                                            std::min(512, xe - xp));
                             }
                         }
-                    } else {
-                        // Corner rows
-                        const float dy = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc) : 
-                                                                 static_cast<float>(yc - corner_y_bottom);
-                        const float dy_sq = dy * dy;
-                        
-                        if (dy_sq > aa_thresh) continue;
-                        
-                        const s32 span_start = std::max(x, clip_x);
-                        const s32 span_end = std::min(x_end, clip_x_end);
-                        s32 xp = span_start;
-                        
-                        // Left corner/edge region
-                        if (xp <= corner_x_left) {
-                            const s32 left_end = std::min(corner_x_left + 1, span_end);
-                            const float dy_half = dy - 0.5f;
-                            const float dy_half_sq = dy_half * dy_half;
-                            
-                            for (; xp < left_end; ++xp) {
-                                const float dx = static_cast<float>(corner_x_left - xp);
-                                const float dx_sq = dx * dx;
-                                const float d2 = dx_sq + dy_sq;
-                                
-                                if (d2 <= r2) {
-                                    self->setPixelBlendDst(xp, yc, color);
-                                } else if (d2 <= aa_thresh) {
-                                    const float dx_half = dx - 0.5f;
-                                    const float dx_half_sq = dx_half * dx_half;
-                                    
-                                    float cov = 0.0f;
-                                    if (dx_sq + dy_sq <= r2) cov += 0.25f;
-                                    if (dx_half_sq + dy_sq <= r2) cov += 0.25f;
-                                    if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
-                                    if (dx_half_sq + dy_half_sq <= r2) cov += 0.25f;
-                                    
-                                    const u8 aa = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
-                                    if (aa > 0) {
-                                        Color c = color;
-                                        c.a = aa;
-                                        self->setPixelBlendDst(xp, yc, c);
-                                    }
-                                }
+                        continue;
+                    }
+            
+                    // determine which vertical arc center to use
+                    const bool is_top = (yc <= top_arc_end);
+                    const int cy2 = is_top ? cy2_top : cy2_bottom;
+            
+                    // compute scaled pixel-center Y: 2*(yc + 0.5) = 2*yc + 1
+                    const int py2 = 2 * yc + 1;
+            
+                    // quick rejection
+                    const long long dy = py2 - cy2;
+                    const long long aa_pad_sq = (2LL * radius + 2) * (2LL * radius + 2);
+                    if (dy * dy > aa_pad_sq) continue;
+            
+                    // Subpixel sample offsets based on center parity
+                    const int sx_left = ((x + radius) & 1) ? -1 : 1;
+                    const int sx_right = ((x_end - radius) & 1) ? -1 : 1;
+                    const int sy = ((is_top ? (y + radius) : (y_end - radius)) & 1) ? -1 : 1;
+            
+                    // iterate across span
+                    s32 xp = std::max(clip_x, x);
+                    const s32 xe = std::min(clip_x_end, x_end);
+            
+                    // LEFT arc columns: x .. x+radius-1 (left_arc_end)
+                    for (; xp <= left_arc_end && xp < xe; ++xp) {
+                        const int px2 = 2 * xp + 1;
+            
+                        int hits = 0;
+                        long long dx, dy_val, dist2;
+            
+                        dx = (px2 + sx_left) - cx2_left; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 + sx_left) - cx2_left; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 - sx_left) - cx2_left; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 - sx_left) - cx2_left; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+            
+                        if (hits == 4) {
+                            self->setPixelBlendDst(xp, yc, color);
+                        } else if (hits > 0) {
+                            const u8 aa = static_cast<u8>((base_a * hits + 2) / 4);
+                            if (aa) {
+                                Color c = color; c.a = aa;
+                                self->setPixelBlendDst(xp, yc, c);
                             }
                         }
-                        
-                        // Middle section - batch fast path
-                        const s32 mid_start = std::max(corner_x_left + 1, xp);
-                        const s32 mid_end = std::min(corner_x_right, span_end);
-                        
-                        if (mid_start < mid_end) {
-                            for (s32 batch_x = mid_start; batch_x < mid_end; batch_x += 512) {
-                                self->setPixelBlendDstBatch(batch_x, yc, redArray, greenArray, blueArray, alphaArray,
-                                                           std::min(512, mid_end - batch_x));
-                            }
-                            xp = mid_end;
+                    }
+            
+                    // middle flat region columns: left_arc_end+1 .. right_arc_start-1
+                    const s32 mid_start = std::max(x, left_arc_end + 1);
+                    const s32 mid_end = std::min(xe, right_arc_start);
+                    if (mid_start < mid_end) {
+                        for (s32 bx = mid_start; bx < mid_end; bx += 512) {
+                            self->setPixelBlendDstBatch(bx, yc, redArray, greenArray, blueArray, alphaArray,
+                                                        std::min(512, mid_end - bx));
                         }
-                        
-                        // Right corner/edge region
-                        if (xp >= corner_x_right && xp < span_end) {
-                            const float dy_half = dy - 0.5f;
-                            const float dy_half_sq = dy_half * dy_half;
-                            
-                            for (; xp < span_end; ++xp) {
-                                const float dx = static_cast<float>(xp - corner_x_right);
-                                const float dx_sq = dx * dx;
-                                const float d2 = dx_sq + dy_sq;
-                                
-                                if (d2 <= r2) {
-                                    self->setPixelBlendDst(xp, yc, color);
-                                } else if (d2 <= aa_thresh) {
-                                    const float dx_half = dx - 0.5f;
-                                    const float dx_half_sq = dx_half * dx_half;
-                                    
-                                    float cov = 0.0f;
-                                    if (dx_sq + dy_sq <= r2) cov += 0.25f;
-                                    if (dx_half_sq + dy_sq <= r2) cov += 0.25f;
-                                    if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
-                                    if (dx_half_sq + dy_half_sq <= r2) cov += 0.25f;
-                                    
-                                    const u8 aa = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
-                                    if (aa > 0) {
-                                        Color c = color;
-                                        c.a = aa;
-                                        self->setPixelBlendDst(xp, yc, c);
-                                    }
-                                }
+                    }
+            
+                    // right arc: right_arc_start .. x_end-1
+                    xp = std::max(xp, right_arc_start);
+                    for (; xp < xe; ++xp) {
+                        const int px2 = 2 * xp + 1;
+            
+                        int hits = 0;
+                        long long dx, dy_val, dist2;
+            
+                        dx = (px2 + sx_right) - cx2_right; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 + sx_right) - cx2_right; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 - sx_right) - cx2_right; dy_val = (py2 + sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+                        dx = (px2 - sx_right) - cx2_right; dy_val = (py2 - sy) - cy2; dist2 = dx*dx + dy_val*dy_val; if (dist2 <= r2_scaled) ++hits;
+            
+                        if (hits == 4) {
+                            self->setPixelBlendDst(xp, yc, color);
+                        } else if (hits > 0) {
+                            const u8 aa = static_cast<u8>((base_a * hits + 2) / 4);
+                            if (aa) {
+                                Color c = color; c.a = aa;
+                                self->setPixelBlendDst(xp, yc, c);
                             }
                         }
                     }
