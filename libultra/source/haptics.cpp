@@ -39,7 +39,7 @@ namespace ult {
     // ===== Constants =====
     static constexpr u64 RUMBLE_DURATION_NS = 30'000'000ULL;
     static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30'000'000ULL;
-    static constexpr u64 DOUBLE_CLICK_GAP_NS = 100'000'000ULL;
+    static constexpr u64 DOUBLE_CLICK_GAP_NS = 80'000'000ULL;
     
     static constexpr HidVibrationValue clickDocked = {
         .amp_low  = 0.20f,

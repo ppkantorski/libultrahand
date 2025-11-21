@@ -7634,7 +7634,11 @@ namespace tsl {
             u32 width, height;
             u64 m_touchStartTime_ns;
             bool isLocked = false;
-        
+            bool m_shortThresholdCrossed = false;
+            #if IS_LAUNCHER_DIRECTIVE
+            bool m_longThresholdCrossed = false;
+            #endif
+
         #if IS_LAUNCHER_DIRECTIVE
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
@@ -7753,18 +7757,39 @@ namespace tsl {
                 if (event == TouchEvent::Touch) [[likely]] {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
+                        m_shortThresholdCrossed = false;
+                        #if IS_LAUNCHER_DIRECTIVE
+                        m_longThresholdCrossed = false;
+                        #endif
                     }
                     return false;
                 }
-        
+            
+                if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
+                    const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
+                    const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
+                    
+                    #if IS_LAUNCHER_DIRECTIVE
+                    if (!m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
+                        m_longThresholdCrossed = true;
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                    } else
+                    #endif
+                    if (!m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
+                        m_shortThresholdCrossed = true;
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                    }
+                    return false;
+                }
+            
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
-        #if IS_LAUNCHER_DIRECTIVE
+            #if IS_LAUNCHER_DIRECTIVE
                         const s64 keyToUse = determineKeyOnTouchRelease(m_flags.m_useScriptKey);
-        #else
+            #else
                         const s64 keyToUse = determineKeyOnTouchRelease(false);
-        #endif
+            #endif
                         const bool handled = onClick(keyToUse);
                         m_clickAnimationProgress = 0;
                         return handled;
@@ -8135,12 +8160,12 @@ namespace tsl {
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                 
                 #if IS_LAUNCHER_DIRECTIVE
-                if (touchDurationInSeconds >= 0.8f) [[unlikely]] {
+                if (touchDurationInSeconds >= 1.0f) [[unlikely]] {
                     ult::longTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : STAR_KEY;
                 }
                 #endif
-                if (touchDurationInSeconds >= 0.3f) [[unlikely]] {
+                if (touchDurationInSeconds >= 0.5f) [[unlikely]] {
                     ult::shortTouchAndRelease.store(true, std::memory_order_release);
                     return useScriptKey ? SCRIPT_KEY : SETTINGS_KEY;
                 }
@@ -9014,28 +9039,46 @@ namespace tsl {
             }
 
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+                static s16 lastHapticSegment = -1;
+                
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                     return true;
-
+                
                 if (keysHeld & KEY_LEFT) {
                     if (this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
+                        
+                        // Calculate current segment (0-10 for 11 segments)
+                        const s16 currentSegment = (this->m_value * 10) / 100;
+                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                            lastHapticSegment = currentSegment;
+                            triggerNavigationFeedback();
+                        }
+                        
                         return true;
                     }
                 }
-
+                
                 if (keysHeld & KEY_RIGHT) {
                     if (this->m_value < 100) {
                         this->m_value++;
                         this->m_valueChangedListener(this->m_value);
+                        
+                        // Calculate current segment (0-10 for 11 segments)
+                        const s16 currentSegment = (this->m_value * 10) / 100;
+                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                            lastHapticSegment = currentSegment;
+                            triggerNavigationFeedback();
+                        }
+                        
                         return true;
                     }
                 }
-
+                
                 return false;
             }
-
+            
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
@@ -9043,11 +9086,12 @@ namespace tsl {
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
-
+                static s16 lastHapticSegment = -1;
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
+                    lastHapticSegment = -1; // Reset for next touch
                     triggerRumbleDoubleClick.store(true, std::memory_order_release);
                     triggerOffSound.store(true, std::memory_order_release);
                     touchInSliderBounds = false;
@@ -9060,9 +9104,8 @@ namespace tsl {
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerOnSound.store(true, std::memory_order_release);
                     }
-
                     touchInSliderBounds = true;
-                    //if (currX > this->getLeftBound() + 50 && currX < this->getRightBound() && currY > this->getTopBound() && currY < this->getBottomBound()) {
+                    
                     s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
                     
                     if (newValue < 0) {
@@ -9070,19 +9113,26 @@ namespace tsl {
                     } else if (newValue > 100) {
                         newValue = 100;
                     }
-        
+            
                     if (newValue != this->m_value) {
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
+                        
+                        // Calculate which 10% segment we're in (0-10 for 11 segments)
+                        const s16 currentSegment = (newValue * 10) / 100;
+                        
+                        // Trigger haptics when crossing into a new 10% segment OR at value 0
+                        if (newValue == 0 || currentSegment != lastHapticSegment) {
+                            lastHapticSegment = currentSegment;
+                            triggerNavigationFeedback();
+                        }
                     }
-        
+            
                     return true;
-                    //}
                 }
             
                 return false;
             }
-
 
             // Define drawBar function outside the draw method
             void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
@@ -9415,29 +9465,31 @@ namespace tsl {
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerOnSound.store(true, std::memory_order_release);
                     }
-
-                    touchInSliderBounds = true;
-                    //if (currY > this->getTopBound() && currY < this->getBottomBound()) {
-                    s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
         
-                    if (newValue < 0) {
+                    touchInSliderBounds = true;
+                    
+                    // Add 0.5 for rounding to nearest step instead of truncating
+                    float rawValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
+                    s16 newValue;
+        
+                    if (rawValue < 0) {
                         newValue = 0;
-                    } else if (newValue > 100) {
+                    } else if (rawValue > 100) {
                         newValue = 100;
                     } else {
-                        newValue = std::round(newValue / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                        // Round to nearest step with 0.5 offset for proper snapping
+                        newValue = std::round((rawValue + 0.5f) / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                        // Clamp after rounding
+                        newValue = std::min(std::max(newValue, s16(0)), s16(100));
                     }
         
                     if (newValue != this->m_value) {
-                        //triggerRumbleClick.store(true, std::memory_order_release);
-                        //triggerNavigationSound.store(true, std::memory_order_release);
                         triggerNavigationFeedback();
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
                     }
         
                     return true;
-                    //}
                 }
             
                 return false;
@@ -9821,11 +9873,8 @@ namespace tsl {
                 }
             
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerEnterSound.store(true, std::memory_order_release);
                     triggerEnterFeedback();
                     
-
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
                         m_holding = false;
@@ -9836,11 +9885,6 @@ namespace tsl {
                     }
                     return true;
                 }
-
-                //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                //    triggerExitSound.store(true, std::memory_order_release);
-                //}
             
                 if ((keysDown & SCRIPT_KEY) && !(keysHeld & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     if (m_scriptKeyListener) {
@@ -9850,14 +9894,15 @@ namespace tsl {
                 }
             
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
+                    static s16 lastHapticSegment = -1;
+                    
                     // Handle key release
                     if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT))) {
+                        lastHapticSegment = -1; // Reset for next interaction
+                        
                         // If we were holding and repeating, just stop
                         if (m_wasLastHeld) {
                             m_wasLastHeld = false;
-                            //triggerNavigationSound.store(true, std::memory_order_release);
-                            //triggerRumbleClick.store(true, std::memory_order_release);
-
                             m_holding = false;
                             updateAndExecute();
                             lastUpdate_ns = armTicksToNs(armGetSystemTick());
@@ -9866,8 +9911,6 @@ namespace tsl {
                         // If it was a quick tap (no repeat happened), handle the single tick
                         else if (m_holding) {
                             m_holding = false;
-                            //triggerNavigationSound.store(true, std::memory_order_release);
-                            //triggerRumbleClick.store(true, std::memory_order_release);
                             updateAndExecute();
                             lastUpdate_ns = armTicksToNs(armGetSystemTick());
                             return true;
@@ -9883,6 +9926,7 @@ namespace tsl {
                     // Handle initial key press
                     if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
                         triggerRumbleClick.store(true, std::memory_order_release);
+                        
                         // Start tracking the hold
                         m_holding = true;
                         m_wasLastHeld = false;
@@ -9895,11 +9939,25 @@ namespace tsl {
                             this->m_value--;
                             this->m_valueChangedListener(this->m_value);
                             updateAndExecute(false);
+                            
+                            // Calculate and store initial segment (0-10 for 11 segments)
+                            const s16 currentSegment = (this->m_index * 10) / (m_numSteps - 1);
+                            if (this->m_index == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
                         } else if (keysDown & KEY_RIGHT && this->m_value < m_maxValue) {
                             this->m_index++;
                             this->m_value++;
                             this->m_valueChangedListener(this->m_value);
                             updateAndExecute(false);
+                            
+                            // Calculate and store initial segment (0-10 for 11 segments)
+                            const s16 currentSegment = (this->m_index * 10) / (m_numSteps - 1);
+                            if (this->m_index == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
                         }
                         return true;
                     }
@@ -9913,20 +9971,8 @@ namespace tsl {
                         // Calculate interval with acceleration
                         static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
                         static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
-                        static constexpr u64 transitionPoint_ns = 1000000000ULL; // 2 seconds
-                        
-                        // Trigger navigation sound every 100ms while holding
-                        static u64 lastNavigationSound_ns = 0;
-                        if (currentTime_ns - lastNavigationSound_ns >= 150'000'000ULL) { // 100ms
-                            if (this->m_value > m_minValue && this->m_value < m_maxValue) {
-                                //triggerRumbleClick.store(true, std::memory_order_release);
-                                //triggerNavigationSound.store(true, std::memory_order_release);
-                                triggerNavigationFeedback();
-                                
-                            }
-                            lastNavigationSound_ns = currentTime_ns;
-                        }
-
+                        static constexpr u64 transitionPoint_ns = 1000000000ULL; // 1 second
+            
                         // If we haven't passed the initial delay, don't repeat yet
                         if (holdDuration_ns < initialDelay_ns) {
                             return true;
@@ -9944,6 +9990,14 @@ namespace tsl {
                                 if (m_executeOnEveryTick) {
                                     updateAndExecute(false);
                                 }
+                                
+                                // Calculate current segment (0-10 for 11 segments) and trigger haptics on segment change
+                                const s16 currentSegment = (this->m_index * 10) / (m_numSteps - 1);
+                                if (this->m_index == 0 || currentSegment != lastHapticSegment) {
+                                    lastHapticSegment = currentSegment;
+                                    triggerNavigationFeedback();
+                                }
+                                
                                 lastUpdate_ns = currentTime_ns;
                                 m_wasLastHeld = true;
                                 return true;
@@ -9956,6 +10010,14 @@ namespace tsl {
                                 if (m_executeOnEveryTick) {
                                     updateAndExecute(false);
                                 }
+                                
+                                // Calculate current segment (0-10 for 11 segments) and trigger haptics on segment change
+                                const s16 currentSegment = (this->m_index * 10) / (m_numSteps - 1);
+                                if (this->m_index == 0 || currentSegment != lastHapticSegment) {
+                                    lastHapticSegment = currentSegment;
+                                    triggerNavigationFeedback();
+                                }
+                                
                                 lastUpdate_ns = currentTime_ns;
                                 m_wasLastHeld = true;
                                 return true;
@@ -9968,7 +10030,7 @@ namespace tsl {
                 
                 return false;
             }
-
+                        
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
@@ -9976,24 +10038,24 @@ namespace tsl {
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
+                static s16 lastHapticSegment = -1;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
-                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
-
-                    return false;
-                }
+                //if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                //    return false;
+                //}
                 
                 if ((touchInCircle || touchInSliderBounds)) {
                     touchInSliderBounds = true;
-
                     if (triggerOnce) {
                         triggerOnce = false;
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerOnSound.store(true, std::memory_order_release);
                     }
                     
-                    const s16 newIndex = std::max(static_cast<s16>(0), std::min(static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1)), static_cast<s16>(m_numSteps - 1)));
+                    // Add 0.5 to round to nearest step instead of truncating
+                    const s16 newIndex = std::max(static_cast<s16>(0), std::min(static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1) + 0.5f), static_cast<s16>(m_numSteps - 1)));
                     const s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
                     
                     if (newValue != this->m_value || newIndex != this->m_index) {
@@ -10003,29 +10065,36 @@ namespace tsl {
                         if (m_executeOnEveryTick) {
                             updateAndExecute(false);
                         }
-                        if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
-                            //triggerRumbleClick.store(true, std::memory_order_release);
-                            //triggerNavigationSound.store(true, std::memory_order_release);
+                        
+                        // Calculate which 10% segment we're in (0-10 for 11 segments)
+                        const s16 currentSegment = (newIndex * 10) / (m_numSteps - 1);
+                        
+                        // Trigger haptics when crossing into a new 10% segment OR at index 0
+                        if (newIndex == 0 || currentSegment != lastHapticSegment) {
+                            lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
+                        }
+                        
+                        if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
+                            // Already handled by segment check above
                         }
                     } else {
                         if (event == TouchEvent::Release) {
                             triggerOnce = true;
+                            lastHapticSegment = -1; // Reset for next touch
                             updateAndExecute();
-                            if (event == TouchEvent::Release)
-                                touchInSliderBounds = false;
-
+                            touchInSliderBounds = false;
                             triggerRumbleDoubleClick.store(true, std::memory_order_release);
                             triggerOffSound.store(true, std::memory_order_release);
                         }
                     }
-        
+            
                     return true;
                 }
                 
                 return false;
             }
-        
+                        
             void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
                 if (isRounded) {
                     renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
@@ -12169,10 +12238,34 @@ namespace tsl {
             const bool menuTouched = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
                                      (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
             
-            ult::touchingBack.store(backTouched, std::memory_order_release);
-            ult::touchingSelect.store(selectTouched, std::memory_order_release);
-            ult::touchingNextPage.store(nextPageTouched, std::memory_order_release);
-            ult::touchingMenu.store(menuTouched, std::memory_order_release);
+            //ult::touchingBack.store(backTouched, std::memory_order_release);
+            //ult::touchingSelect.store(selectTouched, std::memory_order_release);
+            //ult::touchingNextPage.store(nextPageTouched, std::memory_order_release);
+            //ult::touchingMenu.store(menuTouched, std::memory_order_release);
+
+            // Only update and trigger rumble on state changes
+            bool shouldTriggerRumble = false;
+            
+            if (backTouched != ult::touchingBack.exchange(backTouched, std::memory_order_acq_rel)) {
+                if (backTouched) shouldTriggerRumble = true;
+            }
+            
+            if (selectTouched != ult::touchingSelect.exchange(selectTouched, std::memory_order_acq_rel)) {
+                if (selectTouched) shouldTriggerRumble = true;
+            }
+            
+            if (nextPageTouched != ult::touchingNextPage.exchange(nextPageTouched, std::memory_order_acq_rel)) {
+                if (nextPageTouched) shouldTriggerRumble = true;
+            }
+            
+            if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
+                if (menuTouched && ult::inMainMenu.load(std::memory_order_acquire)) shouldTriggerRumble = true;
+            }
+            
+            if (shouldTriggerRumble) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+            }
+
             
             if (touchDetected) {
                 // Update lastSimulatedTouch with current touch states
@@ -12205,7 +12298,10 @@ namespace tsl {
                         ult::touchInBounds = (initialTouchPos.y <= footerY && initialTouchPos.y > 73U && 
                                             initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U && 
                                             initialTouchPos.x > 40U + ult::layerEdge);
-                        if (ult::touchInBounds) currentGui->removeFocus();
+                        if (ult::touchInBounds) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            currentGui->removeFocus();
+                        }
                     }
                     touchEvent = elm::TouchEvent::Touch;
                 }
