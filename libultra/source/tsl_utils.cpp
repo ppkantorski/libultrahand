@@ -301,7 +301,6 @@ namespace ult {
     std::atomic<float> nextPageWidth;
     std::atomic<bool> inMainMenu{false};
     std::atomic<bool> inHiddenMode{false};
-    std::atomic<bool> inMainOrHiddenMenu{false};
     std::atomic<bool> inSettingsMenu{false};
     std::atomic<bool> inSubSettingsMenu{false};
     std::atomic<bool> inOverlaysPage{false};
