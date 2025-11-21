@@ -7769,12 +7769,13 @@ namespace tsl {
                     const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
-                    #if IS_LAUNCHER_DIRECTIVE
-                    if (!m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
+                #if IS_LAUNCHER_DIRECTIVE
+                    if (!m_longThresholdCrossed && touchDurationInSeconds >= 1.0f && 
+                        (ult::inMainMenu.load(std::memory_order_acquire) || (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) [[unlikely]] {
                         m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     } else
-                    #endif
+                #endif
                     if (!m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
                         m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
@@ -7785,12 +7786,13 @@ namespace tsl {
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
-            #if IS_LAUNCHER_DIRECTIVE
-                        const s64 keyToUse = determineKeyOnTouchRelease(m_flags.m_useScriptKey);
-            #else
-                        const s64 keyToUse = determineKeyOnTouchRelease(false);
-            #endif
-                        const bool handled = onClick(keyToUse);
+                        const bool handled = onClick(determineKeyOnTouchRelease(
+                            #if IS_LAUNCHER_DIRECTIVE
+                            m_flags.m_useScriptKey
+                            #else
+                            false
+                            #endif
+                        ));
                         m_clickAnimationProgress = 0;
                         return handled;
                     }
@@ -8198,367 +8200,143 @@ namespace tsl {
         };
 
         /**
-         * @brief A item that goes into a list (this version uses value and faint color sourcing)
-         *
+         * @brief A wrapper item that extends ListItem with custom color support for inputs
+         *        (this version uses value and faint color sourcing)
          */
-        class ListItemV2 : public Element {
+        class ListItemV2 : public ListItem {
         public:
-            u32 width, height;
-            u64 m_touchStartTime_ns;  // Track the time when touch starts
-        
             /**
              * @brief Constructor
              *
              * @param text Initial description text
+             * @param value Initial value text
+             * @param valueColor Color to use for the value when not faint
+             * @param faintColor Color to use for the value when faint
+             * @param isMini Whether to use mini list item height
+             * @param useScriptKey Whether to use script key (launcher only)
              */
-            ListItemV2(const std::string& text, const std::string& value = "", Color valueColor = onTextColor, Color faintColor = offTextColor)
-                : Element(), m_text(text), m_value(value), m_valueColor{valueColor}, m_faintColor{faintColor} {
-            }
-            virtual ~ListItemV2() {}
-        
-                    
-            virtual void draw(gfx::Renderer *renderer) override {
-                static float lastBottomBound;
-                bool useClickTextColor = false;
-                if (this->m_touched && Element::getInputMode() == InputMode::Touch) {
-                    if (ult::touchInBounds) {
-                        //renderer->drawRect(ELEMENT_BOUNDS(this), a(clickColor));
-                        renderer->drawRect( this->getX()+4, this->getY(), this->getWidth()-8, this->getHeight(), a(clickColor));
-                        useClickTextColor = true;
-                    }
-                    //renderer->drawRect(ELEMENT_BOUNDS(this), tsl::style::color::ColorClickAnimation);
-                }
-            
-                // Calculate vertical offset to center the text
-                const s32 yOffset = (tsl::style::ListItemDefaultHeight - this->m_listItemHeight) / 2;
-            
-                if (this->m_maxWidth == 0) {
-                    if (this->m_value.length() > 0) {
-                        //std::tie(width, height) = renderer->drawString(this->m_value, false, 0, 0, 20, a(tsl::style::color::ColorTransparent));
-                        //auto valueWidth = renderer->getTextDimensions(this->m_value, false, 20).first;
-                        width = renderer->getTextDimensions(this->m_value, false, 20).first;
-                        this->m_maxWidth = this->getWidth() - width - 70 +4;
-                    } else {
-                        this->m_maxWidth = this->getWidth() - 40 -10 -12;
-                    }
-                    
-                    //std::tie(width, height) = renderer->drawString(this->m_text, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                    //auto textWidth = renderer->getTextDimensions(this->m_text, false, 23).first;
-                    width = renderer->getTextDimensions(this->m_text, false, 23).first;
-                    this->m_trunctuated = width > this->m_maxWidth+20;
-                    
-                    if (this->m_trunctuated) {
-                        this->m_scrollText = this->m_text + "        ";
-                        //std::tie(width, height) = renderer->drawString(this->m_scrollText, false, 0, 0, 23, a(tsl::style::color::ColorTransparent));
-                        //auto scrollWidth = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
-                        width = renderer->getTextDimensions(this->m_scrollText, false, 23).first;
-                        this->m_scrollText += this->m_text;
-                        this->m_textWidth = width;
-                        
-                        this->m_ellipsisText = renderer->limitStringLength(this->m_text, false, 23, this->m_maxWidth);
-                    } else {
-                        this->m_textWidth = width;
-                    }
-                }
+        #if IS_LAUNCHER_DIRECTIVE
+            ListItemV2(const std::string& text, 
+                       const std::string& value = "", 
+                       Color valueColor = onTextColor, 
+                       Color faintColor = offTextColor,
+                       bool isMini = false,
+                       bool useScriptKey = true)
+                : ListItem(text, value, isMini, useScriptKey),
+                  m_valueColorOverride(valueColor),
+                  m_faintColorOverride(faintColor),
+                  m_hasColorOverrides(true) {
                 
-                if (lastBottomBound !=  this->getTopBound())
-                    renderer->drawRect(this->getX()+4, this->getTopBound(), this->getWidth()+6 +4, 1, a(separatorColor));
-                renderer->drawRect(this->getX()+4, this->getBottomBound(), this->getWidth()+6 +4, 1, a(separatorColor));
-            
-                lastBottomBound = this->getBottomBound();
-                
-            
-                if (this->m_trunctuated) {
-                    if (this->m_focused) {
-                        if (this->m_value.length() > 0)
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 30 -3, tsl::cfg::FramebufferHeight-73-97);
-                        else
-                            renderer->enableScissoring(this->getX()+6, 97, this->m_maxWidth + 40 +9, tsl::cfg::FramebufferHeight-73-97);
-                        renderer->drawString(this->m_scrollText, false, this->getX() + 20-1 - this->m_scrollOffset, this->getY() + 45 - yOffset, 23, selectedTextColor);
-                        renderer->disableScissoring();
-                        
-                        // Handle scrolling with frame rate compensation
-                        const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                        const u64 elapsed_ns = currentTime_ns - this->timeIn_ns;
-                        
-                        // Frame rate compensation - cache calculations to reduce stutter
-                        static u64 lastUpdateTime = 0;
-                        static float cachedScrollOffset = 0.0f;
-                        
-                        // Pre-compute constants as statics to avoid recalculation
-                        static bool constantsInitialized = false;
-                        static double totalCycleDuration;
-                        static double delayDuration;
-                        static double scrollDuration;
-                        static double accelTime;
-                        static double constantVelocityTime;
-                        static double maxVelocity;
-                        static double accelDistance;
-                        static double constantVelocityDistance;
-                        static double minScrollDistance;
-                        static double invAccelTime;  // 1/accelTime for multiplication instead of division
-                        static double invDecelTime;  // 1/decelTime for multiplication instead of division
-                        static double invBillion;    // 1/1000000000.0 for ns to seconds conversion
-                        
-                        if (!constantsInitialized || minScrollDistance != static_cast<double>(this->m_textWidth)) {
-                            // Constants for velocity-based scrolling
-                            delayDuration = 2.0;
-                            static constexpr double pauseDuration = 1.0;
-                            maxVelocity = 166.0;
-                            accelTime = 0.5;
-                            static constexpr double decelTime = 0.5;
-                            
-                            // Pre-calculate derived constants
-                            minScrollDistance = static_cast<double>(this->m_textWidth);
-                            accelDistance = 0.5 * maxVelocity * accelTime;
-                            const double decelDistance = 0.5 * maxVelocity * decelTime;
-                            constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
-                            constantVelocityTime = constantVelocityDistance / maxVelocity;
-                            scrollDuration = accelTime + constantVelocityTime + decelTime;
-                            totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
-                            
-                            // Pre-calculate reciprocals for faster division
-                            invAccelTime = 1.0 / accelTime;
-                            invDecelTime = 1.0 / decelTime;
-                            invBillion = 1.0 / 1000000000.0;
-                            
-                            constantsInitialized = true;
-                        }
-                        
-                        // Fast ns to seconds conversion
-                        const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
-                        
-                        // Update at consistent intervals regardless of frame rate
-                        if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
-                            // Use std::fmod for modulo - it's optimized and faster than loops
-                            const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
-                            
-                            if (cyclePosition < delayDuration) {
-                                // Delay phase - no scrolling
-                                cachedScrollOffset = 0.0f;
-                            } else if (cyclePosition < delayDuration + scrollDuration) {
-                                // Scrolling phase - velocity-based movement
-                                const double scrollTime = cyclePosition - delayDuration;
-                                double distance;
-                                
-                                if (scrollTime <= accelTime) {
-                                    // Acceleration phase - quadratic ease-in
-                                    const double t = scrollTime * invAccelTime;  // Multiply instead of divide
-                                    const double smoothT = t * t;
-                                    distance = smoothT * accelDistance;
-                                } else if (scrollTime <= accelTime + constantVelocityTime) {
-                                    // Constant velocity phase
-                                    const double constantTime = scrollTime - accelTime;
-                                    distance = accelDistance + (constantTime * maxVelocity);
-                                } else {
-                                    // Deceleration phase - quadratic ease-out
-                                    const double decelStartTime = accelTime + constantVelocityTime;
-                                    const double t = (scrollTime - decelStartTime) * invDecelTime;  // Multiply instead of divide
-                                    const double oneMinusT = 1.0 - t;
-                                    const double smoothT = 1.0 - oneMinusT * oneMinusT;  // Avoid repeated calculation
-                                    distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
-                                }
-                                
-                                // Use branchless min with conditional move behavior
-                                cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
-                            } else {
-                                // Pause phase - stay at end
-                                cachedScrollOffset = static_cast<float>(this->m_textWidth);
-                            }
-                            
-                            lastUpdateTime = currentTime_ns;
-                        }
-                        
-                        // Use cached value for consistent display
-                        this->m_scrollOffset = cachedScrollOffset;
-                        
-                        // Reset timer when cycle completes
-                        if (elapsed_seconds >= totalCycleDuration) {
-                            this->timeIn_ns = currentTime_ns;
-                        }
-                    } else {
-                        renderer->drawString(this->m_ellipsisText, false, this->getX() + 20-1, this->getY() + 45 - yOffset, 23, !useClickTextColor ? defaultTextColor : clickTextColor);
-                    }
-                } else {
-                    // Render the text with special character handling
-                #if IS_LAUNCHER_DIRECTIVE
-                    static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
-                #else
-                    static const std::vector<std::string> specialChars = {};
-                #endif
-                    renderer->drawStringWithColoredSections(this->m_text, false, specialChars, this->getX() + 20-1, this->getY() + 45 - yOffset, 23,
-                        (this->m_focused ? (!useClickTextColor ? selectedTextColor : clickTextColor) : (!useClickTextColor ? defaultTextColor : clickTextColor)),
-                        (this->m_focused ? starColor : selectionStarColor)
-                    );
-                }
-                
-                
-                // CUSTOM SECTION START (modification for submenu footer color)
-                const s32 xPosition = this->getX() + this->m_maxWidth + 44 + 3;
-                const s32 yPosition = this->getY() + 45 - yOffset;
-                static constexpr s32 fontSize = 20;
-            
-            
-                //static bool lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
-            
-                // Determine text color
-                const auto textColor = this->m_faint ? a(m_faintColor) : a(m_valueColor);
-                
-                if (this->m_value != ult::INPROGRESS_SYMBOL) {
-                    // Draw the string with the determined text color
-                    renderer->drawString(this->m_value, false, xPosition, yPosition, fontSize, textColor);
-                } else {
-                    static size_t throbberCounter = 0;
-
-                    
-                    // Reset counter to prevent overflow (every full cycle)
-                    if (throbberCounter >= 10 * ult::THROBBER_SYMBOLS.size()) {
-                        throbberCounter = 0;
-                    }
-                    
-                    // Get current throbber symbol (changes every 10 frames)
-                    const size_t symbolIndex = (throbberCounter / 10) % ult::THROBBER_SYMBOLS.size();
-                    const std::string& currentSymbol = ult::THROBBER_SYMBOLS[symbolIndex];
-                    
-                    // Instance-specific counter for independent throbber animation
-                    ++throbberCounter;
-
-                    renderer->drawString(currentSymbol, false, xPosition, yPosition, fontSize, textColor);
-                }
-                //lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+                // Set the custom value color on the base ListItem
+                setValueColor(valueColor);
             }
-        
-            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                this->setBoundaries(this->getX()+2+1, this->getY(), this->getWidth()+8+1, m_listItemHeight);
-            }
-        
-            virtual bool onClick(u64 keys) override {
-                if (keys & KEY_A) {
-                    this->triggerClickAnimation();
-                }
-                else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
-                    this->m_clickAnimationProgress = 0;
-        
-                return Element::onClick(keys);
-            }
-        
-            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                if (event == TouchEvent::Touch)
-                    this->m_touched = this->inBounds(currX, currY);
-        
-                if (event == TouchEvent::Release && this->m_touched) {
-                    this->m_touched = false;
-        
-                    if (Element::getInputMode() == InputMode::Touch) {
-                        const bool handled = this->onClick(KEY_A);
-        
-                        this->m_clickAnimationProgress = 0;
-                        return handled;
-                    }
-                }
+        #else
+            ListItemV2(const std::string& text, 
+                       const std::string& value = "", 
+                       Color valueColor = onTextColor, 
+                       Color faintColor = offTextColor,
+                       bool isMini = false)
+                : ListItem(text, value, isMini),
+                  m_valueColorOverride(valueColor),
+                  m_faintColorOverride(faintColor),
+                  m_hasColorOverrides(true) {
                 
-                
-                return false;
+                // Set the custom value color on the base ListItem
+                setValueColor(valueColor);
             }
+        #endif
         
-        
-            virtual void setFocused(bool state) override {
-                this->m_scroll = false;
-                this->m_scrollOffset = 0;
-                this->timeIn_ns = armTicksToNs(armGetSystemTick());
-                Element::setFocused(state);
-            }
-        
-            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
-                return this;
-            }
+            virtual ~ListItemV2() = default;
         
             /**
-             * @brief Sets the left hand description text of the list item
-             *
-             * @param text Text
-             */
-            inline void setText(const std::string& text) {
-                this->m_text = text;
-                this->m_scrollText = "";
-                this->m_ellipsisText = "";
-                this->m_maxWidth = 0;
-            }
-        
-            /**
-             * @brief Sets the right hand value text of the list item
-             *
-             * @param value Text
-             * @param faint Should the text be drawn in a glowing green or a faint gray
+             * @brief Override setValue to maintain custom color behavior
              */
             inline void setValue(const std::string& value, bool faint = false) {
-                this->m_value = value;
-                this->m_faint = faint;
-                this->m_maxWidth = 0;
+                // Call parent implementation
+                ListItem::setValue(value, faint);
+                
+                // Re-apply color override based on faint state
+                if (m_hasColorOverrides) {
+                    setValueColor(faint ? m_faintColorOverride : m_valueColorOverride);
+                }
             }
         
             /**
-             * @brief Sets the value color
-             *
-             * @param value_color color of the value
+             * @brief Set custom value color
              */
-            inline void setValueColor(Color value_color) {
-                this->m_valueColor = value_color;
+            inline void setValueColorOverride(Color color) {
+                m_valueColorOverride = color;
+                m_hasColorOverrides = true;
+                // Update the base class if not currently faint
+                if (!m_flags.m_faint) {
+                    setValueColor(color);
+                }
             }
         
             /**
-             * @brief Sets the faint color
-             *
-             * @param faint_color color of the faint
+             * @brief Set custom faint color
              */
-            inline void setFaintColor(Color faint_color) {
-                this->m_faintColor = faint_color;
+            inline void setFaintColorOverride(Color color) {
+                m_faintColorOverride = color;
+                m_hasColorOverrides = true;
+                // Update the base class if currently faint
+                if (m_flags.m_faint) {
+                    setValueColor(color);
+                }
             }
         
             /**
-             * @brief Gets the left hand description text of the list item
-             *
-             * @return Text
+             * @brief Get the current value color override
              */
-            inline const std::string& getText() const {
-                return this->m_text;
+            inline Color getValueColorOverride() const {
+                return m_valueColorOverride;
             }
         
             /**
-             * @brief Gets the right hand value text of the list item
-             *
-             * @return Value
+             * @brief Get the current faint color override
              */
-            inline const std::string& getValue() {
-                return this->m_value;
+            inline Color getFaintColorOverride() const {
+                return m_faintColorOverride;
+            }
+        
+            /**
+             * @brief Clear color overrides and revert to default behavior
+             */
+            inline void clearColorOverrides() {
+                m_hasColorOverrides = false;
+                clearValueColor();
             }
         
         protected:
-            u64 timeIn_ns;
+            Color m_valueColorOverride;
+            Color m_faintColorOverride;
+            bool m_hasColorOverrides;
+        };
         
-            std::string m_text;
-            std::string m_value;
-            std::string m_scrollText;
-            std::string m_ellipsisText;
-            u32 m_listItemHeight = tsl::style::ListItemDefaultHeight;
         
+        /**
+         * @brief Mini version of ListItemV2
+         */
+        class MiniListItemV2 : public ListItemV2 {
+        public:
         #if IS_LAUNCHER_DIRECTIVE
-            bool m_useScriptKey = false;
+            MiniListItemV2(const std::string& text, 
+                           const std::string& value = "", 
+                           Color valueColor = onTextColor, 
+                           Color faintColor = offTextColor,
+                           bool useScriptKey = false)
+                : ListItemV2(text, value, valueColor, faintColor, true, useScriptKey) {
+            }
+        #else
+            MiniListItemV2(const std::string& text, 
+                           const std::string& value = "", 
+                           Color valueColor = onTextColor, 
+                           Color faintColor = offTextColor)
+                : ListItemV2(text, value, valueColor, faintColor, true) {
+            }
         #endif
-            Color m_valueColor;
-            Color m_faintColor;
         
-            bool m_scroll = false;
-            bool m_trunctuated = false;
-            bool m_faint = false;
-        
-            bool m_touched = false;
-        
-            u16 m_maxScroll = 0;
-            u16 m_scrollOffset = 0;
-            u32 m_maxWidth = 0;
-            u32 m_textWidth = 0;
-            u16 m_scrollAnimationCounter = 0;
+            virtual ~MiniListItemV2() {}
         };
 
         /**
