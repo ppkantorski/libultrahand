@@ -12276,7 +12276,7 @@ namespace tsl {
             }
             
             if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
-                if (menuTouched && ult::inMainMenu.load(std::memory_order_acquire)) shouldTriggerRumble = true;
+                if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) || (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) shouldTriggerRumble = true;
             }
             
             if (shouldTriggerRumble) {
