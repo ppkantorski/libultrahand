@@ -10039,14 +10039,44 @@ namespace tsl {
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 static s16 lastHapticSegment = -1;
+                static bool wasOriginallyLocked = false;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
                 
-                //if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
-                //    return false;
-                //}
+                // Handle touch start
+                if (event == TouchEvent::Touch && touchInCircle) {
+                    // Remember if it was locked before we touched it
+                    wasOriginallyLocked = !m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire);
+                    
+                    // Temporarily unlock if it was locked
+                    if (wasOriginallyLocked) {
+                        ult::allowSlide.store(true, std::memory_order_release);
+                    }
+                }
                 
-                if ((touchInCircle || touchInSliderBounds)) {
+                // Handle release
+                if (event == TouchEvent::Release) {
+                    triggerOnce = true;
+                    lastHapticSegment = -1;
+                    
+                    // Re-lock if it was originally locked
+                    if (wasOriginallyLocked) {
+                        ult::allowSlide.store(false, std::memory_order_release);
+                        wasOriginallyLocked = false;
+                    }
+                    
+                    if (touchInSliderBounds) {
+                        updateAndExecute();
+                        touchInSliderBounds = false;
+                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                        triggerOffSound.store(true, std::memory_order_release);
+                    }
+                    return false;
+                }
+                
+                const bool isUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
+                
+                if ((touchInCircle || touchInSliderBounds) && isUnlocked) {
                     touchInSliderBounds = true;
                     if (triggerOnce) {
                         triggerOnce = false;
@@ -10073,19 +10103,6 @@ namespace tsl {
                         if (newIndex == 0 || currentSegment != lastHapticSegment) {
                             lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
-                        }
-                        
-                        if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
-                            // Already handled by segment check above
-                        }
-                    } else {
-                        if (event == TouchEvent::Release) {
-                            triggerOnce = true;
-                            lastHapticSegment = -1; // Reset for next touch
-                            updateAndExecute();
-                            touchInSliderBounds = false;
-                            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                            triggerOffSound.store(true, std::memory_order_release);
                         }
                     }
             
