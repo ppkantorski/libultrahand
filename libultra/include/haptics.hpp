@@ -26,10 +26,10 @@
 namespace ult {
 	
 	//extern bool rumbleInitialized;
-	extern std::atomic<bool> rumbleActive;
+	extern std::atomic<bool> clickActive;
 	extern std::atomic<bool> doubleClickActive;
 	
-	//void initRumble();
+	void initRumble();
 	void deinitRumble();
 	void checkAndReinitRumble();
 	

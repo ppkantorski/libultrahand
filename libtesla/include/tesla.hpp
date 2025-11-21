@@ -11119,6 +11119,10 @@ namespace tsl {
 
             ult::isHidden.store(false);
             this->onShow();
+
+            //if (ult::useHapticFeedback)
+                //ult::initRumble();
+
             triggerRumbleClick.store(true, std::memory_order_release);
 
             // reinitialize audio for changes from handheld to docked and vise versa
@@ -12644,8 +12648,8 @@ namespace tsl {
             
             while (shData->running.load(std::memory_order_acquire)) {
 
-                const u64 nowTick = armGetSystemTick();
-                const u64 nowNs = armTicksToNs(nowTick);
+                u64 nowTick = armGetSystemTick();
+                u64 nowNs = armTicksToNs(nowTick);
                 
                 
                 
@@ -12852,32 +12856,53 @@ namespace tsl {
                     }
 
 
+                    if (ult::useHapticFeedback) {
+                        // Process ongoing rumbles
+                        if (ult::clickActive.load(std::memory_order_acquire))
+                            ult::processRumbleStop(nowNs);
+                        if (ult::doubleClickActive.load(std::memory_order_acquire))
+                            ult::processRumbleDoubleClick(nowNs);
+                    }
+
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
                         break;
                     std::scoped_lock lock(shData->dataMutex);
                     if (ult::launchingOverlay.load(std::memory_order_acquire))
                         break;
 
+                    // Repoll after lock
+                    nowTick = armGetSystemTick();
+                    nowNs = armTicksToNs(nowTick);
+                    
                     // Flush any pending rumble triggers when feedback is off
-                    if (!ult::useHapticFeedback) {
-                        triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
-                        triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel);
-                    } else {
+                    if (ult::useHapticFeedback) {
                         ult::checkAndReinitRumble();
                         
-                        if (triggerRumbleDoubleClick.exchange(false)) {
-                            if (!ult::doubleClickActive.load(std::memory_order_acquire)) {
+                        // Double-click takes priority
+                        if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
+                            if (!ult::clickActive.load(std::memory_order_acquire) && !ult::doubleClickActive.load(std::memory_order_acquire)) {
                                 ult::rumbleDoubleClick();
                             }
-                            triggerRumbleClick.exchange(false);
-                        } else if (triggerRumbleClick.exchange(false)) {
-                            ult::rumbleClick();
+                            // Clear any pending single click since double-click supersedes it
+                            triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
+                        } 
+
+                        if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
+                            // Only start single click if nothing else is active
+                            if (!ult::clickActive.load(std::memory_order_acquire) && !ult::doubleClickActive.load(std::memory_order_acquire)) {
+                                ult::rumbleClick();
+                            }
+                            //triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel);
                         }
                         
-                        //const u64 _nowNs = armTicksToNs(armGetSystemTick());
-
-                        ult::processRumbleStop(nowNs);
-                        ult::processRumbleDoubleClick(nowNs);
+                        // Process ongoing rumbles
+                        if (ult::clickActive.load(std::memory_order_acquire))
+                            ult::processRumbleStop(nowNs);
+                        if (ult::doubleClickActive.load(std::memory_order_acquire))
+                            ult::processRumbleDoubleClick(nowNs);
+                    } else {
+                        triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
+                        triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel);
                     }
                     
                     // Flush any pending sound triggers when effects are off
