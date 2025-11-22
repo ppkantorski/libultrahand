@@ -11126,7 +11126,7 @@ namespace tsl {
             triggerRumbleClick.store(true, std::memory_order_release);
 
             // reinitialize audio for changes from handheld to docked and vise versa
-            if (ult::expandedMemory && ult::useSoundEffects)
+            if (!ult::limitedMemory && ult::useSoundEffects)
                 ult::AudioPlayer::reloadIfDockedChanged();
             
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
@@ -12535,7 +12535,7 @@ namespace tsl {
             requiresLNY2 = amsVersionAtLeast(1,10,0);     // Detect if using HOS 21+
 
             // Initialize the audio service
-            if (ult::useSoundEffects && ult::expandedMemory) {
+            if (ult::useSoundEffects && !ult::limitedMemory) {
                 ult::AudioPlayer::initialize();
             }
 
@@ -12907,7 +12907,7 @@ namespace tsl {
                     
                     // Flush any pending sound triggers when effects are off
 
-                    if (ult::expandedMemory) {
+                    if (!ult::limitedMemory) {
                         if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
                             triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
                             triggerEnterSound.exchange(false, std::memory_order_acq_rel);
@@ -14098,7 +14098,7 @@ extern "C" {
         eventClose(&tsl::notificationEvent);
 
         //deinitRumble();
-        if (ult::expandedMemory)
+        if (!ult::limitedMemory)
             ult::AudioPlayer::exit();
 
         

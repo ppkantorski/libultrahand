@@ -25,8 +25,8 @@ namespace ult {
 // Base loader definitions
 size_t DOWNLOAD_READ_BUFFER = 8*1024;//64 * 1024;//4096*10;
 size_t DOWNLOAD_WRITE_BUFFER = 8*1024;//64 * 1024;
-size_t UNZIP_READ_BUFFER = 32*1024;//131072*2;//4096*4;
-size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
+size_t UNZIP_READ_BUFFER = 8*1024;//131072*2;//4096*4;
+size_t UNZIP_WRITE_BUFFER = 8*1024;//131072*2;//4096*4;
 
 
 // Path to the CA certificate
