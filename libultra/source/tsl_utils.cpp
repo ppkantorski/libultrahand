@@ -1876,6 +1876,9 @@ namespace ult {
         u8 flag = 1;
         bool success = (fwrite(&flag, 1, 1, f) == 1);
         fclose(f);
+
+
+        deleteFileOrDirectory(NOTIFICATIONS_FLAG_FILEPATH);
         
         return success;
     }
