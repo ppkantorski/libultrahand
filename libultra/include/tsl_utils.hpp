@@ -376,7 +376,7 @@ namespace ult {
     extern std::string HIDE_OVERLAY;
     extern std::string HIDE_PACKAGE;
     extern std::string LAUNCH_ARGUMENTS;
-    extern std::string FORCE_LNY2_SUPPORT;
+    extern std::string FORCE_AMS110_SUPPORT;
     extern std::string QUICK_LAUNCH;
     extern std::string BOOT_COMMANDS;
     extern std::string EXIT_COMMANDS;
@@ -728,7 +728,8 @@ namespace ult {
         Size_4MB = 0x400000,
         Size_6MB = 0x600000,
         Size_8MB = 0x800000,
-        Size_10MB = 0xA00000
+        Size_10MB = 0xA00000,
+        Size_12MB = 0xC00000
     };
     
     // Static cache

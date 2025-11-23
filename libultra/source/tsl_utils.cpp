@@ -457,7 +457,7 @@ namespace ult {
     std::string HIDE_OVERLAY = "Hide Overlay";
     std::string HIDE_PACKAGE = "Hide Package";
     std::string LAUNCH_ARGUMENTS = "Launch Arguments";
-    std::string FORCE_LNY2_SUPPORT = "Force LNY2 Support";
+    std::string FORCE_AMS110_SUPPORT = "Force AMS110+ Support";
     std::string QUICK_LAUNCH = "Quick Launch";
     std::string BOOT_COMMANDS = "Boot Commands";
     std::string EXIT_COMMANDS = "Exit Commands";
@@ -670,7 +670,7 @@ namespace ult {
         HIDE_OVERLAY = "Hide Overlay";
         HIDE_PACKAGE = "Hide Package";
         LAUNCH_ARGUMENTS = "Launch Arguments";
-        FORCE_LNY2_SUPPORT = "Force LNY2 Support";
+        FORCE_AMS110_SUPPORT = "Force AMS110+ Support";
         QUICK_LAUNCH = "Quick Launch";
         BOOT_COMMANDS = "Boot Commands";
         EXIT_COMMANDS = "Exit Commands";
@@ -882,7 +882,7 @@ namespace ult {
             {"HIDE_PACKAGE", &HIDE_PACKAGE},
             {"HIDE_OVERLAY", &HIDE_OVERLAY},
             {"LAUNCH_ARGUMENTS", &LAUNCH_ARGUMENTS},
-            {"FORCE_LNY2_SUPPORT", &FORCE_LNY2_SUPPORT},
+            {"FORCE_AMS110_SUPPORT", &FORCE_AMS110_SUPPORT},
             {"QUICK_LAUNCH", &QUICK_LAUNCH},
             {"BOOT_COMMANDS", &BOOT_COMMANDS},
             {"EXIT_COMMANDS", &EXIT_COMMANDS},
@@ -1832,7 +1832,7 @@ namespace ult {
         
         u64 size;
         if (fread(&size, sizeof(size), 1, f) == 1) {
-            if (size == 0x400000 || size == 0x600000 || size == 0x800000 || size == 0xA00000) {
+            if (size == 0x400000 || size == 0x600000 || size == 0x800000 || size == 0xA00000 || size == 0xC00000) {
                 heapSizeCache.cachedSize = static_cast<OverlayHeapSize>(size);
             }
         }
