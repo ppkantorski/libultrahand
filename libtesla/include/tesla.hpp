@@ -5051,7 +5051,7 @@ namespace tsl {
             
                     if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) ||
                         (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
-                        renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 10.0f, a(clickColor));
+                        renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 12.0f, a(clickColor));
                     }
                     
                     x = 20;
@@ -5258,13 +5258,13 @@ namespace tsl {
                 
                 // Draw back button if touched
                 if (ult::touchingBack) {
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
                 }
                 
                 // Draw select button (to the right of back) if touched
                 if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
                     renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                              _selectWidth-2, 73.0f, 10.0f, a(clickColor));
+                                              _selectWidth-2, 73.0f, 12.0f, a(clickColor));
                 }
                 
             #if IS_LAUNCHER_DIRECTIVE
@@ -5295,7 +5295,7 @@ namespace tsl {
                 
                         renderer->drawRoundedRect(nextX, buttonY,
                                                   _nextPageWidth-2,
-                                                  73.0f, 10.0f, a(clickColor));
+                                                  73.0f, 12.0f, a(clickColor));
                     }
                 }
             #endif
@@ -5556,13 +5556,13 @@ namespace tsl {
                 
                     // Draw back button rectangle
                     if (ult::touchingBack.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
+                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
                     }
                 
                     // Draw select button rectangle (starts right after back button)
                     if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
                         renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                                  _selectWidth-2, 73.0f, 10.0f, a(clickColor));
+                                                  _selectWidth-2, 73.0f, 12.0f, a(clickColor));
                     }
                 }
                 
@@ -5745,13 +5745,13 @@ namespace tsl {
             
                 // Draw back button rectangle
                 if (ult::touchingBack.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 10.0f, a(clickColor));
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
                 }
             
                 // Draw select button rectangle
                 if (ult::touchingSelect.load(std::memory_order_acquire)) {
                     renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                              _selectWidth-2, 73.0f, 10.0f, a(clickColor));
+                                              _selectWidth-2, 73.0f, 12.0f, a(clickColor));
                 }
             
                 // Draw bottom text
