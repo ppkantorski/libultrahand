@@ -11106,7 +11106,11 @@ namespace tsl {
          *
          */
         void show() {
-            
+            if (ult::useHapticFeedback) {
+                if (ult::isHidden.load(std::memory_order_acquire)) {
+                    ult::initHaptics();
+                }
+            }
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -11116,12 +11120,10 @@ namespace tsl {
                 this->m_fadeInAnimationPlaying = true;
                 this->m_animationCounter = 0;
             }
-
-            ult::isHidden.store(false);
+            
             this->onShow();
 
-            //if (ult::useHapticFeedback)
-                //ult::initRumble();
+            ult::isHidden.store(false);
 
             triggerRumbleClick.store(true, std::memory_order_release);
 
@@ -12591,7 +12593,7 @@ namespace tsl {
             padUpdate(&pad_p1);
             padUpdate(&pad_handheld);
 
-            //ult::initRumble(); // initialize rumble
+            //ult::initHaptics(); // initialize rumble
             
             enum WaiterObject {
                 WaiterObject_HomeButton,
@@ -12876,7 +12878,7 @@ namespace tsl {
                     
                     // Flush any pending rumble triggers when feedback is off
                     if (ult::useHapticFeedback) {
-                        ult::checkAndReinitRumble();
+                        ult::checkAndReinitHaptics();
                         
                         // Double-click takes priority
                         if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
@@ -13546,17 +13548,29 @@ namespace tsl {
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
-            ult::furtherExpandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_10MB;
+            ult::furtherExpandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
             
-            ult::loaderTitle += !ult::furtherExpandedMemory ? "+" : "×";
-            ult::COPY_BUFFER_SIZE = 262144;
-            ult::HEX_BUFFER_SIZE = 8192;
-            ult::UNZIP_READ_BUFFER = 262144;
-            ult::UNZIP_WRITE_BUFFER = 131072;
-            ult::DOWNLOAD_READ_BUFFER = 262144/2;
-            ult::DOWNLOAD_WRITE_BUFFER = 131072;
+            if (!ult::furtherExpandedMemory) {
+                ult::loaderTitle += "+";
+                ult::COPY_BUFFER_SIZE = 262144;
+                ult::HEX_BUFFER_SIZE = 8192;
+                ult::UNZIP_READ_BUFFER = 262144;
+                ult::UNZIP_WRITE_BUFFER = 131072;
+                ult::DOWNLOAD_READ_BUFFER = 131072;
+                ult::DOWNLOAD_WRITE_BUFFER = 131072;
+            } else {
+                ult::loaderTitle += "×";
+                ult::COPY_BUFFER_SIZE = 262144*2;
+                ult::HEX_BUFFER_SIZE = 8192;
+                ult::UNZIP_READ_BUFFER = 262144*2;
+                ult::UNZIP_WRITE_BUFFER = 131072*4;
+                ult::DOWNLOAD_READ_BUFFER = 131072*4;
+                ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
+            }
         } else if (ult::limitedMemory) {
             ult::loaderTitle += "-";
+            ult::DOWNLOAD_READ_BUFFER = 16*1024;
+            ult::UNZIP_READ_BUFFER = 16*1024;
         }
     #endif
     
@@ -14097,7 +14111,7 @@ extern "C" {
         delete tsl::notification;
         eventClose(&tsl::notificationEvent);
 
-        //deinitRumble();
+        //deinitHaptics();
         if (!ult::limitedMemory)
             ult::AudioPlayer::exit();
 

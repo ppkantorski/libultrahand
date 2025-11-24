@@ -29,9 +29,9 @@ namespace ult {
 	extern std::atomic<bool> clickActive;
 	extern std::atomic<bool> doubleClickActive;
 	
-	void initRumble();
-	void deinitRumble();
-	void checkAndReinitRumble();
+	void initHaptics();
+	void deinitHaptics();
+	void checkAndReinitHaptics();
 	
 	void rumbleClick();
 	void rumbleDoubleClick();

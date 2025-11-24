@@ -727,17 +727,23 @@ namespace ult {
     enum class OverlayHeapSize : u64 {
         Size_4MB = 0x400000,
         Size_6MB = 0x600000,
-        Size_8MB = 0x800000,
-        Size_10MB = 0xA00000,
-        Size_12MB = 0xC00000
+        Size_8MB = 0x800000
     };
     
     // Static cache
     static struct {
         bool initialized = false;
         OverlayHeapSize cachedSize = OverlayHeapSize::Size_6MB;
+        u64 customSizeMB = 0;  // NEW: store custom size in MB
     } heapSizeCache;
     
+
+    // Helper function to convert MB to bytes
+    extern u64 mbToBytes(u32 mb);
+    
+    // Helper function to convert bytes to MB
+    extern u32 bytesToMB(u64 bytes);
+
     // Implementation
     OverlayHeapSize getCurrentHeapSize();
     

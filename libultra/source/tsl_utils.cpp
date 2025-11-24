@@ -1814,6 +1814,16 @@ namespace ult {
     
 
 
+        
+    // Helper function to convert MB to bytes
+    u64 mbToBytes(u32 mb) {
+        return static_cast<u64>(mb) * 0x100000;
+    }
+    
+    // Helper function to convert bytes to MB
+    u32 bytesToMB(u64 bytes) {
+        return static_cast<u32>(bytes / 0x100000);
+    }
     
     // Implementation
     OverlayHeapSize getCurrentHeapSize() {
@@ -1832,7 +1842,9 @@ namespace ult {
         
         u64 size;
         if (fread(&size, sizeof(size), 1, f) == 1) {
-            if (size == 0x400000 || size == 0x600000 || size == 0x800000 || size == 0xA00000 || size == 0xC00000) {
+            constexpr u64 twoMB = 0x200000;
+            // Only accept multiples of 2MB, excluding 2MB itself
+            if (size != twoMB && size % twoMB == 0) {
                 heapSizeCache.cachedSize = static_cast<OverlayHeapSize>(size);
             }
         }
@@ -1842,7 +1854,6 @@ namespace ult {
         return heapSizeCache.cachedSize;
     }
     
-    //OverlayHeapSize currentHeapSize = getCurrentHeapSize();
     OverlayHeapSize currentHeapSize = OverlayHeapSize::Size_6MB;
     
     bool setOverlayHeapSize(OverlayHeapSize heapSize) {

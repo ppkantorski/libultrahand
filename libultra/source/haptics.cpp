@@ -72,7 +72,7 @@ namespace ult {
     }
     
     // ===== Public API =====
-    void initRumble() {
+    void initHaptics() {
         const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 player1Style  = hidGetNpadStyleSet(HidNpadIdType_No1);
     
@@ -99,16 +99,16 @@ namespace ult {
             vibPlayer1Right = tmp[1];
         }
     
-        // Ensure cache is valid immediately after initRumble()
+        // Ensure cache is valid immediately after initHaptics()
         cachedHandheldStyle = handheldStyle;
         cachedPlayer1Style  = player1Style;
     }
         
-    //void deinitRumble() {
+    //void deinitHaptics() {
     //    rumbleInitialized = false;
     //}
     
-    void checkAndReinitRumble() {
+    void checkAndReinitHaptics() {
         static u32 lastHandheldStyle = 0;
         static u32 lastPlayer1Style  = 0;
     
@@ -120,7 +120,7 @@ namespace ult {
         //    (currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style);
     
         if ((currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style)) {
-            initRumble();
+            initHaptics();
         }
     
         // Update last-known styles for change detection

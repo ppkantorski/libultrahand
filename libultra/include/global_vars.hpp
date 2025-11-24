@@ -68,6 +68,7 @@ namespace ult {
     extern const std::string PACKAGE_FILENAME;
     
     extern const std::string DOWNLOADS_PATH;
+
     //extern const std::string EXPANSION_PATH;
     extern const std::string FUSE_DATA_INI_PATH;
     extern const std::string PACKAGE_PATH;
@@ -82,12 +83,13 @@ namespace ult {
     extern const std::string ULTRAHAND_REPO_URL;
     extern const std::string INCLUDED_THEME_FOLDER_URL;
     extern const std::string LATEST_RELEASE_INFO_URL;
-    extern const std::string NX_OVLLOADER_ZIP_URL;
+    extern const std::string LATEST_UPDATER_INI_URL;
+    //extern const std::string NX_OVLLOADER_ZIP_URL;
     //extern const std::string NX_OVLLOADER_PLUS_ZIP_URL;
     extern const std::string OLD_NX_OVLLOADER_ZIP_URL;
     //extern const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL;
     extern const std::string UPDATER_PAYLOAD_URL;
-    extern const std::string SOUND_EFFECTS_URL;
+    //extern const std::string SOUND_EFFECTS_URL;
     
     extern const std::string LAUNCH_ARGS_STR;
     extern const std::string USE_LAUNCH_ARGS_STR;
