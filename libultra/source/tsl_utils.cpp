@@ -1865,6 +1865,18 @@ namespace ult {
         return static_cast<u32>(bytes / 0x100000);
     }
     
+
+    // Helper function to get version-appropriate default heap size
+    static OverlayHeapSize getDefaultHeapSize() {
+        if (hosversionAtLeast(21, 0, 0)) {
+            return OverlayHeapSize::Size_4MB;  // HOS 21.0.0+
+        } else if (hosversionAtLeast(20, 0, 0)) {
+            return OverlayHeapSize::Size_6MB;  // HOS 20.0.0+
+        } else {
+            return OverlayHeapSize::Size_8MB;  // Older versions
+        }
+    }
+    
     // Implementation
     OverlayHeapSize getCurrentHeapSize() {
         // Fast path: return cached value if already loaded
@@ -1875,7 +1887,8 @@ namespace ult {
         // Slow path: read from file (only happens once)
         FILE* f = fopen(ult::OVL_HEAP_CONFIG_PATH.c_str(), "rb");
         if (!f) {
-            heapSizeCache.cachedSize = OverlayHeapSize::Size_6MB;
+            // No config file - use version-specific default
+            heapSizeCache.cachedSize = getDefaultHeapSize();
             heapSizeCache.initialized = true;
             return heapSizeCache.cachedSize;
         }
@@ -1886,15 +1899,21 @@ namespace ult {
             // Only accept multiples of 2MB, excluding 2MB itself
             if (size != twoMB && size % twoMB == 0) {
                 heapSizeCache.cachedSize = static_cast<OverlayHeapSize>(size);
+                fclose(f);
+                heapSizeCache.initialized = true;
+                return heapSizeCache.cachedSize;
             }
         }
         
+        // Invalid or no data in config - use version-specific default
         fclose(f);
+        heapSizeCache.cachedSize = getDefaultHeapSize();
         heapSizeCache.initialized = true;
         return heapSizeCache.cachedSize;
     }
     
-    OverlayHeapSize currentHeapSize = OverlayHeapSize::Size_6MB;
+    // Update the global default too
+    OverlayHeapSize currentHeapSize = getDefaultHeapSize();
     
     bool setOverlayHeapSize(OverlayHeapSize heapSize) {
         ult::createDirectory(ult::NX_OVLLOADER_PATH);
