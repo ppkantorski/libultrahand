@@ -168,6 +168,7 @@ namespace ult {
     extern const std::string INPROGRESS_SYMBOL;
     extern const std::string STAR_SYMBOL;
     extern const std::string DIVIDER_SYMBOL;
+    extern const std::string NOTIFY_HEADER;
 
     extern const std::vector<std::string> THROBBER_SYMBOLS;
 

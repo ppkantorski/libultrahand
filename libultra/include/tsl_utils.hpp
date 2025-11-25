@@ -432,8 +432,17 @@ namespace ult {
     extern std::string NOTICE;
     extern std::string UTILIZES;
 
-    extern std::string MEMORY_EXPANSION;
-    extern std::string REBOOT_REQUIRED;
+    extern std::string SYSTEM_RAM;
+    extern std::string OVERLAY_MEMORY;
+    extern std::string NOT_ENOUGH_MEMORY;
+    extern std::string WALLPAPER_SUPPORT_DISABLED;
+    extern std::string SOUND_SUPPORT_DISABLED;
+    extern std::string WALLPAPER_SUPPORT_ENABLED;
+    extern std::string SOUND_SUPPORT_ENABLED;
+    extern std::string EXIT_OVERLAY_SYSTEM;
+
+    //extern std::string MEMORY_EXPANSION;
+    //extern std::string REBOOT_REQUIRED;
     extern std::string LOCAL_IP;
     extern std::string WALLPAPER;
     extern std::string THEME;
@@ -482,6 +491,8 @@ namespace ult {
     //extern std::string HOLD_A_TO_DELETE;
     extern std::string SELECTION_IS_EMPTY;
     extern std::string FORCED_SUPPORT_WARNING;
+    extern std::string TASK_IS_COMPLETE;
+    extern std::string TASK_HAS_FAILED;
 
     //extern std::string PACKAGE_VERSIONS;
     //extern std::string PROGRESS_ANIMATION;

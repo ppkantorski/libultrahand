@@ -512,8 +512,17 @@ namespace ult {
     std::string NOTICE = "Notice";
     std::string UTILIZES = "Utilizes";
 
-    std::string MEMORY_EXPANSION = "Memory Expansion";
-    std::string REBOOT_REQUIRED = "*Reboot required.";
+    std::string SYSTEM_RAM = "System RAM";
+    std::string OVERLAY_MEMORY = "Overlay Memory";
+    std::string NOT_ENOUGH_MEMORY = "Not enough memory.";
+    std::string WALLPAPER_SUPPORT_DISABLED = "Wallpaper support disabled.";
+    std::string SOUND_SUPPORT_DISABLED = "Sound support disabled.";
+    std::string WALLPAPER_SUPPORT_ENABLED = "Wallpaper support enabled.";
+    std::string SOUND_SUPPORT_ENABLED = "Sound support enabled.";
+    std::string EXIT_OVERLAY_SYSTEM = "Exit Overlay System";
+
+    //std::string MEMORY_EXPANSION = "Memory Expansion";
+    //std::string REBOOT_REQUIRED = "*Reboot required.";
     std::string LOCAL_IP = "Local IP";
     std::string WALLPAPER = "Wallpaper";
     std::string THEME = "Theme";
@@ -561,7 +570,8 @@ namespace ult {
     //std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
-
+    std::string TASK_IS_COMPLETE = "Task is complete!";
+    std::string TASK_HAS_FAILED = "Task has failed.";
 
     //std::string PACKAGE_VERSIONS = "Package Versions";
 
@@ -724,8 +734,18 @@ namespace ult {
         NOTICE = "Notice";
         UTILIZES = "Utilizes";
         FREE = "free";
-        MEMORY_EXPANSION = "Memory Expansion";
-        REBOOT_REQUIRED = "*Reboot required.";
+
+        SYSTEM_RAM = "System RAM";
+        OVERLAY_MEMORY = "Overlay Memory";
+        NOT_ENOUGH_MEMORY = "Not enough memory.";
+        WALLPAPER_SUPPORT_DISABLED = "Wallpaper support disabled.";
+        SOUND_SUPPORT_DISABLED = "Sound support disabled.";
+        WALLPAPER_SUPPORT_ENABLED = "Wallpaper support enabled.";
+        SOUND_SUPPORT_ENABLED = "Sound support enabled.";
+        EXIT_OVERLAY_SYSTEM = "Exit Overlay System";
+
+        //MEMORY_EXPANSION = "Memory Expansion";
+        //REBOOT_REQUIRED = "*Reboot required.";
         LOCAL_IP = "Local IP";
         WALLPAPER = "Wallpaper";
         THEME = "Theme";
@@ -788,6 +808,8 @@ namespace ult {
         //HOLD_A_TO_DELETE = "Hold  to Delete";
         SELECTION_IS_EMPTY = "Selection is empty!";
         FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
+        TASK_IS_COMPLETE = "Task is complete!";
+        TASK_HAS_FAILED = "Task has failed.";
 
         //EMPTY = "Empty";
     
@@ -937,8 +959,17 @@ namespace ult {
             {"NOTICE", &NOTICE},
             {"UTILIZES", &UTILIZES},
 
-            {"MEMORY_EXPANSION", &MEMORY_EXPANSION},
-            {"REBOOT_REQUIRED", &REBOOT_REQUIRED},
+            {"SYSTEM_RAM", &SYSTEM_RAM},
+            {"OVERLAY_MEMORY", &OVERLAY_MEMORY},
+            {"NOT_ENOUGH_MEMORY", &NOT_ENOUGH_MEMORY},
+            {"WALLPAPER_SUPPORT_DISABLED", &WALLPAPER_SUPPORT_DISABLED},
+            {"SOUND_SUPPORT_DISABLED", &SOUND_SUPPORT_DISABLED},
+            {"WALLPAPER_SUPPORT_ENABLED", &WALLPAPER_SUPPORT_ENABLED},
+            {"SOUND_SUPPORT_ENABLED", &SOUND_SUPPORT_ENABLED},
+            {"EXIT_OVERLAY_SYSTEM", &EXIT_OVERLAY_SYSTEM},
+
+            //{"MEMORY_EXPANSION", &MEMORY_EXPANSION},
+            //{"REBOOT_REQUIRED", &REBOOT_REQUIRED},
             {"LOCAL_IP", &LOCAL_IP},
             {"WALLPAPER", &WALLPAPER},
             {"THEME", &THEME},
@@ -987,6 +1018,8 @@ namespace ult {
             //{"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
             {"FORCED_SUPPORT_WARNING", &FORCED_SUPPORT_WARNING},
+            {"TASK_IS_COMPLETE", &TASK_IS_COMPLETE},
+            {"TASK_HAS_FAILED", &TASK_HAS_FAILED},
 
             //{"PACKAGE_VERSIONS", &PACKAGE_VERSIONS},
             //{"PROGRESS_ANIMATION", &PROGRESS_ANIMATION},
