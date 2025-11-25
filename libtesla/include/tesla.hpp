@@ -10498,15 +10498,15 @@ namespace tsl {
     
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", u32 durationMs = 2500,
-                  s32 promptWidth = 448, s32 promptHeight = 88)
+                  s32 promptWidth = 448, s32 promptHeight = 88, bool immediately = false)
         {
             if (msg.empty()) return;
-    
+        
             // Quick reject using atomics (fast-path)
             if (!enabled_.load(std::memory_order_acquire)) return;
             if (!ult::useNotifications) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
-    
+        
             NotificationData data;
             data.text = msg;
             data.fileName = fileName;
@@ -10514,23 +10514,37 @@ namespace tsl {
             data.promptWidth = std::clamp(promptWidth, s32(100), s32(1280));
             data.promptHeight = std::clamp(promptHeight, s32(50), s32(720));
             data.durationMs = std::clamp(durationMs, 500u, 30000u);
-            data.priority = priority;
+            data.priority = immediately ? 0 : priority;  // Priority 0 for immediate
             data.arrivalNs = armTicksToNs(armGetSystemTick());
-    
+        
             std::lock_guard<std::mutex> lg(state_mutex_);
-    
+        
             // Re-check under lock to avoid TOCTOU
             if (!enabled_.load(std::memory_order_acquire)) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
             if (pending_queue_.size() >= MAX_NOTIFS) return;
-    
+        
+            // If immediately = true and there's an active notification, force it to complete
+            if (immediately && is_active_ && current_state_.state != PromptState::Inactive) {
+                // Delete current notification's file if exists
+                const std::string fileToDelete = current_state_.fileName;
+                if (!fileToDelete.empty()) {
+                    std::lock_guard<std::mutex> lg(notificationJsonMutex);
+                    const std::string fullPath = ult::NOTIFICATIONS_PATH + fileToDelete;
+                    remove(fullPath.c_str());
+                }
+                
+                // Reset current state
+                current_state_ = NotificationState{};
+                is_active_ = false;
+            }
+        
             pending_queue_.push(data);
-    
+        
             if (!is_active_) {
                 startNext_NoLock();
-                //pending_event_fire_.store(true, std::memory_order_release);
                 eventFire(&notificationEvent);
-
+        
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (isRendering) {
                     isRendering = false;
@@ -10540,6 +10554,11 @@ namespace tsl {
                 }
                 #endif
             }
+        }
+        
+        // Immediate notification function - shows immediately with highest priority
+        void showImmediately(const std::string& msg, size_t fontSize = 26) {
+            show(msg, fontSize, 0, "", 2500, 448, 88, true);
         }
     
 
