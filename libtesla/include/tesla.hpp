@@ -207,9 +207,11 @@ inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> disableSound{false};
 //inline std::atomic<bool> clearSoundCacheNow{false};
+inline std::atomic<bool> reloadIfDockedChangedNow{false};
 inline std::atomic<bool> reloadSoundCacheNow{false};
 
 // Haptic triggering variables
+inline std::atomic<bool> triggerInitHaptics{false};
 inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
@@ -11126,10 +11128,17 @@ namespace tsl {
          */
         void show() {
             if (ult::useHapticFeedback) {
-                if (ult::isHidden.load(std::memory_order_acquire)) {
-                    ult::initHaptics();
+                if (!ult::isHidden.load(std::memory_order_acquire)) {
+                    triggerInitHaptics.store(true, std::memory_order_release);
                 }
             }
+            
+
+            // reinitialize audio for changes from handheld to docked and vise versa
+            if (!ult::limitedMemory && ult::useSoundEffects)
+                reloadIfDockedChangedNow.store(true, std::memory_order_release);
+                //ult::AudioPlayer::reloadIfDockedChanged();
+
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -11143,13 +11152,11 @@ namespace tsl {
             this->onShow();
 
             ult::isHidden.store(false);
-
-            triggerRumbleClick.store(true, std::memory_order_release);
-
-            // reinitialize audio for changes from handheld to docked and vise versa
-            if (!ult::limitedMemory && ult::useSoundEffects)
-                ult::AudioPlayer::reloadIfDockedChanged();
             
+            if (ult::useHapticFeedback) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+            }
+
             //if (auto& currGui = this->getCurrentGui(); currGui != nullptr) // TESTING DISABLED (EFFECTS NEED TO BE VERIFIED)
             //    currGui->restoreFocus();
         }
@@ -12897,7 +12904,10 @@ namespace tsl {
                     
                     // Flush any pending rumble triggers when feedback is off
                     if (ult::useHapticFeedback) {
-                        ult::checkAndReinitHaptics();
+                        if (!triggerInitHaptics.load(std::memory_order_acquire))
+                            ult::checkAndReinitHaptics();
+                        else
+                            ult::initHaptics();
                         
                         // Double-click takes priority
                         if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
@@ -12939,6 +12949,9 @@ namespace tsl {
                             triggerSettingsSound.exchange(false, std::memory_order_acq_rel);
                             triggerMoveSound.exchange(false, std::memory_order_acq_rel);
                         } else {
+                            if (reloadIfDockedChangedNow.exchange(false, std::memory_order_acq_rel)) {
+                                ult::AudioPlayer::reloadIfDockedChanged();
+                            }
                             if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
                                 ult::AudioPlayer::reloadAllSounds();
                             }
