@@ -432,7 +432,6 @@ namespace ult {
     extern std::string NOTICE;
     extern std::string UTILIZES;
 
-    extern std::string SYSTEM_RAM;
     extern std::string OVERLAY_MEMORY;
     extern std::string NOT_ENOUGH_MEMORY;
     extern std::string WALLPAPER_SUPPORT_DISABLED;
@@ -506,6 +505,7 @@ namespace ult {
     extern std::string BOOT_ENTRY;
     #endif
 
+    extern std::string SYSTEM_RAM;
     extern std::string FREE;
 
     extern std::string DEFAULT_CHAR_WIDTH;

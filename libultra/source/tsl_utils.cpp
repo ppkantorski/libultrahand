@@ -512,7 +512,7 @@ namespace ult {
     std::string NOTICE = "Notice";
     std::string UTILIZES = "Utilizes";
 
-    std::string SYSTEM_RAM = "System RAM";
+
     std::string OVERLAY_MEMORY = "Overlay Memory";
     std::string NOT_ENOUGH_MEMORY = "Not enough memory.";
     std::string WALLPAPER_SUPPORT_DISABLED = "Wallpaper support disabled.";
@@ -585,6 +585,7 @@ namespace ult {
     std::string BOOT_ENTRY = "Boot Entry";
     #endif
 
+    std::string SYSTEM_RAM = "System RAM";
     std::string FREE = "free";
 
     std::string DEFAULT_CHAR_WIDTH = "0.33";
@@ -735,9 +736,9 @@ namespace ult {
         STORAGE = "Storage";
         NOTICE = "Notice";
         UTILIZES = "Utilizes";
-        FREE = "free";
-
         SYSTEM_RAM = "System RAM";
+        FREE = "free";
+        
         OVERLAY_MEMORY = "Overlay Memory";
         NOT_ENOUGH_MEMORY = "Not enough memory.";
         WALLPAPER_SUPPORT_DISABLED = "Wallpaper support disabled.";
@@ -963,7 +964,6 @@ namespace ult {
             {"NOTICE", &NOTICE},
             {"UTILIZES", &UTILIZES},
 
-            {"SYSTEM_RAM", &SYSTEM_RAM},
             {"OVERLAY_MEMORY", &OVERLAY_MEMORY},
             {"NOT_ENOUGH_MEMORY", &NOT_ENOUGH_MEMORY},
             {"WALLPAPER_SUPPORT_DISABLED", &WALLPAPER_SUPPORT_DISABLED},
@@ -1036,6 +1036,7 @@ namespace ult {
             {"BOOT_ENTRY", &BOOT_ENTRY},
             #endif
 
+            {"SYSTEM_RAM", &SYSTEM_RAM},
             {"FREE", &FREE},
             
             {"DEFAULT_CHAR_WIDTH", &DEFAULT_CHAR_WIDTH},
