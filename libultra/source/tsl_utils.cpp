@@ -568,6 +568,8 @@ namespace ult {
     std::string NEW_UPDATE_IS_AVAILABLE = "New update is available!";
     //std::string REBOOT_IS_REQUIRED = "Reboot is required.";
     //std::string HOLD_A_TO_DELETE = "Hold \uE0E0 to Delete";
+    std::string DELETE_PACKAGE = "Delete Package";
+    std::string DELETE_OVERLAY = "Delete Overlay";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
     std::string TASK_IS_COMPLETE = "Task is complete!";
@@ -806,6 +808,8 @@ namespace ult {
         NEW_UPDATE_IS_AVAILABLE = "New update is available!";
         //REBOOT_IS_REQUIRED = "Reboot is required.";
         //HOLD_A_TO_DELETE = "Hold  to Delete";
+        DELETE_PACKAGE = "Delete Package";
+        DELETE_OVERLAY = "Delete Overlay";
         SELECTION_IS_EMPTY = "Selection is empty!";
         FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
         TASK_IS_COMPLETE = "Task is complete!";
@@ -1016,6 +1020,8 @@ namespace ult {
             {"NEW_UPDATE_IS_AVAILABLE", &NEW_UPDATE_IS_AVAILABLE},
             //{"REBOOT_IS_REQUIRED", &REBOOT_IS_REQUIRED},
             //{"HOLD_A_TO_DELETE", &HOLD_A_TO_DELETE},
+            {"DELETE_PACKAGE", &DELETE_PACKAGE},
+            {"DELETE_OVERLAY", &DELETE_OVERLAY},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
             {"FORCED_SUPPORT_WARNING", &FORCED_SUPPORT_WARNING},
             {"TASK_IS_COMPLETE", &TASK_IS_COMPLETE},

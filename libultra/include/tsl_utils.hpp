@@ -489,6 +489,9 @@ namespace ult {
     extern std::string NEW_UPDATE_IS_AVAILABLE;
     //extern std::string REBOOT_IS_REQUIRED;
     //extern std::string HOLD_A_TO_DELETE;
+
+    extern std::string DELETE_PACKAGE;
+    extern std::string DELETE_OVERLAY;
     extern std::string SELECTION_IS_EMPTY;
     extern std::string FORCED_SUPPORT_WARNING;
     extern std::string TASK_IS_COMPLETE;
