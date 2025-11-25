@@ -13567,7 +13567,7 @@ namespace tsl {
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
-            ult::furtherExpandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
+            ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB;
             
             if (!ult::furtherExpandedMemory) {
                 ult::loaderTitle += "+";
