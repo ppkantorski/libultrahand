@@ -10557,7 +10557,7 @@ namespace tsl {
         }
         
         // Immediate notification function - shows immediately with highest priority
-        void showImmediately(const std::string& msg, size_t fontSize = 26) {
+        void showNow(const std::string& msg, size_t fontSize = 26) {
             show(msg, fontSize, 0, "", 2500, 448, 88, true);
         }
     
