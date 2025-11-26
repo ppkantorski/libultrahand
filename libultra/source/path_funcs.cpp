@@ -24,7 +24,7 @@
 namespace ult {
     std::atomic<bool> abortFileOp(false);
     
-    size_t COPY_BUFFER_SIZE = 65536/8; // Back to non-const as requested
+    size_t COPY_BUFFER_SIZE = 8192; // Back to non-const as requested
 
     std::atomic<int> copyPercentage(-1);
     
@@ -220,23 +220,25 @@ namespace ult {
     #endif
     }
     
-
     /**
-     * @brief Deletes a file or directory.
+     * @brief Deletes a file or directory without using an explicit stack.
      *
-     * This function deletes the file or directory specified by `path`. It can delete both files and directories.
+     * This function deletes the file or directory specified by `pathToDelete`.
+     * It uses a state-machine approach with a current directory pointer instead
+     * of an explicit stack data structure.
      *
-     * @param path The path of the file or directory to be deleted.
+     * @param pathToDelete The path of the file or directory to be deleted.
+     * @param logSource The path to the log file where deletions are recorded.
      */
     void deleteFileOrDirectory(const std::string& pathToDelete, const std::string& logSource) {
-        std::vector<std::string> stack;
+        if (pathToDelete.empty()) return;
         
-        // Batch logging optimization - collect successful deletions instead of logging immediately
         std::vector<std::string> successfulDeletions;
         const bool needsLogging = !logSource.empty();
-    
+        
+        // Handle single file case
         const bool pathIsFile = pathToDelete.back() != '/';
-    
+        
         if (pathIsFile) {
             if (isFile(pathToDelete)) {
                 if (remove(pathToDelete.c_str()) == 0) {
@@ -282,82 +284,104 @@ namespace ult {
             }
             return;
         }
-    
-        stack.push_back(pathToDelete);
-        struct stat pathStat;
-        std::string currentPath, filePath;
-        bool isEmpty;
-    
-        while (!stack.empty()) {
-            currentPath = stack.back();
-    
-            if (stat(currentPath.c_str(), &pathStat) != 0) {
-                stack.pop_back();
+        
+        // Directory deletion - stackless approach
+        // Normalize root path
+        std::string rootPath = pathToDelete;
+        if (rootPath.back() != '/') rootPath += '/';
+        
+        std::string currentDir = rootPath;
+        struct stat st;
+        
+        while (true) {
+            DIR* directory = opendir(currentDir.c_str());
+            if (!directory) {
+                #if USING_LOGGING_DIRECTIVE
+                if (!disableLogging)
+                    logMessage("Failed to open directory: " + currentDir);
+                #endif
+                
+                // Can't open - either deleted or error. Try to move up.
+                if (currentDir == rootPath) break; // Done with root
+                
+                size_t pos = currentDir.find_last_of('/', currentDir.length() - 2);
+                if (pos != std::string::npos && pos >= rootPath.length() - 1) {
+                    currentDir = currentDir.substr(0, pos + 1);
+                } else {
+                    break;
+                }
                 continue;
             }
-    
-            if (S_ISREG(pathStat.st_mode)) { // It's a file
-                stack.pop_back(); // Remove from stack before deletion
-                if (remove(currentPath.c_str()) == 0) {
-                    // Batch logging - store successful deletion instead of writing immediately
-                    if (needsLogging) {
-                        successfulDeletions.push_back(currentPath);
+            
+            bool foundSubdir = false;
+            bool foundFile = false;
+            dirent* entry;
+            
+            while ((entry = readdir(directory)) != nullptr) {
+                const char* name = entry->d_name;
+                if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+                
+                std::string childPath = currentDir + name;
+                if (stat(childPath.c_str(), &st) != 0) continue;
+                
+                if (S_ISDIR(st.st_mode)) {
+                    // Found a subdirectory - dive into it
+                    currentDir = childPath + "/";
+                    foundSubdir = true;
+                    break;
+                } else if (S_ISREG(st.st_mode)) {
+                    // Delete file immediately
+                    if (remove(childPath.c_str()) == 0) {
+                        if (needsLogging) {
+                            successfulDeletions.push_back(childPath);
+                        }
+                        foundFile = true;
+                    } else {
+                        #if USING_LOGGING_DIRECTIVE
+                        if (!disableLogging)
+                            logMessage("Failed to delete file: " + childPath);
+                        #endif
                     }
                 } else {
                     #if USING_LOGGING_DIRECTIVE
                     if (!disableLogging)
-                        logMessage("Failed to delete file: " + currentPath);
+                        logMessage("Unknown file type: " + childPath);
                     #endif
                 }
-            } else if (S_ISDIR(pathStat.st_mode)) { // It's a directory
-                DIR* directory = opendir(currentPath.c_str());
-                if (!directory) {
-                    #if USING_LOGGING_DIRECTIVE
-                    if (!disableLogging)
-                        logMessage("Failed to open directory: " + currentPath);
-                    #endif
-                    stack.pop_back();
-                    continue;
-                }
-    
-                dirent* entry;
-                isEmpty = true;
-                while ((entry = readdir(directory)) != nullptr) {
-                    const std::string& fileName = entry->d_name;
-                    if (fileName != "." && fileName != "..") {
-                        filePath = currentPath + fileName;
-                        stack.push_back(filePath + (filePath.back() == '/' ? "" : "/"));
-                        isEmpty = false;
-                    }
-                }
-                closedir(directory);
-    
-                if (isEmpty) {
-                    stack.pop_back(); // Directory is now empty, safe to remove from stack
-                    if (rmdir(currentPath.c_str()) == 0) {
-                        // Note: Typically we don't log directory deletions, only files
-                        // If you want to log directory deletions too, uncomment the lines below:
-                        // if (needsLogging) {
-                        //     successfulDeletions.push_back(currentPath);
-                        // }
-                    } else {
-                        #if USING_LOGGING_DIRECTIVE
-                        if (!disableLogging)
-                            logMessage("Failed to delete directory: " + currentPath);
-                        #endif
-                    }
-                }
-            } else {
-                stack.pop_back(); // Unknown file type, just remove from stack
+            }
+            closedir(directory);
+            
+            if (foundSubdir) {
+                // Continue with the subdirectory
+                continue;
+            }
+            
+            if (foundFile) {
+                // We deleted files, re-scan this directory to check if empty
+                continue;
+            }
+            
+            // Directory is empty - delete it and move up
+            if (rmdir(currentDir.c_str()) != 0) {
                 #if USING_LOGGING_DIRECTIVE
                 if (!disableLogging)
-                    logMessage("Unknown file type: " + currentPath);
+                    logMessage("Failed to delete directory: " + currentDir);
                 #endif
             }
+            
+            // Check if we just deleted the root directory
+            if (currentDir == rootPath) break;
+            
+            // Move up, but NEVER go above rootPath
+            size_t pos = currentDir.find_last_of('/', currentDir.length() - 2);
+            if (pos != std::string::npos && pos >= rootPath.length() - 1) {
+                currentDir = currentDir.substr(0, pos + 1);
+            } else {
+                break; // Safety: don't go above root
+            }
         }
-    
-        // KEY OPTIMIZATION: Batch write all successful deletions to log file at the end
-        // This eliminates the overhead of logging inside the hot loop
+        
+        // Batch write all successful deletions to log file at the end
         if (needsLogging && !successfulDeletions.empty()) {
     #if !USING_FSTREAM_DIRECTIVE
             createDirectory(getParentDirFromPath(logSource));
