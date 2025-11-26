@@ -25,7 +25,6 @@ namespace ult {
     std::atomic<bool> abortFileOp(false);
     
     size_t COPY_BUFFER_SIZE = 8192; // Back to non-const as requested
-    constexpr size_t MAX_PATH_LENGTH = 1024;
 
     std::atomic<int> copyPercentage(-1);
     
@@ -545,7 +544,7 @@ namespace ult {
                 return;
             }
     
-            bool hasContent = false;
+            //bool hasContent = false;
             dirent* entry;
             
             while ((entry = readdir(dir)) != nullptr) {
@@ -554,7 +553,7 @@ namespace ult {
                     continue;
                 }
     
-                hasContent = true;
+                //hasContent = true;
     
                 // Build full paths
                 std::string fullSrcPath = srcPath;
