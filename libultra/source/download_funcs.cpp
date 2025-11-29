@@ -277,6 +277,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     //const bool wasAborted = (result == CURLE_ABORTED_BY_CALLBACK || 
     //                         abortDownload.load(std::memory_order_acquire));
 
+    // Check HTTP response code BEFORE closing file/curl
+    long http_code = 0;
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
 
 #if USING_FSTREAM_DIRECTIVE
     file.close();
@@ -309,6 +312,20 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     //cleanupCurl();
 
     //socketExit();
+    
+    // Check for HTTP errors (404, 500, etc.)
+    if (result == CURLE_OK && (http_code < 200 || http_code >= 300)) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("HTTP error " + std::to_string(http_code) + " downloading: " + url);
+        #endif
+        deleteFileOrDirectory(tempFilePath);
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
+        return false;
+    }
+
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
@@ -382,6 +399,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     moveFile(tempFilePath, destination);
+
     return true;
 }
 
