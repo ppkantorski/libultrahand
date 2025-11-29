@@ -1411,7 +1411,7 @@ namespace ult {
         fileList.clear();
         fileList.shrink_to_fit();
     }
-    
+        
     /**
      * @brief Removes all files starting with "._" from a directory and its subdirectories.
      *
@@ -1422,91 +1422,81 @@ namespace ult {
      * @param sourcePath The path of the directory to clean.
      */
     void dotCleanDirectory(const std::string& sourcePath) {
-        DIR* rootDir = opendir(sourcePath.c_str());
-        if (!rootDir) {
+        DIR* dir = opendir(sourcePath.c_str());
+        if (!dir) {
             #if USING_LOGGING_DIRECTIVE
             if (!disableLogging)
                 logMessage("Path is not a directory or cannot open: " + sourcePath);
             #endif
             return;
         }
-        closedir(rootDir);
-    
-        std::vector<std::string> stack;
-        stack.push_back(sourcePath);
     
         struct dirent* entry;
-        struct stat pathStat{};
-        std::string subDirPath; // reuse for directories
-        std::string filePath;   // reuse for dot-underscore files
+        struct stat pathStat;
+        bool needsSlash = (!sourcePath.empty() && sourcePath.back() != '/');
     
-        while (!stack.empty()) {
-            const std::string currentPath = std::move(stack.back());
-            stack.pop_back();
+        while ((entry = readdir(dir)) != nullptr) {
+            const char* fileName = entry->d_name;
     
-            DIR* directory = opendir(currentPath.c_str());
-            if (!directory) {
-                #if USING_LOGGING_DIRECTIVE
-                if (!disableLogging)
-                    logMessage("Failed to open directory: " + currentPath);
-                #endif
+            // Fast skip for "." and ".."
+            if (fileName[0] == '.' &&
+                (fileName[1] == '\0' || (fileName[1] == '.' && fileName[2] == '\0'))) {
                 continue;
             }
     
-            while ((entry = readdir(directory)) != nullptr) {
-                const char* fileName = entry->d_name;
+            // Build full path
+            std::string fullPath = sourcePath;
+            if (needsSlash) fullPath += '/';
+            fullPath += fileName;
     
-                // Skip "." and ".."
-                if (fileName[0] == '.' &&
-                    (fileName[1] == '\0' || (fileName[1] == '.' && fileName[2] == '\0'))) {
-                    continue;
-                }
+            // Handle directories - recurse into them
+            if (entry->d_type == DT_DIR) {
+                dotCleanDirectory(fullPath);
+                continue;
+            }
     
-                // Handle directories first
-                if (entry->d_type == DT_DIR) {
-                    subDirPath.clear();
-                    subDirPath = currentPath;
-                    if (!subDirPath.empty() && subDirPath.back() != '/')
-                        subDirPath += '/';
-                    subDirPath += fileName;
-                    stack.push_back(std::move(subDirPath));
-                    continue;
-                }
+            // Only care about "._" files and ".DS_Store"
+            bool isDotUnderscore = (fileName[0] == '.' && fileName[1] == '_');
+            bool isDSStore = (fileName[0] == '.' && fileName[1] == 'D' && fileName[2] == 'S' &&
+                             fileName[3] == '_' && fileName[4] == 'S' && fileName[5] == 't' &&
+                             fileName[6] == 'o' && fileName[7] == 'r' && fileName[8] == 'e' &&
+                             fileName[9] == '\0');
+            
+            if (!isDotUnderscore && !isDSStore) {
+                continue;
+            }
     
-                // Only care about "._" files
-                if (!(fileName[0] == '.' && fileName[1] == '_'))
-                    continue;
-    
-                // Only process files or unknown types
-                if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN)
-                    continue;
-    
-                filePath.clear();
-                filePath = currentPath;
-                if (!filePath.empty() && filePath.back() != '/')
-                    filePath += '/';
-                filePath += fileName;
-    
-                // If type unknown, verify with stat
-                if (entry->d_type == DT_UNKNOWN) {
-                    if (stat(filePath.c_str(), &pathStat) != 0 || !S_ISREG(pathStat.st_mode))
-                        continue;
-                }
-    
-                if (remove(filePath.c_str()) == 0) {
+            // Process regular files or unknown types
+            if (entry->d_type == DT_REG) {
+                if (remove(fullPath.c_str()) == 0) {
                     #if USING_LOGGING_DIRECTIVE
                     if (!disableLogging)
-                        logMessage("Removed dot-underscore file: " + filePath);
+                        logMessage("Removed dot-underscore file: " + fullPath);
                     #endif
                 } else {
                     #if USING_LOGGING_DIRECTIVE
                     if (!disableLogging)
-                        logMessage("Failed to remove dot-underscore file: " + filePath);
+                        logMessage("Failed to remove dot-underscore file: " + fullPath);
                     #endif
                 }
+            } else if (entry->d_type == DT_UNKNOWN) {
+                // Verify with stat if type is unknown
+                if (stat(fullPath.c_str(), &pathStat) == 0 && S_ISREG(pathStat.st_mode)) {
+                    if (remove(fullPath.c_str()) == 0) {
+                        #if USING_LOGGING_DIRECTIVE
+                        if (!disableLogging)
+                            logMessage("Removed dot-underscore file: " + fullPath);
+                        #endif
+                    } else {
+                        #if USING_LOGGING_DIRECTIVE
+                        if (!disableLogging)
+                            logMessage("Failed to remove dot-underscore file: " + fullPath);
+                        #endif
+                    }
+                }
             }
-    
-            closedir(directory);
         }
+    
+        closedir(dir);
     }
 }
