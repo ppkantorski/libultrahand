@@ -676,10 +676,12 @@ namespace tsl {
         // Set Ultrahand Globals using loaded section (defaults match initialization function)
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
         ult::useNotifications = getBoolValue("notifications", true);       // TRUE_STR default
-        if (ult::useNotifications && !ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
-            FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
-            if (file) {
-                std::fclose(file);
+        if (ult::useNotifications) {
+            if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
+                FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
+                if (file) {
+                    std::fclose(file);
+                }
             }
         } else {
             ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
