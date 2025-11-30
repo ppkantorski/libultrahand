@@ -661,8 +661,7 @@ namespace tsl {
         
         std::string UI_PATH = UI_OVERRIDE_PATH;
         ult::preprocessPath(UI_PATH);
-
-        ult::createDirectory(UI_PATH);
+        ult::createDirectory(UI_PATH); // create UI override path automatically (when provided)
 
         const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
         const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
