@@ -52,9 +52,9 @@ namespace ult {
     };
     
     static constexpr HidVibrationValue clickHandheld = {
-        .amp_low  = 0.25f,
+        .amp_low  = 0.20f,
         .freq_low = 100.0f,
-        .amp_high = 1.0f,
+        .amp_high = 0.80f,
         .freq_high = 300.0f
     };
     
@@ -136,16 +136,25 @@ namespace ult {
     void rumbleClick() {
         // Use cached style bit instead of querying hid each call
         //const HidVibrationValue* pattern = cachedHandheldStyle ? &clickHandheld : &clickDocked;
-    
-        sendVibration(cachedHandheldStyle ? &clickHandheld : &clickDocked);
+        
+        if (cachedHandheldStyle) {
+            sendVibration(&clickHandheld);
+            sendVibration(&clickHandheld);
+        } else
+            sendVibration(&clickDocked);
         clickActive.store(true, std::memory_order_release);
         rumbleStartTick = armGetSystemTick();
+
     }
     
     void rumbleDoubleClick() {
         //onst HidVibrationValue* pattern = cachedHandheldStyle ? &clickHandheld : &clickDocked;
-    
-        sendVibration(cachedHandheldStyle ? &clickHandheld : &clickDocked);
+        
+        if (cachedHandheldStyle) {
+            sendVibration(&clickHandheld);
+            sendVibration(&clickHandheld);
+        } else
+            sendVibration(&clickDocked);
         doubleClickActive.store(true, std::memory_order_release);
         doubleClickPulse = 1;
         doubleClickTick = armGetSystemTick();  // Set ONCE
@@ -178,7 +187,11 @@ namespace ult {
             case 2:
                 if (elapsed >= DOUBLE_CLICK_PULSE_DURATION_NS + DOUBLE_CLICK_GAP_NS) {
                     // Use cached style here too
-                    sendVibration(cachedHandheldStyle ? &clickHandheld : &clickDocked);
+                    if (cachedHandheldStyle) {
+                        sendVibration(&clickHandheld);
+                        sendVibration(&clickHandheld);
+                    } else
+                        sendVibration(&clickDocked);
                     doubleClickPulse = 3;
                     // Don't reset tick!
                 }

@@ -146,6 +146,7 @@ namespace ult {
     CONSTEXPR_STRING std::string FALSE_STR            = "false";
     CONSTEXPR_STRING std::string GLOBAL_STR           = "global";
     CONSTEXPR_STRING std::string DEFAULT_STR          = "default";
+    CONSTEXPR_STRING std::string HOLD_STR             = "hold";
     CONSTEXPR_STRING std::string SLOT_STR             = "slot";
     CONSTEXPR_STRING std::string OPTION_STR           = "option";
     CONSTEXPR_STRING std::string FORWARDER_STR        = "forwarder";

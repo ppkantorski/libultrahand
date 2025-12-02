@@ -206,6 +206,9 @@ namespace ult {
     
     
     std::string extractVersionFromBinary(const std::string &filePath);
+
+
+    std::string decodeBase64ToString(const std::string& b64);
 }
 
 #endif

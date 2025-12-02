@@ -144,6 +144,7 @@ namespace ult {
     extern const std::string FALSE_STR;
     extern const std::string GLOBAL_STR;
     extern const std::string DEFAULT_STR;
+    extern const std::string HOLD_STR;
     extern const std::string SLOT_STR;
     extern const std::string OPTION_STR;
     extern const std::string FORWARDER_STR;
