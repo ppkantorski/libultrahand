@@ -1521,18 +1521,19 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
 static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 index_map, int unicode_codepoint)
 {
    stbtt_uint16 format = FAST_USHORT(data + index_map);
+   stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
    
    switch (format) {
    case 4: {
-      if ((unsigned)unicode_codepoint > 0xffff) return 0;
+      if (uc > 0xffff) return 0;
       
       stbtt_uint8 *header = data + index_map;
       stbtt_uint16 segcount = FAST_USHORT(header + 6) >> 1;
-      stbtt_uint16 rangeShift = FAST_USHORT(header + 12) >> 1;  // Keep - used twice
-      stbtt_uint32 endCount = index_map + 14;  // Keep - used twice
+      stbtt_uint16 rangeShift = FAST_USHORT(header + 12) >> 1;
+      stbtt_uint32 endCount = index_map + 14;
       stbtt_uint32 search = endCount;
       
-      if (unicode_codepoint >= FAST_USHORT(data + search + (rangeShift << 1)))
+      if (uc >= (stbtt_uint16)FAST_USHORT(data + search + (rangeShift << 1)))
          search += rangeShift << 1;
       
       search -= 2;
@@ -1542,7 +1543,7 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       while (entrySelector) {
          searchRange >>= 1;
          stbtt_uint32 test_pos = search + (searchRange << 1);
-         if (unicode_codepoint > FAST_USHORT(data + test_pos))
+         if (uc > (stbtt_uint16)FAST_USHORT(data + test_pos))
             search = test_pos;
          --entrySelector;
       }
@@ -1554,14 +1555,14 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       stbtt_uint16 start = FAST_USHORT(data + base + (segcount << 1) + 2 + (item << 1));
       stbtt_uint16 end = FAST_USHORT(data + endCount + (item << 1));
       
-      if ((unsigned)(unicode_codepoint - start) > (unsigned)(end - start))
+      if ((stbtt_uint32)(uc - start) > (stbtt_uint32)(end - start))
          return 0;
       
       stbtt_uint16 offset = FAST_USHORT(data + base + (segcount * 6) + 2 + (item << 1));
       if (offset == 0)
-         return (stbtt_uint16)(unicode_codepoint + FAST_SHORT(data + base + (segcount << 2) + 2 + (item << 1)));
+         return (stbtt_uint16)(uc + FAST_SHORT(data + base + (segcount << 2) + 2 + (item << 1)));
       
-      return FAST_USHORT(data + offset + ((unicode_codepoint - start) << 1) + base + (segcount * 6) + 2 + (item << 1));
+      return FAST_USHORT(data + offset + ((uc - start) << 1) + base + (segcount * 6) + 2 + (item << 1));
    }
    
    case 12:
@@ -1574,14 +1575,12 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
          stbtt_uint8 *group = groups_base + (mid * 12);
          stbtt_uint32 start_char = FAST_ULONG(group);
          
-         if ((stbtt_uint32)unicode_codepoint < start_char) {
+         if (uc < start_char) {
             high = mid;
+         } else if (uc <= FAST_ULONG(group + 4)) {
+            stbtt_uint32 start_glyph = FAST_ULONG(group + 8);
+            return (format == 12) ? (start_glyph + uc - start_char) : start_glyph;
          } else {
-            stbtt_uint32 end_char = FAST_ULONG(group + 4);
-            if ((stbtt_uint32)unicode_codepoint <= end_char) {
-               stbtt_uint32 start_glyph = FAST_ULONG(group + 8);
-               return (format == 12) ? (start_glyph + unicode_codepoint - start_char) : start_glyph;
-            }
             low = mid + 1;
          }
       }
@@ -1589,11 +1588,11 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
    }
    
    case 0:
-      return ((unsigned)unicode_codepoint < (unsigned)(FAST_USHORT(data + index_map + 2) - 6)) ? 
-             data[index_map + 6 + unicode_codepoint] : 0;
+      return (uc < (stbtt_uint32)(FAST_USHORT(data + index_map + 2) - 6)) ? 
+             data[index_map + 6 + uc] : 0;
    
    case 6: {
-      stbtt_uint32 offset = (stbtt_uint32)unicode_codepoint - FAST_USHORT(data + index_map + 6);
+      stbtt_uint32 offset = uc - FAST_USHORT(data + index_map + 6);
       return (offset < (stbtt_uint32)FAST_USHORT(data + index_map + 8)) ? 
              FAST_USHORT(data + index_map + 10 + (offset << 1)) : 0;
    }
