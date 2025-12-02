@@ -68,7 +68,7 @@ namespace ult {
             content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
             file.close();
         #endif
-    
+        
         return true;
     }
     
@@ -77,7 +77,7 @@ namespace ult {
         size_t pos = 0;
         size_t keyStart, keyEnd, colonPos, valueStart, valueEnd;
         std::string key, value;
-    
+        
         auto normalizeNewlines = [](std::string &s) {
             size_t n = 0;
             while ((n = s.find("\\n", n)) != std::string::npos) {
@@ -85,28 +85,28 @@ namespace ult {
                 n += 1;
             }
         };
-    
+        
         while ((pos = content.find('"', pos)) != std::string::npos) {
             keyStart = pos + 1;
             keyEnd = content.find('"', keyStart);
             if (keyEnd == std::string::npos) break;
-    
+            
             key = content.substr(keyStart, keyEnd - keyStart);
             colonPos = content.find(':', keyEnd);
             if (colonPos == std::string::npos) break;
-    
+            
             valueStart = content.find('"', colonPos);
             valueEnd = content.find('"', valueStart + 1);
             if (valueStart == std::string::npos || valueEnd == std::string::npos) break;
-    
+            
             value = content.substr(valueStart + 1, valueEnd - valueStart - 1);
-    
-            // 🔹 Convert escaped newlines (\\n) into real ones
+            
+            // Convert escaped newlines (\\n) into real ones
             normalizeNewlines(key);
             normalizeNewlines(value);
-    
+            
             result[key] = value;
-    
+            
             key.clear();
             value.clear();
             pos = valueEnd + 1; // Move to next pair
@@ -383,7 +383,7 @@ namespace ult {
         if (combo.find(' ') != std::string::npos) {
             return;  // Spaces found, return without modifying
         }
-    
+        
         std::string unicodeCombo;
         bool modified = false;
         size_t start = 0;
@@ -391,7 +391,7 @@ namespace ult {
         size_t end = 0;  // Moved outside the loop
         std::string token;  // Moved outside the loop
         auto it = buttonCharMap.end();  // Initialize iterator once outside the loop
-    
+        
         // Iterate through the combo string and split by '+'
         for (size_t i = 0; i <= length; ++i) {
             if (i == length || combo[i] == '+') {
@@ -399,25 +399,25 @@ namespace ult {
                 end = i;  // Reuse the end variable
                 while (start < end && std::isspace(combo[start])) start++;  // Trim leading spaces
                 while (end > start && std::isspace(combo[end - 1])) end--;  // Trim trailing spaces
-    
+                
                 token = combo.substr(start, end - start);  // Reuse the token variable
                 it = buttonCharMap.find(token);  // Reuse the iterator
-    
+                
                 if (it != buttonCharMap.end()) {
                     unicodeCombo += it->second;  // Append the mapped Unicode value
                     modified = true;
                 } else {
                     unicodeCombo += token;  // Append the original token if not found
                 }
-    
+                
                 if (i != length) {
                     unicodeCombo += "+";  // Only append '+' if we're not at the end
                 }
-    
+                
                 start = i + 1;  // Move to the next token
             }
         }
-    
+        
         // If a modification was made, update the original combo
         if (modified) {
             combo = unicodeCombo;
@@ -1100,7 +1100,7 @@ namespace ult {
             {"DEC", &DEC}
             #endif
         };
-    
+        
         // Iterate over the map to update global variables
         for (auto& kv : configMap) {
             auto it = jsonMap.find(kv.first);
@@ -1166,9 +1166,9 @@ namespace ult {
             {"November", &NOVEMBER},
             {"December", &DECEMBER}
         };
-    
+        
         std::string timeStrCopy = timeStr; // Convert the char array to a string for processing
-    
+        
         // Apply day and month replacements
         size_t pos;
         for (const auto& mapping : mappings) {
@@ -1178,7 +1178,7 @@ namespace ult {
                 pos = timeStrCopy.find(mapping.first, pos + mapping.second->length());
             }
         }
-    
+        
         // Copy the modified string back to the character array
         strcpy(timeStr, timeStrCopy.c_str());
     }
@@ -1355,7 +1355,7 @@ namespace ult {
     //        return (APPROXIMATE_cos(x) + 1.0f) / 2.0f;  // Cosine function expects radians
     //    }
     //}
-            
+    
     
     std::atomic<bool> refreshWallpaperNow(false);
     std::atomic<bool> refreshWallpaper(false);
@@ -1486,7 +1486,7 @@ namespace ult {
 
 
     
-        
+    
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
         const size_t originalDataSize = width * height * 4;
         const size_t compressedDataSize = originalDataSize / 2;
@@ -1561,21 +1561,21 @@ namespace ult {
     void reloadWallpaper() {
         // Signal that wallpaper is being refreshed
         refreshWallpaper.store(true, std::memory_order_release);
-    
+        
         // Lock the mutex for condition waiting
         std::unique_lock<std::mutex> lock(wallpaperMutex);
-    
+        
         // Wait for inPlot to be false before reloading the wallpaper
         cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire); });
-    
+        
         // Clear the current wallpaper data
         wallpaperData.clear();
-    
+        
         // Reload the wallpaper file
         if (isFileOrDirectory(WALLPAPER_PATH)) {
             loadWallpaperFile(WALLPAPER_PATH);
         }
-    
+        
         // Signal that wallpaper has finished refreshing
         refreshWallpaper.store(false, std::memory_order_release);
         
@@ -1653,12 +1653,12 @@ namespace ult {
             PsmChargerType charger = PsmChargerType_Unconnected;
             Result rc = psmGetBatteryChargePercentage(_batteryCharge);
             bool hwReadsSucceeded = R_SUCCEEDED(rc);
-    
+            
             if (hwReadsSucceeded) {
                 rc = psmGetChargerType(&charger);
                 hwReadsSucceeded &= R_SUCCEEDED(rc);
                 *_isCharging = (charger != PsmChargerType_Unconnected);
-    
+                
                 if (hwReadsSucceeded) {
                     // Update cache
                     powerCacheCharge = *_batteryCharge;
@@ -1668,18 +1668,18 @@ namespace ult {
                     return true;
                 }
             }
-    
+            
             // Use cached values if the hardware read fails
             if (powerCacheInitialized) {
                 *_batteryCharge = powerCacheCharge;
                 *_isCharging = powerCacheIsCharging;
                 return hwReadsSucceeded; // Return false if hardware read failed but cache is valid
             }
-    
+            
             // Return false if cache is not initialized and hardware read failed
             return false;
         }
-    
+        
         // Use cached values if not enough time has passed
         *_batteryCharge = powerCacheCharge;
         *_isCharging = powerCacheIsCharging;
@@ -1690,19 +1690,19 @@ namespace ult {
     void powerInit(void) {
         uint32_t charge = 0;
         bool charging = false;
-    
+        
         powerCacheInitialized = false;
         powerCacheCharge = 0;
         powerCacheIsCharging = false;
-    
+        
         if (!powerInitialized) {
             Result rc = psmInitialize();
             if (R_SUCCEEDED(rc)) {
                 rc = psmBindStateChangeEvent(&powerSession, 1, 1, 1);
-    
+                
                 if (R_FAILED(rc))
                     psmExit();
-    
+                
                 if (R_SUCCEEDED(rc)) {
                     powerInitialized = true;
                     ult::powerGetDetails(&charge, &charging);
@@ -1742,15 +1742,15 @@ namespace ult {
             u8 receive;
             u8 receiveLength;
         };
-    
+        
         I2cSession _session;
-    
+        
         Result res = i2cOpenSession(&_session, dev);
         if (res)
             return res;
-    
+        
         u16 val;
-    
+        
         struct readReg readRegister = {
             .send = 0 | (I2cTransactionOption_Start << 6),
             .sendLength = sizeof(reg),
@@ -1758,13 +1758,13 @@ namespace ult {
             .receive = 1 | (I2cTransactionOption_All << 6),
             .receiveLength = sizeof(val),
         };
-    
+        
         res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
         if (res) {
             i2csessionClose(&_session);
             return res;
         }
-    
+        
         *out = val;
         i2csessionClose(&_session);
         return 0;
@@ -1777,31 +1777,31 @@ namespace ult {
         u8 val;
         s32 integerPart = 0;
         float fractionalPart = 0.0f;  // Change this to a float to retain fractional precision
-    
+        
         // Read the integer part of the temperature
         Result res = I2cReadRegHandler(integerReg, I2cDevice_Tmp451, &rawValue);
         if (R_FAILED(res)) {
             return res;  // Error during I2C read
         }
-    
+        
         val = (u8)rawValue;  // Cast the value to an 8-bit unsigned integer
         integerPart = val;    // Integer part of temperature in Celsius
-    
+        
         if (integerOnly)
         {
             *temperature = static_cast<float>(integerPart);  // Ensure it's treated as a float
             return 0;  // Return only integer part if requested
         }
-    
+        
         // Read the fractional part of the temperature
         res = I2cReadRegHandler(fractionalReg, I2cDevice_Tmp451, &rawValue);
         if (R_FAILED(res)) {
             return res;  // Error during I2C read
         }
-    
+        
         val = (u8)rawValue;  // Cast the value to an 8-bit unsigned integer
         fractionalPart = static_cast<float>(val >> 4) * 0.0625f;  // Convert upper 4 bits into fractional part
-    
+        
         // Combine integer and fractional parts
         *temperature = static_cast<float>(integerPart) + fractionalPart;
         
@@ -1858,7 +1858,7 @@ namespace ult {
     
 
 
-        
+    
     // Helper function to convert MB to bytes
     u64 mbToBytes(u32 mb) {
         return static_cast<u64>(mb) * 0x100000;

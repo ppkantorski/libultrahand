@@ -72,19 +72,19 @@ namespace ult {
             loadSoundFromWav(static_cast<SoundType>(i), m_soundPaths[i]);
         }
     }
-
+    
     void AudioPlayer::unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds) {
         std::lock_guard<std::mutex> lock(m_audioMutex);
         if (!m_initialized) return;
-    
+        
         for (uint32_t i = 0; i < m_cachedSounds.size(); ++i) {
             SoundType current = static_cast<SoundType>(i);
-    
+            
             // Skip if this sound is in the exclude list
             if (std::find(excludeSounds.begin(), excludeSounds.end(), current) != excludeSounds.end()) {
                 continue;
             }
-    
+            
             auto& cached = m_cachedSounds[i];
             if (cached.buffer) {
                 free(cached.buffer);
@@ -111,25 +111,25 @@ namespace ult {
     bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
         const uint32_t idx = static_cast<uint32_t>(type);
         if (!m_initialized || idx >= static_cast<uint32_t>(SoundType::Count)) return false;
-    
+        
         // Free existing buffer
         free(m_cachedSounds[idx].buffer);
         m_cachedSounds[idx] = { nullptr, 0, 0 };
-    
+        
         FILE* f = fopen(path, "rb");
         if (!f) return false;
-    
+        
         // Parse WAV header
         char hdr[12];
         if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "RIFF", 4) || memcmp(hdr + 8, "WAVE", 4)) {
             fclose(f);
             return false;
         }
-    
+        
         u16 fmt = 0, ch = 0, bits = 0;
         u32 rate = 0, dSize = 0;
         long dPos = 0;
-    
+        
         // Find fmt and data chunks
         while (fread(hdr, 1, 8, f) == 8) {
             const u32 sz = *(u32*)(hdr + 4);
@@ -148,13 +148,13 @@ namespace ult {
                 fseek(f, sz, SEEK_CUR);
             }
         }
-    
+        
         // Validate format
         if (!dSize || fmt != 1 || ch == 0 || ch > 2 || (bits != 8 && bits != 16)) {
             fclose(f);
             return false;
         }
-    
+        
         // Calculate buffer sizes
         // Note: audout REQUIRES stereo (2 channels), so we must duplicate mono
         const bool mono = (ch == 1);
@@ -165,14 +165,14 @@ namespace ult {
         // Use smaller alignment to reduce waste (256 bytes instead of 4KB)
         const uint32_t align = 0x100;
         const uint32_t bufSize = (outSize + align - 1) & ~(align - 1);
-    
+        
         // Allocate output buffer
         void* buf = aligned_alloc(align, bufSize);
         if (!buf) {
             fclose(f);
             return false;
         }
-    
+        
         fseek(f, dPos, SEEK_SET);
         s16* out = (s16*)buf;
         
@@ -182,7 +182,7 @@ namespace ult {
             effectiveVolume *= 0.5f;
         }
         const float scale = std::clamp(effectiveVolume, 0.0f, 1.0f);
-    
+        
         // Process audio in chunks to minimize memory usage
         // This eliminates the need for temporary vectors
         constexpr uint32_t CHUNK_SIZE = 512;
@@ -241,14 +241,14 @@ namespace ult {
                 remaining -= toRead;
             }
         }
-    
+        
         fclose(f);
-    
+        
         // Zero-fill any padding
         if (outSize < bufSize) {
             memset((u8*)buf + outSize, 0, bufSize - outSize);
         }
-    
+        
         m_cachedSounds[idx] = { buf, bufSize, outSize };
         return true;
     }
@@ -256,10 +256,10 @@ namespace ult {
     void AudioPlayer::playSound(SoundType type) {
         // Lock-free check - SAFE with atomic
         if (!m_enabled.load(std::memory_order_relaxed)) return;
-    
+        
         const uint32_t idx = static_cast<uint32_t>(type);
         if (idx >= static_cast<uint32_t>(SoundType::Count)) return;
-    
+        
         std::lock_guard<std::mutex> lock(m_audioMutex);
         
         // Check again under lock
@@ -267,12 +267,12 @@ namespace ult {
         
         auto& cached = m_cachedSounds[idx];
         if (!cached.buffer) return;
-    
+        
         // Release any finished buffers
         AudioOutBuffer* releasedBuffers = nullptr;
         u32 releasedCount = 0;
         audoutGetReleasedAudioOutBuffer(&releasedBuffers, &releasedCount);
-    
+        
         // Static buffer is safe with mutex protection
         static AudioOutBuffer audioBuffer = {};
         audioBuffer = {};
@@ -281,7 +281,7 @@ namespace ult {
         audioBuffer.data_size = cached.dataSize;
         audioBuffer.data_offset = 0;
         audioBuffer.next = nullptr;
-    
+        
         AudioOutBuffer* rel = nullptr;
         audoutPlayBuffer(&audioBuffer, &rel);
     }

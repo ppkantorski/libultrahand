@@ -1520,39 +1520,26 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
 // Force inline for maximum performance
 static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 index_map, int unicode_codepoint)
 {
-   // Read format once - single memory access
    stbtt_uint16 format = FAST_USHORT(data + index_map);
+   stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
    
-   // Variables used across multiple cases or frequently in loops
-   stbtt_uint32 low, high, mid;
-   stbtt_uint8 *group;
-   stbtt_uint32 start_char, end_char;
-   stbtt_uint32 uc;
-   
-   // Switch for jump table optimization
    switch (format) {
-   case 4: { // Windows fonts - most common
-      // Early exit for out-of-range Unicode
+   case 4: {
       if ((unsigned)unicode_codepoint > 0xffff) return 0;
       
-      // Cache all header values in one go - burst read
       stbtt_uint8 *header = data + index_map;
       stbtt_uint16 segcount = FAST_USHORT(header + 6) >> 1;
-      stbtt_uint16 searchRange = FAST_USHORT(header + 8) >> 1;
-      stbtt_uint16 entrySelector = FAST_USHORT(header + 10);
       stbtt_uint16 rangeShift = FAST_USHORT(header + 12) >> 1;
-      
-      // Optimized binary search with fewer memory accesses
       stbtt_uint32 endCount = index_map + 14;
       stbtt_uint32 search = endCount;
       
-      // Use the precomputed rangeShift for initial jump
       if (unicode_codepoint >= FAST_USHORT(data + search + (rangeShift << 1)))
          search += rangeShift << 1;
       
       search -= 2;
+      stbtt_uint16 entrySelector = FAST_USHORT(header + 10);
+      stbtt_uint16 searchRange = FAST_USHORT(header + 8) >> 1;
       
-      // Unrolled binary search - most critical path
       while (entrySelector) {
          searchRange >>= 1;
          stbtt_uint32 test_pos = search + (searchRange << 1);
@@ -1563,49 +1550,39 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       
       search += 2;
       stbtt_uint16 item = (stbtt_uint16)((search - endCount) >> 1);
+      stbtt_uint32 base = index_map + 14;
       
-      // Calculate all offsets upfront - better instruction scheduling
-      stbtt_uint32 base1 = index_map + 14;
-      stbtt_uint32 startCode_offset = base1 + (segcount << 1) + 2 + (item << 1);
-      stbtt_uint32 endCode_offset = endCount + (item << 1);
-      stbtt_uint32 idRangeOffset_offset = base1 + (segcount * 6) + 2 + (item << 1);
+      stbtt_uint16 start = FAST_USHORT(data + base + (segcount << 1) + 2 + (item << 1));
+      stbtt_uint16 end = FAST_USHORT(data + endCount + (item << 1));
       
-      stbtt_uint16 start = FAST_USHORT(data + startCode_offset);
-      stbtt_uint16 end = FAST_USHORT(data + endCode_offset);
-      
-      // Single comparison using unsigned arithmetic trick
       if ((unsigned)(unicode_codepoint - start) > (unsigned)(end - start))
          return 0;
       
-      stbtt_uint16 offset = FAST_USHORT(data + idRangeOffset_offset);
-      if (offset == 0) {
-         stbtt_uint32 idDelta_offset = base1 + (segcount << 2) + 2 + (item << 1);
-         return (stbtt_uint16)(unicode_codepoint + FAST_SHORT(data + idDelta_offset));
-      }
+      stbtt_uint16 offset = FAST_USHORT(data + base + (segcount * 6) + 2 + (item << 1));
+      if (offset == 0)
+         return (stbtt_uint16)(unicode_codepoint + FAST_SHORT(data + base + (segcount << 2) + 2 + (item << 1)));
       
-      return FAST_USHORT(data + offset + ((unicode_codepoint - start) << 1) + idRangeOffset_offset);
+      return FAST_USHORT(data + offset + ((unicode_codepoint - start) << 1) + base + (segcount * 6) + 2 + (item << 1));
    }
    
-   case 12: { // 32-bit format
+   case 12:
+   case 13: {
       stbtt_uint32 ngroups = FAST_ULONG(data + index_map + 12);
-      uc = (stbtt_uint32)unicode_codepoint;
-      
-      // Optimized binary search with minimal memory access
-      low = 0; high = ngroups;
+      stbtt_uint32 low = 0, high = ngroups;
       stbtt_uint8 *groups_base = data + index_map + 16;
       
       while (low < high) {
-         mid = (low + high) >> 1;
-         group = groups_base + (mid * 12);
+         stbtt_uint32 mid = (low + high) >> 1;
+         stbtt_uint8 *group = groups_base + (mid * 12);
+         stbtt_uint32 start_char = FAST_ULONG(group);
          
-         start_char = FAST_ULONG(group);
          if (uc < start_char) {
             high = mid;
          } else {
-            end_char = FAST_ULONG(group + 4);
+            stbtt_uint32 end_char = FAST_ULONG(group + 4);
             if (uc <= end_char) {
                stbtt_uint32 start_glyph = FAST_ULONG(group + 8);
-               return start_glyph + uc - start_char;
+               return (format == 12) ? (start_glyph + uc - start_char) : start_glyph;
             }
             low = mid + 1;
          }
@@ -1613,47 +1590,21 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       return 0;
    }
    
-   case 13: { // 32-bit format, many-to-one mapping
-      stbtt_uint32 ngroups = FAST_ULONG(data + index_map + 12);
-      uc = (stbtt_uint32)unicode_codepoint;
-      
-      low = 0; high = ngroups;
-      stbtt_uint8 *groups_base = data + index_map + 16;
-      
-      while (low < high) {
-         mid = (low + high) >> 1;
-         group = groups_base + (mid * 12);
-         
-         start_char = FAST_ULONG(group);
-         if (uc < start_char) {
-            high = mid;
-         } else {
-            end_char = FAST_ULONG(group + 4);
-            if (uc <= end_char) {
-               return FAST_ULONG(group + 8); // Same glyph for all chars in range
-            }
-            low = mid + 1;
-         }
-      }
-      return 0;
-   }
-   
-   case 0: { // Apple byte encoding - simple and fast
+   case 0: {
       stbtt_int32 bytes = FAST_USHORT(data + index_map + 2);
       return ((unsigned)unicode_codepoint < (unsigned)(bytes - 6)) ? 
              data[index_map + 6 + unicode_codepoint] : 0;
    }
    
-   case 6: { // Trimmed table mapping
+   case 6: {
       stbtt_uint32 first = FAST_USHORT(data + index_map + 6);
       stbtt_uint32 count = FAST_USHORT(data + index_map + 8);
-      uc = (stbtt_uint32)unicode_codepoint;
       stbtt_uint32 offset = uc - first;
       return (offset < count) ? FAST_USHORT(data + index_map + 10 + (offset << 1)) : 0;
    }
    
    default:
-      return 0; // Unsupported format
+      return 0;
    }
 }
 

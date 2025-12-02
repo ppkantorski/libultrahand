@@ -1449,13 +1449,14 @@ namespace tsl {
             
             static stbtt_fontinfo* selectFontForCharacter(u32 character) {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-                
+            
                 if (!s_initialized) return nullptr;
-                
+            
                 if (stbtt_FindGlyphIndex(s_extFont, character)) {
                     return s_extFont;
                 } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                    return s_localFont;
+                    // Fix: Always fetch degree symbol "°" from the standard Latin font
+                    return (character != 0x00B0) ? s_localFont : s_stdFont;
                 }
                 return s_stdFont;
             }
@@ -1616,15 +1617,11 @@ namespace tsl {
             static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
                 if (!s_initialized) return nullptr;
                 
-                // Fix: Always fetch degree symbol "°" from the standard Latin font
-                if (character == 0x00B0) {
-                    return s_stdFont;
-                }
-                
                 if (stbtt_FindGlyphIndex(s_extFont, character)) {
                     return s_extFont;
                 } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                    return s_localFont;
+                    // Fix: Always fetch degree symbol "°" from the standard Latin font
+                    return (character != 0x00B0) ? s_localFont : s_stdFont;
                 }
                 return s_stdFont;
             }
