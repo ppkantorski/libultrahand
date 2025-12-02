@@ -493,7 +493,7 @@ namespace ult {
     extern std::string DELETE_OVERLAY;
     extern std::string SELECTION_IS_EMPTY;
     extern std::string FORCED_SUPPORT_WARNING;
-    extern std::string INCOMPATIBLE_WARNING;
+
     extern std::string TASK_IS_COMPLETE;
     extern std::string TASK_HAS_FAILED;
 
@@ -506,6 +506,7 @@ namespace ult {
     extern std::string BOOT_ENTRY;
     #endif
 
+    extern std::string INCOMPATIBLE_WARNING;
     extern std::string SYSTEM_RAM;
     extern std::string FREE;
 

@@ -572,7 +572,7 @@ namespace ult {
     std::string DELETE_OVERLAY = "Delete Overlay";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
-    std::string INCOMPATIBLE_WARNING = "Incompatible on AMS v1.10+";
+    
     std::string TASK_IS_COMPLETE = "Task is complete!";
     std::string TASK_HAS_FAILED = "Task has failed.";
 
@@ -586,6 +586,7 @@ namespace ult {
     std::string BOOT_ENTRY = "Boot Entry";
     #endif
 
+    std::string INCOMPATIBLE_WARNING = "Incompatible on AMS v1.10+";
     std::string SYSTEM_RAM = "System RAM";
     std::string FREE = "free";
 
