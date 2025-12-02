@@ -1616,6 +1616,11 @@ namespace tsl {
             static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
                 if (!s_initialized) return nullptr;
                 
+                // Fix: Always fetch degree symbol "°" from the standard Latin font
+                if (character == 0x00B0) {
+                    return s_stdFont;
+                }
+                
                 if (stbtt_FindGlyphIndex(s_extFont, character)) {
                     return s_extFont;
                 } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
