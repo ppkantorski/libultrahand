@@ -1521,7 +1521,6 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
 static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 index_map, int unicode_codepoint)
 {
    stbtt_uint16 format = FAST_USHORT(data + index_map);
-   stbtt_uint32 uc = (stbtt_uint32)unicode_codepoint;
    
    switch (format) {
    case 4: {
@@ -1529,8 +1528,8 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       
       stbtt_uint8 *header = data + index_map;
       stbtt_uint16 segcount = FAST_USHORT(header + 6) >> 1;
-      stbtt_uint16 rangeShift = FAST_USHORT(header + 12) >> 1;
-      stbtt_uint32 endCount = index_map + 14;
+      stbtt_uint16 rangeShift = FAST_USHORT(header + 12) >> 1;  // Keep - used twice
+      stbtt_uint32 endCount = index_map + 14;  // Keep - used twice
       stbtt_uint32 search = endCount;
       
       if (unicode_codepoint >= FAST_USHORT(data + search + (rangeShift << 1)))
@@ -1567,8 +1566,7 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
    
    case 12:
    case 13: {
-      stbtt_uint32 ngroups = FAST_ULONG(data + index_map + 12);
-      stbtt_uint32 low = 0, high = ngroups;
+      stbtt_uint32 low = 0, high = FAST_ULONG(data + index_map + 12);
       stbtt_uint8 *groups_base = data + index_map + 16;
       
       while (low < high) {
@@ -1576,13 +1574,13 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
          stbtt_uint8 *group = groups_base + (mid * 12);
          stbtt_uint32 start_char = FAST_ULONG(group);
          
-         if (uc < start_char) {
+         if ((stbtt_uint32)unicode_codepoint < start_char) {
             high = mid;
          } else {
             stbtt_uint32 end_char = FAST_ULONG(group + 4);
-            if (uc <= end_char) {
+            if ((stbtt_uint32)unicode_codepoint <= end_char) {
                stbtt_uint32 start_glyph = FAST_ULONG(group + 8);
-               return (format == 12) ? (start_glyph + uc - start_char) : start_glyph;
+               return (format == 12) ? (start_glyph + unicode_codepoint - start_char) : start_glyph;
             }
             low = mid + 1;
          }
@@ -1590,17 +1588,14 @@ static inline int stbtt_FindGlyphIndex_impl(stbtt_uint8 *data, stbtt_uint32 inde
       return 0;
    }
    
-   case 0: {
-      stbtt_int32 bytes = FAST_USHORT(data + index_map + 2);
-      return ((unsigned)unicode_codepoint < (unsigned)(bytes - 6)) ? 
+   case 0:
+      return ((unsigned)unicode_codepoint < (unsigned)(FAST_USHORT(data + index_map + 2) - 6)) ? 
              data[index_map + 6 + unicode_codepoint] : 0;
-   }
    
    case 6: {
-      stbtt_uint32 first = FAST_USHORT(data + index_map + 6);
-      stbtt_uint32 count = FAST_USHORT(data + index_map + 8);
-      stbtt_uint32 offset = uc - first;
-      return (offset < count) ? FAST_USHORT(data + index_map + 10 + (offset << 1)) : 0;
+      stbtt_uint32 offset = (stbtt_uint32)unicode_codepoint - FAST_USHORT(data + index_map + 6);
+      return (offset < (stbtt_uint32)FAST_USHORT(data + index_map + 8)) ? 
+             FAST_USHORT(data + index_map + 10 + (offset << 1)) : 0;
    }
    
    default:
