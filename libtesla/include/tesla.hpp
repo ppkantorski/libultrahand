@@ -7737,16 +7737,19 @@ namespace tsl {
         
             virtual bool onClick(u64 keys) override {
                 if (keys & KEY_A) [[likely]] {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-
-                    if (isLocked)
+                    
+                    if (!isLocked) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        if (m_value.find(ult::CAPITAL_ON_STR) != std::string::npos)
+                            triggerOffSound.store(true, std::memory_order_release);
+                        else if (m_value.find(ult::CAPITAL_OFF_STR) != std::string::npos)
+                            triggerOnSound.store(true, std::memory_order_release);
+                        else
+                            triggerEnterSound.store(true, std::memory_order_release);
+                    } else {
+                        triggerRumbleDoubleClick.store(true,std::memory_order_release);
                         triggerWallSound.store(true, std::memory_order_release);
-                    else if (m_value.find(ult::CAPITAL_ON_STR) != std::string::npos)
-                        triggerOffSound.store(true, std::memory_order_release);
-                    else if (m_value.find(ult::CAPITAL_OFF_STR) != std::string::npos)
-                        triggerOnSound.store(true, std::memory_order_release);
-                    else
-                        triggerEnterSound.store(true, std::memory_order_release);
+                    }
                     
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
