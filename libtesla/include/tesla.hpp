@@ -13204,6 +13204,9 @@ namespace tsl {
                                     const auto forceSupportStatus = ult::parseValueFromIniSection(
                                         ult::OVERLAYS_INI_FILEPATH, overlayFileName, "force_support");
                                     if (forceSupportStatus != ult::TRUE_STR) {
+                                        if (tsl::notification) {
+                                            tsl::notification->showNow(ult::NOTIFY_HEADER+ult::INCOMPATIBLE_WARNING, 22);
+                                        }
                                         continue;
                                     }
                                     //continue;

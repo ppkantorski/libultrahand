@@ -572,6 +572,7 @@ namespace ult {
     std::string DELETE_OVERLAY = "Delete Overlay";
     std::string SELECTION_IS_EMPTY = "Selection is empty!";
     std::string FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
+    std::string INCOMPATIBLE_WARNING = "Incompatible on AMS v1.10+";
     std::string TASK_IS_COMPLETE = "Task is complete!";
     std::string TASK_HAS_FAILED = "Task has failed.";
 
@@ -813,6 +814,7 @@ namespace ult {
         DELETE_OVERLAY = "Delete Overlay";
         SELECTION_IS_EMPTY = "Selection is empty!";
         FORCED_SUPPORT_WARNING = "Forcing support can be dangerous.";
+        INCOMPATIBLE_WARNING = "Incompatible on AMS v1.10+";
         TASK_IS_COMPLETE = "Task is complete!";
         TASK_HAS_FAILED = "Task has failed.";
 
@@ -1024,6 +1026,7 @@ namespace ult {
             {"DELETE_OVERLAY", &DELETE_OVERLAY},
             {"SELECTION_IS_EMPTY", &SELECTION_IS_EMPTY},
             {"FORCED_SUPPORT_WARNING", &FORCED_SUPPORT_WARNING},
+            {"INCOMPATIBLE_WARNING", &INCOMPATIBLE_WARNING},
             {"TASK_IS_COMPLETE", &TASK_IS_COMPLETE},
             {"TASK_HAS_FAILED", &TASK_HAS_FAILED},
 
