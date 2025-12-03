@@ -68,7 +68,7 @@ namespace ult {
     static constexpr HidVibrationValue vibrationStop{0};
     
     // ===== Internal helpers =====
-    static void sendVibration(const HidVibrationValue* value) {
+    static inline void sendVibration(const HidVibrationValue* value) {
         if (cachedHandheldStyle)
             hidSendVibrationValue(vibHandheld, value);
     
@@ -78,7 +78,7 @@ namespace ult {
         }
     }
 
-    static void sendVibration2x(const HidVibrationValue* value) {
+    static inline void sendVibration2x(const HidVibrationValue* value) {
         sendVibration(value);
         sendVibration(value);
     }
