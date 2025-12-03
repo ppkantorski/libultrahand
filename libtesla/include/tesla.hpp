@@ -13973,7 +13973,8 @@ namespace tsl {
                                 triggerExitFeedback();
                             } else {
                                 //triggerRumbleClick.store(true, std::memory_order_release);
-                                triggerEnterSound.store(true, std::memory_order_release);
+                                //triggerEnterSound.store(true, std::memory_order_release);
+                                triggerEnterFeedback();
                             }
                             #else
                             //triggerRumbleClick.store(true, std::memory_order_release);
