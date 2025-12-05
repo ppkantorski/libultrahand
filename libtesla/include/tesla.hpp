@@ -4691,6 +4691,10 @@ namespace tsl {
                 this->m_clickAnimationProgress = 0;
             }
 
+            inline bool hasFocus() {
+                return this->m_focused;
+            }
+
             virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool contains) const {
                 return false; // Default implementation for non-ListItem elements
             }
@@ -5941,6 +5945,7 @@ namespace tsl {
                 m_listHeight = 0;
                 actualItemCount = 0;
                 m_isItem = false;
+                m_hasSetInitialFocusHack = false;
 
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
@@ -6088,6 +6093,33 @@ namespace tsl {
                 
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
+                    // Force focus ONLY if no item has focus yet
+                    if (!m_hasSetInitialFocusHack && !m_items.empty()) {
+                        // Check if ANY item already has focus
+                        bool anyItemFocused = false;
+                        for (Element* item : m_items) {
+                            if (item && item->hasFocus()) {
+                                anyItemFocused = true;
+                                break;
+                            }
+                        }
+                        
+                        // Only set focus if nothing is focused yet
+                        if (!anyItemFocused) {
+                            for (Element* item : m_items) {
+                                if (item && item->m_isItem) {
+                                    item->setFocused(true);
+                                    m_hasSetInitialFocusHack = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            // Focus already exists (from handleInput or jump logic), just mark as done
+                            m_hasSetInitialFocusHack = true;
+                        }
+                    }
+
+
                     // Optimized visibility culling
                     for (Element* entry : m_items) {
                         if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
@@ -6334,6 +6366,7 @@ namespace tsl {
             bool m_pendingJump = false;
             bool m_hasForwardCached = false;
             bool m_cachingDisabled = false;  // New flag to disable caching
+            bool m_hasSetInitialFocusHack = false;
             
             //bool m_hasRenderedCache = false;
 
@@ -6501,6 +6534,7 @@ namespace tsl {
                 invalidate();
                 m_clearList = false;
                 actualItemCount = 0;
+                m_hasSetInitialFocusHack = false;
             }
             
             void addPendingItems() {

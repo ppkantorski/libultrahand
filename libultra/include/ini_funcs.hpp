@@ -339,6 +339,36 @@ namespace ult {
      * @param data The complete INI data structure to save.
      */
     void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data);
+
+
+
+    /**
+     * @brief Adds a key-value pair to all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key-value pair will be added to ALL sections.
+     * If patternKey is specified, only sections containing that key will be modified.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param newKey The new key to add.
+     * @param newValue The value for the new key.
+     */
+    void addKeyToMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                   const std::string& newKey, const std::string& newValue);
+
+    /**
+     * @brief Removes a key from all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key will be removed from ALL sections.
+     * If patternKey is specified, only sections containing that key will have keyToRemove deleted.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param keyToRemove The key to remove from matching sections.
+     */
+    void removeKeyFromMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                        const std::string& keyToRemove);
+    
 }
 
 #endif

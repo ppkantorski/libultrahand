@@ -2331,4 +2331,233 @@ namespace ult {
         file.close();
     #endif
     }
+
+
+
+    enum class KeyOp { ADD, REMOVE };
+    
+    /**
+     * @brief Internal helper for pattern-based key operations.
+     * Section-buffered approach for clean formatting with minimal code size.
+     */
+    void processKeysInMatchingSections(const std::string& filePath, const std::string& patternKey,
+                                       const std::string& targetKey, const std::string& value,
+                                       KeyOp operation) {
+        auto fileMutex = getFileMutex(filePath);
+        std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        
+        const std::string tempPath = filePath + ".tmp";
+        const bool matchAll = patternKey.empty();
+        
+    #if !USING_FSTREAM_DIRECTIVE
+        FILE* in = fopen(filePath.c_str(), "r");
+        if (!in) return;
+        FILE* out = fopen(tempPath.c_str(), "w");
+        if (!out) { fclose(in); return; }
+        
+        char buf[1024];
+        std::vector<std::string> section;
+        bool inMatch = matchAll;
+        size_t patIdx = SIZE_MAX, tgtIdx = SIZE_MAX;
+        size_t len;
+        
+        while (fgets(buf, sizeof(buf), in)) {
+            len = strlen(buf);
+            if (len > 0 && buf[len-1] == '\n') buf[--len] = '\0';
+            if (len > 0 && buf[len-1] == '\r') buf[--len] = '\0';
+            
+            std::string line(buf), tl = line;
+            trim(tl);
+            
+            if (!tl.empty() && tl[0] == '[' && tl.back() == ']') {
+                // Flush previous section
+                if (!section.empty() && inMatch) {
+                    if (operation == KeyOp::ADD) {
+                        // If target exists, update it in place; otherwise insert after pattern
+                        size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
+                        for (size_t i = 0; i < section.size(); ++i) {
+                            if (i == tgtIdx) {
+                                fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                            } else {
+                                fprintf(out, "%s\n", section[i].c_str());
+                            }
+                            if (i + 1 == insertAt) {
+                                fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                            }
+                        }
+                    } else if (operation == KeyOp::REMOVE) {
+                        for (size_t i = 0; i < section.size(); ++i) {
+                            if (i != tgtIdx) fprintf(out, "%s\n", section[i].c_str());
+                        }
+                    }
+                } else {
+                    for (const auto& l : section) fprintf(out, "%s\n", l.c_str());
+                }
+                
+                section.clear();
+                fprintf(out, "%s\n", buf);
+                inMatch = matchAll;
+                patIdx = tgtIdx = SIZE_MAX;
+                continue;
+            }
+            
+            size_t eq = tl.find('=');
+            if (eq != std::string::npos) {
+                std::string k(tl, 0, eq);
+                trim(k);
+                if (!matchAll && k == patternKey) { inMatch = true; patIdx = section.size(); }
+                if (k == targetKey) tgtIdx = section.size();
+            }
+            
+            section.push_back(buf);
+        }
+        
+        // Flush last section
+        if (!section.empty() && inMatch) {
+            if (operation == KeyOp::ADD) {
+                size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
+                for (size_t i = 0; i < section.size(); ++i) {
+                    if (i == tgtIdx) {
+                        fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                    } else {
+                        fprintf(out, "%s\n", section[i].c_str());
+                    }
+                    if (i + 1 == insertAt) {
+                        fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                    }
+                }
+            } else if (operation == KeyOp::REMOVE) {
+                for (size_t i = 0; i < section.size(); ++i) {
+                    if (i != tgtIdx) fprintf(out, "%s\n", section[i].c_str());
+                }
+            }
+        } else {
+            for (const auto& l : section) fprintf(out, "%s\n", l.c_str());
+        }
+        
+        fclose(in);
+        fclose(out);
+    #else
+        std::ifstream in(filePath);
+        if (!in) return;
+        std::ofstream out(tempPath);
+        if (!out) return;
+        
+        std::vector<std::string> section;
+        std::string line;
+        bool inMatch = matchAll;
+        size_t patIdx = SIZE_MAX, tgtIdx = SIZE_MAX;
+        
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            
+            std::string tl = line;
+            trim(tl);
+            
+            if (!tl.empty() && tl[0] == '[' && tl.back() == ']') {
+                // Flush previous section
+                if (!section.empty() && inMatch) {
+                    if (operation == KeyOp::ADD) {
+                        size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
+                        for (size_t i = 0; i < section.size(); ++i) {
+                            if (i == tgtIdx) {
+                                out << targetKey << "=" << value << '\n';
+                            } else {
+                                out << section[i] << '\n';
+                            }
+                            if (i + 1 == insertAt) {
+                                out << targetKey << "=" << value << '\n';
+                            }
+                        }
+                    } else if (operation == KeyOp::REMOVE) {
+                        for (size_t i = 0; i < section.size(); ++i) {
+                            if (i != tgtIdx) out << section[i] << '\n';
+                        }
+                    }
+                } else {
+                    for (const auto& l : section) out << l << '\n';
+                }
+                
+                section.clear();
+                out << line << '\n';
+                inMatch = matchAll;
+                patIdx = tgtIdx = SIZE_MAX;
+                continue;
+            }
+            
+            size_t eq = tl.find('=');
+            if (eq != std::string::npos) {
+                std::string k(tl, 0, eq);
+                trim(k);
+                if (!matchAll && k == patternKey) { inMatch = true; patIdx = section.size(); }
+                if (k == targetKey) tgtIdx = section.size();
+            }
+            
+            section.push_back(line);
+        }
+        
+        // Flush last section
+        if (!section.empty() && inMatch) {
+            if (operation == KeyOp::ADD) {
+                size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
+                for (size_t i = 0; i < section.size(); ++i) {
+                    if (i == tgtIdx) {
+                        out << targetKey << "=" << value << '\n';
+                    } else {
+                        out << section[i] << '\n';
+                    }
+                    if (i + 1 == insertAt) {
+                        out << targetKey << "=" << value << '\n';
+                    }
+                }
+            } else if (operation == KeyOp::REMOVE) {
+                for (size_t i = 0; i < section.size(); ++i) {
+                    if (i != tgtIdx) out << section[i] << '\n';
+                }
+            }
+        } else {
+            for (const auto& l : section) out << l << '\n';
+        }
+        
+        in.close();
+        out.close();
+    #endif
+        
+        std::remove(filePath.c_str());
+        std::rename(tempPath.c_str(), filePath.c_str());
+    }
+
+
+    /**
+     * @brief Adds a key-value pair to all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key-value pair will be added to ALL sections.
+     * If patternKey is specified, only sections containing that key will be modified.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param newKey The new key to add.
+     * @param newValue The value for the new key.
+     */
+    void addKeyToMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                   const std::string& newKey, const std::string& newValue) {
+        processKeysInMatchingSections(filePath, patternKey, newKey, newValue, KeyOp::ADD);
+    }
+
+    
+    /**
+     * @brief Removes a key from all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key will be removed from ALL sections.
+     * If patternKey is specified, only sections containing that key will have keyToRemove deleted.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param keyToRemove The key to remove from matching sections.
+     */
+    void removeKeyFromMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                        const std::string& keyToRemove) {
+        processKeysInMatchingSections(filePath, patternKey, keyToRemove, "", KeyOp::REMOVE);
+    }
+
 }

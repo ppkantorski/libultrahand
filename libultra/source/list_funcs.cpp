@@ -84,9 +84,9 @@ namespace ult {
         }
     }
     
-        
-    // Function to read file into a vector of strings with optional cap
-    std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines) {
+    
+    // Function to read file into a vector of strings with optional cap and newline preservation
+    std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines, bool preserveNewlines) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::vector<std::string> lines;
     
@@ -109,18 +109,22 @@ namespace ult {
                 break;
             }
             
-            // More efficient newline removal
-            len = strlen(buffer);
-            if (len > 0 && buffer[len - 1] == '\n') {
-                buffer[len - 1] = '\0';
-                --len;
-                // Also remove carriage return if present
-                if (len > 0 && buffer[len - 1] == '\r') {
+            if (preserveNewlines) {
+                // Keep the line as-is, including newlines
+                lines.emplace_back(buffer);
+            } else {
+                // Remove newlines
+                len = strlen(buffer);
+                if (len > 0 && buffer[len - 1] == '\n') {
                     buffer[len - 1] = '\0';
+                    --len;
+                    // Also remove carriage return if present
+                    if (len > 0 && buffer[len - 1] == '\r') {
+                        buffer[len - 1] = '\0';
+                    }
                 }
+                lines.emplace_back(buffer);
             }
-            
-            lines.emplace_back(buffer);
         }
     
         fclose(file);
@@ -140,12 +144,17 @@ namespace ult {
                 break;
             }
             
-            // Remove carriage return if present (getline removes \n but not \r)
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
+            if (preserveNewlines) {
+                // Add back the newline that getline removed
+                line += '\n';
+                lines.emplace_back(std::move(line));
+            } else {
+                // Remove carriage return if present (getline removes \n but not \r)
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                lines.emplace_back(std::move(line));
             }
-            
-            lines.emplace_back(std::move(line));
         }
     
         file.close();
