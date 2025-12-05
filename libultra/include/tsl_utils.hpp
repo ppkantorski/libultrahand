@@ -429,8 +429,8 @@ namespace ult {
     extern std::string VENDOR;
     extern std::string MODEL;
     extern std::string STORAGE;
-    extern std::string NOTICE;
-    extern std::string UTILIZES;
+    //extern std::string NOTICE;
+    //extern std::string UTILIZES;
 
     extern std::string OVERLAY_MEMORY;
     extern std::string NOT_ENOUGH_MEMORY;

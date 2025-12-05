@@ -509,8 +509,8 @@ namespace ult {
     std::string VENDOR = "Vendor";
     std::string MODEL = "Model";
     std::string STORAGE = "Storage";
-    std::string NOTICE = "Notice";
-    std::string UTILIZES = "Utilizes";
+    //std::string NOTICE = "Notice";
+    //std::string UTILIZES = "Utilizes";
 
 
     std::string OVERLAY_MEMORY = "Overlay Memory";
@@ -736,8 +736,8 @@ namespace ult {
         VENDOR = "Vendor";
         MODEL = "Model";
         STORAGE = "Storage";
-        NOTICE = "Notice";
-        UTILIZES = "Utilizes";
+        //NOTICE = "Notice";
+        //UTILIZES = "Utilizes";
         SYSTEM_RAM = "System RAM";
         FREE = "free";
         
@@ -964,8 +964,8 @@ namespace ult {
             {"VENDOR", &VENDOR},
             {"MODEL", &MODEL},
             {"STORAGE", &STORAGE},
-            {"NOTICE", &NOTICE},
-            {"UTILIZES", &UTILIZES},
+            //{"NOTICE", &NOTICE},
+            //{"UTILIZES", &UTILIZES},
 
             {"OVERLAY_MEMORY", &OVERLAY_MEMORY},
             {"NOT_ENOUGH_MEMORY", &NOT_ENOUGH_MEMORY},
