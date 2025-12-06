@@ -6328,12 +6328,14 @@ namespace tsl {
                 m_lastScrollTime = 0;
             }
 
-            inline void disableCaching() {
+            inline void disableCaching(bool preserveTopAndBottom = false) {
                 m_cachingDisabled = true;
                 //clearFrameCache();
                 g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
-                g_cachedTop.disabled = true;
-                g_cachedBottom.disabled = true;
+                if (!preserveTopAndBottom) {
+                    g_cachedTop.disabled = true;
+                    g_cachedBottom.disabled = true;
+                }
             }
         
         protected:
