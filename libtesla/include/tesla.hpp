@@ -8883,7 +8883,7 @@ namespace tsl {
 
                 if (keysDown & KEY_A) {
                     this->triggerClickAnimation();
-                    triggerNavigationFeedback();
+                    triggerEnterFeedback();
                 }
 
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
@@ -9290,7 +9290,7 @@ namespace tsl {
 
                 if (keysDown & KEY_A) {
                     this->triggerClickAnimation();
-                    triggerNavigationFeedback();
+                    triggerEnterFeedback();
                 }
 
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
