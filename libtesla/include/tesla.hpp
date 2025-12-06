@@ -6332,6 +6332,8 @@ namespace tsl {
                 m_cachingDisabled = true;
                 //clearFrameCache();
                 g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
+                g_cachedTop.disabled = true;
+                g_cachedBottom.disabled = true;
             }
         
         protected:
