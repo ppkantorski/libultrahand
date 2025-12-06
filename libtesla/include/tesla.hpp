@@ -5982,7 +5982,7 @@ namespace tsl {
                 //s_directionalKeyReleased.store(false, std::memory_order_release);
                 //std::lock_guard<std::mutex> lock(s_safeTransitionMutex);
                 //s_safeToSwap.store(false, std::memory_order_release);
-            
+                
                 // NOW take mutex for shared static variable operations
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
@@ -7301,10 +7301,19 @@ namespace tsl {
             
                 const float oldOffset = m_nextOffset;
                 m_focusedIndex = lastFocusableIndex;
+
+                // NEW: Check if there's a table after the focused item
+                if (lastFocusableIndex + 1 < m_items.size()) {
+                    Element* nextItem = m_items[lastFocusableIndex + 1];
+                    if (nextItem->isTable()) {
+                        m_focusedIndex = lastFocusableIndex + 1;  // Point at the table
+                    }
+                }
+
                 m_nextOffset = targetOffset;
-            
+                
                 Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-            
+                
                 // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
