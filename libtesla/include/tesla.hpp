@@ -8866,6 +8866,13 @@ namespace tsl {
 
             virtual ~TrackBar() {}
 
+            virtual void triggerClickAnimation() {
+                Element::triggerClickAnimation();
+
+                // Activate the click animation
+                this->m_clickAnimationStartTime = armTicksToNs(armGetSystemTick());
+                this->m_clickAnimationActive = true;
+            }
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
@@ -8873,6 +8880,12 @@ namespace tsl {
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static s16 lastHapticSegment = -1;
                 
+
+                if (keysDown & KEY_A) {
+                    this->triggerClickAnimation();
+                    triggerNavigationFeedback();
+                }
+
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
                     return true;
                 
@@ -9147,8 +9160,8 @@ namespace tsl {
                             renderer->drawRectMultiThreaded(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
                         else
                             renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor)); // CUSTOM MODIFICATION 
-
-
+            
+            
                         //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
                     }
                     
@@ -9161,9 +9174,38 @@ namespace tsl {
                             renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor)); // CUSTOM MODIFICATION 
                     }
                 }
-
-
+            
+            
                 ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
+                
+                // Click animation rendering - checking if animation is active
+                if (this->m_clickAnimationActive) {
+                    const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
+            
+                    auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (static_cast<float>(elapsedTime_ns) / 500000000.0f));
+                    
+                    if (clickAnimationProgress < 0.0f) {
+                        clickAnimationProgress = 0.0f;
+                        this->m_clickAnimationActive = false;
+                    }
+                
+                    if (clickAnimationProgress > 0.0f) {
+                        const u8 saturation = tsl::style::ListItemHighlightSaturation * (float(clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
+                
+                        Color animColor = {0xF, 0xF, 0xF, 0xF};
+                        if (invertBGClickColor) {
+                            animColor.r = 15 - saturation;
+                            animColor.g = 15 - saturation;
+                            animColor.b = 15 - saturation;
+                        } else {
+                            animColor.r = saturation;
+                            animColor.g = saturation;
+                            animColor.b = saturation;
+                        }
+                        animColor.a = selectionBGColor.a;
+                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
+                    }
+                }
             }
 
             /**
@@ -9205,6 +9247,9 @@ namespace tsl {
             bool m_unlockedTrackbar = true;
             bool touchInSliderBounds = false;
             
+            u64 m_clickAnimationStartTime = 0;
+            bool m_clickAnimationActive = false;
+
             u8 m_numSteps = 101;
             // V2 Style properties
             bool m_useV2Style = false;
@@ -9241,6 +9286,12 @@ namespace tsl {
 
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
+
+
+                if (keysDown & KEY_A) {
+                    this->triggerClickAnimation();
+                    triggerNavigationFeedback();
+                }
 
                 if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
                     tick = 0;
