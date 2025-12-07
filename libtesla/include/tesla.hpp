@@ -11618,9 +11618,16 @@ namespace tsl {
                 }
             }
         #endif
-        
+
+
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
+                if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerWallSound.store(true, std::memory_order_release);
+                    return;
+                }
+
                 if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
                     keysDown |= KEY_A;
                 
@@ -11646,11 +11653,18 @@ namespace tsl {
                 ult::simulatedBack.exchange(false, std::memory_order_acq_rel);
             }
         #else
+
             if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
                 keysDown |= KEY_A;
             
             if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
                 keysDown |= KEY_B;
+
+            if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerWallSound.store(true, std::memory_order_release);
+                return;
+            }
 
             if (!overrideBackButton) {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
@@ -11670,6 +11684,7 @@ namespace tsl {
                     if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
                         //triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         //triggerExitSound.store(true, std::memory_order_release);
+                        
                         triggerExitFeedback();
                     }
                 }
@@ -12397,7 +12412,7 @@ namespace tsl {
          */
         std::unique_ptr<tsl::Gui>& swapTo(std::unique_ptr<tsl::Gui>&& gui, u32 count = 1) {
             //isNavigatingBackwards = true;
-            
+
             isNavigatingBackwards.store(true, std::memory_order_release);
             
             // Clamp count to available stack size to prevent underflow
@@ -12459,6 +12474,12 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
+            if (ult::stillTouching) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerWallSound.store(true, std::memory_order_release);
+                return;
+            }
+
             tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
 
             // If there is exactly one GUI and an active notification, handle that first
@@ -12499,6 +12520,13 @@ namespace tsl {
         }
 
         void pop(u32 count = 1) {
+
+            if (ult::stillTouching) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerWallSound.store(true, std::memory_order_release);
+                return;
+            }
+
             isNavigatingBackwards.store(true, std::memory_order_release);
             
             // Clamp count to available stack size to prevent underflow
