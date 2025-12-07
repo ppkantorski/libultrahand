@@ -6094,7 +6094,7 @@ namespace tsl {
                 {
                     std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
                     // Force focus ONLY if no item has focus yet
-                    if (!m_hasSetInitialFocusHack && !m_items.empty()) {
+                    if (!m_hasSetInitialFocusHack && !m_items.empty() && !m_pendingJump) {
                         // Check if ANY item already has focus
                         bool anyItemFocused = false;
                         for (Element* item : m_items) {
