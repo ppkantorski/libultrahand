@@ -1682,8 +1682,8 @@ namespace ult {
     
     
     // Time implementation
-    CONSTEXPR_STRING std::string DEFAULT_DT_FORMAT = "'%a %T'";
-    std::string datetimeFormat = "%a %T";
+    CONSTEXPR_STRING std::string DEFAULT_DT_FORMAT = "%a %T";
+    std::string datetimeFormat = DEFAULT_DT_FORMAT;
     
     
     // Widget settings
