@@ -2877,25 +2877,6 @@ namespace tsl {
              * @param screenH Target screen height
              */
 
-            //inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, const u8 *preprocessedData) {
-            //    s32 startRow;
-            //    
-            //    // Divide rows among ult::renderThreads
-            //    //s32 chunkSize = (screenH + ult::numThreads - 1) / ult::numThreads;
-            //    for (unsigned i = 0; i < ult::numThreads; ++i) {
-            //        startRow = i * ult::bmpChunkSize;
-            //        //s32 endRow = std::min(startRow + ult::bmpChunkSize, screenH);
-            //        
-            //        // Bind the member function and create the thread
-            //        ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, this, x, y, screenW, preprocessedData, startRow, std::min(startRow + ult::bmpChunkSize, screenH)));
-            //    }
-            //    
-            //    // Join all ult::renderThreads
-            //    for (auto& t : ult::renderThreads) {
-            //        t.join();
-            //    }
-            //}
-
             inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, 
                                            const u8 *preprocessedData, float opacity = 1.0f) {
                 // Pre-compute alpha limit once
@@ -2917,24 +2898,6 @@ namespace tsl {
                     t.join();
                 }
             }
-
-
-
-            //inline void drawWallpaper() {
-            //    if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
-            //        return;
-            //    }
-            //    
-            //    ult::inPlot.store(true, std::memory_order_release);
-            //    
-            //    if (!ult::wallpaperData.empty() && 
-            //        !ult::refreshWallpaper.load(std::memory_order_acquire) && 
-            //        ult::correctFrameSize) {
-            //        drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, ult::wallpaperData.data());
-            //    }
-            //    
-            //    ult::inPlot.store(false, std::memory_order_release);
-            //}
 
             inline void drawWallpaper() {
                 if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
@@ -13865,21 +13828,10 @@ namespace tsl {
         threadStart(&backgroundThread);
     
         eventCreate(&shData.comboEvent, false);
-    
-        auto& overlay = tsl::Overlay::s_overlayInstance;
-        overlay = new TOverlay();
-        overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
-    
-        tsl::hlp::doWithSmSession([&overlay]{
-            overlay->initServices();
-        });
-
+        
     #if !IS_LAUNCHER_DIRECTIVE
         tsl::initializeUltrahandSettings();
     #endif
-
-        overlay->initScreen();
-        overlay->changeTo(overlay->loadInitialGui());
         
 
         bool shouldFireEvent = false;
@@ -13917,6 +13869,8 @@ namespace tsl {
             // Fire event if needed
             if (shouldFireEvent) {
                 eventFire(&shData.comboEvent);
+            } else {
+                lastOverlayFilename = "";
             }
         }
     #else
@@ -13943,9 +13897,20 @@ namespace tsl {
             shouldFireEvent = true;
         }
     #endif
+        
+        auto& overlay = tsl::Overlay::s_overlayInstance;
+        overlay = new TOverlay();
+        overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
     
+        tsl::hlp::doWithSmSession([&overlay]{
+            overlay->initServices();
+        });
+
+        overlay->initScreen();
+        overlay->changeTo(overlay->loadInitialGui());
+
         overlay->disableNextAnimation();
-    
+        
         {
             const Handle handles[2] = { shData.comboEvent.revent, notificationEvent.revent };
             s32 index = -1;
@@ -13953,7 +13918,7 @@ namespace tsl {
             bool exitAfterPrompt = false;
             bool comboBreakout = false;
             bool firstLoop = !ult::firstBoot;
-    
+            
             while (shData.running.load(std::memory_order_acquire)) {
                 // Early exit if launching new overlay
                 if (ult::launchingOverlay.load(std::memory_order_acquire)) {
@@ -13962,7 +13927,7 @@ namespace tsl {
                     shData.overlayOpen.store(false, std::memory_order_release);
                     break;
                 }
-    
+                
                 // Wait for events only if no active notification
                 if (!(notification && notification->isActive())) {
                     svcWaitSynchronization(&index, handles, 2, UINT64_MAX);
@@ -13971,10 +13936,10 @@ namespace tsl {
                 }
                 eventClear(&notificationEvent);
                 eventClear(&shData.comboEvent);
-    
+                
                 if ((notification && notification->isActive() && !firstLoop) || index == 1) {
                     comboBreakout = false;
-    
+                    
                     while (shData.running.load(std::memory_order_acquire)) {
                         {
                             //std::scoped_lock lock(shData.dataMutex);
@@ -13985,25 +13950,25 @@ namespace tsl {
                             }
                             overlay->loop(true); // Draw prompts while hidden
                         }
-    
+                        
                         if (mainComboHasTriggered.exchange(false, std::memory_order_acq_rel)) {
                             comboBreakout = true;
                             exitAfterPrompt = false;
                             break;
                         }
-    
+                        
                         if (launchComboHasTriggered.load(std::memory_order_acquire)) {
                             exitAfterPrompt = true;
                             usingPackageLauncher = false;
                             directMode = false;
                             break;
                         }
-    
+                        
                         if (!(notification && notification->isActive())) {
                             break;
                         }
                     }
-    
+                    
                     if (!comboBreakout || !shData.running.load(std::memory_order_acquire)) {
                         {
                             //std::scoped_lock lock(shData.dataMutex);
