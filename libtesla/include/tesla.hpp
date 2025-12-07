@@ -11622,7 +11622,7 @@ namespace tsl {
 
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
-                if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching) {
+                if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
                     triggerRumbleClick.store(true, std::memory_order_release);
                     triggerWallSound.store(true, std::memory_order_release);
                     return;
@@ -11660,7 +11660,7 @@ namespace tsl {
             if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
                 keysDown |= KEY_B;
 
-            if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching) {
+            if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
                 triggerRumbleClick.store(true, std::memory_order_release);
                 triggerWallSound.store(true, std::memory_order_release);
                 return;
@@ -12474,7 +12474,7 @@ namespace tsl {
          * @note The Overlay gets closed once there are no more Guis on the stack
          */
         void goBack(u32 count = 1) {
-            if (ult::stillTouching) {
+            if (ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
                 triggerRumbleClick.store(true, std::memory_order_release);
                 triggerWallSound.store(true, std::memory_order_release);
                 return;
@@ -12521,7 +12521,7 @@ namespace tsl {
 
         void pop(u32 count = 1) {
 
-            if (ult::stillTouching) {
+            if (ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
                 triggerRumbleClick.store(true, std::memory_order_release);
                 triggerWallSound.store(true, std::memory_order_release);
                 return;
