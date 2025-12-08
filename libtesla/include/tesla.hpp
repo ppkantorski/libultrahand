@@ -5852,35 +5852,12 @@ namespace tsl {
 
         class ListItem; // forward declaration
 
-        //static std::mutex s_lastFrameItemsMutex;
-        //static std::vector<Element*> s_lastFrameItems;
-        //static std::atomic<bool> s_isForwardCache(false); // NEW VARIABLE FOR FORWARD CACHING
-        //static std::atomic<bool> s_hasValidFrame(false);
-        //static std::atomic<s32> s_cachedTopBound{0};
-        //static std::atomic<s32> s_cachedBottomBound{0};
-        //static std::atomic<s32> s_cachedHeight{0};
-        //static std::atomic<s32> s_cachedListHeight{0};
-        //static std::atomic<s32> s_cachedActualContentBottom{0};
-        //static std::atomic<bool> s_shouldDrawScrollbar(false);
-        //static std::atomic<u32> s_cachedScrollbarHeight{0};
-        //static std::atomic<u32> s_cachedScrollbarOffset{0};
-        //static std::atomic<u32> s_cachedScrollbarX{0};
-        //static std::atomic<u32> s_cachedScrollbarY{0};
-        //static std::atomic<bool> s_cacheForwardFrameOnce(true);
-        //static std::atomic<bool> s_hasClearedCache(false);
-
         static std::atomic<float> s_currentScrollVelocity{0};
         static std::atomic<bool> s_directionalKeyReleased{false};
         static std::atomic<bool> lastInternalTouchRelease(true);
 
-        //static std::atomic<bool> s_skipCaching(false);
-
         static std::mutex s_safeToSwapMutex;
-        //static std::mutex s_safeTransitionMutex;
         static std::atomic<bool> s_safeToSwap{false};
-
-        //static std::atomic<bool> fullDeconstruction{false};
-        //static std::atomic<bool> skipDeconstruction{false};
         static std::atomic<bool> skipOnce{false};
 
         static std::atomic<bool> isTableScrolling{false};
@@ -5889,9 +5866,6 @@ namespace tsl {
         
         public:
             List() : Element() {
-                //if (fullDeconstruction.load(std::memory_order_acquire)) {
-                //    return;
-                //}
             
                 s_safeToSwap.store(false, std::memory_order_release);
                 
@@ -5906,43 +5880,17 @@ namespace tsl {
                 actualItemCount = 0;
                 m_isItem = false;
                 m_hasSetInitialFocusHack = false;
-                
-                // Simple cleanup if needed
-                //if (skipDeconstruction.load(std::memory_order_acquire)) {
-                //    purgePendingItems();
-                //}
+                m_hasRenderedInitialFocus = false;
             }
             
             virtual ~List() {
-                //if (fullDeconstruction.load(std::memory_order_acquire)) {
-                //    purgePendingItems();
-                //    clearItems();
-                //    return;
-                //}
-            
                 s_safeToSwap.store(false, std::memory_order_release);
-                
-                //if (!skipDeconstruction.load(std::memory_order_acquire)) {
-                //    purgePendingItems();
-                //    clearItems();
-                //}
-                //
-                //if (m_cachingDisabled || (skipOnce.load(std::memory_order_acquire) && skipDeconstruction.load(std::memory_order_acquire))) {
-                //    purgePendingItems();
-                //    clearItems();
-                //} else if (skipDeconstruction.load(std::memory_order_acquire)) {
-                //    skipOnce.store(true, std::memory_order_release);
-                //}
-
                 purgePendingItems();
                 clearItems();
             }
             
                                                             
             virtual void draw(gfx::Renderer* renderer) override {
-                //if (fullDeconstruction.load(std::memory_order_acquire)) {
-                //    return;
-                //}
             
                 s_safeToSwap.store(false, std::memory_order_release);
                 std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
@@ -6015,7 +5963,7 @@ namespace tsl {
                 renderer->enableScissoring(getLeftBound(), topBound-8, getWidth() + 8, height + 14);
             
                 // Manually set focus flag on the target item for the first frame
-                if (m_hasSetInitialFocusHack && !m_items.empty() && m_focusedIndex < m_items.size()) {
+                if (m_hasSetInitialFocusHack && !m_hasRenderedInitialFocus && !m_items.empty() && m_focusedIndex < m_items.size()) {
                     bool anyItemFocused = false;
                     for (Element* item : m_items) {
                         if (item && item->hasFocus()) {
@@ -6027,6 +5975,7 @@ namespace tsl {
                     if (!anyItemFocused) {
                         m_items[m_focusedIndex]->setFocused(true);
                     }
+                    m_hasRenderedInitialFocus = true;
                 }
             
                 for (Element* entry : m_items) {
@@ -6075,6 +6024,7 @@ namespace tsl {
                         m_items[m_focusedIndex]->setFocused(true);
                         
                         m_hasSetInitialFocusHack = true;
+                        m_hasRenderedInitialFocus = true;
                         m_pendingJump = false;
                         
                         break;
@@ -6112,6 +6062,8 @@ namespace tsl {
                             
                             // Manually set the focus flag for first frame drawing
                             m_items[i]->setFocused(true);
+
+                            m_hasRenderedInitialFocus = true;
                             
                             break;
                         }
@@ -6322,7 +6274,8 @@ namespace tsl {
             bool m_hasForwardCached = false;
             bool m_cachingDisabled = false;  // New flag to disable caching
             bool m_hasSetInitialFocusHack = false;
-            
+            bool m_hasRenderedInitialFocus = false;
+
             //bool m_hasRenderedCache = false;
 
             // Stack variables for hot path - reused to avoid allocations
@@ -6357,126 +6310,6 @@ namespace tsl {
             NavigationResult m_lastNavigationResult = NavigationResult::None;
         
         private:
-
-            // Thread-safe versions (handle their own locking)
-            //static void clearStaticCache(bool preservePointers = false) {
-            //    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
-            //    clearStaticCacheUnsafe(preservePointers);
-            //}
-            //
-            //void cacheCurrentFrame(bool preservePointers = false) {
-            //    std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
-            //    cacheCurrentFrameUnsafe(preservePointers);
-            //}
-//
-            //
-            //static void clearStaticCacheUnsafe(bool preservePointers = false) {
-            //    //std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
-            //    if (!preservePointers) {
-            //        // Normal case: delete elements and clear
-            //        for (Element* el : s_lastFrameItems) {
-            //            delete el;
-            //        }
-            //    }
-            //
-            //    s_lastFrameItems.clear();
-            //    //s_lastFrameItems.shrink_to_fit();
-            //
-            //    // CRITICAL: Always reset these, even for forward cache!
-            //    s_hasValidFrame.store(false, std::memory_order_release);  // This MUST be false after clearing
-            //    s_isForwardCache.store(false, std::memory_order_release);
-            //    
-            //    s_cachedTopBound.store(0, std::memory_order_release);
-            //    s_cachedBottomBound.store(0, std::memory_order_release);
-            //    s_cachedHeight.store(0, std::memory_order_release);
-            //    s_cachedListHeight.store(0, std::memory_order_release);
-            //    s_cachedActualContentBottom.store(0, std::memory_order_release);
-            //
-            //    s_shouldDrawScrollbar.store(false, std::memory_order_release);
-            //    s_cachedScrollbarHeight.store(0, std::memory_order_release);
-            //    s_cachedScrollbarOffset.store(0, std::memory_order_release);
-            //    s_cachedScrollbarX.store(0, std::memory_order_release);
-            //    s_cachedScrollbarY.store(0, std::memory_order_release);
-            //}
-            //        
-            //void cacheCurrentFrameUnsafe(bool preservePointers = false) {
-            //    //std::lock_guard<std::mutex> lock(s_lastFrameItemsMutex);
-            //    if (!preservePointers) {
-            //        for (Element* el : s_lastFrameItems) delete el;
-            //    }
-            //
-            //    s_lastFrameItems = m_items;
-            //
-            //    // Store new cache values using atomic stores
-            //    s_cachedTopBound.store(getTopBound(), std::memory_order_release);
-            //    s_cachedBottomBound.store(getBottomBound(), std::memory_order_release);
-            //    s_cachedHeight.store(getHeight(), std::memory_order_release);
-            //    s_cachedListHeight.store(m_listHeight, std::memory_order_release);
-            //
-            //    if (preservePointers)
-            //        s_isForwardCache.store(true, std::memory_order_release);
-            //
-            //    s_hasValidFrame.store(true, std::memory_order_release);
-            //}
-            //
-            //void cacheCurrentScrollbar() {
-            //    const s32 cachedHeight = s_cachedHeight.load(std::memory_order_acquire);
-            //    const s32 cachedListHeight = s_cachedListHeight.load(std::memory_order_acquire);
-            //
-            //    s_shouldDrawScrollbar.store((cachedListHeight > cachedHeight), std::memory_order_release);
-            //
-            //    if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
-            //        const float viewHeight  = static_cast<float>(cachedHeight);
-            //        const float totalHeight = static_cast<float>(cachedListHeight);
-            //        const u32   maxScroll   = std::max(static_cast<u32>(totalHeight - viewHeight), 1u);
-            //
-            //        u32 scrollbarHeight = std::min(
-            //            static_cast<u32>((viewHeight * viewHeight) / totalHeight),
-            //            static_cast<u32>(viewHeight)
-            //        );
-            //
-            //        u32 scrollbarOffset = std::min(
-            //            static_cast<u32>((m_offset / maxScroll) * (viewHeight - scrollbarHeight)),
-            //            static_cast<u32>(viewHeight - scrollbarHeight) // corrected potential bug
-            //        );
-            //
-            //        scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM;
-            //
-            //        s_cachedScrollbarHeight.store(scrollbarHeight, std::memory_order_release);
-            //        s_cachedScrollbarOffset.store(scrollbarOffset, std::memory_order_release);
-            //        s_cachedScrollbarX.store(getRightBound() + SCROLLBAR_X_OFFSET, std::memory_order_release);
-            //        s_cachedScrollbarY.store(getY() + scrollbarOffset + SCROLLBAR_Y_OFFSET, std::memory_order_release);
-            //    }
-            //}
-            //                                    
-            //void renderCachedFrame(gfx::Renderer* renderer) {
-            //    const s32 cachedTopBound    = s_cachedTopBound.load(std::memory_order_acquire);
-            //    const s32 cachedBottomBound = s_cachedBottomBound.load(std::memory_order_acquire);
-            //    const s32 cachedHeight      = s_cachedHeight.load(std::memory_order_acquire);
-            //
-            //    renderer->enableScissoring(getLeftBound(), cachedTopBound - 8, getWidth() + 8, cachedHeight + 14);
-            //
-            //    for (Element* entry : s_lastFrameItems) {
-            //        if (entry &&
-            //            entry->getBottomBound() > cachedTopBound &&
-            //            entry->getTopBound() < cachedBottomBound) {
-            //            entry->frame(renderer);
-            //        }
-            //    }
-            //
-            //    renderer->disableScissoring();
-            //
-            //    if (s_shouldDrawScrollbar.load(std::memory_order_acquire)) {
-            //        const u32 scrollbarX      = s_cachedScrollbarX.load(std::memory_order_acquire);
-            //        const u32 scrollbarY      = s_cachedScrollbarY.load(std::memory_order_acquire);
-            //        const u32 scrollbarHeight = s_cachedScrollbarHeight.load(std::memory_order_acquire);
-            //
-            //        renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
-            //        renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
-            //        renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
-            //    }
-            //}
-            
 
             void clearItems() {
 
