@@ -5861,6 +5861,7 @@ namespace tsl {
         static std::atomic<bool> skipOnce{false};
 
         static std::atomic<bool> isTableScrolling{false};
+        static bool s_triggerShakeOnce;
 
         class List : public Element {
         
@@ -5871,7 +5872,7 @@ namespace tsl {
                 
                 // Initialize instance state
                 m_pendingJump = false;
-                m_cachingDisabled = false;
+                //m_cachingDisabled = false;
                 m_clearList = false;
                 m_focusedIndex = 0;
                 m_offset = 0;
@@ -6227,6 +6228,7 @@ namespace tsl {
                 m_lastNavigationResult = NavigationResult::None;
                 m_isHolding = false;
                 m_stoppedAtBoundary = false;
+                m_justArrivedAtBoundary = false; 
                 m_lastNavigationTime = 0;
                 m_lastScrollTime = 0;
             }
@@ -6271,8 +6273,10 @@ namespace tsl {
             std::string m_jumpToValue;
             bool m_jumpToExactMatch = false;
             bool m_pendingJump = false;
-            bool m_hasForwardCached = false;
-            bool m_cachingDisabled = false;  // New flag to disable caching
+            //bool m_hasForwardCached = false;
+            //bool m_cachingDisabled = false;  // New flag to disable caching
+
+            bool m_justArrivedAtBoundary = false;
             bool m_hasSetInitialFocusHack = false;
             bool m_hasRenderedInitialFocus = false;
 
@@ -6552,7 +6556,8 @@ namespace tsl {
                     prevOffset = m_offset;
                 }
             }
-                                                        
+            
+
             Element* handleInitialFocus(Element* oldFocus) {
                 const size_t itemCount = m_items.size();
                 if (itemCount == 0) return nullptr;
@@ -6593,18 +6598,36 @@ namespace tsl {
                 return nullptr;
             }
             
-                                                                                                                                            
+            inline void triggerWallEffect(FocusDirection direction) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerWallSound.store(true, std::memory_order_release);
+            
+                if (m_items.empty())
+                    return;
+            
+                // Directional search bounds
+                ssize_t i  = static_cast<ssize_t>(m_focusedIndex);
+                ssize_t end = (direction == FocusDirection::Down) ? -1 : static_cast<ssize_t>(m_items.size());
+                ssize_t step = (direction == FocusDirection::Down) ? -1 : 1;
+            
+                // Walk until we hit a real item
+                for (; i != end; i += step) {
+                    auto *it = m_items[i];
+                    if (it->m_isItem) {
+                        it->shakeHighlight(direction);
+                        return;
+                    }
+                }
+            }
+                                                                                                                                                        
             inline Element* handleDownFocus(Element* oldFocus) {
-                static bool triggerShakeOnce = true;
                 const bool atBottom = isAtBottom();
                 updateHoldState();
                 
-                // Check if the next item is non-focusable BEFORE we do anything else
-                if (m_focusedIndex + 1 < int(m_items.size())) {
-                    Element* nextItem = m_items[m_focusedIndex + 1];
-                    if (!nextItem->m_isItem) {
-                        isTableScrolling.store(true, std::memory_order_release);
-                    }
+                // Check if the next item is non-focusable
+                if (m_focusedIndex + 1 < static_cast<int>(m_items.size()) &&
+                    !m_items[m_focusedIndex + 1]->m_isItem) {
+                    isTableScrolling.store(true, std::memory_order_release);
                 }
                 
                 // If holding and at boundary, try to scroll first
@@ -6619,9 +6642,8 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    triggerShakeOnce = true;  // This resets it for THIS function
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    s_triggerShakeOnce = true;
+                    m_justArrivedAtBoundary = isAtBottom();
                     triggerNavigationFeedback();
                     return result;
                 }
@@ -6629,63 +6651,51 @@ namespace tsl {
                 // Check if we can still scroll down
                 if (!atBottom) {
                     scrollDown();
-                    triggerShakeOnce = true;  // ADDED: Reset when scrolling away from boundary
+                    s_triggerShakeOnce = true;
                     return oldFocus;
                 }
                 
-                // At absolute bottom - check for wrapping (single tap)
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && atBottom) {
+                // Force boundary hit before allowing wrap
+                if (m_justArrivedAtBoundary) {
+                    m_justArrivedAtBoundary = false;
+                    m_stoppedAtBoundary = true;
+                    s_triggerShakeOnce = false;
+                    m_lastNavigationResult = NavigationResult::HitBoundary;
+                    triggerWallEffect(FocusDirection::Down);
+                    return oldFocus;
+                }
+                
+                // Check for wrapping (single tap only)
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    
-                    //if (result->m_isItem) {
-                    triggerShakeOnce = true;  // Reset when wrapping
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
-                    //}
+                    s_triggerShakeOnce = true;
                     return handleJumpToTop(oldFocus);
                 }
                 
                 // Set boundary flag (for holding)
-                if (m_isHolding && atBottom) {
-                    m_stoppedAtBoundary = true;
-                    if (triggerShakeOnce) {
-                        if (result->m_isItem) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerWallSound.store(true, std::memory_order_release);
-                            
-                            for (ssize_t i = static_cast<ssize_t>(m_focusedIndex); i >= 0; --i) {
-                                if (m_items[i]->m_isItem) {
-                                    m_items[i]->shakeHighlight(FocusDirection::Down);
-                                    break;
-                                }
-                            }
-                        } else {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerWallSound.store(true, std::memory_order_release);
-                        }
-                        triggerShakeOnce = false;
-                    }
-                } else if (!m_isHolding) {
-                    triggerShakeOnce = true;
-                }
-            
                 m_lastNavigationResult = NavigationResult::HitBoundary;
+                if (m_isHolding) {
+                    m_stoppedAtBoundary = true;
+                    if (s_triggerShakeOnce) {
+                        s_triggerShakeOnce = false;
+                        triggerWallEffect(FocusDirection::Down);
+                    }
+                } else {
+                    s_triggerShakeOnce = true;
+                }
+                
                 return oldFocus;
             }
             
             inline Element* handleUpFocus(Element* oldFocus) {
-                static bool triggerShakeOnce = true;
                 const bool atTop = isAtTop();
                 updateHoldState();
                 
-                // Check if the previous item is non-focusable BEFORE we do anything else
-                if (m_focusedIndex > 0) {
-                    Element* prevItem = m_items[m_focusedIndex - 1];
-                    if (prevItem->isTable()) {
-                        isTableScrolling.store(true, std::memory_order_release);
-                    }
+                // Check if the previous item is non-focusable
+                if (m_focusedIndex > 0 && m_items[m_focusedIndex - 1]->isTable()) {
+                    isTableScrolling.store(true, std::memory_order_release);
                 }
                 
                 // If holding and at boundary, try to scroll first
@@ -6700,9 +6710,8 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    triggerShakeOnce = true;  // This resets it for THIS function
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
+                    s_triggerShakeOnce = true;
+                    m_justArrivedAtBoundary = isAtTop();
                     triggerNavigationFeedback();
                     return result;
                 }
@@ -6710,49 +6719,41 @@ namespace tsl {
                 // Check if we can still scroll up
                 if (!atTop) {
                     scrollUp();
-                    triggerShakeOnce = true;  // ADDED: Reset when scrolling away from boundary
+                    s_triggerShakeOnce = true;
                     return oldFocus;
                 }
                 
-                // At absolute top - check for wrapping (single tap)
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence && atTop) {
+                // Force boundary hit before allowing wrap
+                if (m_justArrivedAtBoundary) {
+                    m_justArrivedAtBoundary = false;
+                    m_stoppedAtBoundary = true;
+                    s_triggerShakeOnce = false;
+                    m_lastNavigationResult = NavigationResult::HitBoundary;
+                    triggerWallEffect(FocusDirection::Up);
+                    return oldFocus;
+                }
+                
+                // Check for wrapping (single tap only)
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    
-                    //if (result->m_isItem) {
-                    triggerShakeOnce = true;  // Reset when wrapping
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
-                    //}
+                    s_triggerShakeOnce = true;
                     return handleJumpToBottom(oldFocus);
                 }
                 
                 // Set boundary flag (for holding)
-                if (m_isHolding && atTop) {
+                m_lastNavigationResult = NavigationResult::HitBoundary;
+                if (m_isHolding) {
                     m_stoppedAtBoundary = true;
-                    if (triggerShakeOnce) {
-                        if (result->m_isItem) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerWallSound.store(true, std::memory_order_release);
-                            
-                            for (size_t i = m_focusedIndex; i < m_items.size(); ++i) {
-                                if (m_items[i]->m_isItem) {
-                                    m_items[i]->shakeHighlight(FocusDirection::Up);
-                                    break;
-                                }
-                            }
-                        } else {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerWallSound.store(true, std::memory_order_release);
-                        }
-                        triggerShakeOnce = false;
+                    if (s_triggerShakeOnce) {
+                        s_triggerShakeOnce = false;
+                        triggerWallEffect(FocusDirection::Up);
                     }
-                } else if (!m_isHolding) {
-                    triggerShakeOnce = true;
+                } else {
+                    s_triggerShakeOnce = true;
                 }
                 
-                m_lastNavigationResult = NavigationResult::HitBoundary;
                 return oldFocus;
             }
             
@@ -6831,6 +6832,7 @@ namespace tsl {
                 m_lastNavigationResult = NavigationResult::None;
                 m_isHolding = false;
                 m_stoppedAtBoundary = false;
+                m_justArrivedAtBoundary = false;
                 m_lastNavigationTime = 0;
             }
 
