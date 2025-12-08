@@ -11467,14 +11467,17 @@ namespace tsl {
                     return;
                 }
             } else {
+                #if IS_LAUNCHER_DIRECTIVE
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
                         //triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         //triggerExitSound.store(true, std::memory_order_release);
                         
                         triggerExitFeedback();
+                        
                     }
                 }
+                #endif
             }
         #endif
         
