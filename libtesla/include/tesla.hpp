@@ -6883,6 +6883,10 @@ namespace tsl {
                     m_hasWrappedInCurrentSequence = false;
                 }
                 m_lastNavigationTime = currentTime;
+
+                // bug fix, boundary reset upon key release
+                if (s_directionalKeyReleased.load(std::memory_order_acquire))
+                     m_justArrivedAtBoundary = false;
             }
         
             inline void resetNavigationState() {
