@@ -3494,7 +3494,7 @@ namespace tsl {
 
         #if USING_WIDGET_DIRECTIVE
             // Method to draw clock, temperatures, and battery percentage
-            inline void drawWidget() {
+            inline bool drawWidget() {
                 static time_t lastTimeUpdate = 0;
                 static char timeStr[20];
                 static char PCB_temperatureStr[10];
@@ -3686,6 +3686,7 @@ namespace tsl {
                         );
                     }
                 }
+                return showAnyWidget;
             }
         #endif
 
@@ -4933,10 +4934,12 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
-                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
+                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), 
+                  subScroll{0, 0, 0.0f, 0, 0, false, false} {
         #else
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
-                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
+                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems),
+                  subScroll{0, 0, 0.0f, 0, 0, false, false} {
         #endif
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
@@ -4946,12 +4949,6 @@ namespace tsl {
         
             ~OverlayFrame() {
                 delete m_contentElement;
-                
-                // Check if returning from a list that disabled caching
-                //if (g_disableMenuCacheOnReturn.exchange(false, std::memory_order_acq_rel)) {
-                //    g_cachedTop.disabled = true;
-                //    g_cachedBottom.disabled = true;
-                //}
             }
         
         #if USING_FPS_INDICATOR_DIRECTIVE
@@ -4994,35 +4991,19 @@ namespace tsl {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
             
-                //const bool isUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
-                //                        m_subtitle.find("Ultrahand Package") == std::string::npos && 
-                //                        m_subtitle.find("Ultrahand Script") == std::string::npos);
-                
-                // Determine if we should use cached data (first frame of new overlay)
-                //const bool useCachedTop = !g_cachedTop.disabled && 
-                //                          !g_cachedTop.title.empty() && 
-                //                          (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
-                
                 // Use cached or current data for rendering
                 const std::string& renderTitle = m_title;
                 const std::string& renderSubtitle = m_subtitle;
-                //const tsl::Color& renderTitleColor = titleColor;
                 const bool renderUseDynamicLogo = ult::useDynamicLogo;
                 
                 const bool renderIsUltrahandMenu = (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                                      renderSubtitle.find("Ultrahand Package") == std::string::npos && 
                                                      renderSubtitle.find("Ultrahand Script") == std::string::npos);
                 
+                bool widgetDrawn = false;
                 if (renderIsUltrahandMenu) {
                 #if USING_WIDGET_DIRECTIVE
-                    //if (useCachedTop) {
-                    //    if (g_cachedTop.widgetDrawn) {
-                    //        renderer->drawWidget();
-                    //    }
-                    //} else {
-                    //    renderer->drawWidget();
-                    //}
-                    renderer->drawWidget();
+                    widgetDrawn = renderer->drawWidget();
                 #endif
             
                     if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) ||
@@ -5046,18 +5027,9 @@ namespace tsl {
                     renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, logoColor2);
                     
                 } else {
-                    //if (useCachedTop) {
-                    //    if (g_cachedTop.widgetDrawn) {
-                    //        renderer->drawWidget();
-                    //    }
-                    //} else {
-                    //    if (m_showWidget) {
-                    //        renderer->drawWidget();
-                    //    }
-                    //}
-                    if (m_showWidget) {
-                        renderer->drawWidget();
-                    }
+                #if USING_WIDGET_DIRECTIVE
+                    widgetDrawn = m_showWidget && renderer->drawWidget();
+                #endif
                     
                     x = 20;
                     y = 52 - 2;
@@ -5082,7 +5054,6 @@ namespace tsl {
                                     break;
                                 case 'r': // red
                                     if (len == 3 && m_colorSelection.compare("red") == 0) {
-                                        //drawColor = RGB888("#F7253E");
                                         drawColor = {0xF, 0x2, 0x4, 0xF};
                                     }
                                     break;
@@ -5098,16 +5069,13 @@ namespace tsl {
                                     break;
                                 case 'o': // orange
                                     if (len == 6 && m_colorSelection.compare("orange") == 0) {
-                                        //drawColor = {0xFF, 0xA5, 0x00, 0xFF};
                                         drawColor = {0xF, 0xA, 0x0, 0xF};
                                     }
                                     break;
                                 case 'p': // pink or purple
                                     if (len == 4 && m_colorSelection.compare("pink") == 0) {
-                                        //drawColor = {0xFF, 0x69, 0xB4, 0xFF};
                                         drawColor = {0xF, 0x6, 0xB, 0xF};
                                     } else if (len == 6 && m_colorSelection.compare("purple") == 0) {
-                                        //drawColor = {0x80, 0x00, 0x80, 0xFF};
                                         drawColor = {0x8, 0x0, 0x8, 0xF};
                                     }
                                     break;
@@ -5125,77 +5093,93 @@ namespace tsl {
                         }
                         
                         renderer->drawString(renderTitle, false, x, y, fontSize, drawColor);
-                        y += 2;
                     }
                 }
                 
+                // Calculate subtitle widths and handle scrolling
+                calcSubWidth(renderer, widgetDrawn);
+                
                 static const std::vector<std::string> specialChars2 = {""};
+                const int subtitleX = 20;
+                const int subtitleY = y + 25;
+                
                 if (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 20, y+25, 15, bannerVersionTextColor, textSeparatorColor);
+                    // Version label - no scrolling needed
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 
+                                                           subtitleX, subtitleY, 15, 
+                                                           bannerVersionTextColor, textSeparatorColor);
                 } else {
+                    // Prepare subtitle (remove "?Ultrahand Script" if present)
                     std::string subtitle = renderSubtitle;
                     const size_t pos = subtitle.find("?Ultrahand Script");
                     if (pos != std::string::npos) {
-                        subtitle.erase(pos, 17); // "?Ultrahand Script".length() = 17
+                        subtitle.erase(pos, 17);
                     }
-                    renderer->drawStringWithColoredSections(subtitle, false, specialChars2, 20, y+23, 15, bannerVersionTextColor, textSeparatorColor);
+                    
+                    // Handle scrolling subtitle
+                    if (subScroll.trunc) {
+                        if (!subScroll.active) {
+                            subScroll.active = true;
+                            subScroll.timeIn = armTicksToNs(armGetSystemTick());
+                        }
+                        
+                        renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
+                        
+                        renderer->drawStringWithColoredSections(subScrollText, false, specialChars2,
+                            subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
+                            bannerVersionTextColor, textSeparatorColor);
+                        
+                        renderer->disableScissoring();
+                        
+                        updateSubScroll();
+                    } else {
+                        // Normal subtitle drawing
+                        renderer->drawStringWithColoredSections(subtitle, false, specialChars2,
+                            subtitleX, subtitleY, 15,
+                            bannerVersionTextColor, textSeparatorColor);
+                    }
                 }
                 
-                // Update top cache after rendering for next frame
-                //g_cachedTop.title = m_title;
-                //g_cachedTop.subtitle = m_subtitle;
-                //g_cachedTop.titleColor = titleColor;
-                //g_cachedTop.useDynamicLogo = ult::useDynamicLogo;
-                //// Store whether widget was ACTUALLY drawn this frame
-                //if (isUltrahandMenu) {
-                //    g_cachedTop.widgetDrawn = true;  // Ultrahand menu always shows widget
-                //} else {
-                //    g_cachedTop.widgetDrawn = m_showWidget;  // Other menus use m_showWidget
-                //}
-                //g_cachedTop.disabled = false;
-            
             #else
-                // NON-LAUNCHER PATH WITH CACHE SUPPORT
+                // NON-LAUNCHER PATH
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
                 
-                // Determine if we should use cached data (first frame of new overlay)
-                //const bool useCachedTop = !g_cachedTop.disabled && 
-                //                          !g_cachedTop.title.empty() && 
-                //                          (g_cachedTop.title != m_title || g_cachedTop.subtitle != m_subtitle);
-                
-                // Use cached or current data for rendering
                 const std::string& renderTitle = m_title;
                 const std::string& renderSubtitle = m_subtitle;
                 
+                bool widgetDrawn = false;
                 #if USING_WIDGET_DIRECTIVE
-                //if (useCachedTop) {
-                //    if (g_cachedTop.widgetDrawn) {
-                //        renderer->drawWidget();
-                //    }
-                //} else {
-                //    if (m_showWidget)
-                //        renderer->drawWidget();
-                //}
-                if (m_showWidget)
-                    renderer->drawWidget();
+                widgetDrawn = m_showWidget && renderer->drawWidget();
                 #endif
                 
                 renderer->drawString(renderTitle, false, 20, 52-2, 32, defaultOverlayColor);
-                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, bannerVersionTextColor);
                 
-                // Update top cache after rendering for next frame
-            //    g_cachedTop.title = m_title;
-            //    g_cachedTop.subtitle = m_subtitle;
-            //    g_cachedTop.titleColor = {0xF, 0xF, 0xF, 0xF};
-            //#if USING_WIDGET_DIRECTIVE
-            //    g_cachedTop.widgetDrawn = m_showWidget;
-            //#else
-            //    g_cachedTop.widgetDrawn = false;
-            //#endif
-            //    g_cachedTop.useDynamicLogo = false;
-            //    g_cachedTop.disabled = false;
+                // Calculate subtitle widths and handle scrolling
+                calcSubWidth(renderer, widgetDrawn);
+                
+                const int subtitleX = 20;
+                const int subtitleY = y + 2 + 23;
+                
+                if (subScroll.trunc) {
+                    if (!subScroll.active) {
+                        subScroll.active = true;
+                        subScroll.timeIn = armTicksToNs(armGetSystemTick());
+                    }
+                    
+                    renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
+                    
+                    renderer->drawString(subScrollText, false,
+                        subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
+                        bannerVersionTextColor);
+                    
+                    renderer->disableScissoring();
+                    
+                    updateSubScroll();
+                } else {
+                    renderer->drawString(renderSubtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
+                }
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -5312,11 +5296,6 @@ namespace tsl {
                         : "");
             #endif
                 
-                // Determine if we should use cached bottom text (first frame of new overlay)
-                //const bool useCachedBottom = !g_cachedBottom.disabled && 
-                //                              !g_cachedBottom.bottomText.empty() && 
-                //                              g_cachedBottom.bottomText != currentBottomLine;
-                
                 const std::string& menuBottomLine = currentBottomLine;
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
@@ -5324,17 +5303,6 @@ namespace tsl {
                 renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
                                                         buttonStartX, 693, 23, 
                                                         (bottomTextColor), (buttonColor));
-                
-                // Update bottom cache after rendering for next frame
-            //    g_cachedBottom.bottomText = currentBottomLine;
-            //    g_cachedBottom.backWidth = _backWidth;
-            //    g_cachedBottom.selectWidth = _selectWidth;
-            //#if IS_LAUNCHER_DIRECTIVE
-            //    g_cachedBottom.nextPageWidth = ult::nextPageWidth.load(std::memory_order_acquire);
-            //#else
-            //    g_cachedBottom.nextPageWidth = 0.0f;
-            //#endif
-            //    g_cachedBottom.disabled = false;
             
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
@@ -5416,11 +5384,101 @@ namespace tsl {
              * @param title Subtitle to change to
              */
             inline void setSubtitle(const std::string &subtitle) {
-                m_subtitle = subtitle;
+                if (m_subtitle != subtitle) {
+                    m_subtitle = subtitle;
+                    subScroll.maxW = 0; // Reset to recalculate
+                    subScroll.active = subScroll.trunc = false;
+                }
             }
             
         protected:
             Element *m_contentElement = nullptr;
+            
+        private:
+            // Compact subtitle scroll state
+            struct {
+                u64 timeIn, lastUpd;
+                float offset;
+                u32 maxW, textW;
+                bool active, trunc;
+            } subScroll;
+            
+            std::string subScrollText;
+            
+            void calcSubWidth(gfx::Renderer* r, bool widgetDrawn) {
+                if (subScroll.maxW) return;
+                
+                subScroll.maxW = widgetDrawn ? 218-1 : (tsl::cfg::FramebufferWidth - 40);
+                
+                std::string sub = m_subtitle;
+
+            #if IS_LAUNCHER_DIRECTIVE
+                const size_t p = sub.find("?Ultrahand Script");
+                if (p != std::string::npos) sub.erase(p, 17);
+            #endif
+                
+                const u32 w = r->getTextDimensions(sub, false, 15).first;
+                subScroll.trunc = w > subScroll.maxW;
+                
+                if (subScroll.trunc) {
+                    subScrollText.clear();
+                    subScrollText.reserve(sub.size() * 2 + 8);
+                    subScrollText.append(sub).append("        ");
+                    subScroll.textW = r->getTextDimensions(subScrollText, false, 15).first;
+                    subScrollText.append(sub);
+                } else {
+                    subScroll.textW = w;
+                }
+            }
+            
+            void updateSubScroll() {
+                const u64 now = armTicksToNs(armGetSystemTick());
+                const u64 elapsed = now - subScroll.timeIn;
+                
+                // Timing constants (shared across all scrolling subtitles)
+                static constexpr double delay = 3.0, pause = 2.0, vel = 100.0, accel = 0.5, decel = 0.5;
+                static constexpr double invBil = 1.0 / 1e9, invAccel = 1.0 / accel, invDecel = 1.0 / decel;
+                
+                const double minDist = static_cast<double>(subScroll.textW);
+                const double accelDist = 0.5 * vel * accel;
+                const double decelDist = 0.5 * vel * decel;
+                const double constDist = std::max(0.0, minDist - accelDist - decelDist);
+                const double constTime = constDist / vel;
+                const double scrollDur = accel + constTime + decel;
+                const double totalDur = delay + scrollDur + pause;
+                
+                const double t = (elapsed * invBil);
+                
+                if (now - subScroll.lastUpd >= 8333333ULL) {
+                    const double cycle = std::fmod(t, totalDur);
+                    
+                    if (cycle < delay) {
+                        subScroll.offset = 0.0f;
+                    } else if (cycle < delay + scrollDur) {
+                        const double st = cycle - delay;
+                        double d;
+                        
+                        if (st <= accel) {
+                            const double r = st * invAccel;
+                            d = r * r * accelDist;
+                        } else if (st <= accel + constTime) {
+                            d = accelDist + (st - accel) * vel;
+                        } else {
+                            const double r = (st - accel - constTime) * invDecel;
+                            const double omr = 1.0 - r;
+                            d = accelDist + constDist + (1.0 - omr * omr) * (minDist - accelDist - constDist);
+                        }
+                        
+                        subScroll.offset = static_cast<float>(d < minDist ? d : minDist);
+                    } else {
+                        subScroll.offset = static_cast<float>(subScroll.textW);
+                    }
+                    
+                    subScroll.lastUpd = now;
+                }
+                
+                if (t >= totalDur) subScroll.timeIn = now;
+            }
         };
         
     #if IS_STATUS_MONITOR_DIRECTIVE
