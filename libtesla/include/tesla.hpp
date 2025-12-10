@@ -8730,48 +8730,124 @@ namespace tsl {
                 return this;
             }
 
+            
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                static s16 lastHapticSegment = -1;
+                const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
+                m_prevKeysHeld = keysHeld;
                 
-
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                static u64 lastUpdate_ns = currentTime_ns;
+                const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
+            
                 if (keysDown & KEY_A) {
                     this->triggerClickAnimation();
                     triggerEnterFeedback();
                 }
-
-                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
-                    return true;
+            
+                static s16 lastHapticSegment = -1;
                 
-                if (keysHeld & KEY_LEFT) {
-                    if (this->m_value > 0) {
-                        this->m_value--;
-                        this->m_valueChangedListener(this->m_value);
-                        
-                        // Calculate current segment (0-10 for 11 segments)
-                        const s16 currentSegment = (this->m_value * 10) / 100;
-                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
-                            lastHapticSegment = currentSegment;
-                            triggerNavigationFeedback();
-                        }
-                        
+                // Handle key release
+                if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
+                    lastHapticSegment = -1;
+                    
+                    if (m_wasLastHeld) {
+                        m_wasLastHeld = false;
+                        m_holding = false;
+                        lastUpdate_ns = currentTime_ns;
+                        return true;
+                    } else if (m_holding) {
+                        m_holding = false;
+                        lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
                 
-                if (keysHeld & KEY_RIGHT) {
-                    if (this->m_value < 100) {
-                        this->m_value++;
+                // Ignore simultaneous left+right
+                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
+                    return true;
+            
+                // Handle initial key press
+                if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
+                    m_holding = true;
+                    m_wasLastHeld = false;
+                    m_holdStartTime_ns = currentTime_ns;
+                    lastUpdate_ns = currentTime_ns;
+                    
+                    // Perform initial single tick
+                    if (keysDown & KEY_LEFT && this->m_value > 0) {
+                        this->m_value--;
                         this->m_valueChangedListener(this->m_value);
                         
-                        // Calculate current segment (0-10 for 11 segments)
                         const s16 currentSegment = (this->m_value * 10) / 100;
                         if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                             lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
                         }
+                    } else if (keysDown & KEY_RIGHT && this->m_value < 100) {
+                        this->m_value++;
+                        this->m_valueChangedListener(this->m_value);
                         
+                        const s16 currentSegment = (this->m_value * 10) / 100;
+                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                            lastHapticSegment = currentSegment;
+                            triggerNavigationFeedback();
+                        }
+                    }
+                    return true;
+                }
+                
+                // Handle continued holding with acceleration
+                if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
+                    const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
+            
+                    // Initial delay before repeating starts
+                    static constexpr u64 initialDelay_ns = 300000000ULL;  // 300ms
+                    // Calculate interval with acceleration
+                    static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
+                    static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
+                    static constexpr u64 transitionPoint_ns = 1000000000ULL; // 1 second
+            
+                    if (holdDuration_ns < initialDelay_ns) {
                         return true;
                     }
+                    
+                    const u64 holdDurationAfterDelay_ns = holdDuration_ns - initialDelay_ns;
+                    const float t = std::min(1.0f, static_cast<float>(holdDurationAfterDelay_ns) / static_cast<float>(transitionPoint_ns));
+                    const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
+                    
+                    if (elapsed_ns >= currentInterval_ns) {
+                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
+                            this->m_value--;
+                            this->m_valueChangedListener(this->m_value);
+                            
+                            const s16 currentSegment = (this->m_value * 10) / 100;
+                            if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
+                            
+                            lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                        
+                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                            this->m_value++;
+                            this->m_valueChangedListener(this->m_value);
+                            
+                            const s16 currentSegment = (this->m_value * 10) / 100;
+                            if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
+                            
+                            lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                    }
+                } else {
+                    m_holding = false;
                 }
                 
                 return false;
@@ -9112,6 +9188,12 @@ namespace tsl {
             bool m_drawFrameless = false;
 
             float m_lastBottomBound;
+
+            s16 m_index = 0;  // Add index tracking like V2
+            u64 m_holdStartTime_ns = 0;
+            bool m_holding = false;
+            bool m_wasLastHeld = false;
+            u64 m_prevKeysHeld = 0;
         };
 
 
@@ -9138,44 +9220,103 @@ namespace tsl {
             virtual ~StepTrackBar() {}
 
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                static u32 tick = 0;
-
-
+                const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
+                m_prevKeysHeld = keysHeld;
+                
+                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                static u64 lastUpdate_ns = currentTime_ns;
+                const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
+            
                 if (keysDown & KEY_A) {
                     this->triggerClickAnimation();
                     triggerEnterFeedback();
                 }
-
-                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
-                    tick = 0;
-                    return true;
+            
+                // Handle key release
+                if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
+                    if (m_wasLastHeld) {
+                        m_wasLastHeld = false;
+                        m_holding = false;
+                        lastUpdate_ns = currentTime_ns;
+                        return true;
+                    } else if (m_holding) {
+                        m_holding = false;
+                        lastUpdate_ns = currentTime_ns;
+                        return true;
+                    }
                 }
-
-                if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
-                    if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
-                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
-                            //triggerRumbleClick.store(true, std::memory_order_release);
-                            //triggerNavigationSound.store(true, std::memory_order_release);
-                            triggerNavigationFeedback();
-                            this->m_value = std::max(this->m_value - (100 / (this->m_numSteps - 1)), 0);
-                        } else if (keysHeld & KEY_RIGHT && this->m_value < 100) {
-                            //triggerRumbleClick.store(true, std::memory_order_release);
-                            //triggerNavigationSound.store(true, std::memory_order_release);
-                            triggerNavigationFeedback();
-                            this->m_value = std::min(this->m_value + (100 / (this->m_numSteps - 1)), 100);
-                        } else {
-                            return false;
-                        }
+                
+                // Ignore simultaneous left+right
+                if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT)
+                    return true;
+            
+                // Handle initial key press
+                if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
+                    m_holding = true;
+                    m_wasLastHeld = false;
+                    m_holdStartTime_ns = currentTime_ns;
+                    lastUpdate_ns = currentTime_ns;
+                    
+                    const int stepSize = 100 / (this->m_numSteps - 1);
+                    
+                    // Perform initial single tick
+                    if (keysDown & KEY_LEFT && this->m_value > 0) {
+                        triggerNavigationFeedback();
+                        this->m_value = std::max(this->m_value - stepSize, 0);
+                        this->m_valueChangedListener(this->getProgress());
+                    } else if (keysDown & KEY_RIGHT && this->m_value < 100) {
+                        triggerNavigationFeedback();
+                        this->m_value = std::min(this->m_value + stepSize, 100);
                         this->m_valueChangedListener(this->getProgress());
                     }
-                    tick++;
                     return true;
-                } else {
-                    tick = 0;
                 }
-
+                
+                // Handle continued holding with acceleration
+                if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
+                    const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
+            
+                    static constexpr u64 initialDelay_ns = 300000000ULL;
+                    static constexpr u64 initialInterval_ns = 67000000ULL;
+                    static constexpr u64 shortInterval_ns = 10000000ULL;
+                    static constexpr u64 transitionPoint_ns = 1000000000ULL;
+            
+                    if (holdDuration_ns < initialDelay_ns) {
+                        return true;
+                    }
+                    
+                    const u64 holdDurationAfterDelay_ns = holdDuration_ns - initialDelay_ns;
+                    const float t = std::min(1.0f, static_cast<float>(holdDurationAfterDelay_ns) / static_cast<float>(transitionPoint_ns));
+                    const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
+                    
+                    if (elapsed_ns >= currentInterval_ns) {
+                        const int stepSize = 100 / (this->m_numSteps - 1);
+                        
+                        if (keysHeld & KEY_LEFT && this->m_value > 0) {
+                            triggerNavigationFeedback();
+                            this->m_value = std::max(this->m_value - stepSize, 0);
+                            this->m_valueChangedListener(this->getProgress());
+                            lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                        
+                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                            triggerNavigationFeedback();
+                            this->m_value = std::min(this->m_value + stepSize, 100);
+                            this->m_valueChangedListener(this->getProgress());
+                            lastUpdate_ns = currentTime_ns;
+                            m_wasLastHeld = true;
+                            return true;
+                        }
+                    }
+                } else {
+                    m_holding = false;
+                }
+                
                 return false;
             }
+
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
@@ -9261,37 +9402,27 @@ namespace tsl {
          */
         class NamedStepTrackBar : public StepTrackBar {
         public:
-            /**
-             * @brief Constructor
-             *
-             * @param icon Icon shown next to the track bar
-             * @param stepDescriptions Step names displayed above the track bar
-             * @param useV2Style Whether to use V2 visual style (label + value instead of icon)
-             * @param label Label text for V2 style
-             */
             NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions,
                              bool useV2Style = false, const std::string& label = "")
                 : StepTrackBar(icon, stepDescriptions.size(), true, useV2Style, label, ""), 
                   m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
                 this->m_usingNamedStepTrackbar = true;
-                // Initialize selection with first step
+                m_numSteps = m_stepDescriptions.size();
+                
+                // Initialize m_selection with first step
                 if (!m_stepDescriptions.empty()) {
                     this->m_selection = m_stepDescriptions[0];
                 }
-                m_numSteps = m_stepDescriptions.size();
             }
-
+        
             virtual ~NamedStepTrackBar() {}
-
-            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                // Store previous value to update selection
+        
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, 
+                                    HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 const u8 prevProgress = this->getProgress();
-                
-                // Call parent input handling
                 const bool result = StepTrackBar::handleInput(keysDown, keysHeld, touchPos, leftJoyStick, rightJoyStick);
                 
-                // Update selection if progress changed
-                if (result && this->getProgress() != prevProgress) {
+                if (this->getProgress() != prevProgress) {
                     const u8 currentIndex = this->getProgress();
                     if (currentIndex < m_stepDescriptions.size()) {
                         this->m_selection = m_stepDescriptions[currentIndex];
@@ -9300,15 +9431,12 @@ namespace tsl {
                 
                 return result;
             }
-
-            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                // Store previous value to update selection
+        
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, 
+                                s32 initialX, s32 initialY) override {
                 const u8 prevProgress = this->getProgress();
-                
-                // Call parent touch handling
                 const bool result = StepTrackBar::onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
                 
-                // Update selection if progress changed
                 if (result && this->getProgress() != prevProgress) {
                     const u8 currentIndex = this->getProgress();
                     if (currentIndex < m_stepDescriptions.size()) {
@@ -9318,17 +9446,20 @@ namespace tsl {
                 
                 return result;
             }
-
+        
             virtual void setProgress(u8 value) override {
                 StepTrackBar::setProgress(value);
                 
-                // Update selection when progress is set programmatically
                 const u8 currentIndex = this->getProgress();
                 if (currentIndex < m_stepDescriptions.size()) {
                     this->m_selection = m_stepDescriptions[currentIndex];
                 }
             }
-
+        
+            const std::string& getSelection() const {
+                return this->m_selection;
+            }
+        
             virtual void draw(gfx::Renderer *renderer) override {
                 if (touchInSliderBounds) {
                     m_drawFrameless = true;
@@ -9342,9 +9473,8 @@ namespace tsl {
                 s32 width = this->getWidth() - 95;
                 u16 handlePos = width * (this->m_value) / (100);
             
-                if (!m_usingNamedStepTrackbar) {
-                    yPos -= 11;
-                }
+                // NOTE: For NamedStepTrackBar, yPos is NOT adjusted down
+                // (the !m_usingNamedStepTrackbar check is false here)
             
                 s32 iconOffset = 0;
             
@@ -9356,84 +9486,92 @@ namespace tsl {
                     handlePos = (width) * (this->m_value) / (100);
                 }
             
-                // Draw step tick marks if this is a step trackbar
-                {
-                    const u8 numSteps = m_numSteps;
-                    const u16 baseX = xPos;
-                    const u16 baseY = this->getY() + 44;
-                    const u8 halfNumSteps = (numSteps - 1) / 2;
-                    const u16 lastStepX = baseX + width - 1;
-                    const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
-                    const auto stepColor = a(trackBarEmptyColor);
-                    
-                    u16 stepX;
-                    for (u8 i = 0; i < numSteps; i++) {
-                        if (i == numSteps - 1) {
-                            stepX = lastStepX;
-                        } else {
-                            stepX = baseX + static_cast<u16>(std::round(i * stepSpacing));
-                            if (i > halfNumSteps) {
-                                stepX -= 1;
-                            }
+                // Draw step tick marks
+                const u8 numSteps = m_numSteps;
+                const u16 baseX = xPos;
+                const u16 baseY = this->getY() + 44;
+                const u8 halfNumSteps = (numSteps - 1) / 2;
+                const u16 lastStepX = baseX + width - 1;
+                const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
+                const auto stepColor = a(trackBarEmptyColor);
+                
+                u16 stepX;
+                for (u8 i = 0; i < numSteps; i++) {
+                    if (i == numSteps - 1) {
+                        stepX = lastStepX;
+                    } else {
+                        stepX = baseX + static_cast<u16>(std::round(i * stepSpacing));
+                        if (i > halfNumSteps) {
+                            stepX -= 1;
                         }
-                        renderer->drawRect(stepX, baseY, 1, 8, stepColor);
                     }
+                    renderer->drawRect(stepX, baseY, 1, 8, stepColor);
                 }
-
+        
                 // Draw track bar background
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, false); // Not rounded for named step
             
                 if (!this->m_focused) {
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
             
-                // Draw icon (original style) or label + value (V2 style)
+                // CRITICAL FIX: Draw the selection text based on which style is being used
                 if (m_useV2Style) {
-                    // V2 Style: Draw label and value
+                    // V2 Style: Draw label on left, value on right
                     std::string labelPart = this->m_label;
                     ult::removeTag(labelPart);
                 
-                    std::string valuePart;
-                    if (!m_usingNamedStepTrackbar) {
-                        valuePart = (m_units.compare("%") == 0 || m_units.compare("°C") == 0 || m_units.compare("°F") == 0)
-                                    ? ult::to_string(m_value) + m_units
-                                    : ult::to_string(m_value) + (m_units.empty() ? "" : " ") + m_units;
-                    } else {
-                        valuePart = this->m_selection;
-                    }
-                
+                    std::string valuePart = this->m_selection;
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
                 
                     renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
                                        ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
             
-                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
+                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, 
+                                       (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
                 } else {
-                    // Original Style: Draw icon
+                    // OLD API Style: Draw selection text CENTERED ABOVE the bar
+                    // This is the original libtesla behavior!
+                    
+                    // Calculate text width to center it (same font size and Y position as V2)
+                    const auto textDimensions = renderer->getTextDimensions(this->m_selection, false, 16);
+                    const s32 textWidth = textDimensions.first;
+                    
+                    // Center the text horizontally - account for the left margin (59) and right space
+                    // The actual content area starts at getX() + 59 and the trackbar area is getWidth() - 95
+                    const s32 contentStart = 59;
+                    const s32 trackbarWidth = this->getWidth() - 95;
+                    const s32 textX = this->getX() + contentStart + (trackbarWidth / 2) - (textWidth / 2);
+                    const s32 textY = this->getY() + 14 + 16; // Same Y position as V2 style
+                    
+                    // Draw the centered selection text
+                    renderer->drawString(this->m_selection.c_str(), false, textX, textY, 16, 
+                                       a(this->m_focused ? tsl::style::color::ColorHighlight : tsl::style::color::ColorText));
+                    
+                    // Also draw icon if provided (though usually empty for named step trackbars)
                     if (m_icon[0] != '\0')
                         renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, tsl::style::color::ColorText);
                 }
             
+                // Draw separators
                 if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 m_lastBottomBound = this->getBottomBound();
             }
-
+        
         protected:
             std::vector<std::string> m_stepDescriptions;
-
         };
-
 
 
         /**
