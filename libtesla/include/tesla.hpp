@@ -14007,7 +14007,7 @@ namespace tsl {
                     overlay->resetFlags();
                     hlp::requestForeground(false);
                     shData.overlayOpen.store(false, std::memory_order_release);
-                    mainComboHasTriggered.store(false, std::memory_order_acquire);
+                    mainComboHasTriggered.store(false, std::memory_order_release);
                     //launchComboHasTriggered.store(false, std::memory_order_acquire);
                     eventClear(&shData.comboEvent);
                 }
