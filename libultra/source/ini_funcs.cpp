@@ -1971,25 +1971,25 @@ namespace ult {
     //}
     
     
-    void syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
+    bool syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
                        const std::string& packageConfigIniPath,
                        const std::string& optionName,
                        const std::string& key,
                        std::string& value) {
         auto optionIt = packageConfigData.find(optionName);
+        
+        // Check if option exists and has the key
         if (optionIt != packageConfigData.end()) {
             auto it = optionIt->second.find(key);
             if (it != optionIt->second.end()) {
-                value = it->second;  // Update value only if the key exists
-            //} else {
-            //    setIniFileValue(packageConfigIniPath, optionName, key, value); // Set INI file value if key not found
-            //}
-            } else {
-                // Key not found - add it to in-memory data and save entire structure
-                packageConfigData[optionName][key] = value;
-                saveIniFileData(packageConfigIniPath, packageConfigData);
+                value = it->second;  // Load existing value from config
+                return false;  // Value exists, we're done
             }
         }
+        
+        // Key/section doesn't exist - add it (will be saved later in batch)
+        packageConfigData[optionName][key] = value;
+        return true;
     }
     
     

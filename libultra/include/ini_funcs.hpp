@@ -290,7 +290,7 @@ namespace ult {
     //}
     
     
-    void syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
+    bool syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
                        const std::string& packageConfigIniPath,
                        const std::string& optionName,
                        const std::string& key,
@@ -368,7 +368,7 @@ namespace ult {
      */
     void removeKeyFromMatchingSections(const std::string& filePath, const std::string& patternKey, 
                                         const std::string& keyToRemove);
-    
+
 }
 
 #endif
