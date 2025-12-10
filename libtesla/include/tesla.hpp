@@ -8857,17 +8857,25 @@ namespace tsl {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
-                const s32 circleCenterY = this->getY() + 40 + 16 - 1;
+                // FIX: Account for NamedStepTrackBar vertical offset
+                const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 static s16 lastHapticSegment = -1;
-                const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                
+                // FIX: Use currX/currY consistently (like V2), not initialX/initialY
+                const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
                 
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
-                    lastHapticSegment = -1; // Reset for next touch
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerOffSound.store(true, std::memory_order_release);
+                    lastHapticSegment = -1;
+                    
+                    // Only trigger feedback if we were actually interacting with the slider
+                    if (touchInSliderBounds) {
+                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                        triggerOffSound.store(true, std::memory_order_release);
+                    }
+                    
                     touchInSliderBounds = false;
                     return false;
                 }
@@ -8892,11 +8900,9 @@ namespace tsl {
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
                         
-                        // Calculate which 10% segment we're in (0-10 for 11 segments)
-                        const s16 currentSegment = (newValue * 10) / 100;
+                        const s16 currentSegment = (this->m_value * 10) / 100;
                         
-                        // Trigger haptics when crossing into a new 10% segment OR at value 0
-                        if (newValue == 0 || currentSegment != lastHapticSegment) {
+                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                             lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
                         }
@@ -8907,6 +8913,7 @@ namespace tsl {
             
                 return false;
             }
+            
 
             // Define drawBar function outside the draw method
             void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
@@ -9040,13 +9047,36 @@ namespace tsl {
                 // Standard cosine wave calculation with high precision
                 progress = (ult::cos(2.0 * ult::M_PI * std::fmod(time_seconds, 1.0) - ult::M_PI / 2) + 1.0) / 2.0;
             
-                // High precision floating point color interpolation
-                highlightColor = {
-                    static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
-                    static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
-                    static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
-                    0xF
-                };
+                // Determine which colors to interpolate based on animation state
+                if (m_clickAnimationActive) {
+                    // Handle click animation color transition
+                    Color clickColor1 = highlightColor1;
+                    Color clickColor2 = clickColor;
+                    
+                    if (progress >= 0.5) {
+                        clickColor1 = clickColor;
+                        clickColor2 = highlightColor2;
+                    }
+                    const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
+                    if (elapsedTime_ns < 500000000ULL) {
+                        highlightColor = {
+                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r + 0.5),
+                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g + 0.5),
+                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b + 0.5),
+                            0xF
+                        };
+                    } else {
+                        m_clickAnimationActive = false;
+                    }
+                } else {
+                    // Normal highlight animation
+                    highlightColor = {
+                        static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
+                        static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
+                        static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
+                        0xF
+                    };
+                }
                 
                 // Initialize position offsets
                 x = 0;
@@ -9322,16 +9352,23 @@ namespace tsl {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * this->m_value) / 100;
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
-                const s32 circleCenterY = this->getY() + 40 + 16 - 1;
+                // FIX: Account for NamedStepTrackBar vertical offset
+                const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 
-                const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                // FIX: Use currX/currY consistently (like V2), not initialX/initialY
+                const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
                 
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
-                    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                    triggerOffSound.store(true, std::memory_order_release);
+                    
+                    // Only trigger feedback if we were actually interacting with the slider
+                    if (touchInSliderBounds) {
+                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
+                        triggerOffSound.store(true, std::memory_order_release);
+                    }
+                    
                     touchInSliderBounds = false;
                     return false;
                 }
@@ -9342,13 +9379,12 @@ namespace tsl {
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerOnSound.store(true, std::memory_order_release);
                     }
-        
+            
                     touchInSliderBounds = true;
                     
-                    // Add 0.5 for rounding to nearest step instead of truncating
                     float rawValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
                     s16 newValue;
-        
+            
                     if (rawValue < 0) {
                         newValue = 0;
                     } else if (rawValue > 100) {
@@ -9359,19 +9395,19 @@ namespace tsl {
                         // Clamp after rounding
                         newValue = std::min(std::max(newValue, s16(0)), s16(100));
                     }
-        
+            
                     if (newValue != this->m_value) {
                         triggerNavigationFeedback();
                         this->m_value = newValue;
                         this->m_valueChangedListener(this->getProgress());
                     }
-        
+            
                     return true;
                 }
             
                 return false;
             }
-
+            
             /**
              * @brief Gets the current value of the trackbar
              *
