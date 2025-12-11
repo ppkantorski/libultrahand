@@ -6528,7 +6528,14 @@ namespace tsl {
                                               (m_stoppedAtBoundary || m_justArrivedAtBoundary);
                 
                 // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
-                if (currentlyAtWall && !m_scrollbarAtWall) {
+                if (currentlyAtWall && !m_scrollbarAtWall && !s_directionalKeyReleased.load(std::memory_order_acquire)) {
+                    //m_scrollbarAtWall = true;
+                    m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
+                    //m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
+                }
+
+                // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
+                if (currentlyAtWall && !m_scrollbarAtWall && s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     m_scrollbarAtWall = true;
                     m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
                     m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
