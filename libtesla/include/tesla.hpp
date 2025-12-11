@@ -504,7 +504,8 @@ namespace tsl {
     static size_t progressAlpha = 7;
     static Color progressColor = RGB888("253EF7", progressAlpha);
 
-    static Color trackBarColor = RGB888("555555");
+    static Color scrollBarColor = RGB888("555555");
+    static Color scrollBarWallColor = RGB888("AAAAAA");
 
     static size_t separatorAlpha = 15;
     static Color separatorColor = RGB888("404040", separatorAlpha);
@@ -606,7 +607,8 @@ namespace tsl {
         clickColor = getColor("click_color", clickAlpha);
         progressAlpha = getAlpha("progress_alpha");
         progressColor = getColor("progress_color", progressAlpha);
-        trackBarColor = getColor("trackbar_color");
+        scrollBarColor = getColor("scrollbar_color");
+        scrollBarWallColor = getColor("scrollbar_wall_color");
         separatorAlpha = getAlpha("separator_alpha");
         separatorColor = getColor("separator_color", separatorAlpha);
         textSeparatorColor = getColor("text_separator_color");
@@ -2194,8 +2196,56 @@ namespace tsl {
                 } 
                     
             }
-            
+                        
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
+                // Use Bresenham-style algorithm for small radii
+                if (radius <= 3) {
+                    s32 x = radius;
+                    s32 y = 0;
+                    s32 radiusError = 0;
+                    s32 xChange = 1 - (radius << 1);
+                    s32 yChange = 0;
+                    
+                    while (x >= y) {
+                        if (filled) {
+                            for (s32 i = centerX - x; i <= centerX + x; i++) {
+                                this->setPixelBlendDst(i, centerY + y, color);
+                                this->setPixelBlendDst(i, centerY - y, color);
+                            }
+                            for (s32 i = centerX - y; i <= centerX + y; i++) {
+                                this->setPixelBlendDst(i, centerY + x, color);
+                                this->setPixelBlendDst(i, centerY - x, color);
+                            }
+                            y++;
+                            radiusError += yChange;
+                            yChange += 2;
+                            if (((radiusError << 1) + xChange) > 0) {
+                                x--;
+                                radiusError += xChange;
+                                xChange += 2;
+                            }
+                        } else {
+                            this->setPixelBlendDst(centerX + x, centerY + y, color);
+                            this->setPixelBlendDst(centerX + y, centerY + x, color);
+                            this->setPixelBlendDst(centerX - y, centerY + x, color);
+                            this->setPixelBlendDst(centerX - x, centerY + y, color);
+                            this->setPixelBlendDst(centerX - x, centerY - y, color);
+                            this->setPixelBlendDst(centerX - y, centerY - x, color);
+                            this->setPixelBlendDst(centerX + y, centerY - x, color);
+                            this->setPixelBlendDst(centerX + x, centerY - y, color);
+                            if (radiusError <= 0) {
+                                y++;
+                                radiusError += 2 * y + 1;
+                            } else {
+                                x--;
+                                radiusError -= 2 * x + 1;
+                            }
+                        }
+                    }
+                    return;
+                }
+                
+                // Original supersampling algorithm for larger radii
                 const float r_f = static_cast<float>(radius);
                 const float r2 = r_f * r_f;
                 const u8 base_a = color.a;
@@ -2207,13 +2257,12 @@ namespace tsl {
                 const s32 clip_top = std::max(0, centerY - bound);
                 const s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
                 
-                // 8-sample pattern (better than 4-sample, captures diagonals better)
-                const float offset = 0.353553f; // sqrt(2)/4, keeps samples equidistant
+                const float offset = 0.353553f; // sqrt(2)/4
                 const float samples[8][2] = {
-                    {-offset, -offset}, {offset, -offset},  // Diagonal
-                    {-offset, offset},  {offset, offset},   // Diagonal
-                    {-0.5f, 0.0f},     {0.5f, 0.0f},       // Horizontal edge
-                    {0.0f, -0.5f},     {0.0f, 0.5f}        // Vertical edge
+                    {-offset, -offset}, {offset, -offset},
+                    {-offset, offset},  {offset, offset},
+                    {-0.5f, 0.0f},     {0.5f, 0.0f},
+                    {0.0f, -0.5f},     {0.0f, 0.5f}
                 };
                 
                 for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
@@ -2225,10 +2274,8 @@ namespace tsl {
                         const float px_sq = px * px;
                         const float center_d2 = px_sq + py_sq;
                         
-                        // Quick reject for pixels far from edge
                         if (filled) {
                             if (center_d2 <= r2 - r_f) {
-                                // Definitely inside
                                 const u32 off = this->getPixelOffset(xc, yc);
                                 if (off != UINT32_MAX) {
                                     if (full_opacity) this->setPixelAtOffset(off, color);
@@ -2236,11 +2283,9 @@ namespace tsl {
                                 }
                                 continue;
                             } else if (center_d2 > r2 + r_f) {
-                                // Definitely outside
                                 continue;
                             }
                             
-                            // On the edge - use 8-sample supersampling
                             u32 inside_count = 0;
                             for (u32 s = 0; s < 8; ++s) {
                                 const float sx = px + samples[s][0];
@@ -2254,16 +2299,14 @@ namespace tsl {
                                 const u32 off = this->getPixelOffset(xc, yc);
                                 if (off != UINT32_MAX) {
                                     Color c = color;
-                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8); // +4 for rounding
+                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8);
                                     this->setPixelBlendDst(xc, yc, c);
                                 }
                             }
                         } else {
-                            // Outline
                             const float inner_r2 = (r_f - 1.0f) * (r_f - 1.0f);
                             
                             if (center_d2 >= inner_r2 + r_f && center_d2 <= r2 - r_f) {
-                                // Definitely in ring
                                 const u32 off = this->getPixelOffset(xc, yc);
                                 if (off != UINT32_MAX) {
                                     if (full_opacity) this->setPixelAtOffset(off, color);
@@ -2271,11 +2314,9 @@ namespace tsl {
                                 }
                                 continue;
                             } else if (center_d2 < inner_r2 - r_f || center_d2 > r2 + r_f) {
-                                // Definitely outside ring
                                 continue;
                             }
                             
-                            // On edge - use 8-sample supersampling
                             u32 inside_count = 0;
                             for (u32 s = 0; s < 8; ++s) {
                                 const float sx = px + samples[s][0];
@@ -5940,6 +5981,11 @@ namespace tsl {
                 m_isItem = false;
                 m_hasSetInitialFocusHack = false;
                 m_hasRenderedInitialFocus = false;
+
+                // Initialize new scrollbar color transition members
+                m_scrollbarAtWall = false;
+                m_scrollbarColorTransition = 0.0f;
+                m_lastWallReleaseTime = 0;
             }
             
             virtual ~List() {
@@ -6348,6 +6394,11 @@ namespace tsl {
             static constexpr float SCROLLBAR_Y_OFFSET = 3.0f;
             static constexpr float SCROLLBAR_HEIGHT_TRIM = 6.0f;
             
+            bool m_scrollbarAtWall = false;
+            float m_scrollbarColorTransition = 0.0f;  // 0.0 = scrollBarColor, 1.0 = scrollBarWallColor
+            u64 m_lastWallReleaseTime = 0;
+            static constexpr u64 COLOR_TRANSITION_DURATION_NS = 300000000ULL;  // 0.3 seconds
+
             //static constexpr float smoothingFactor = 0.15f;
             //static constexpr float dampingFactor = 0.3f;
             static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
@@ -6356,9 +6407,7 @@ namespace tsl {
             static constexpr float VIEW_CENTER_OFFSET = 7.0f;
 
             u64 m_lastScrollTime = 0;
-
             float m_scrollVelocity = 0.0f;
-            
             bool m_touchScrollActive = false;
 
             enum class NavigationResult {
@@ -6468,15 +6517,63 @@ namespace tsl {
                 
                 scrollbarOffset = std::min(static_cast<u32>((m_offset / maxScrollableHeight) * (viewHeight - scrollbarHeight)), 
                                          static_cast<u32>(viewHeight - scrollbarHeight));
-        
+            
                 const u32 scrollbarX = getRightBound() + SCROLLBAR_X_OFFSET;
-                const u32 scrollbarY = getY() + scrollbarOffset+SCROLLBAR_Y_OFFSET;
-
-                scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM; // shorten very slightly
-        
-                renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(trackBarColor));
-                renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(trackBarColor));
-                renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(trackBarColor));
+                const u32 scrollbarY = getY() + scrollbarOffset + SCROLLBAR_Y_OFFSET;
+            
+                scrollbarHeight -= SCROLLBAR_HEIGHT_TRIM;
+            
+                // Check if we're at a wall (boundary)
+                const bool currentlyAtWall = (m_lastNavigationResult == NavigationResult::HitBoundary) && 
+                                              (m_stoppedAtBoundary || m_justArrivedAtBoundary);
+                
+                // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
+                if (currentlyAtWall && !m_scrollbarAtWall) {
+                    m_scrollbarAtWall = true;
+                    m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
+                    m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
+                }
+                
+                // Reset flag when we leave the wall (so we can trigger again next time)
+                if (!currentlyAtWall && m_scrollbarAtWall) {
+                    m_scrollbarAtWall = false;
+                    m_scrollbarColorTransition = 0.0f;  // Reset to normal immediately
+                }
+                
+                // Smooth transition back to scrollBarColor over 0.5s
+                if (m_scrollbarAtWall && m_scrollbarColorTransition > 0.0f) {
+                    const u64 currentTime = armTicksToNs(armGetSystemTick());
+                    const u64 elapsed = currentTime - m_lastWallReleaseTime;
+                    
+                    if (elapsed >= COLOR_TRANSITION_DURATION_NS) {
+                        m_scrollbarColorTransition = 0.0f;  // Transition complete
+                    } else {
+                        // Linear interpolation from 1.0 to 0.0
+                        const float progress = static_cast<float>(elapsed) / static_cast<float>(COLOR_TRANSITION_DURATION_NS);
+                        m_scrollbarColorTransition = 1.0f - progress;
+                    }
+                }
+                
+                // Interpolate between scrollBarColor and scrollBarWallColor
+                tsl::Color currentColor = scrollBarColor;
+                if (m_scrollbarColorTransition >= 1.0f) {
+                    currentColor = scrollBarWallColor;
+                } else if (m_scrollbarColorTransition > 0.0f) {
+                    const float t = m_scrollbarColorTransition;
+                    const float oneMinusT = 1.0f - t;
+                    
+                    const u8 r = static_cast<u8>(scrollBarColor.r * oneMinusT + scrollBarWallColor.r * t);
+                    const u8 g = static_cast<u8>(scrollBarColor.g * oneMinusT + scrollBarWallColor.g * t);
+                    const u8 b = static_cast<u8>(scrollBarColor.b * oneMinusT + scrollBarWallColor.b * t);
+                    const u8 a = static_cast<u8>(scrollBarColor.a * oneMinusT + scrollBarWallColor.a * t);
+                    
+                    currentColor = tsl::Color(r, g, b, a);
+                }
+            
+                // Draw scrollbar with interpolated color
+                renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(currentColor));
             }
 
             
@@ -8852,25 +8949,27 @@ namespace tsl {
                 
                 return false;
             }
-            
+                        
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
-                // FIX: Account for NamedStepTrackBar vertical offset
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 static s16 lastHapticSegment = -1;
                 
-                // FIX: Use currX/currY consistently (like V2), not initialX/initialY
                 const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
+                
+                // Check horizontal bounds only (allow vertical drift)
+                const s32 trackBarLeft = this->getX() + 59;
+                const s32 trackBarRight = trackBarLeft + trackBarWidth;
+                const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
                 
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
                     lastHapticSegment = -1;
                     
-                    // Only trigger feedback if we were actually interacting with the slider
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
@@ -8881,38 +8980,56 @@ namespace tsl {
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
-                    if (triggerOnce){
-                        triggerOnce = false;
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerOnSound.store(true, std::memory_order_release);
-                    }
-                    touchInSliderBounds = true;
-                    
-                    s16 newValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
-                    
-                    if (newValue < 0) {
-                        newValue = 0;
-                    } else if (newValue > 100) {
-                        newValue = 100;
-                    }
-            
-                    if (newValue != this->m_value) {
-                        this->m_value = newValue;
+                    // If we were touching but now went out of horizontal bounds, clamp to edge value then stop
+                    if (touchInSliderBounds && !currentlyInHorizontalBounds) {
+                        // Clamp to max if past right edge, min if past left edge
+                        if (currX > trackBarRight) {
+                            this->m_value = 100;
+                        } else if (currX < trackBarLeft) {
+                            this->m_value = 0;
+                        }
                         this->m_valueChangedListener(this->getProgress());
                         
-                        const s16 currentSegment = (this->m_value * 10) / 100;
-                        
-                        if (this->m_value == 0 || currentSegment != lastHapticSegment) {
-                            lastHapticSegment = currentSegment;
-                            triggerNavigationFeedback();
-                        }
+                        touchInSliderBounds = false;
+                        return false;
                     }
-            
-                    return true;
+                    
+                    // Only update if we're still in horizontal bounds
+                    if (currentlyInHorizontalBounds) {
+                        if (triggerOnce){
+                            triggerOnce = false;
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        }
+                        touchInSliderBounds = true;
+                        
+                        s16 newValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * 100;
+                        
+                        if (newValue < 0) {
+                            newValue = 0;
+                        } else if (newValue > 100) {
+                            newValue = 100;
+                        }
+                
+                        if (newValue != this->m_value) {
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                            
+                            const s16 currentSegment = (this->m_value * 10) / 100;
+                            
+                            if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
+                        }
+                
+                        return true;
+                    }
                 }
             
                 return false;
             }
+
             
 
             // Define drawBar function outside the draw method
@@ -9352,18 +9469,20 @@ namespace tsl {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * this->m_value) / 100;
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
-                // FIX: Account for NamedStepTrackBar vertical offset
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 
-                // FIX: Use currX/currY consistently (like V2), not initialX/initialY
                 const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
+                
+                // Check horizontal bounds only (allow vertical drift)
+                const s32 trackBarLeft = this->getX() + 59;
+                const s32 trackBarRight = trackBarLeft + trackBarWidth;
+                const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
                 
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
                     
-                    // Only trigger feedback if we were actually interacting with the slider
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
@@ -9374,35 +9493,50 @@ namespace tsl {
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
-                    if (triggerOnce){
-                        triggerOnce = false;
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerOnSound.store(true, std::memory_order_release);
-                    }
-            
-                    touchInSliderBounds = true;
-                    
-                    float rawValue = (static_cast<float>(currX - (this->getX() + 60)) / static_cast<float>(this->getWidth() - 95)) * 100;
-                    s16 newValue;
-            
-                    if (rawValue < 0) {
-                        newValue = 0;
-                    } else if (rawValue > 100) {
-                        newValue = 100;
-                    } else {
-                        // Round to nearest step with 0.5 offset for proper snapping
-                        newValue = std::round((rawValue + 0.5f) / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
-                        // Clamp after rounding
-                        newValue = std::min(std::max(newValue, s16(0)), s16(100));
-                    }
-            
-                    if (newValue != this->m_value) {
-                        triggerNavigationFeedback();
-                        this->m_value = newValue;
+                    // If we were touching but now went out of horizontal bounds, clamp to edge value then stop
+                    if (touchInSliderBounds && !currentlyInHorizontalBounds) {
+                        // Clamp to max if past right edge, min if past left edge
+                        if (currX > trackBarRight) {
+                            this->m_value = 100;
+                        } else if (currX < trackBarLeft) {
+                            this->m_value = 0;
+                        }
                         this->m_valueChangedListener(this->getProgress());
+                        
+                        touchInSliderBounds = false;
+                        return false;
                     }
-            
-                    return true;
+                    
+                    // Only update if we're still in horizontal bounds
+                    if (currentlyInHorizontalBounds) {
+                        if (triggerOnce){
+                            triggerOnce = false;
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        }
+                
+                        touchInSliderBounds = true;
+                        
+                        float rawValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * 100;
+                        s16 newValue;
+                
+                        if (rawValue < 0) {
+                            newValue = 0;
+                        } else if (rawValue > 100) {
+                            newValue = 100;
+                        } else {
+                            newValue = std::round((rawValue + 0.5f) / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
+                            newValue = std::min(std::max(newValue, s16(0)), s16(100));
+                        }
+                
+                        if (newValue != this->m_value) {
+                            triggerNavigationFeedback();
+                            this->m_value = newValue;
+                            this->m_valueChangedListener(this->getProgress());
+                        }
+                
+                        return true;
+                    }
                 }
             
                 return false;
@@ -9940,7 +10074,7 @@ namespace tsl {
                 
                 return false;
             }
-                        
+            
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
@@ -9952,6 +10086,12 @@ namespace tsl {
                 static bool wasOriginallyLocked = false;
                 
                 const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) && (std::abs(initialY - circleCenterY) <= circleRadius);
+                
+                // CRITICAL FIX: Check if current touch is within valid horizontal bounds
+                // Allow vertical drift (top/bottom), only care about left/right bounds
+                const s32 trackBarLeft = this->getX() + 59;
+                const s32 trackBarRight = trackBarLeft + trackBarWidth;
+                const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
                 
                 // Handle touch start
                 if (event == TouchEvent::Touch && touchInCircle) {
@@ -9986,42 +10126,66 @@ namespace tsl {
                 
                 const bool isUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
                 
+                // CRITICAL FIX: Only process touch if we're in bounds OR if we were already interacting
+                // When going out of horizontal bounds, clamp to min/max value before stopping
                 if ((touchInCircle || touchInSliderBounds) && isUnlocked) {
-                    touchInSliderBounds = true;
-                    if (triggerOnce) {
-                        triggerOnce = false;
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerOnSound.store(true, std::memory_order_release);
-                    }
-                    
-                    // Add 0.5 to round to nearest step instead of truncating
-                    const s16 newIndex = std::max(static_cast<s16>(0), std::min(static_cast<s16>((currX - (this->getX() + 59)) / static_cast<float>(this->getWidth() - 95) * (m_numSteps - 1) + 0.5f), static_cast<s16>(m_numSteps - 1)));
-                    const s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
-                    
-                    if (newValue != this->m_value || newIndex != this->m_index) {
-                        this->m_value = newValue;
-                        this->m_index = newIndex;
+                    // If we were touching but now went out of horizontal bounds, clamp to edge value then stop
+                    if (touchInSliderBounds && !currentlyInHorizontalBounds) {
+                        // Clamp to max if past right edge, min if past left edge
+                        if (currX > trackBarRight) {
+                            this->m_value = m_maxValue;
+                            this->m_index = m_numSteps - 1;
+                        } else if (currX < trackBarLeft) {
+                            this->m_value = m_minValue;
+                            this->m_index = 0;
+                        }
                         this->m_valueChangedListener(this->getProgress());
                         if (m_executeOnEveryTick) {
                             updateAndExecute(false);
                         }
                         
-                        // Calculate which 10% segment we're in (0-10 for 11 segments)
-                        const s16 currentSegment = (newIndex * 10) / (m_numSteps - 1);
-                        
-                        // Trigger haptics when crossing into a new 10% segment OR at index 0
-                        if (newIndex == 0 || currentSegment != lastHapticSegment) {
-                            lastHapticSegment = currentSegment;
-                            triggerNavigationFeedback();
-                        }
+                        touchInSliderBounds = false;
+                        return false;
                     }
-            
-                    return true;
+                    
+                    // We're in valid horizontal bounds, continue interaction
+                    if (currentlyInHorizontalBounds) {
+                        touchInSliderBounds = true;
+                        if (triggerOnce) {
+                            triggerOnce = false;
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        }
+                        
+                        // Add 0.5 to round to nearest step instead of truncating
+                        const s16 newIndex = std::max(static_cast<s16>(0), std::min(static_cast<s16>((currX - trackBarLeft) / static_cast<float>(trackBarWidth) * (m_numSteps - 1) + 0.5f), static_cast<s16>(m_numSteps - 1)));
+                        const s16 newValue = m_minValue + newIndex * (static_cast<float>(m_maxValue - m_minValue) / (m_numSteps - 1));
+                        
+                        if (newValue != this->m_value || newIndex != this->m_index) {
+                            this->m_value = newValue;
+                            this->m_index = newIndex;
+                            this->m_valueChangedListener(this->getProgress());
+                            if (m_executeOnEveryTick) {
+                                updateAndExecute(false);
+                            }
+                            
+                            // Calculate which 10% segment we're in (0-10 for 11 segments)
+                            const s16 currentSegment = (newIndex * 10) / (m_numSteps - 1);
+                            
+                            // Trigger haptics when crossing into a new 10% segment OR at index 0
+                            if (newIndex == 0 || currentSegment != lastHapticSegment) {
+                                lastHapticSegment = currentSegment;
+                                triggerNavigationFeedback();
+                            }
+                        }
+                
+                        return true;
+                    }
                 }
                 
                 return false;
             }
-                        
+                                    
             void drawBar(gfx::Renderer *renderer, s32 x, s32 y, u16 width, Color& color, bool isRounded = true) {
                 if (isRounded) {
                     renderer->drawUniformRoundedRect(x, y, width, 7, a(color));
