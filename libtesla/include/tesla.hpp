@@ -2197,9 +2197,9 @@ namespace tsl {
                     
             }
                         
-            inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
+            inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color, bool style2 = false) {
                 // Use Bresenham-style algorithm for small radii
-                if (radius <= 3) {
+                if (style2) {
                     s32 x = radius;
                     s32 y = 0;
                     s32 radiusError = 0;
@@ -6579,8 +6579,8 @@ namespace tsl {
             
                 // Draw scrollbar with interpolated color
                 renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(currentColor));
-                renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(currentColor));
-                renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(currentColor), true);
+                renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(currentColor), true);
             }
 
             
