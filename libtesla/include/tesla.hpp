@@ -10403,6 +10403,10 @@ namespace tsl {
                 }
             }
             
+            virtual inline u8 getIndex() {
+                return this->m_index;
+            }
+
             virtual inline u8 getProgress() {
                 return this->m_value;
             }
