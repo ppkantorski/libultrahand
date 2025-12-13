@@ -9062,7 +9062,10 @@ namespace tsl {
                 s32 xPos = this->getX() + 59;
                 s32 yPos = this->getY() + 40 + 16 - 1;
                 s32 width = this->getWidth() - 95;
-                u16 handlePos = width * (this->m_value) / (100);
+                const int maxValue = (m_usingStepTrackbar || m_usingNamedStepTrackbar) 
+                                     ? ((100 / (this->m_numSteps - 1)) * (this->m_numSteps - 1))
+                                     : 100;
+                u16 handlePos = width * (this->m_value) / maxValue;
 
                 if (!m_usingNamedStepTrackbar) {
                     yPos -= 11;
@@ -9386,6 +9389,10 @@ namespace tsl {
                     triggerEnterFeedback();
                 }
             
+                // Calculate actual max value based on steps
+                const int stepSize = 100 / (this->m_numSteps - 1);
+                const int maxValue = stepSize * (this->m_numSteps - 1);  // For 25 steps: 4 * 24 = 96
+            
                 // Handle key release
                 if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
                     if (m_wasLastHeld) {
@@ -9411,16 +9418,14 @@ namespace tsl {
                     m_holdStartTime_ns = currentTime_ns;
                     lastUpdate_ns = currentTime_ns;
                     
-                    const int stepSize = 100 / (this->m_numSteps - 1);
-                    
                     // Perform initial single tick
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
                         triggerNavigationFeedback();
                         this->m_value = std::max(this->m_value - stepSize, 0);
                         this->m_valueChangedListener(this->getProgress());
-                    } else if (keysDown & KEY_RIGHT && this->m_value < 100) {
+                    } else if (keysDown & KEY_RIGHT && this->m_value < maxValue) {  // CHANGED: was < 100
                         triggerNavigationFeedback();
-                        this->m_value = std::min(this->m_value + stepSize, 100);
+                        this->m_value = std::min(this->m_value + stepSize, maxValue);  // CHANGED: was 100
                         this->m_valueChangedListener(this->getProgress());
                     }
                     return true;
@@ -9444,8 +9449,6 @@ namespace tsl {
                     const u64 currentInterval_ns = static_cast<u64>((initialInterval_ns - shortInterval_ns) * (1.0f - t) + shortInterval_ns);
                     
                     if (elapsed_ns >= currentInterval_ns) {
-                        const int stepSize = 100 / (this->m_numSteps - 1);
-                        
                         if (keysHeld & KEY_LEFT && this->m_value > 0) {
                             triggerNavigationFeedback();
                             this->m_value = std::max(this->m_value - stepSize, 0);
@@ -9455,9 +9458,9 @@ namespace tsl {
                             return true;
                         }
                         
-                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                        if (keysHeld & KEY_RIGHT && this->m_value < maxValue) {  // CHANGED: was < 100
                             triggerNavigationFeedback();
-                            this->m_value = std::min(this->m_value + stepSize, 100);
+                            this->m_value = std::min(this->m_value + stepSize, maxValue);  // CHANGED: was 100
                             this->m_valueChangedListener(this->getProgress());
                             lastUpdate_ns = currentTime_ns;
                             m_wasLastHeld = true;
@@ -9473,8 +9476,12 @@ namespace tsl {
 
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
+                // Calculate actual max value based on steps FIRST
+                const int stepSize = 100 / (this->m_numSteps - 1);
+                const int maxValue = stepSize * (this->m_numSteps - 1);  // For 25 steps: 96
+                
                 const u16 trackBarWidth = this->getWidth() - 95;
-                const u16 handlePos = (trackBarWidth * this->m_value) / 100;
+                const u16 handlePos = (trackBarWidth * this->m_value) / maxValue;  // CHANGED: was /100
                 const s32 circleCenterX = this->getX() + 59 + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
                 static constexpr s32 circleRadius = 16;
@@ -9504,7 +9511,7 @@ namespace tsl {
                     if (touchInSliderBounds && !currentlyInHorizontalBounds) {
                         // Clamp to max if past right edge, min if past left edge
                         if (currX > trackBarRight) {
-                            this->m_value = 100;
+                            this->m_value = maxValue;
                         } else if (currX < trackBarLeft) {
                             this->m_value = 0;
                         }
@@ -9524,16 +9531,18 @@ namespace tsl {
                 
                         touchInSliderBounds = true;
                         
-                        float rawValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * 100;
+                        // CHANGED: Scale rawValue to maxValue instead of 100
+                        float rawValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * maxValue;
                         s16 newValue;
                 
                         if (rawValue < 0) {
                             newValue = 0;
-                        } else if (rawValue > 100) {
-                            newValue = 100;
+                        } else if (rawValue > maxValue) {
+                            newValue = maxValue;
                         } else {
-                            newValue = std::round((rawValue + 0.5f) / (100.0F / (this->m_numSteps - 1))) * (100.0F / (this->m_numSteps - 1));
-                            newValue = std::min(std::max(newValue, s16(0)), s16(100));
+                            // Round to nearest step
+                            newValue = std::round(rawValue / stepSize) * stepSize;
+                            newValue = std::min(std::max(newValue, s16(0)), s16(maxValue));
                         }
                 
                         if (newValue != this->m_value) {
@@ -9648,8 +9657,9 @@ namespace tsl {
                 s32 xPos = this->getX() + 59;
                 s32 yPos = this->getY() + 40 + 16 - 1;
                 s32 width = this->getWidth() - 95;
-                u16 handlePos = width * (this->m_value) / (100);
-            
+                const int maxValue = (100 / (this->m_numSteps - 1)) * (this->m_numSteps - 1);  // For 25 steps: 96
+                u16 handlePos = width * (this->m_value) / maxValue;  // Changed from /100
+                            
                 // NOTE: For NamedStepTrackBar, yPos is NOT adjusted down
                 // (the !m_usingNamedStepTrackbar check is false here)
             
