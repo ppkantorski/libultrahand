@@ -346,8 +346,8 @@ namespace ult {
 
     extern std::atomic<bool> languageWasChanged;
     
-    inline constexpr double M_PI = 3.14159265358979323846;  // For double precision
-    inline constexpr double RAD_TO_DEG = 180.0f / M_PI;
+    inline constexpr double _M_PI = 3.14159265358979323846;  // For double precision
+    inline constexpr double RAD_TO_DEG = 180.0f / _M_PI;
     
     #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;
