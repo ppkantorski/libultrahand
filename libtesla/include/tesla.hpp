@@ -4936,7 +4936,7 @@ namespace tsl {
        //inline BottomCache g_cachedBottom;
        //
        //inline std::atomic<bool> g_disableMenuCacheOnReturn = false;
-
+    
         /**
          * @brief The base frame which can contain another view
          *
@@ -4964,7 +4964,7 @@ namespace tsl {
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
             float letterWidth;
         #endif
-
+        
         #if USING_WIDGET_DIRECTIVE
             bool m_showWidget = false;
         #endif
@@ -4972,15 +4972,13 @@ namespace tsl {
             float x, y;
             int offset, y_offset;
             int fontSize;
-
+        
         #if IS_LAUNCHER_DIRECTIVE
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
-                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName), 
-                  subScroll{0, 0, 0.0f, 0, 0, false, false} {
+                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
         #else
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
-                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems),
-                  subScroll{0, 0, 0.0f, 0, 0, false, false} {
+                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
         #endif
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
@@ -5033,13 +5031,9 @@ namespace tsl {
                 }
             
                 // Use cached or current data for rendering
-                const std::string& renderTitle = m_title;
-                const std::string& renderSubtitle = m_subtitle;
-                const bool renderUseDynamicLogo = ult::useDynamicLogo;
-                
-                const bool renderIsUltrahandMenu = (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
-                                                     renderSubtitle.find("Ultrahand Package") == std::string::npos && 
-                                                     renderSubtitle.find("Ultrahand Script") == std::string::npos);
+                const bool renderIsUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
+                                                     m_subtitle.find("Ultrahand Package") == std::string::npos && 
+                                                     m_subtitle.find("Ultrahand Script") == std::string::npos);
                 
                 bool widgetDrawn = false;
                 if (renderIsUltrahandMenu) {
@@ -5049,14 +5043,14 @@ namespace tsl {
             
                     if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) ||
                         (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
-                        renderer->drawRoundedRect(0.0f + 7, 12.0f, 245.0f - 13, 73.0f, 12.0f, a(clickColor));
+                        renderer->drawRoundedRect(7.0f, 12.0f, 232.0f, 73.0f, 12.0f, a(clickColor));
                     }
                     
                     x = 20;
                     fontSize = 42;
                     offset = 6;
                     
-                    if (renderUseDynamicLogo) {
+                    if (ult::useDynamicLogo) {
                         x = drawDynamicUltraText(renderer, x, y + offset, fontSize, logoColor1, false);
                     } else {
                         for (const char letter : ult::SPLIT_PROJECT_NAME_1) {
@@ -5073,90 +5067,37 @@ namespace tsl {
                 #endif
                     
                     x = 20;
-                    y = 52 - 2;
+                    y = 50;
                     fontSize = 32;
             
-                    if (renderSubtitle.find("Ultrahand Script") != std::string::npos) {
-                        renderer->drawString(renderTitle, false, x, y, fontSize, defaultScriptColor);
-                    } else {
-                        tsl::Color drawColor = defaultPackageColor; // Default to green
-                        
-                        // Calculate color only if not using cache
-                        if (!m_colorSelection.empty()) {
-                            const char firstChar = m_colorSelection[0];
-                            const size_t len = m_colorSelection.length();
-                            
-                            // Fast path: check first char + length for unique combinations
-                            switch (firstChar) {
-                                case 'g': // green
-                                    if (len == 5 && m_colorSelection.compare("green") == 0) {
-                                        drawColor = {0x0, 0xF, 0x0, 0xF};
-                                    }
-                                    break;
-                                case 'r': // red
-                                    if (len == 3 && m_colorSelection.compare("red") == 0) {
-                                        drawColor = {0xF, 0x2, 0x4, 0xF};
-                                    }
-                                    break;
-                                case 'b': // blue
-                                    if (len == 4 && m_colorSelection.compare("blue") == 0) {
-                                        drawColor = {0x7, 0x7, 0xF, 0xF};
-                                    }
-                                    break;
-                                case 'y': // yellow
-                                    if (len == 6 && m_colorSelection.compare("yellow") == 0) {
-                                        drawColor = {0xF, 0xF, 0x0, 0xF};
-                                    }
-                                    break;
-                                case 'o': // orange
-                                    if (len == 6 && m_colorSelection.compare("orange") == 0) {
-                                        drawColor = {0xF, 0xA, 0x0, 0xF};
-                                    }
-                                    break;
-                                case 'p': // pink or purple
-                                    if (len == 4 && m_colorSelection.compare("pink") == 0) {
-                                        drawColor = {0xF, 0x6, 0xB, 0xF};
-                                    } else if (len == 6 && m_colorSelection.compare("purple") == 0) {
-                                        drawColor = {0x8, 0x0, 0x8, 0xF};
-                                    }
-                                    break;
-                                case 'w': // white
-                                    if (len == 5 && m_colorSelection.compare("white") == 0) {
-                                        drawColor = {0xF, 0xF, 0xF, 0xF};
-                                    }
-                                    break;
-                                case '#': // hex color
-                                    if (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) {
-                                        drawColor = RGB888(m_colorSelection.substr(1));
-                                    }
-                                    break;
-                            }
-                        }
-                        
-                        renderer->drawString(renderTitle, false, x, y, fontSize, drawColor);
-                    }
+                    // Calculate title widths and handle scrolling
+                    calcScrollWidth(renderer, titleScroll, m_title, 32, widgetDrawn);
+                    
+                    const bool isScript = m_subtitle.find("Ultrahand Script") != std::string::npos;
+                    const tsl::Color titleClr = isScript ? defaultScriptColor : getPackageColor();
+                    
+                    drawScrollableText(renderer, titleScroll, titleClr, x, y, 32, 27, 35);
                 }
                 
                 // Calculate subtitle widths and handle scrolling
-                calcSubWidth(renderer, widgetDrawn);
+                std::string subtitle = m_subtitle;
+                const size_t pos = subtitle.find("?Ultrahand Script");
+                if (pos != std::string::npos) {
+                    subtitle.erase(pos, 17);
+                }
                 
-                static const std::vector<std::string> specialChars2 = {""};
+                calcScrollWidth(renderer, subScroll, subtitle, 15, widgetDrawn);
+                
+                static const std::vector<std::string> specialChars = {""};
                 const int subtitleX = 20;
                 const int subtitleY = y + 25;
                 
-                if (renderTitle == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
+                if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
                     // Version label - no scrolling needed
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars2, 
+                    renderer->drawStringWithColoredSections(ult::versionLabel, false, specialChars, 
                                                            subtitleX, subtitleY, 15, 
                                                            bannerVersionTextColor, textSeparatorColor);
                 } else {
-                    // Prepare subtitle (remove "?Ultrahand Script" if present)
-                    std::string subtitle = renderSubtitle;
-                    const size_t pos = subtitle.find("?Ultrahand Script");
-                    if (pos != std::string::npos) {
-                        subtitle.erase(pos, 17);
-                    }
-                    
                     // Handle scrolling subtitle
                     if (subScroll.trunc) {
                         if (!subScroll.active) {
@@ -5166,16 +5107,16 @@ namespace tsl {
                         
                         renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
                         
-                        renderer->drawStringWithColoredSections(subScrollText, false, specialChars2,
+                        renderer->drawStringWithColoredSections(subScroll.scrollText, false, specialChars,
                             subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
                             bannerVersionTextColor, textSeparatorColor);
                         
                         renderer->disableScissoring();
                         
-                        updateSubScroll();
+                        updateScroll(subScroll);
                     } else {
                         // Normal subtitle drawing
-                        renderer->drawStringWithColoredSections(subtitle, false, specialChars2,
+                        renderer->drawStringWithColoredSections(subtitle, false, specialChars,
                             subtitleX, subtitleY, 15,
                             bannerVersionTextColor, textSeparatorColor);
                     }
@@ -5187,21 +5128,20 @@ namespace tsl {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
                 }
                 
-                const std::string& renderTitle = m_title;
-                const std::string& renderSubtitle = m_subtitle;
-                
                 bool widgetDrawn = false;
                 #if USING_WIDGET_DIRECTIVE
                 widgetDrawn = m_showWidget && renderer->drawWidget();
                 #endif
                 
-                renderer->drawString(renderTitle, false, 20, 52-2, 32, defaultOverlayColor);
+                // Calculate title widths and handle scrolling
+                calcScrollWidth(renderer, titleScroll, m_title, 32, widgetDrawn);
+                drawScrollableText(renderer, titleScroll, defaultOverlayColor, 20, 50, 32, 27, 35);
                 
                 // Calculate subtitle widths and handle scrolling
-                calcSubWidth(renderer, widgetDrawn);
+                calcScrollWidth(renderer, subScroll, m_subtitle, 15, widgetDrawn);
                 
                 const int subtitleX = 20;
-                const int subtitleY = y + 2 + 23;
+                const int subtitleY = y + 25;
                 
                 if (subScroll.trunc) {
                     if (!subScroll.active) {
@@ -5211,15 +5151,15 @@ namespace tsl {
                     
                     renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
                     
-                    renderer->drawString(subScrollText, false,
+                    renderer->drawString(subScroll.scrollText, false,
                         subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
                         bannerVersionTextColor);
                     
                     renderer->disableScissoring();
                     
-                    updateSubScroll();
+                    updateScroll(subScroll);
                 } else {
-                    renderer->drawString(renderSubtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
+                    renderer->drawString(m_subtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
                 }
             #endif
             
@@ -5241,7 +5181,7 @@ namespace tsl {
                     "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
             #endif
                 
-                const float _halfGap = gapWidth / 2.0f;
+                const float _halfGap = gapWidth * 0.5f;
                 if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
                     ult::halfGap.store(_halfGap, std::memory_order_release);
             
@@ -5277,7 +5217,7 @@ namespace tsl {
                             !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
                             !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
                             (ult::inMainMenu.load(std::memory_order_acquire) ?
-                                (((m_menuMode.compare("packages") == 0) ?
+                                (((m_menuMode == "packages") ?
                                     (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
                                     (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
                                 ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ?
@@ -5313,14 +5253,14 @@ namespace tsl {
                         : "") +
                     (!interpreterIsRunningNow
                         ? (!ult::usePageSwap
-                            ? ((m_menuMode.compare("packages") == 0)
+                            ? ((m_menuMode == "packages")
                                 ? "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : (m_menuMode.compare("overlays") == 0)
+                                : (m_menuMode == "overlays")
                                     ? "\uE0EE" + ult::GAP_2 + ult::PACKAGES
                                     : "")
-                            : ((m_menuMode.compare("packages") == 0)
+                            : ((m_menuMode == "packages")
                                 ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : (m_menuMode.compare("overlays") == 0)
+                                : (m_menuMode == "overlays")
                                     ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES
                                     : ""))
                         : "") +
@@ -5337,18 +5277,16 @@ namespace tsl {
                         : "");
             #endif
                 
-                const std::string& menuBottomLine = currentBottomLine;
-                
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
-                static const std::vector<std::string> specialChars = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
-                renderer->drawStringWithColoredSections(menuBottomLine, false, specialChars, 
+                static const std::vector<std::string> specialChars2 = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
+                renderer->drawStringWithColoredSections(currentBottomLine, false, specialChars2, 
                                                         buttonStartX, 693, 23, 
-                                                        (bottomTextColor), (buttonColor));
+                                                        bottomTextColor, buttonColor);
             
             #if USING_FPS_INDICATOR_DIRECTIVE
                 // Update and display FPS
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const double currentTime_seconds = currentTime_ns / 1000000000.0;
+                const double currentTime_seconds = currentTime_ns / 1e9;
                 const float currentFps = updateFPS(currentTime_seconds);
             
                 static char fpsBuffer[32];
@@ -5359,7 +5297,7 @@ namespace tsl {
                     snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.2f", currentFps);
                     lastFps = currentFps;
                 }
-                static constexpr auto whiteColor = tsl::Color(0xF,0xF,0xF,0xF);
+                static constexpr tsl::Color whiteColor = {0xF,0xF,0xF,0xF};
                 renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, whiteColor);
             #endif
             
@@ -5416,7 +5354,11 @@ namespace tsl {
              * @param title Title to change to
              */
             inline void setTitle(const std::string &title) {
-                m_title = title;
+                if (m_title != title) {
+                    m_title = title;
+                    titleScroll.maxW = 0; // Reset to recalculate
+                    titleScroll.active = titleScroll.trunc = false;
+                }
             }
             
             /**
@@ -5436,89 +5378,146 @@ namespace tsl {
             Element *m_contentElement = nullptr;
             
         private:
-            // Compact subtitle scroll state
-            struct {
+            // Unified scroll state structure
+            struct ScrollState {
                 u64 timeIn, lastUpd;
                 float offset;
                 u32 maxW, textW;
                 bool active, trunc;
-            } subScroll;
+                std::string scrollText;
+            };
             
-            std::string subScrollText;
+            ScrollState subScroll = {0, 0, 0.0f, 0, 0, false, false, ""};
+            ScrollState titleScroll = {0, 0, 0.0f, 0, 0, false, false, ""};
             
-            void calcSubWidth(gfx::Renderer* r, bool widgetDrawn) {
-                if (subScroll.maxW) return;
+            // Unified width calculation
+            void calcScrollWidth(gfx::Renderer* r, ScrollState& s, const std::string& text, u32 fontSize, bool widgetDrawn) {
+                if (s.maxW) return;
                 
-                subScroll.maxW = widgetDrawn ? 218-1 : (tsl::cfg::FramebufferWidth - 40);
+                s.maxW = widgetDrawn ? 217 : (tsl::cfg::FramebufferWidth - 40);
                 
-                std::string sub = m_subtitle;
-
-            #if IS_LAUNCHER_DIRECTIVE
-                const size_t p = sub.find("?Ultrahand Script");
-                if (p != std::string::npos) sub.erase(p, 17);
-            #endif
+                const u32 w = r->getTextDimensions(text, false, fontSize).first;
+                s.trunc = w > s.maxW;
                 
-                const u32 w = r->getTextDimensions(sub, false, 15).first;
-                subScroll.trunc = w > subScroll.maxW;
-                
-                if (subScroll.trunc) {
-                    subScrollText.clear();
-                    subScrollText.reserve(sub.size() * 2 + 8);
-                    subScrollText.append(sub).append("        ");
-                    subScroll.textW = r->getTextDimensions(subScrollText, false, 15).first;
-                    subScrollText.append(sub);
+                if (s.trunc) {
+                    s.scrollText = text + "        ";
+                    s.textW = r->getTextDimensions(s.scrollText, false, fontSize).first;
+                    s.scrollText += text;
                 } else {
-                    subScroll.textW = w;
+                    s.textW = w;
                 }
             }
             
-            void updateSubScroll() {
+        #if IS_LAUNCHER_DIRECTIVE
+            // Get package color based on m_colorSelection
+            tsl::Color getPackageColor() const {
+                if (m_colorSelection.empty()) return defaultPackageColor;
+                
+                const char c = m_colorSelection[0];
+                const size_t len = m_colorSelection.length();
+                
+                switch (c) {
+                    case 'g': return (len == 5) ? tsl::Color{0x0,0xF,0x0,0xF} : defaultPackageColor;
+                    case 'r': return (len == 3) ? tsl::Color{0xF,0x2,0x4,0xF} : defaultPackageColor;
+                    case 'b': return (len == 4) ? tsl::Color{0x7,0x7,0xF,0xF} : defaultPackageColor;
+                    case 'y': return (len == 6) ? tsl::Color{0xF,0xF,0x0,0xF} : defaultPackageColor;
+                    case 'o': return (len == 6) ? tsl::Color{0xF,0xA,0x0,0xF} : defaultPackageColor;
+                    case 'p': 
+                        if (len == 4) return tsl::Color{0xF,0x6,0xB,0xF};
+                        if (len == 6) return tsl::Color{0x8,0x0,0x8,0xF};
+                        return defaultPackageColor;
+                    case 'w': return (len == 5) ? tsl::Color{0xF,0xF,0xF,0xF} : defaultPackageColor;
+                    case '#': 
+                        return (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) 
+                            ? RGB888(m_colorSelection.substr(1)) : defaultPackageColor;
+                    default: return defaultPackageColor;
+                }
+            }
+            
+            // Draw scrollable text with common parameters
+            void drawScrollableText(gfx::Renderer* r, ScrollState& s, const tsl::Color& clr, 
+                                   int xPos, int yPos, u32 fontSize, int scissorYOffset, int scissorHeight) {
+                if (s.trunc) {
+                    if (!s.active) {
+                        s.active = true;
+                        s.timeIn = armTicksToNs(armGetSystemTick());
+                    }
+                    
+                    r->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
+                    r->drawString(s.scrollText, false, xPos - static_cast<s32>(s.offset), yPos, fontSize, clr);
+                    r->disableScissoring();
+                    
+                    updateScroll(s);
+                } else {
+                    r->drawString(m_title, false, xPos, yPos, fontSize, clr);
+                }
+            }
+        #else
+            // Non-launcher version
+            void drawScrollableText(gfx::Renderer* r, ScrollState& s, const tsl::Color& clr, 
+                                   int xPos, int yPos, u32 fontSize, int scissorYOffset, int scissorHeight) {
+                if (s.trunc) {
+                    if (!s.active) {
+                        s.active = true;
+                        s.timeIn = armTicksToNs(armGetSystemTick());
+                    }
+                    
+                    r->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
+                    r->drawString(s.scrollText, false, xPos - static_cast<s32>(s.offset), yPos, fontSize, clr);
+                    r->disableScissoring();
+                    
+                    updateScroll(s);
+                } else {
+                    r->drawString(m_title, false, xPos, yPos, fontSize, clr);
+                }
+            }
+        #endif
+            
+            // Unified scroll update
+            void updateScroll(ScrollState& s) {
                 const u64 now = armTicksToNs(armGetSystemTick());
-                const u64 elapsed = now - subScroll.timeIn;
                 
-                // Timing constants (shared across all scrolling subtitles)
+                // Only update at ~120Hz
+                if (now - s.lastUpd < 8333333ULL) return;
+                
                 static constexpr double delay = 3.0, pause = 2.0, vel = 100.0, accel = 0.5, decel = 0.5;
-                static constexpr double invBil = 1.0 / 1e9, invAccel = 1.0 / accel, invDecel = 1.0 / decel;
+                static constexpr double invBil = 1e-9, invAccel = 2.0, invDecel = 2.0;
                 
-                const double minDist = static_cast<double>(subScroll.textW);
+                const double minDist = s.textW;
                 const double accelDist = 0.5 * vel * accel;
                 const double decelDist = 0.5 * vel * decel;
                 const double constDist = std::max(0.0, minDist - accelDist - decelDist);
                 const double constTime = constDist / vel;
-                const double scrollDur = accel + constTime + decel;
-                const double totalDur = delay + scrollDur + pause;
+                const double totalDur = delay + accel + constTime + decel + pause;
                 
-                const double t = (elapsed * invBil);
+                const double t = (now - s.timeIn) * invBil;
+                const double cycle = std::fmod(t, totalDur);
                 
-                if (now - subScroll.lastUpd >= 8333333ULL) {
-                    const double cycle = std::fmod(t, totalDur);
+                if (cycle < delay) {
+                    s.offset = 0.0f;
+                } else if (cycle < delay + accel + constTime + decel) {
+                    const double st = cycle - delay;
+                    double d;
                     
-                    if (cycle < delay) {
-                        subScroll.offset = 0.0f;
-                    } else if (cycle < delay + scrollDur) {
-                        const double st = cycle - delay;
-                        double d;
-                        
-                        if (st <= accel) {
-                            const double r = st * invAccel;
-                            d = r * r * accelDist;
-                        } else if (st <= accel + constTime) {
-                            d = accelDist + (st - accel) * vel;
-                        } else {
-                            const double r = (st - accel - constTime) * invDecel;
-                            const double omr = 1.0 - r;
-                            d = accelDist + constDist + (1.0 - omr * omr) * (minDist - accelDist - constDist);
-                        }
-                        
-                        subScroll.offset = static_cast<float>(d < minDist ? d : minDist);
+                    if (st <= accel) {
+                        const double r = st * invAccel;
+                        d = r * r * accelDist;
+                    } else if (st <= accel + constTime) {
+                        d = accelDist + (st - accel) * vel;
                     } else {
-                        subScroll.offset = static_cast<float>(subScroll.textW);
+                        const double r = (st - accel - constTime) * invDecel;
+                        const double omr = 1.0 - r;
+                        d = accelDist + constDist + (1.0 - omr * omr) * (minDist - accelDist - constDist);
                     }
                     
-                    subScroll.lastUpd = now;
+                    s.offset = static_cast<float>(std::min(d, minDist));
+                } else {
+                    s.offset = static_cast<float>(s.textW);
                 }
                 
-                if (t >= totalDur) subScroll.timeIn = now;
+                s.lastUpd = now;
+                
+                if (t >= totalDur) s.timeIn = now;
             }
         };
         

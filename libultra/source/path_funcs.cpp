@@ -421,18 +421,27 @@ namespace ult {
      *
      * This function deletes files or directories specified by `pathPattern` by matching against a pattern.
      * It identifies files or directories that match the pattern and deletes them.
+     * Files/directories in the filterSet will be skipped.
      *
      * @param pathPattern The pattern used to match and delete files or directories.
+     * @param logSource Optional log source identifier.
+     * @param filterSet Optional set of paths to exclude from deletion (nullptr to delete all).
      */
-    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource) {
-        //logMessage("pathPattern: "+pathPattern);
+    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource, 
+        const std::unordered_set<std::string>* filterSet) {
+        
         fileList = getFilesListByWildcards(pathPattern);
         
         for (auto& path : fileList) {
-            //logMessage("path: "+path);
-            deleteFileOrDirectory(path, logSource);
+            // Check filter before deleting
+            const bool shouldDelete = !filterSet || filterSet->find(path) == filterSet->end();
+            
+            if (shouldDelete) {
+                deleteFileOrDirectory(path, logSource);
+            }
             path = "";
         }
+        
         fileList.clear();
         fileList.shrink_to_fit();
     }
@@ -783,43 +792,40 @@ namespace ult {
      *
      * This function identifies files or directories that match the `sourcePathPattern` and moves them to the `destinationPath`.
      * It processes each matching entry in the source directory pattern and moves them to the specified destination.
+     * Files/directories in the filterSet will be skipped.
      *
      * @param sourcePathPattern The pattern used to match files or directories to be moved.
      * @param destinationPath The destination directory where matching files or directories will be moved.
+     * @param logSource Optional log source identifier.
+     * @param logDestination Optional log destination identifier.
+     * @param filterSet Optional set of paths to exclude from moving (nullptr to move all).
      */
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
-        const std::string& logSource, const std::string& logDestination) {
+        const std::string& logSource, const std::string& logDestination, const std::unordered_set<std::string>* filterSet) {
         
         fileList = getFilesListByWildcards(sourcePathPattern);
         
-        //std::string fileListAsString;
-        //for (const std::string& filePath : fileList)
-        //    fileListAsString += filePath + "\n";
-        //logMessage("File List:\n" + fileListAsString);
-        
-        //logMessage("pre loop");
         std::string folderName, fixedDestinationPath;
         
         // Iterate through the file list
         for (std::string& sourceFileOrDirectory : fileList) {
-            //logMessage("sourceFileOrDirectory: "+sourceFileOrDirectory);
-            // if sourceFile is a file (Needs condition handling)
-            if (!isDirectory(sourceFileOrDirectory)) {
-                //logMessage("destinationPath: "+destinationPath);
-                moveFileOrDirectory(sourceFileOrDirectory, destinationPath, logSource, logDestination);
-            } else if (isDirectory(sourceFileOrDirectory)) {
-                // if sourceFile is a directory (needs conditoin handling)
-                folderName = getNameFromPath(sourceFileOrDirectory);
-                fixedDestinationPath = destinationPath + folderName + "/";
-                
-                //logMessage("fixedDestinationPath: "+fixedDestinationPath);
-                
-                moveFileOrDirectory(sourceFileOrDirectory, fixedDestinationPath, logSource, logDestination);
+            // Check filter before moving
+            const bool shouldMove = !filterSet || filterSet->find(sourceFileOrDirectory) == filterSet->end();
+            
+            if (shouldMove) {
+                // if sourceFile is a file
+                if (!isDirectory(sourceFileOrDirectory)) {
+                    moveFileOrDirectory(sourceFileOrDirectory, destinationPath, logSource, logDestination);
+                } else if (isDirectory(sourceFileOrDirectory)) {
+                    // if sourceFile is a directory
+                    folderName = getNameFromPath(sourceFileOrDirectory);
+                    fixedDestinationPath = destinationPath + folderName + "/";
+                    moveFileOrDirectory(sourceFileOrDirectory, fixedDestinationPath, logSource, logDestination);
+                }
             }
             sourceFileOrDirectory = "";
         }
-        //logMessage("post loop");
-
+    
         fileList.clear();
         fileList.shrink_to_fit();
     }
@@ -1297,27 +1303,41 @@ namespace ult {
      *
      * This function identifies files or directories that match the `sourcePathPattern` and copies them to the `toDirectory`.
      * It processes each matching entry in the source directory pattern and copies them to the specified destination.
+     * Files/directories in the filterSet will be skipped.
      *
      * @param sourcePathPattern The pattern used to match files or directories to be copied.
      * @param toDirectory The destination directory where matching files or directories will be copied.
+     * @param logSource Optional log source identifier.
+     * @param logDestination Optional log destination identifier.
+     * @param filterSet Optional set of paths to exclude from copying (nullptr to copy all).
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
-        const std::string& logSource, const std::string& logDestination) {
+        const std::string& logSource, const std::string& logDestination, const std::unordered_set<std::string>* filterSet) {
+        
         fileList = getFilesListByWildcards(sourcePathPattern);
+        
+        // Calculate total size only for files that will actually be copied
         long long totalSize = 0;
         for (const std::string& path : fileList) {
-            totalSize += getTotalSize(path);
+            const bool shouldCopy = !filterSet || filterSet->find(path) == filterSet->end();
+            if (shouldCopy) {
+                totalSize += getTotalSize(path);
+            }
         }
     
         long long totalBytesCopied = 0;
         for (std::string& sourcePath : fileList) {
-            copyFileOrDirectory(sourcePath, toDirectory, &totalBytesCopied, totalSize, logSource, logDestination);
+            // Check filter before copying
+            const bool shouldCopy = !filterSet || filterSet->find(sourcePath) == filterSet->end();
+            
+            if (shouldCopy) {
+                copyFileOrDirectory(sourcePath, toDirectory, &totalBytesCopied, totalSize, logSource, logDestination);
+            }
             sourcePath = "";
         }
-
+        
         fileList.clear();
         fileList.shrink_to_fit();
-        //copyPercentage.store(-1, std::memory_order_release);  // Reset after operation
     }
 
 

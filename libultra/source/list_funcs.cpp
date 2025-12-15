@@ -291,7 +291,7 @@ namespace ult {
     
     
     // Function to read file into a set of strings
-    std::unordered_set<std::string> readSetFromFile(const std::string& filePath) {
+    std::unordered_set<std::string> readSetFromFile(const std::string& filePath, const std::string& packagePath) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::unordered_set<std::string> lines;
     
@@ -313,7 +313,12 @@ namespace ult {
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
-            lines.insert(buffer);
+            
+            std::string line = buffer;
+            if (!packagePath.empty()) {
+                preprocessPath(line, packagePath);
+            }
+            lines.insert(std::move(line));
         }
     
         fclose(file);
@@ -328,6 +333,9 @@ namespace ult {
     
         std::string line;
         while (std::getline(file, line)) {
+            if (!packagePath.empty()) {
+                preprocessPath(line, packagePath);
+            }
             lines.insert(std::move(line));
         }
     

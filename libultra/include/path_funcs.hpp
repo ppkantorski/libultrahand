@@ -36,6 +36,7 @@
 #include "get_funcs.hpp"
 #include <queue>
 #include <mutex>
+#include <unordered_set>
 
 
 namespace ult {
@@ -143,7 +144,7 @@ namespace ult {
      *
      * @param pathPattern The pattern used to match and delete files or directories.
      */
-    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource = "");
+    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSourc = "", const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
@@ -176,12 +177,16 @@ namespace ult {
      *
      * This function identifies files or directories that match the `sourcePathPattern` and moves them to the `destinationPath`.
      * It processes each matching entry in the source directory pattern and moves them to the specified destination.
+     * Files/directories in the filterSet will be skipped.
      *
      * @param sourcePathPattern The pattern used to match files or directories to be moved.
      * @param destinationPath The destination directory where matching files or directories will be moved.
+     * @param logSource Optional log source identifier.
+     * @param logDestination Optional log destination identifier.
+     * @param filterSet Optional set of paths to exclude from moving (nullptr to move all).
      */
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
-        const std::string& logSource = "", const std::string& logDestination = "");
+        const std::string& logSource = "", const std::string& logDestination = "", const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     
@@ -227,12 +232,16 @@ namespace ult {
      *
      * This function identifies files or directories that match the `sourcePathPattern` and copies them to the `toDirectory`.
      * It processes each matching entry in the source directory pattern and copies them to the specified destination.
+     * Files/directories in the filterSet will be skipped.
      *
      * @param sourcePathPattern The pattern used to match files or directories to be copied.
      * @param toDirectory The destination directory where matching files or directories will be copied.
+     * @param logSource Optional log source identifier.
+     * @param logDestination Optional log destination identifier.
+     * @param filterSet Optional set of paths to exclude from copying (nullptr to copy all).
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
-        const std::string& logSource = "", const std::string& logDestination = "");
+        const std::string& logSource = "", const std::string& logDestination = "", const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     
