@@ -432,6 +432,7 @@ namespace tsl {
     }
 
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
+    static bool disableTouchHiding = false;
 
     // Theme color variable definitions
     //static bool disableColorfulLogo = false;
@@ -12482,7 +12483,8 @@ namespace tsl {
                         this->hide();
                     }
             #else
-                    this->hide();
+                    if (!disableTouchHiding)
+                        this->hide();
             #endif
                 }
                 ult::stillTouching.store(true, std::memory_order_release);
