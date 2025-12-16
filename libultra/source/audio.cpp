@@ -1,5 +1,5 @@
 /********************************************************************************
- * File: audio_player.cpp
+ * File: audio.cpp
  * Author: ppkantorski
  * Description:
  *   Memory-optimized version with reduced allocation overhead and chunked I/O.
@@ -19,17 +19,17 @@
  *  Copyright (c) 2025 ppkantorski
  ********************************************************************************/
 
-#include "audio_player.hpp"
+#include "audio.hpp"
 
 namespace ult {
-    bool AudioPlayer::m_initialized = false;
-    std::atomic<bool> AudioPlayer::m_enabled{true};
-    float AudioPlayer::m_masterVolume = 0.6f;
-    bool AudioPlayer::m_lastDockedState = false;
-    std::vector<AudioPlayer::CachedSound> AudioPlayer::m_cachedSounds;
-    std::mutex AudioPlayer::m_audioMutex;
+    bool Audio::m_initialized = false;
+    std::atomic<bool> Audio::m_enabled{true};
+    float Audio::m_masterVolume = 0.6f;
+    bool Audio::m_lastDockedState = false;
+    std::vector<Audio::CachedSound> Audio::m_cachedSounds;
+    std::mutex Audio::m_audioMutex;
     
-    bool AudioPlayer::initialize() {
+    bool Audio::initialize() {
         std::lock_guard<std::mutex> lock(m_audioMutex);
         
         if (m_initialized) return true;
@@ -47,7 +47,7 @@ namespace ult {
         return true;
     }
     
-    void AudioPlayer::exit() {
+    void Audio::exit() {
         std::lock_guard<std::mutex> lock(m_audioMutex);
         
         // Free all cached sound buffers
@@ -67,13 +67,13 @@ namespace ult {
         }
     }
     
-    void AudioPlayer::reloadAllSounds() {
+    void Audio::reloadAllSounds() {
         for (uint32_t i = 0; i < static_cast<uint32_t>(SoundType::Count); ++i) {
             loadSoundFromWav(static_cast<SoundType>(i), m_soundPaths[i]);
         }
     }
     
-    void AudioPlayer::unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds) {
+    void Audio::unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds) {
         std::lock_guard<std::mutex> lock(m_audioMutex);
         if (!m_initialized) return;
         
@@ -95,7 +95,7 @@ namespace ult {
         }
     }
     
-    bool AudioPlayer::reloadIfDockedChanged() {
+    bool Audio::reloadIfDockedChanged() {
         if (!m_initialized) return false;
         
         const bool currentDocked = ult::consoleIsDocked();
@@ -108,7 +108,7 @@ namespace ult {
         return true;
     }
     
-    bool AudioPlayer::loadSoundFromWav(SoundType type, const char* path) {
+    bool Audio::loadSoundFromWav(SoundType type, const char* path) {
         const uint32_t idx = static_cast<uint32_t>(type);
         if (!m_initialized || idx >= static_cast<uint32_t>(SoundType::Count)) return false;
         
@@ -253,7 +253,7 @@ namespace ult {
         return true;
     }
     
-    void AudioPlayer::playSound(SoundType type) {
+    void Audio::playSound(SoundType type) {
         // Lock-free check - SAFE with atomic
         if (!m_enabled.load(std::memory_order_relaxed)) return;
         
@@ -286,20 +286,20 @@ namespace ult {
         audoutPlayBuffer(&audioBuffer, &rel);
     }
     
-    void AudioPlayer::setMasterVolume(float v) { 
+    void Audio::setMasterVolume(float v) { 
         std::lock_guard<std::mutex> lock(m_audioMutex);
         m_masterVolume = std::clamp(v, 0.0f, 1.0f);
     }
     
-    void AudioPlayer::setEnabled(bool e) { 
+    void Audio::setEnabled(bool e) { 
         m_enabled.store(e, std::memory_order_relaxed);
     }
     
-    bool AudioPlayer::isEnabled() { 
+    bool Audio::isEnabled() { 
         return m_enabled.load(std::memory_order_relaxed);
     }
     
-   //bool AudioPlayer::isDocked() {
+   //bool Audio::isDocked() {
    //    Result rc = apmInitialize();
    //    if (R_FAILED(rc)) return false;
    //    
