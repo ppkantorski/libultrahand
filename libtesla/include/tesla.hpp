@@ -432,7 +432,7 @@ namespace tsl {
     }
 
     static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
-    static bool disableTouchHiding = false;
+    static bool disableHiding = false;
 
     // Theme color variable definitions
     //static bool disableColorfulLogo = false;
@@ -12483,7 +12483,7 @@ namespace tsl {
                         this->hide();
                     }
             #else
-                    if (!disableTouchHiding)
+                    if (!disableHiding)
                         this->hide();
             #endif
                 }
@@ -13459,8 +13459,10 @@ namespace tsl {
                         #endif
                         
                         if (shData->overlayOpen) {
-                            tsl::Overlay::get()->hide();
-                            shData->overlayOpen = false;
+                            if (!disableHiding) {
+                                tsl::Overlay::get()->hide();
+                                shData->overlayOpen = false;
+                            }
                         }
                         else {
                             eventFire(&shData->comboEvent);
