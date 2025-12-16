@@ -1,8 +1,8 @@
 /********************************************************************************
- * File: audio_player.hpp
+ * File: audio.hpp
  * Author: ppkantorski
  * Description:
- *   This header defines the AudioPlayer class and related structures used for
+ *   This header defines the Audio class and related structures used for
  *   handling sound playback within the Ultrahand Overlay. It provides interfaces
  *   for loading, caching, and playing WAV audio through libnx’s audout service,
  *   along with basic sound type management and synchronization support.
@@ -28,7 +28,7 @@
 #include "tsl_utils.hpp"
 
 namespace ult {
-    class AudioPlayer {
+    class Audio {
     public:
         enum class SoundType : uint8_t {  // <- uint8_t saves space
             Navigate,
