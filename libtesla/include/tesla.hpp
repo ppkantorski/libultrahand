@@ -431,8 +431,8 @@ namespace tsl {
         }
     }
 
-    static bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
-    static bool disableHiding = false;
+    inline bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
+    inline bool disableHiding = false; // for manually disabling the hide overlay functionality
 
     // Theme color variable definitions
     //static bool disableColorfulLogo = false;
