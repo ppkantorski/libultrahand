@@ -131,7 +131,7 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 //    }
 //}
 
-std::unique_ptr<char[]> globalWriteBuffer;
+//std::unique_ptr<char[]> globalWriteBuffer;
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
@@ -192,7 +192,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     // ADD THIS: Set up write buffer for better performance
-    //std::unique_ptr<char[]> globalWriteBuffer;
+    std::unique_ptr<char[]> globalWriteBuffer;
     if (DOWNLOAD_WRITE_BUFFER > 0) {
         //if (!globalWriteBuffer)
         globalWriteBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
@@ -640,7 +640,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
     //std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
     
-    globalWriteBuffer = std::make_unique<char[]>(bufferSize);
+    std::unique_ptr<char[]> globalWriteBuffer = std::make_unique<char[]>(bufferSize);
 
     char filenameBuffer[512]; // Stack allocated for filename reading
     
