@@ -8395,7 +8395,7 @@ namespace tsl {
                     this->m_stateChangedListener(this->m_state);
                     this->triggerClickAnimation();
                     
-                    return ListItem::onClick(keys);
+                    return Element::onClick(keys);
                 }
                 //if (keys & KEY_B) {
                 //    triggerRumbleDoubleClick.store(true, std::memory_order_release);
