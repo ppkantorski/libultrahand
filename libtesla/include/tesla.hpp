@@ -221,6 +221,11 @@ static inline void triggerNavigationFeedback() {
     triggerNavigationSound.store(true, std::memory_order_release);
 }
 
+static inline void triggerWallFeedback() {
+    triggerRumbleClick.store(true, std::memory_order_release);
+    triggerWallSound.store(true, std::memory_order_release);
+}
+
 static inline void triggerEnterFeedback() {
     triggerRumbleClick.store(true, std::memory_order_release);
     triggerEnterSound.store(true, std::memory_order_release);
@@ -641,7 +646,10 @@ namespace tsl {
         // Helper lambda to safely get string values
         auto getStringValue = [&](const std::string& key, const std::string& defaultValue = "") -> std::string {
             if (ultrahandSection.count(key) > 0) {
-                return ultrahandSection.at(key);
+                const std::string& value = ultrahandSection.at(key);
+                if (!value.empty()) {
+                    return value;
+                }
             }
             return defaultValue;
         };
@@ -649,7 +657,10 @@ namespace tsl {
         // Helper lambda to safely get boolean values
         auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
             if (ultrahandSection.count(key) > 0) {
-                return (ultrahandSection.at(key) == ult::TRUE_STR);
+                const std::string& value = ultrahandSection.at(key);
+                if (!value.empty()) {
+                    return (value == ult::TRUE_STR);
+                }
             }
             return defaultValue;
         };
@@ -682,6 +693,7 @@ namespace tsl {
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
         ult::useNotifications = getBoolValue("notifications", true);       // TRUE_STR default
         if (ult::useNotifications) {
+            ult::createDirectory(ult::FLAGS_PATH);
             if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
                 FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
                 if (file) {
@@ -2475,10 +2487,10 @@ namespace tsl {
                                                       long long r2_scaled, const Color& color, u8 base_a)
             {
                 int hits = 0;
-                long long dx1 = px2 + sx - cx2;
-                long long dx2 = px2 - sx - cx2;
-                long long dy1 = py2 + sy - cy2;
-                long long dy2 = py2 - sy - cy2;
+                const long long dx1 = px2 + sx - cx2;
+                const long long dx2 = px2 - sx - cx2;
+                const long long dy1 = py2 + sy - cy2;
+                const long long dy2 = py2 - sy - cy2;
                 
                 if (dx1*dx1 + dy1*dy1 <= r2_scaled) ++hits;
                 if (dx1*dx1 + dy2*dy2 <= r2_scaled) ++hits;
@@ -4348,8 +4360,9 @@ namespace tsl {
                 this->m_highlightShakingDirection = direction;
                 this->m_highlightShakingStartTime = armTicksToNs(armGetSystemTick()); // Changed
                 if (direction != FocusDirection::None && m_isItem) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerWallSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerWallSound.store(true, std::memory_order_release);
+                    triggerWallFeedback();
                 }
             }
             
@@ -6761,8 +6774,9 @@ namespace tsl {
             }
             
             inline void triggerWallEffect(FocusDirection direction) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerWallSound.store(true, std::memory_order_release);
+                //triggerRumbleClick.store(true, std::memory_order_release);
+                //triggerWallSound.store(true, std::memory_order_release);
+                triggerWallFeedback();
             
                 if (m_items.empty())
                     return;
@@ -11831,8 +11845,9 @@ namespace tsl {
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
                 if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerWallSound.store(true, std::memory_order_release);
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //triggerWallSound.store(true, std::memory_order_release);
+                    triggerWallFeedback();
                     return;
                 }
 
@@ -11869,8 +11884,9 @@ namespace tsl {
                 keysDown |= KEY_B;
 
             if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerWallSound.store(true, std::memory_order_release);
+                //triggerRumbleClick.store(true, std::memory_order_release);
+                //triggerWallSound.store(true, std::memory_order_release);
+                triggerWallFeedback();
                 return;
             }
 
@@ -12687,8 +12703,9 @@ namespace tsl {
          */
         void goBack(u32 count = 1) {
             if (ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerWallSound.store(true, std::memory_order_release);
+                //triggerRumbleClick.store(true, std::memory_order_release);
+                //triggerWallSound.store(true, std::memory_order_release);
+                triggerWallFeedback();
                 return;
             }
 
@@ -12734,8 +12751,9 @@ namespace tsl {
         void pop(u32 count = 1) {
 
             if (ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerWallSound.store(true, std::memory_order_release);
+                //triggerRumbleClick.store(true, std::memory_order_release);
+                //triggerWallSound.store(true, std::memory_order_release);
+                triggerWallFeedback();
                 return;
             }
 
