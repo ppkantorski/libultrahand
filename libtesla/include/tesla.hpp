@@ -693,8 +693,8 @@ namespace tsl {
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
         ult::useNotifications = getBoolValue("notifications", true);       // TRUE_STR default
         if (ult::useNotifications) {
-            ult::createDirectory(ult::FLAGS_PATH);
             if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
+                ult::createDirectory(ult::FLAGS_PATH);
                 FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
                 if (file) {
                     std::fclose(file);
