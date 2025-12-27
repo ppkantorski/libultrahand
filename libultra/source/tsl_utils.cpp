@@ -260,7 +260,7 @@ namespace ult {
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
-    bool useNotifications = true;
+    bool useNotifications = false;
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
     bool usePageSwap = false;

@@ -691,10 +691,10 @@ namespace tsl {
         
         // Set Ultrahand Globals using loaded section (defaults match initialization function)
         ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
-        ult::useNotifications = getBoolValue("notifications", true);       // TRUE_STR default
+        ult::useNotifications = getBoolValue("notifications", false);       // TRUE_STR default
         if (ult::useNotifications) {
             if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
-                ult::createDirectory(ult::FLAGS_PATH);
+                //ult::createDirectory(ult::FLAGS_PATH);
                 FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
                 if (file) {
                     std::fclose(file);
@@ -10835,7 +10835,7 @@ namespace tsl {
         
             // Quick reject using atomics (fast-path)
             if (!enabled_.load(std::memory_order_acquire)) return;
-            if (!ult::useNotifications) return;
+            //if (!ult::useNotifications) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
         
             NotificationData data;
@@ -11142,7 +11142,7 @@ namespace tsl {
         }
     
         bool isActive() const {
-            if (!ult::useNotifications) return false;
+            //if (!ult::useNotifications) return false;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             if (is_active_) return true;
