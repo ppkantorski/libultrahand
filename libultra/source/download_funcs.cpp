@@ -214,6 +214,32 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     //    return false;
     //}
 
+    static constexpr SocketInitConfig socketInitConfig = {
+        // TCP buffers
+        .tcp_tx_buf_size     = 16 * 1024,   // 16 KB default
+        .tcp_rx_buf_size     = 16 * 1024*2,   // 16 KB default
+        .tcp_tx_buf_max_size = 64 * 1024,   // 64 KB default max
+        .tcp_rx_buf_max_size = 64 * 1024*2,   // 64 KB default max
+        
+        // UDP buffers
+        .udp_tx_buf_size     = 512,         // 512 B default
+        .udp_rx_buf_size     = 512,         // 512 B default
+    
+        // Socket buffer efficiency
+        .sb_efficiency       = 1,           // 0 = default, balanced memory vs CPU
+                                            // 1 = prioritize memory efficiency (smaller internal allocations)
+        .bsd_service_type    = BsdServiceType_Auto // Auto-select service
+    };
+    
+
+    if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("Failed to initialize socket.");
+        #endif
+        return false;
+    }
+
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
@@ -311,7 +337,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     //cleanupCurl();
 
-    //socketExit();
+    socketExit();
     
     // Check for HTTP errors (404, 500, etc.)
     if (result == CURLE_OK && (http_code < 200 || http_code >= 300)) {
