@@ -140,7 +140,7 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
  * @param toDestination The destination path where the file should be saved.
  * @return True if the download was successful, false otherwise.
  */
-bool downloadFile(const std::string& url, const std::string& toDestination, bool noPercentagePolling) {
+bool downloadFile(const std::string& url, const std::string& toDestination, bool noSocketInit, bool noPercentagePolling) {
     abortDownload.store(false, std::memory_order_release);
 
     if (url.find_first_of("{}") != std::string::npos) {
@@ -216,28 +216,29 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     static constexpr SocketInitConfig socketInitConfig = {
         // TCP buffers
-        .tcp_tx_buf_size     = 16 * 1024,   // 16 KB default
-        .tcp_rx_buf_size     = 16 * 1024*2,   // 16 KB default
-        .tcp_tx_buf_max_size = 64 * 1024,   // 64 KB default max
-        .tcp_rx_buf_max_size = 64 * 1024*2,   // 64 KB default max
+        .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
+        .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
+        .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
+        .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
         
         // UDP buffers
-        .udp_tx_buf_size     = 512,         // 512 B default
-        .udp_rx_buf_size     = 512,         // 512 B default
+        .udp_tx_buf_size     = 512,                // 512 B default
+        .udp_rx_buf_size     = 512,                // 512 B default
     
         // Socket buffer efficiency
-        .sb_efficiency       = 1,           // 0 = default, balanced memory vs CPU
-                                            // 1 = prioritize memory efficiency (smaller internal allocations)
+        .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
+                                                   // 1 = prioritize memory efficiency (smaller internal allocations)
         .bsd_service_type    = BsdServiceType_Auto // Auto-select service
     };
     
-
-    if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
-        #if USING_LOGGING_DIRECTIVE
-        if (!disableLogging)
-            logMessage("Failed to initialize socket.");
-        #endif
-        return false;
+    if (!noSocketInit) {
+        if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Failed to initialize socket.");
+            #endif
+            return false;
+        }
     }
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
@@ -337,7 +338,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     //cleanupCurl();
 
-    socketExit();
+    if (!noSocketInit) {
+        socketExit();
+    }
     
     // Check for HTTP errors (404, 500, etc.)
     if (result == CURLE_OK && (http_code < 200 || http_code >= 300)) {
