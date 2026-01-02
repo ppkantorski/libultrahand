@@ -13,7 +13,7 @@
  *   altered or removed.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2023-2025 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 
@@ -77,6 +77,7 @@ namespace ult {
     extern const std::string PACKAGES_INI_FILEPATH;
 
     extern const std::string NOTIFICATIONS_FLAG_FILEPATH;
+    extern const std::string RELOADING_FLAG_FILEPATH;
 
     extern const std::set<std::string> PROTECTED_FILES;
 

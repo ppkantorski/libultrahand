@@ -13,7 +13,7 @@
  *   altered or removed.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2023-2025 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #include "global_vars.hpp"
@@ -41,6 +41,7 @@ namespace ult {
     const std::string OVERLAYS_INI_FILENAME            = "overlays.ini";
     const std::string PACKAGES_INI_FILENAME            = "packages.ini";
     const std::string NOTIFICATIONS_FLAG_FILENAME      = "NOTIFICATIONS.flag";
+    const std::string RELOADING_FLAG_FILENAME          = "RELOADING.flag";
 
     // Project names
     CONSTEXPR_STRING std::string ULTRAHAND_PROJECT_NAME         = "ultrahand";
@@ -71,6 +72,7 @@ namespace ult {
     const std::string OVERLAYS_INI_FILEPATH       = BASE_CONFIG_PATH + OVERLAYS_INI_FILENAME;
     const std::string PACKAGES_INI_FILEPATH       = BASE_CONFIG_PATH + PACKAGES_INI_FILENAME;
     const std::string NOTIFICATIONS_FLAG_FILEPATH = FLAGS_PATH + NOTIFICATIONS_FLAG_FILENAME;
+    const std::string RELOADING_FLAG_FILEPATH     = FLAGS_PATH + RELOADING_FLAG_FILENAME;
 
     // Protected files
     const std::set<std::string> PROTECTED_FILES = {

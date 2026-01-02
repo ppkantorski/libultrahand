@@ -18,7 +18,7 @@
  *   altered or removed.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2023-2025 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 
@@ -169,6 +169,7 @@ namespace ult {
     extern bool useSwipeToOpen;
     extern bool useLaunchCombos;
     extern bool useNotifications;
+    extern bool useStartupNotification;
     extern bool useSoundEffects;
     extern bool useHapticFeedback;
     extern bool usePageSwap;
@@ -218,6 +219,7 @@ namespace ult {
     extern std::atomic<bool> inPackagesPage;
     
     extern bool firstBoot; // for detecting first boot
+    extern bool reloadingBoot; // for detedting reloading boots
     
     //static std::unordered_map<std::string, std::string> hexSumCache;
     
@@ -452,7 +454,8 @@ namespace ult {
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
-    extern std::string NOTIFICATIONS;
+    extern std::string STARTUP_NOTIFICATION;
+    extern std::string EXTERNAL_NOTIFICATIONS;
     extern std::string SOUND_EFFECTS;
     extern std::string HAPTIC_FEEDBACK;
     extern std::string OPAQUE_SCREENSHOTS;
@@ -485,6 +488,7 @@ namespace ult {
     extern std::string PACKAGE_TITLES;
 
     extern std::string ULTRAHAND_HAS_STARTED;
+    extern std::string ULTRAHAND_HAS_RESTARTED;
     extern std::string NEW_UPDATE_IS_AVAILABLE;
     //extern std::string REBOOT_IS_REQUIRED;
     //extern std::string HOLD_A_TO_DELETE;
