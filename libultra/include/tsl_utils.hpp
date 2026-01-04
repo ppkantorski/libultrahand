@@ -218,6 +218,8 @@ namespace ult {
     extern std::atomic<bool> inOverlaysPage;
     extern std::atomic<bool> inPackagesPage;
     
+    extern std::atomic<bool> hasNextPageButton;
+
     extern bool firstBoot; // for detecting first boot
     extern bool reloadingBoot; // for detedting reloading boots
     

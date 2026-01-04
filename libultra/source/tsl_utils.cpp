@@ -306,6 +306,8 @@ namespace ult {
     std::atomic<bool> inSubSettingsMenu{false};
     std::atomic<bool> inOverlaysPage{false};
     std::atomic<bool> inPackagesPage{false};
+
+    std::atomic<bool> hasNextPageButton{false};
     
     bool firstBoot = true; // for detecting first boot
     bool reloadingBoot = false; // for detecting reloading boots

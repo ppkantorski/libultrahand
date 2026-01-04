@@ -15,7 +15,7 @@
  *   Note: Please be aware that this notice cannot be altered or removed. It is a part
  *   of the project's documentation and must remain intact.
  *
- *  Copyright (c) 2023-2025 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 /**
@@ -4971,13 +4971,13 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
             std::string m_menuMode; // CUSTOM MODIFICATION
             std::string m_colorSelection; // CUSTOM MODIFICATION
-            std::string m_pageLeftName; // CUSTOM MODIFICATION
-            std::string m_pageRightName; // CUSTOM MODIFICATION
-            
             
             tsl::Color titleColor = {0xF,0xF,0xF,0xF};
             float letterWidth;
         #endif
+
+            std::string m_pageLeftName; // CUSTOM MODIFICATION
+            std::string m_pageRightName; // CUSTOM MODIFICATION
         
         #if USING_WIDGET_DIRECTIVE
             bool m_showWidget = false;
@@ -4991,8 +4991,8 @@ namespace tsl {
             OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false, const std::string& menuMode = "", const std::string& colorSelection = "", const std::string& pageLeftName = "", const std::string& pageRightName = "")
                 : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_menuMode(menuMode), m_colorSelection(colorSelection), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
         #else
-            OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false)
-                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems) {
+            OverlayFrame(const std::string& title, const std::string& subtitle, const bool& _noClickableItems=false, const std::string& pageLeftName = "", const std::string& pageRightName = "")
+                : Element(), m_title(title), m_subtitle(subtitle), m_noClickableItems(_noClickableItems), m_pageLeftName(pageLeftName), m_pageRightName(pageRightName) {
         #endif
                     ult::activeHeaderHeight = 97;
                     ult::loadWallpaperFileWhenSafe();
@@ -5224,8 +5224,13 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Handle optional next page button when in launcher mode and appropriate conditions are met
-                if (!interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
-                                                 !m_pageLeftName.empty() || !m_pageRightName.empty())) {
+                const bool hasNextPage = !interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
+                                         !m_pageLeftName.empty() || !m_pageRightName.empty());
+                
+                if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
+                    ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
+                
+                if (hasNextPage) {
                     // Construct next-page label inline without creating temporary strings
                     const float _nextPageWidth = renderer->getTextDimensions(
                             !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
@@ -5252,6 +5257,34 @@ namespace tsl {
                                                   _nextPageWidth-2,
                                                   73.0f, 12.0f, a(clickColor));
                     }
+                }
+            #else
+                // NON-LAUNCHER
+                const bool hasNextPage = !m_pageLeftName.empty() || !m_pageRightName.empty();
+                
+                if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
+                    ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
+                
+                if (hasNextPage) {
+                    const float _nextPageWidth = renderer->getTextDimensions(
+                            !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
+                                                     ("\uE0EE" + ult::GAP_2 + m_pageRightName),
+                            false, 23).first + gapWidth;
+            
+                    if (_nextPageWidth != ult::nextPageWidth.load(std::memory_order_acquire))
+                        ult::nextPageWidth.store(_nextPageWidth, std::memory_order_release);
+                    
+                    // Draw next-page button if touched
+                    if (ult::touchingNextPage.load(std::memory_order_acquire)) {
+                        float nextX = buttonStartX+2 - _halfGap + _backWidth +1;
+                        if (!m_noClickableItems)
+                            nextX += _selectWidth;
+                
+                        renderer->drawRoundedRect(nextX, buttonY, _nextPageWidth-2, 73.0f, 12.0f, a(clickColor));
+                    }
+                } else {
+                    // Button doesn't exist, ensure width is reset to prevent stale touch regions
+                    ult::nextPageWidth.store(0.0f, std::memory_order_release);
                 }
             #endif
                 
@@ -5285,10 +5318,8 @@ namespace tsl {
                             : "");
             #else
                 const std::string currentBottomLine =
-                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
-                    (!m_noClickableItems
-                        ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
-                        : "");
+                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 + (!m_noClickableItems ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
+                    (!m_pageLeftName.empty() ? "\uE0ED" + ult::GAP_2 + m_pageLeftName : !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
             #endif
                 
                 // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
@@ -12412,7 +12443,9 @@ namespace tsl {
                                        (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) &&
                                        (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
             
-            const bool nextPageTouched = (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
+
+
+            const bool nextPageTouched = ult::hasNextPageButton.load(std::memory_order_acquire) && (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
                                           (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
             
             const bool menuTouched = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
