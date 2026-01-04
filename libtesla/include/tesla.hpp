@@ -5261,7 +5261,7 @@ namespace tsl {
             #else
                 // NON-LAUNCHER
                 const bool hasNextPage = !m_pageLeftName.empty() || !m_pageRightName.empty();
-                
+
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
                 
@@ -6571,11 +6571,26 @@ namespace tsl {
                 const bool currentlyAtWall = (m_lastNavigationResult == NavigationResult::HitBoundary) && 
                                               (m_stoppedAtBoundary || m_justArrivedAtBoundary);
                 
+                static bool triggerOnce = true;
                 // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
                 if (currentlyAtWall && !m_scrollbarAtWall && !s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     //m_scrollbarAtWall = true;
                     m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
                     //m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
+
+                    if (triggerOnce) {
+                        // NEW: Trigger wall effect here based on scroll position
+                        const float maxOffset = static_cast<float>(m_listHeight - getHeight());
+                        if (m_offset <= 0.0f) {
+                            triggerWallEffect(FocusDirection::Up);
+                        } else if (m_offset >= maxOffset - 1.0f) {
+                            triggerWallEffect(FocusDirection::Down);
+                        }
+                        //isTableScrolling.store(false, std::memory_order_release);
+                    }
+                    triggerOnce = false;
+                } else {
+                    triggerOnce = true;
                 }
 
                 // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
@@ -6807,10 +6822,12 @@ namespace tsl {
             inline void triggerWallEffect(FocusDirection direction) {
                 //triggerRumbleClick.store(true, std::memory_order_release);
                 //triggerWallSound.store(true, std::memory_order_release);
-                triggerWallFeedback();
+                
             
-                if (m_items.empty())
+                if (m_items.empty()) {
+                    triggerWallFeedback();
                     return;
+                }
             
                 // Directional search bounds
                 ssize_t i  = static_cast<ssize_t>(m_focusedIndex);
@@ -6825,8 +6842,10 @@ namespace tsl {
                         return;
                     }
                 }
+
+                triggerWallFeedback();
             }
-                                                                                                                                                        
+            
             inline Element* handleDownFocus(Element* oldFocus) {
                 const bool atBottom = isAtBottom();
                 updateHoldState();
@@ -6850,7 +6869,20 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     s_triggerShakeOnce = true;
-                    m_justArrivedAtBoundary = isAtBottom();
+                    
+                    // NEW: Check if we just navigated to the last focusable item
+                    // If so, set boundary flag regardless of scroll position
+                    bool isLastFocusableItem = true;
+                    for (size_t i = m_focusedIndex + 1; i < m_items.size(); ++i) {
+                        if (m_items[i]->m_isItem) {
+                            isLastFocusableItem = false;
+                            break;
+                        }
+                    }
+                    
+                    // Set boundary flag if we're at last focusable item OR at scroll bottom
+                    m_justArrivedAtBoundary = isLastFocusableItem || isAtBottom();
+                    
                     triggerNavigationFeedback();
                     return result;
                 }
@@ -6868,7 +6900,8 @@ namespace tsl {
                     m_stoppedAtBoundary = true;
                     s_triggerShakeOnce = false;
                     m_lastNavigationResult = NavigationResult::HitBoundary;
-                    triggerWallEffect(FocusDirection::Down);
+                    if (m_listHeight <= getHeight())
+                        triggerWallEffect(FocusDirection::Down);
                     return oldFocus;
                 }
                 
@@ -6887,7 +6920,6 @@ namespace tsl {
                     m_stoppedAtBoundary = true;
                     if (s_triggerShakeOnce) {
                         s_triggerShakeOnce = false;
-                        triggerWallEffect(FocusDirection::Down);
                     }
                 } else {
                     s_triggerShakeOnce = true;
@@ -6918,7 +6950,20 @@ namespace tsl {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
                     s_triggerShakeOnce = true;
-                    m_justArrivedAtBoundary = isAtTop();
+                    
+                    // NEW: Check if we just navigated to the first focusable item
+                    // If so, set boundary flag regardless of scroll position
+                    bool isFirstFocusableItem = true;
+                    for (size_t i = 0; i < m_focusedIndex; ++i) {
+                        if (m_items[i]->m_isItem) {
+                            isFirstFocusableItem = false;
+                            break;
+                        }
+                    }
+                    
+                    // Set boundary flag if we're at first focusable item OR at scroll top
+                    m_justArrivedAtBoundary = isFirstFocusableItem || isAtTop();
+                    
                     triggerNavigationFeedback();
                     return result;
                 }
@@ -6936,7 +6981,8 @@ namespace tsl {
                     m_stoppedAtBoundary = true;
                     s_triggerShakeOnce = false;
                     m_lastNavigationResult = NavigationResult::HitBoundary;
-                    triggerWallEffect(FocusDirection::Up);
+                    if (m_listHeight <= getHeight())
+                        triggerWallEffect(FocusDirection::Up);
                     return oldFocus;
                 }
                 
@@ -6955,7 +7001,6 @@ namespace tsl {
                     m_stoppedAtBoundary = true;
                     if (s_triggerShakeOnce) {
                         s_triggerShakeOnce = false;
-                        triggerWallEffect(FocusDirection::Up);
                     }
                 } else {
                     s_triggerShakeOnce = true;
@@ -7302,16 +7347,18 @@ namespace tsl {
                     return oldFocus;
             
                 const float oldOffset = m_nextOffset;
+                
+                // Set focused index - check if we need to point at a table or non-focusable element after the last item
                 m_focusedIndex = lastFocusableIndex;
-
-                // NEW: Check if there's a table after the focused item
-                if (lastFocusableIndex + 1 < m_items.size()) {
-                    Element* nextItem = m_items[lastFocusableIndex + 1];
-                    if (nextItem->isTable()) {
-                        m_focusedIndex = lastFocusableIndex + 1;  // Point at the table
+                
+                // Search forward from last focusable item to find tables/gaps that extend below
+                for (size_t i = lastFocusableIndex + 1; i < m_items.size(); ++i) {
+                    m_focusedIndex = i;  // Point at the table/gap, just like navigateDown does
+                    if (m_items[i]->isTable()) {
+                        isTableScrolling.store(true, std::memory_order_release);
                     }
                 }
-
+                
                 m_nextOffset = targetOffset;
                 
                 Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
@@ -7319,8 +7366,6 @@ namespace tsl {
                 // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
                     triggerNavigationFeedback();
                 }
             
@@ -7358,7 +7403,20 @@ namespace tsl {
                     return oldFocus;
             
                 const float oldOffset = m_nextOffset;
+                
+                // Set focused index - check if we need to point at a table/gap before the first focusable item
                 m_focusedIndex = firstFocusableIndex;
+                
+                // Search backward from first focusable item to find tables/gaps that extend above
+                if (firstFocusableIndex > 0) {
+                    for (ssize_t i = static_cast<ssize_t>(firstFocusableIndex) - 1; i >= 0; --i) {
+                        m_focusedIndex = static_cast<size_t>(i);  // Point at the table/gap, just like navigateUp does
+                        if (m_items[i]->isTable()) {
+                            isTableScrolling.store(true, std::memory_order_release);
+                        }
+                    }
+                }
+                
                 m_nextOffset = targetOffset;
             
                 Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
@@ -7366,14 +7424,13 @@ namespace tsl {
                 // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerNavigationSound.store(true, std::memory_order_release);
                     triggerNavigationFeedback();
                 }
             
                 return newFocus ? newFocus : oldFocus;
             }
             
+
             Element* handleSkipDown(Element* oldFocus) {
                 if (m_items.empty()) return oldFocus;
             
@@ -11350,8 +11407,12 @@ namespace tsl {
                 }
             }
             
-            if (shake && oldFocus == this->m_focusedElement && this->m_focusedElement != nullptr)
-                this->m_focusedElement->shakeHighlight(direction);
+            if (shake && oldFocus == this->m_focusedElement && this->m_focusedElement != nullptr) {
+                if (!tsl::elm::isTableScrolling.load(std::memory_order_acquire)) {
+                    this->m_focusedElement->shakeHighlight(direction);
+                }
+                //this->m_focusedElement->shakeHighlight(direction);
+            }
         }
         
         /**
