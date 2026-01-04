@@ -7786,6 +7786,7 @@ namespace tsl {
                         #if IS_LAUNCHER_DIRECTIVE
                         m_longThresholdCrossed = false;
                         #endif
+                        triggerNavigationFeedback();
                     }
                     return false;
                 }
@@ -7796,7 +7797,10 @@ namespace tsl {
                     
                 #if IS_LAUNCHER_DIRECTIVE
                     if (!m_longThresholdCrossed && touchDurationInSeconds >= 1.0f && 
-                        (ult::inMainMenu.load(std::memory_order_acquire) || (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) [[unlikely]] {
+                        (ult::inMainMenu.load(std::memory_order_acquire) ||
+                        (ult::inHiddenMode.load(std::memory_order_acquire) &&
+                        !ult::inSettingsMenu.load(std::memory_order_acquire) &&
+                        !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) [[unlikely]] {
                         m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     } else
@@ -12439,7 +12443,8 @@ namespace tsl {
             }
             
             if (shouldTriggerRumble) {
-                triggerRumbleClick.store(true, std::memory_order_release);
+                //triggerRumbleClick.store(true, std::memory_order_release);
+                triggerNavigationFeedback();
             }
 
             
@@ -12475,7 +12480,8 @@ namespace tsl {
                                             initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U && 
                                             initialTouchPos.x > 40U + ult::layerEdge);
                         if (ult::touchInBounds) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerRumbleClick.store(true, std::memory_order_release);
+                            //triggerNavigationFeedback();
                             currentGui->removeFocus();
                         }
                     }
