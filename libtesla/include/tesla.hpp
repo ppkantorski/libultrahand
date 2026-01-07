@@ -6004,7 +6004,7 @@ namespace tsl {
         static std::atomic<bool> skipOnce{false};
 
         static std::atomic<bool> isTableScrolling{false};
-        static bool s_triggerShakeOnce;
+        //static bool s_triggerShakeOnce;
 
         class List : public Element {
         
@@ -6868,7 +6868,7 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     
                     // NEW: Check if we just navigated to the last focusable item
                     // If so, set boundary flag regardless of scroll position
@@ -6890,7 +6890,7 @@ namespace tsl {
                 // Check if we can still scroll down
                 if (!atBottom) {
                     scrollDown();
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     return oldFocus;
                 }
                 
@@ -6898,7 +6898,7 @@ namespace tsl {
                 if (m_justArrivedAtBoundary) {
                     m_justArrivedAtBoundary = false;
                     m_stoppedAtBoundary = true;
-                    s_triggerShakeOnce = false;
+                    //s_triggerShakeOnce = false;
                     m_lastNavigationResult = NavigationResult::HitBoundary;
                     if (m_listHeight <= getHeight())
                         triggerWallEffect(FocusDirection::Down);
@@ -6910,7 +6910,7 @@ namespace tsl {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     return handleJumpToTop(oldFocus);
                 }
                 
@@ -6918,11 +6918,11 @@ namespace tsl {
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
-                    if (s_triggerShakeOnce) {
-                        s_triggerShakeOnce = false;
-                    }
-                } else {
-                    s_triggerShakeOnce = true;
+                    //if (s_triggerShakeOnce) {
+                    //    s_triggerShakeOnce = false;
+                    //}
+                //} else {
+                //    s_triggerShakeOnce = true;
                 }
                 
                 return oldFocus;
@@ -6949,7 +6949,7 @@ namespace tsl {
                 if (result != oldFocus) {
                     m_lastNavigationResult = NavigationResult::Success;
                     m_stoppedAtBoundary = false;
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     
                     // NEW: Check if we just navigated to the first focusable item
                     // If so, set boundary flag regardless of scroll position
@@ -6971,7 +6971,7 @@ namespace tsl {
                 // Check if we can still scroll up
                 if (!atTop) {
                     scrollUp();
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     return oldFocus;
                 }
                 
@@ -6979,7 +6979,7 @@ namespace tsl {
                 if (m_justArrivedAtBoundary) {
                     m_justArrivedAtBoundary = false;
                     m_stoppedAtBoundary = true;
-                    s_triggerShakeOnce = false;
+                    //s_triggerShakeOnce = false;
                     m_lastNavigationResult = NavigationResult::HitBoundary;
                     if (m_listHeight <= getHeight())
                         triggerWallEffect(FocusDirection::Up);
@@ -6991,7 +6991,7 @@ namespace tsl {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
-                    s_triggerShakeOnce = true;
+                    //s_triggerShakeOnce = true;
                     return handleJumpToBottom(oldFocus);
                 }
                 
@@ -6999,11 +6999,11 @@ namespace tsl {
                 m_lastNavigationResult = NavigationResult::HitBoundary;
                 if (m_isHolding) {
                     m_stoppedAtBoundary = true;
-                    if (s_triggerShakeOnce) {
-                        s_triggerShakeOnce = false;
-                    }
-                } else {
-                    s_triggerShakeOnce = true;
+                    //if (s_triggerShakeOnce) {
+                    //    s_triggerShakeOnce = false;
+                    //}
+                //} else {
+                //    s_triggerShakeOnce = true;
                 }
                 
                 return oldFocus;
@@ -7744,23 +7744,10 @@ namespace tsl {
             u32 width, height;
             u64 m_touchStartTime_ns;
             bool isLocked = false;
-            bool m_shortThresholdCrossed = false;
-            #if IS_LAUNCHER_DIRECTIVE
-            bool m_longThresholdCrossed = false;
-            #endif
 
-        #if IS_LAUNCHER_DIRECTIVE
-            ListItem(const std::string& text, const std::string& value = "", bool isMini = false, bool useScriptKey = true)
-                : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
-                m_isItem = true;
-                m_flags.m_useScriptKey = useScriptKey;
-                m_flags.m_useClickAnimation = true;
-                m_text_clean = m_text;
-                ult::removeTag(m_text_clean);
-                applyInitialTranslations();
-                if (!value.empty()) applyInitialTranslations(true);
-            }
-        #else
+            u64 m_shortHoldKey = KEY_Y;
+            u64 m_longHoldKey = KEY_X;
+
             ListItem(const std::string& text, const std::string& value = "", bool isMini = false)
                 : Element(), m_text(text), m_value(value), m_listItemHeight(isMini ? tsl::style::MiniListItemDefaultHeight : tsl::style::ListItemDefaultHeight) {
                 m_isItem = true;
@@ -7770,7 +7757,7 @@ namespace tsl {
                 applyInitialTranslations();
                 if (!value.empty()) applyInitialTranslations(true);
             }
-        #endif
+            
         
             virtual ~ListItem() = default;
         
@@ -7871,29 +7858,24 @@ namespace tsl {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
                         m_shortThresholdCrossed = false;
-                        #if IS_LAUNCHER_DIRECTIVE
                         m_longThresholdCrossed = false;
-                        #endif
                         triggerNavigationFeedback();
                     }
                     return false;
                 }
-            
+                
                 if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
                     const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
-                #if IS_LAUNCHER_DIRECTIVE
-                    if (!m_longThresholdCrossed && touchDurationInSeconds >= 1.0f && 
+                    if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f && 
                         (ult::inMainMenu.load(std::memory_order_acquire) ||
                         (ult::inHiddenMode.load(std::memory_order_acquire) &&
                         !ult::inSettingsMenu.load(std::memory_order_acquire) &&
                         !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) [[unlikely]] {
                         m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
-                    } else
-                #endif
-                    if (!m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
+                    } else if (m_flags.m_useShortThreshold && !m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
                         m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     }
@@ -7903,13 +7885,7 @@ namespace tsl {
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
-                        const bool handled = onClick(determineKeyOnTouchRelease(
-                            #if IS_LAUNCHER_DIRECTIVE
-                            m_flags.m_useScriptKey
-                            #else
-                            false
-                            #endif
-                        ));
+                        const bool handled = onClick(determineKeyOnTouchRelease());
                         m_clickAnimationProgress = 0;
                         return handled;
                     }
@@ -7974,6 +7950,22 @@ namespace tsl {
             inline void enableClickAnimation() {
                 m_flags.m_useClickAnimation = true;
             }
+
+            inline void enableShortHoldKey() {
+                m_flags.m_useShortThreshold = true;
+            }
+
+            inline void disableShortHoldKey() {
+                m_flags.m_useShortThreshold = false;
+            }
+
+            inline void enableLongHoldKey() {
+                m_flags.m_useLongThreshold = true;
+            }
+
+            inline void disableLongHoldKey() {
+                m_flags.m_useLongThreshold = false;
+            }
             
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -8012,6 +8004,8 @@ namespace tsl {
             std::string m_ellipsisText;
             u16 m_listItemHeight;  // Changed from u32 to u16
 
+            bool m_shortThresholdCrossed = false;
+            bool m_longThresholdCrossed = false;
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
             struct {
@@ -8022,9 +8016,8 @@ namespace tsl {
                 bool m_hasCustomTextColor : 1;
                 bool m_hasCustomValueColor : 1;
                 bool m_useClickAnimation : 1;
-            #if IS_LAUNCHER_DIRECTIVE
-                bool m_useScriptKey : 1;
-            #endif
+                bool m_useShortThreshold : 1;
+                bool m_useLongThreshold : 1;
             } m_flags = {};
         
             Color m_customTextColor = {0};
@@ -8222,12 +8215,14 @@ namespace tsl {
                                (m_flags.m_faint ? offTextColor : (useClickTextColor ? clickTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor)));
                     }
                     
+                #if IS_LAUNCHER_DIRECTIVE
                     const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                     if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                      m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                      m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
                         return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                     }
+                #endif
                     
                     if (m_value == ult::INPROGRESS_SYMBOL) {
                         return m_flags.m_faint ? offTextColor : (inprogressTextColor);
@@ -8249,12 +8244,14 @@ namespace tsl {
                            (useClickTextColor ? clickTextColor : (m_flags.m_faint ? offTextColor : defaultTextColor)));
                 }
                 
+            #if IS_LAUNCHER_DIRECTIVE
                 const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
                     return m_flags.m_faint ? offTextColor : (inprogressTextColor);
                 }
+            #endif
                 
                 if (m_value == ult::INPROGRESS_SYMBOL) {
                     return m_flags.m_faint ? offTextColor : (inprogressTextColor);
@@ -8274,19 +8271,21 @@ namespace tsl {
                 renderer->drawString(throbberSymbol, false, xPosition, yPosition, fontSize, textColor);
             }
             
-            s64 determineKeyOnTouchRelease(bool useScriptKey) const {
+            s64 determineKeyOnTouchRelease() const {
                 const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                 
-                #if IS_LAUNCHER_DIRECTIVE
-                if (touchDurationInSeconds >= 1.0f) [[unlikely]] {
-                    ult::longTouchAndRelease.store(true, std::memory_order_release);
-                    return useScriptKey ? SCRIPT_KEY : STAR_KEY;
+                if (m_flags.m_useLongThreshold) {
+                    if (touchDurationInSeconds >= 1.0f) {
+                        ult::longTouchAndRelease.store(true, std::memory_order_release);
+                        return m_longHoldKey;
+                    }
                 }
-                #endif
-                if (touchDurationInSeconds >= 0.5f) [[unlikely]] {
-                    ult::shortTouchAndRelease.store(true, std::memory_order_release);
-                    return useScriptKey ? SCRIPT_KEY : SETTINGS_KEY;
+                if (m_flags.m_useShortThreshold) {
+                    if (touchDurationInSeconds >= 0.5f) {
+                        ult::shortTouchAndRelease.store(true, std::memory_order_release);
+                        return m_shortHoldKey;
+                    }
                 }
                 return KEY_A;
             }
@@ -8300,16 +8299,8 @@ namespace tsl {
         
         class MiniListItem : public ListItem {
         public:
-        #if IS_LAUNCHER_DIRECTIVE
-            // Constructor for MiniListItem, with no `isMini` boolean.
-            MiniListItem(const std::string& text, const std::string& value = "", bool useScriptKey = false) 
-                : ListItem(text, value, true, useScriptKey) { // Call the parent constructor with `isMini = true`
-        #else
             MiniListItem(const std::string& text, const std::string& value = "")
                 : ListItem(text, value, true) {  // Call the parent constructor with `isMini = true`
-        #endif
-            
-                // Additional MiniListItem-specific initialization can go here, if necessary.
             }
             
             // Destructor if needed (inherits default behavior from ListItem)
@@ -8332,22 +8323,6 @@ namespace tsl {
              * @param isMini Whether to use mini list item height
              * @param useScriptKey Whether to use script key (launcher only)
              */
-        #if IS_LAUNCHER_DIRECTIVE
-            ListItemV2(const std::string& text, 
-                       const std::string& value = "", 
-                       Color valueColor = onTextColor, 
-                       Color faintColor = offTextColor,
-                       bool isMini = false,
-                       bool useScriptKey = true)
-                : ListItem(text, value, isMini, useScriptKey),
-                  m_valueColorOverride(valueColor),
-                  m_faintColorOverride(faintColor),
-                  m_hasColorOverrides(true) {
-                
-                // Set the custom value color on the base ListItem
-                setValueColor(valueColor);
-            }
-        #else
             ListItemV2(const std::string& text, 
                        const std::string& value = "", 
                        Color valueColor = onTextColor, 
@@ -8361,7 +8336,6 @@ namespace tsl {
                 // Set the custom value color on the base ListItem
                 setValueColor(valueColor);
             }
-        #endif
         
             virtual ~ListItemV2() = default;
         
@@ -8436,22 +8410,12 @@ namespace tsl {
          */
         class MiniListItemV2 : public ListItemV2 {
         public:
-        #if IS_LAUNCHER_DIRECTIVE
-            MiniListItemV2(const std::string& text, 
-                           const std::string& value = "", 
-                           Color valueColor = onTextColor, 
-                           Color faintColor = offTextColor,
-                           bool useScriptKey = false)
-                : ListItemV2(text, value, valueColor, faintColor, true, useScriptKey) {
-            }
-        #else
             MiniListItemV2(const std::string& text, 
                            const std::string& value = "", 
                            Color valueColor = onTextColor, 
                            Color faintColor = offTextColor)
                 : ListItemV2(text, value, valueColor, faintColor, true) {
             }
-        #endif
         
             virtual ~MiniListItemV2() {}
         };
