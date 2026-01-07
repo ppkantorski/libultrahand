@@ -4927,30 +4927,7 @@ namespace tsl {
         }
 
         #endif
-
-       //struct TopCache {
-       //    std::string title;
-       //    std::string subtitle;
-       //    tsl::Color titleColor{0xF, 0xF, 0xF, 0xF}; // white by default
-       //    bool widgetDrawn = false;
-       //    bool useDynamicLogo = false;
-       //    bool disabled = false;
-       //};
-       //
-       //struct BottomCache {
-       //    std::string bottomText;
-       //    float backWidth = 0.0f;
-       //    float selectWidth = 0.0f;
-       //    float nextPageWidth = 0.0f;
-       //    bool disabled = false;
-       //};
-       //
-       //// Global or namespace-level variable
-       //inline TopCache g_cachedTop;
-       //inline BottomCache g_cachedBottom;
-       //
-       //inline std::atomic<bool> g_disableMenuCacheOnReturn = false;
-    
+        
         /**
          * @brief The base frame which can contain another view
          *
@@ -5436,17 +5413,17 @@ namespace tsl {
             ScrollState titleScroll = {0, 0, 0.0f, 0, 0, false, false, ""};
             
             // Unified width calculation
-            void calcScrollWidth(gfx::Renderer* r, ScrollState& s, const std::string& text, u32 fontSize, bool widgetDrawn) {
+            void calcScrollWidth(gfx::Renderer* renderer, ScrollState& s, const std::string& text, u32 fontSize, bool widgetDrawn) {
                 if (s.maxW) return;
                 
                 s.maxW = widgetDrawn ? 217 : (tsl::cfg::FramebufferWidth - 40);
                 
-                const u32 w = r->getTextDimensions(text, false, fontSize).first;
+                const u32 w = renderer->getTextDimensions(text, false, fontSize).first;
                 s.trunc = w > s.maxW;
                 
                 if (s.trunc) {
                     s.scrollText = text + "        ";
-                    s.textW = r->getTextDimensions(s.scrollText, false, fontSize).first;
+                    s.textW = renderer->getTextDimensions(s.scrollText, false, fontSize).first;
                     s.scrollText += text;
                 } else {
                     s.textW = w;
@@ -5478,9 +5455,10 @@ namespace tsl {
                     default: return defaultPackageColor;
                 }
             }
+        #endif
             
             // Draw scrollable text with common parameters
-            void drawScrollableText(gfx::Renderer* r, ScrollState& s, const tsl::Color& clr, 
+            void drawScrollableText(gfx::Renderer* renderer, ScrollState& s, const tsl::Color& clr, 
                                    int xPos, int yPos, u32 fontSize, int scissorYOffset, int scissorHeight) {
                 if (s.trunc) {
                     if (!s.active) {
@@ -5488,35 +5466,15 @@ namespace tsl {
                         s.timeIn = armTicksToNs(armGetSystemTick());
                     }
                     
-                    r->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
-                    r->drawString(s.scrollText, false, xPos - static_cast<s32>(s.offset), yPos, fontSize, clr);
-                    r->disableScissoring();
+                    renderer->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
+                    renderer->drawString(s.scrollText, false, xPos - static_cast<s32>(s.offset), yPos, fontSize, clr);
+                    renderer->disableScissoring();
                     
                     updateScroll(s);
                 } else {
-                    r->drawString(m_title, false, xPos, yPos, fontSize, clr);
+                    renderer->drawString(m_title, false, xPos, yPos, fontSize, clr);
                 }
             }
-        #else
-            // Non-launcher version
-            void drawScrollableText(gfx::Renderer* r, ScrollState& s, const tsl::Color& clr, 
-                                   int xPos, int yPos, u32 fontSize, int scissorYOffset, int scissorHeight) {
-                if (s.trunc) {
-                    if (!s.active) {
-                        s.active = true;
-                        s.timeIn = armTicksToNs(armGetSystemTick());
-                    }
-                    
-                    r->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
-                    r->drawString(s.scrollText, false, xPos - static_cast<s32>(s.offset), yPos, fontSize, clr);
-                    r->disableScissoring();
-                    
-                    updateScroll(s);
-                } else {
-                    r->drawString(m_title, false, xPos, yPos, fontSize, clr);
-                }
-            }
-        #endif
             
             // Unified scroll update
             void updateScroll(ScrollState& s) {
@@ -7860,34 +7818,31 @@ namespace tsl {
                         m_shortThresholdCrossed = false;
                         m_longThresholdCrossed = false;
                         triggerNavigationFeedback();
+                        //return true;
                     }
-                    return false;
+                    //return false;
                 }
                 
                 if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
                     const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
-                    if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f && 
-                        (ult::inMainMenu.load(std::memory_order_acquire) ||
-                        (ult::inHiddenMode.load(std::memory_order_acquire) &&
-                        !ult::inSettingsMenu.load(std::memory_order_acquire) &&
-                        !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) [[unlikely]] {
+                    if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
                         m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     } else if (m_flags.m_useShortThreshold && !m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
                         m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     }
-                    return false;
+                    //return true;
                 }
             
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
-                        const bool handled = onClick(determineKeyOnTouchRelease());
+                        //const bool handled = onClick(determineKeyOnTouchRelease());
                         m_clickAnimationProgress = 0;
-                        return handled;
+                        return onClick(determineKeyOnTouchRelease());
                     }
                 }
                 return false;
@@ -12547,11 +12502,13 @@ namespace tsl {
                 }
                 
                 if (currentGui && topElement && !interpreterIsRunning) {
-                    topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
+                    
                     if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth - 30U + ult::layerEdge && 
                         touchPos.y > 73U && touchPos.y <= footerY) {
                         currentGui->removeFocus();
                     }
+                    topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
+                    //f (handledTouch) return;
                 }
                 
                 oldTouchPos = touchPos;
