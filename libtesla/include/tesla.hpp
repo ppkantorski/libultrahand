@@ -11950,7 +11950,8 @@ namespace tsl {
             if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
                 
-                if (!currentGui->initialFocusSet() || keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+                // Only set initial focus if NO directional keys are pressed
+                if (!currentGui->initialFocusSet() && !(keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
                 }
@@ -12043,13 +12044,14 @@ namespace tsl {
                             if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
                                 currentGui->requestFocus(topElement, FocusDirection::Up, shouldShake);
                             else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, shouldShake);
+                                // FIXED: Use topElement instead of currentFocus->getParent() when no focus exists
+                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Down, shouldShake);
                                 //isTopElement = false;
                             }
                             else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, shouldShake);
+                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Left, shouldShake);
                             else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, shouldShake);
+                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Right, shouldShake);
                         }
                         
                         if (keysHeld & ~KEY_DOWN & ~KEY_UP & ~KEY_LEFT & ~KEY_RIGHT & ALL_KEYS_MASK) // reset
@@ -12508,7 +12510,6 @@ namespace tsl {
                         currentGui->removeFocus();
                     }
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
-                    //f (handledTouch) return;
                 }
                 
                 oldTouchPos = touchPos;
