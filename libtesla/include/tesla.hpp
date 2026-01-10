@@ -6403,8 +6403,11 @@ namespace tsl {
 
             //static constexpr float smoothingFactor = 0.15f;
             //static constexpr float dampingFactor = 0.3f;
-            static constexpr float TABLE_SCROLL_STEP_SIZE = 10;
-            static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
+            //static constexpr float TABLE_SCROLL_STEP_SIZE = 4;
+            //static constexpr float TABLE_SCROLL_STEP_SIZE_CLICK = 22;
+            static constexpr float TABLE_SCROLL_SPEED_PPS = 120.0f*4;      // Pixels per second when holding
+            static constexpr float TABLE_SCROLL_SPEED_CLICK_PPS = 120.0f*4; // Pixels per second for single click
+
             static constexpr float BOTTOM_PADDING = 7.0f;
             static constexpr float VIEW_CENTER_OFFSET = 7.0f;
 
@@ -6603,15 +6606,13 @@ namespace tsl {
             
             inline void updateScrollAnimation() {
                 if (Element::getInputMode() == InputMode::Controller) {
-                    // Clear touch flag when in controller mode
                     m_touchScrollActive = false;
                     
-                    // Calculate distance to target
                     const float diff = m_nextOffset - m_offset;
                     const float distance = std::abs(diff);
                     
-                    // ENHANCED BOUNDARY SNAPPING: More aggressive snapping for boundaries
-                    if (distance < 1.0f) {  // Increased threshold from 0.5f
+                    // Boundary snapping
+                    if (distance < 1.0f) {
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
                         s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
@@ -6623,10 +6624,9 @@ namespace tsl {
                         return;
                     }
                     
-                    // SPECIAL CASE: If target is exactly 0 or max, be more aggressive
                     const float maxOffset = static_cast<float>(m_listHeight - getHeight());
                     if (m_nextOffset == 0.0f || m_nextOffset == maxOffset) {
-                        if (distance < 3.0f) {  // Larger snap zone for boundaries
+                        if (distance < 3.0f) {
                             m_offset = m_nextOffset;
                             m_scrollVelocity = 0.0f;
                             s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
@@ -6635,25 +6635,21 @@ namespace tsl {
                                 invalidate();
                                 prevOffset = m_offset;
                             }
-
                             return;
                         }
                     }
                     
-                    // Emergency correction if item is going out of bounds
+                    // Emergency correction
                     if (m_focusedIndex < m_items.size()) {
                         float itemTop = 0.0f;
                         for (size_t i = 0; i < m_focusedIndex; ++i) {
                             itemTop += m_items[i]->getHeight();
                         }
                         const float itemBottom = itemTop + m_items[m_focusedIndex]->getHeight();
-                        
-                        //float viewTop = m_offset;
                         const float viewBottom = m_offset + getHeight();
                         
                         if (itemTop < m_offset || itemBottom > viewBottom) {
                             const float emergencySpeed = (itemBottom < m_offset || itemTop > viewBottom) ? 0.9f : 0.6f;
-                            
                             m_offset += diff * emergencySpeed;
                             m_scrollVelocity = diff * 0.3f;
                             s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
@@ -6666,36 +6662,43 @@ namespace tsl {
                         }
                     }
                     
-                    // Rest of your existing smooth scrolling logic...
-                    const bool isLargeJump = distance > getHeight() * 1.5f;
-                    const bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;
+                    const bool isTableScrolling = tsl::elm::isTableScrolling.load(std::memory_order_acquire);
                     
-                    if (isLargeJump && isFromRest) {
-                        static constexpr float gentleAcceleration = 0.08f;
-                        static constexpr float gentleDamping = 0.85f;
-                        
-                        const float targetVelocity = diff * gentleAcceleration;
-                        m_scrollVelocity += (targetVelocity - m_scrollVelocity) * gentleDamping;
+                    if (isTableScrolling) {
+                        // Direct assignment - instant updates, smoothness comes from small frequent steps
+                        m_offset = m_nextOffset;
+                        m_scrollVelocity = 0.0f;
                     } else {
-                        const float urgency = std::min(distance / getHeight(), 1.0f);
-                        const float accelerationFactor = 0.18f + (0.24f * urgency);
-                        const float dampingFactor = 0.48f - (0.18f * urgency);
+                        // Original smooth scrolling for regular navigation
+                        const bool isLargeJump = distance > getHeight() * 1.5f;
+                        const bool isFromRest = std::abs(m_scrollVelocity) < 2.0f;
                         
-                        const float targetVelocity = diff * accelerationFactor;
-                        m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
+                        if (isLargeJump && isFromRest) {
+                            static constexpr float gentleAcceleration = 0.08f;
+                            static constexpr float gentleDamping = 0.85f;
+                            
+                            const float targetVelocity = diff * gentleAcceleration;
+                            m_scrollVelocity += (targetVelocity - m_scrollVelocity) * gentleDamping;
+                        } else {
+                            const float urgency = std::min(distance / getHeight(), 1.0f);
+                            const float accelerationFactor = 0.18f + (0.24f * urgency);
+                            const float dampingFactor = 0.48f - (0.18f * urgency);
+                            
+                            const float targetVelocity = diff * accelerationFactor;
+                            m_scrollVelocity += (targetVelocity - m_scrollVelocity) * dampingFactor;
+                        }
+                        
+                        m_offset += m_scrollVelocity;
                     }
                     
-                    // Apply velocity
-                    m_offset += m_scrollVelocity;
-                    
-                    // ENHANCED overshoot prevention with better boundary handling
+                    // Overshoot prevention
                     if ((m_scrollVelocity > 0 && m_offset > m_nextOffset) ||
                         (m_scrollVelocity < 0 && m_offset < m_nextOffset)) {
                         m_offset = m_nextOffset;
                         m_scrollVelocity = 0.0f;
                     }
                     
-                    // ADDITIONAL: Force exact boundary values
+                    // Force exact boundary values
                     if (m_nextOffset == 0.0f && m_offset < 1.0f) {
                         m_offset = 0.0f;
                         m_scrollVelocity = 0.0f;
@@ -6703,11 +6706,10 @@ namespace tsl {
                         m_offset = maxOffset;
                         m_scrollVelocity = 0.0f;
                     }
-
+            
                     s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
                 
                 } else if (Element::getInputMode() == InputMode::TouchScroll) {
-                    // Your existing touch scroll logic...
                     m_offset = m_nextOffset;
                     m_scrollVelocity = 0.0f;
                     
@@ -6715,7 +6717,6 @@ namespace tsl {
                         const float viewCenter = m_offset + (getHeight() / 2.0f);
                         float accumHeight = 0.0f;
                         
-                        //float itemHeight, itemCenter;
                         for (size_t i = 0; i < m_items.size(); ++i) {
                             const float itemHeight = m_items[i]->getHeight();
                             const float itemCenter = accumHeight + (itemHeight / 2.0f);
@@ -7223,7 +7224,7 @@ namespace tsl {
             //inline bool canScrollUp() {
             //    return (m_nextOffset > 0.1f) || (m_offset > 0.1f);
             //}
-            
+
             
             //u64 m_lastScrollNavigationTime = 0;
             //bool m_isHoldingOnTable = false;
@@ -7232,21 +7233,23 @@ namespace tsl {
             inline void scrollDown() {
                 const u64 currentTime = armTicksToNs(armGetSystemTick());
                 
-                // Calculate frame time
-                float frameTimeMs = 0.0f;
+                // Calculate delta time in seconds
+                float deltaTime = 0.0f;
                 if (m_lastScrollTime != 0) {
-                    frameTimeMs = static_cast<float>(currentTime - m_lastScrollTime) / 1000000.0f;
+                    const u64 deltaTimeNs = currentTime - m_lastScrollTime;
+                    deltaTime = static_cast<float>(deltaTimeNs) / 1000000000.0f; // Convert to seconds
+                } else {
+                    // First frame - assume 60fps
+                    deltaTime = 1.0f / 60.0f;
                 }
                 m_lastScrollTime = currentTime;
                 
-                // Use original frame-based amounts
-                float scrollAmount = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                // Clamp delta time to prevent huge jumps on lag spikes
+                deltaTime = std::min(deltaTime, 0.1f); // Cap at 100ms (10fps minimum)
                 
-                // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
-                if (frameTimeMs > 33.0f) {
-                    const float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
-                    scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
-                }
+                // Calculate scroll amount: pixels_per_second * seconds_elapsed
+                const float speedPPS = m_isHolding ? TABLE_SCROLL_SPEED_PPS : TABLE_SCROLL_SPEED_CLICK_PPS;
+                const float scrollAmount = speedPPS * deltaTime;
                 
                 m_nextOffset = std::min(m_nextOffset + scrollAmount, 
                                        static_cast<float>(m_listHeight - getHeight()));
@@ -7255,21 +7258,23 @@ namespace tsl {
             inline void scrollUp() {
                 const u64 currentTime = armTicksToNs(armGetSystemTick());
                 
-                // Calculate frame time
-                float frameTimeMs = 0.0f;
+                // Calculate delta time in seconds
+                float deltaTime = 0.0f;
                 if (m_lastScrollTime != 0) {
-                    frameTimeMs = static_cast<float>(currentTime - m_lastScrollTime) / 1000000.0f;
+                    const u64 deltaTimeNs = currentTime - m_lastScrollTime;
+                    deltaTime = static_cast<float>(deltaTimeNs) / 1000000000.0f; // Convert to seconds
+                } else {
+                    // First frame - assume 60fps
+                    deltaTime = 1.0f / 60.0f;
                 }
                 m_lastScrollTime = currentTime;
                 
-                // Use original frame-based amounts
-                float scrollAmount = m_isHolding ? TABLE_SCROLL_STEP_SIZE : TABLE_SCROLL_STEP_SIZE_CLICK;
+                // Clamp delta time to prevent huge jumps on lag spikes
+                deltaTime = std::min(deltaTime, 0.1f); // Cap at 100ms (10fps minimum)
                 
-                // If frame took longer than ~33ms (slower than 30fps), scale up the scroll amount
-                if (frameTimeMs > 33.0f) {
-                    const float scaleFactor = frameTimeMs / 16.67f;  // 16.67ms = 60fps baseline
-                    scrollAmount *= std::min(scaleFactor, 3.0f);  // Cap at 3x for very slow frames
-                }
+                // Calculate scroll amount: pixels_per_second * seconds_elapsed
+                const float speedPPS = m_isHolding ? TABLE_SCROLL_SPEED_PPS : TABLE_SCROLL_SPEED_CLICK_PPS;
+                const float scrollAmount = speedPPS * deltaTime;
                 
                 m_nextOffset = std::max(m_nextOffset - scrollAmount, 0.0f);
             }
@@ -7722,11 +7727,25 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 const bool useClickTextColor = m_flags.m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
-                if (useClickTextColor) [[unlikely]] {
+                if (useClickTextColor && !isTouchHolding()) [[unlikely]] {
                     auto drawFunc = ult::expandedMemory ? &gfx::Renderer::drawRectMultiThreaded : &gfx::Renderer::drawRect;
                     (renderer->*drawFunc)(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                 }
-        
+                
+                #if IS_LAUNCHER_DIRECTIVE
+
+                if (isTouchHolding()) {
+                    // Determine the active percentage to use
+                    const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
+                    if (activePercentage > 0){
+                        if (ult::expandedMemory)
+                            renderer->drawRectMultiThreaded(this->getX() + 4, this->getY(), (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                        else
+                            renderer->drawRect(this->getX() + 4, this->getY(), (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                    }
+                }
+                #endif
+
                 const s16 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1) + 1;
         
                 if (!m_maxWidth) [[unlikely]] {
@@ -7815,17 +7834,25 @@ namespace tsl {
                 if (event == TouchEvent::Touch) [[likely]] {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
+                        m_touchHoldStartTick = armGetSystemTick();  // Start tracking hold
+                        m_isTouchHolding = false;  // Will be set to true when hold activates
                         m_shortThresholdCrossed = false;
                         m_longThresholdCrossed = false;
                         triggerNavigationFeedback();
-                        //return true;
                     }
-                    //return false;
                 }
                 
                 if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
                     const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
+                    
+                    // Activate touch hold immediately when Hold event fires
+                    if (m_usingTouchHolding && !m_isTouchHolding && touchDurationInSeconds >= 0.1f) {
+                        m_isTouchHolding = true;
+                        // Trigger the click with KEY_A to start hold behavior
+                        onClick(KEY_A);
+                        return true;
+                    }
                     
                     if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
                         m_longThresholdCrossed = true;
@@ -7834,15 +7861,21 @@ namespace tsl {
                         m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     }
-                    //return true;
+                    
+                    return true;  // Keep handling hold
                 }
             
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
+                    const bool wasHolding = m_isTouchHolding;
+                    m_isTouchHolding = false;  // Stop tracking hold on release
+                    
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
-                        //const bool handled = onClick(determineKeyOnTouchRelease());
                         m_clickAnimationProgress = 0;
-                        return onClick(determineKeyOnTouchRelease());
+                        // Only trigger normal click if we weren't in a hold
+                        if (!wasHolding) {
+                            return onClick(determineKeyOnTouchRelease());
+                        }
                     }
                 }
                 return false;
@@ -7921,6 +7954,28 @@ namespace tsl {
             inline void disableLongHoldKey() {
                 m_flags.m_useLongThreshold = false;
             }
+
+            inline void enableTouchHolding() {
+                m_usingTouchHolding = true;
+            }
+
+            inline void disableTouchHolding() {
+                m_usingTouchHolding = false;
+            }
+
+            inline bool isTouchHolding() const noexcept {
+                return m_isTouchHolding;
+            }
+            
+            inline u64 getTouchHoldStartTick() const noexcept {
+                return m_touchHoldStartTick;
+            }
+            
+            inline void resetTouchHold() {
+                m_isTouchHolding = false;
+                m_touchHoldStartTick = 0;
+            }
+
             
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -7981,6 +8036,10 @@ namespace tsl {
             float m_scrollOffset = 0.0f;
             u16 m_maxWidth = 0;     // Changed from u32 to u16
             u16 m_textWidth = 0;     // Changed from u32 to u16
+
+            bool m_usingTouchHolding = false;
+            bool m_isTouchHolding = false;
+            u64 m_touchHoldStartTick = 0;
         
         private:
             // Consolidated scroll constants struct
@@ -8150,7 +8209,8 @@ namespace tsl {
                 const s32 xPosition = getX() + m_maxWidth + 47;
                 const s32 yPosition = getY() + 45 - yOffset-1;
                 static constexpr s32 fontSize = 20;
-        
+            
+            #if IS_LAUNCHER_DIRECTIVE
                 static bool lastRunningInterpreter = false;
                 const auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
         
@@ -8161,9 +8221,22 @@ namespace tsl {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
                 lastRunningInterpreter = ult::runningInterpreter.load(std::memory_order_acquire);
+            #else
+                const auto textColor = determineValueTextColor(useClickTextColor);
+                if (m_value != ult::INPROGRESS_SYMBOL) [[likely]] {
+                    static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
+                    renderer->drawStringWithColoredSections(m_value, false, specialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
+                } else {
+                    drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
+                }
+            #endif
             }
-                    
-            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter) const {
+        
+        #if IS_LAUNCHER_DIRECTIVE
+            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter=false) const {
+        #else
+            Color determineValueTextColor(bool useClickTextColor) const {
+        #endif
                 if (m_focused && ult::useSelectionValue) {
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
                         return useClickTextColor ? (clickTextColor) :
