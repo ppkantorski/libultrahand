@@ -7834,7 +7834,7 @@ namespace tsl {
                 if (event == TouchEvent::Touch) [[likely]] {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
-                        m_touchHoldStartTick = armGetSystemTick();  // Start tracking hold
+                        //m_touchHoldStartTick = armGetSystemTick();  // Start tracking hold
                         m_isTouchHolding = false;  // Will be set to true when hold activates
                         m_shortThresholdCrossed = false;
                         m_longThresholdCrossed = false;
@@ -7967,13 +7967,13 @@ namespace tsl {
                 return m_isTouchHolding;
             }
             
-            inline u64 getTouchHoldStartTick() const noexcept {
-                return m_touchHoldStartTick;
-            }
+            //inline u64 getTouchHoldStartTick() const noexcept {
+            //    return m_touchHoldStartTick;
+            //}
             
             inline void resetTouchHold() {
                 m_isTouchHolding = false;
-                m_touchHoldStartTick = 0;
+                //m_touchHoldStartTick = 0;
             }
 
             
@@ -8039,7 +8039,7 @@ namespace tsl {
 
             bool m_usingTouchHolding = false;
             bool m_isTouchHolding = false;
-            u64 m_touchHoldStartTick = 0;
+            //u64 m_touchHoldStartTick = 0;
         
         private:
             // Consolidated scroll constants struct
