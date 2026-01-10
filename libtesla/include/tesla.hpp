@@ -7727,14 +7727,14 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 const bool useClickTextColor = m_flags.m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
-                if (useClickTextColor && !isTouchHolding()) [[unlikely]] {
+                if (useClickTextColor && !m_isTouchHolding) [[unlikely]] {
                     auto drawFunc = ult::expandedMemory ? &gfx::Renderer::drawRectMultiThreaded : &gfx::Renderer::drawRect;
                     (renderer->*drawFunc)(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                 }
                 
                 #if IS_LAUNCHER_DIRECTIVE
 
-                if (isTouchHolding()) {
+                if (m_isTouchHolding) [[unlikely]] {
                     // Determine the active percentage to use
                     const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
