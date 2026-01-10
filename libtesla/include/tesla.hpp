@@ -7850,8 +7850,8 @@ namespace tsl {
                     if (m_usingTouchHolding && !m_isTouchHolding && touchDurationInSeconds >= 0.1f) {
                         m_isTouchHolding = true;
                         // Trigger the click with KEY_A to start hold behavior
-                        onClick(KEY_A);
-                        return true;
+                        
+                        return onClick(KEY_A);
                     }
                     
                     if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
