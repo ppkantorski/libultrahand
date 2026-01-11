@@ -7095,14 +7095,14 @@ namespace tsl {
             // Optimized version with variable definitions pulled outside the loop
             inline Element* navigateDown(Element* oldFocus) {
                 // Synchronize m_focusedIndex with actual focus before navigating
-                if (oldFocus) {
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        if (m_items[i] == oldFocus) {
-                            m_focusedIndex = i;
-                            break;
-                        }
-                    }
-                }
+                //if (oldFocus) {
+                //    for (size_t i = 0; i < m_items.size(); ++i) {
+                //        if (m_items[i] == oldFocus) {
+                //            m_focusedIndex = i;
+                //            break;
+                //        }
+                //    }
+                //}
                 
 
                 size_t searchIndex = m_focusedIndex + 1;
@@ -7116,6 +7116,17 @@ namespace tsl {
                         return oldFocus;
                     }
                 }
+
+               // Sync AFTER table check - if we're not mid-table-scroll
+               if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
+                   for (size_t i = 0; i < m_items.size(); ++i) {
+                       if (m_items[i] == oldFocus) {
+                           m_focusedIndex = i;
+                           searchIndex = i + 1;
+                           break;
+                       }
+                   }
+               }
                 
                 // Cache invariant values (legitimate optimization)
                 const s32 viewBottom = getBottomBound();
@@ -7162,14 +7173,14 @@ namespace tsl {
             
             inline Element* navigateUp(Element* oldFocus) {
                 // Synchronize m_focusedIndex with actual focus before navigating
-                if (oldFocus) {
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        if (m_items[i] == oldFocus) {
-                            m_focusedIndex = i;
-                            break;
-                        }
-                    }
-                }
+                //if (oldFocus) {
+                //    for (size_t i = 0; i < m_items.size(); ++i) {
+                //        if (m_items[i] == oldFocus) {
+                //            m_focusedIndex = i;
+                //            break;
+                //        }
+                //    }
+                //}
 
 
                 if (m_focusedIndex == 0) return oldFocus;
@@ -7184,6 +7195,17 @@ namespace tsl {
                         return oldFocus;
                     }
                 }
+
+               // Sync AFTER table check - if we're not mid-table-scroll
+               if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
+                   for (size_t i = 0; i < m_items.size(); ++i) {
+                       if (m_items[i] == oldFocus) {
+                           m_focusedIndex = i;
+                           searchIndex = static_cast<ssize_t>(i) - 1;
+                           break;
+                       }
+                   }
+               }
                 
                 // Cache invariant values (legitimate optimization)
                 const s32 viewTop = getTopBound();
