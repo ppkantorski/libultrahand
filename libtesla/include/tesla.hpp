@@ -13946,6 +13946,23 @@ namespace tsl {
         Overlay::get()->pop(count);
     }
         
+    /**
+     * @brief Shifts focus to a specific UI element
+     * 
+     * Requests focus on the provided element without directional navigation.
+     * Uses FocusDirection::None to set focus directly on the target element,
+     * typically centering it in the viewport without triggering navigation effects.
+     * 
+     * Useful for jumping to specific items programmatically (e.g., after search,
+     * restoring saved position, or responding to external events).
+     * 
+     * @param element The element to receive focus
+     */
+    void shiftItemFocus(elm::Element* element) {
+        if (auto& currentGui = Overlay::get()->getCurrentGui()) {
+            currentGui->requestFocus(element, FocusDirection::None);
+        }
+    }
     
     static inline std::mutex setNextOverlayMutex;
 
