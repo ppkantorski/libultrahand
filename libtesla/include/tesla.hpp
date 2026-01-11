@@ -5955,7 +5955,7 @@ namespace tsl {
 
         static std::atomic<float> s_currentScrollVelocity{0};
         static std::atomic<bool> s_directionalKeyReleased{false};
-        static std::atomic<bool> lastInternalTouchRelease(true);
+        static std::atomic<bool> lastInternalTouchRelease{true};
 
         static std::mutex s_safeToSwapMutex;
         static std::atomic<bool> s_safeToSwap{false};
@@ -7094,6 +7094,17 @@ namespace tsl {
             // Core navigation logic
             // Optimized version with variable definitions pulled outside the loop
             inline Element* navigateDown(Element* oldFocus) {
+                // Synchronize m_focusedIndex with actual focus before navigating
+                if (oldFocus) {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i] == oldFocus) {
+                            m_focusedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                
+
                 size_t searchIndex = m_focusedIndex + 1;
                 
                 // If currently on a table that needs more scrolling
@@ -7150,6 +7161,17 @@ namespace tsl {
             }
             
             inline Element* navigateUp(Element* oldFocus) {
+                // Synchronize m_focusedIndex with actual focus before navigating
+                if (oldFocus) {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i] == oldFocus) {
+                            m_focusedIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+
                 if (m_focusedIndex == 0) return oldFocus;
                 ssize_t searchIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
                 
@@ -7642,7 +7664,6 @@ namespace tsl {
             }
             
             
-            // Keep your EXACT original updateScrollOffset() method unchanged:
             virtual void updateScrollOffset() {
                 if (Element::getInputMode() != InputMode::Controller) return;
                 
