@@ -13958,7 +13958,7 @@ namespace tsl {
      * 
      * @param element The element to receive focus
      */
-    void shiftItemFocus(elm::Element* element) {
+    inline void shiftItemFocus(elm::Element* element) {
         if (auto& currentGui = Overlay::get()->getCurrentGui()) {
             currentGui->requestFocus(element, FocusDirection::None);
         }
