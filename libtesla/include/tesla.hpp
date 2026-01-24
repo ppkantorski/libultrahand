@@ -4073,7 +4073,13 @@ namespace tsl {
                         TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_KO));
                         break;
                     default:
-                        this->m_hasLocalFont = false;
+                        // FIX: Always attempt to load ChineseSimplified as a high-priority 
+                        // fallback to support manual language switching on non-CJK system languages.
+                        if (R_SUCCEEDED(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseSimplified))) {
+                            this->m_hasLocalFont = true;
+                        } else {
+                            this->m_hasLocalFont = false;
+                        }
                         break;
                     }
                     
