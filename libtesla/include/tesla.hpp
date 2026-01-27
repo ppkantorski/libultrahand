@@ -4065,21 +4065,17 @@ namespace tsl {
                     switch (setLanguage) {
                     case SetLanguage_ZHCN:
                     case SetLanguage_ZHHANS:
+                        TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseSimplified));
+                        break;
                     case SetLanguage_ZHTW:
                     case SetLanguage_ZHHANT:
-                        TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseSimplified));
+                        TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseTraditional));
                         break;
                     case SetLanguage_KO:
                         TSL_R_TRY(plGetSharedFontByType(&localFontData, PlSharedFontType_KO));
                         break;
                     default:
-                        // FIX: Always attempt to load ChineseSimplified as a high-priority 
-                        // fallback to support manual language switching on non-CJK system languages.
-                        if (R_SUCCEEDED(plGetSharedFontByType(&localFontData, PlSharedFontType_ChineseSimplified))) {
-                            this->m_hasLocalFont = true;
-                        } else {
-                            this->m_hasLocalFont = false;
-                        }
+                        this->m_hasLocalFont = false;
                         break;
                     }
                     
@@ -4096,6 +4092,22 @@ namespace tsl {
                 stbtt_InitFont(&this->m_extFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
                 
                 // Initialize the shared font manager
+                FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
+                                           &this->m_extFont, this->m_hasLocalFont);
+                
+                return 0;
+            }
+
+        public:
+            Result loadLocalFont(PlSharedFontType type) {
+                PlFontData localFontData;
+                TSL_R_TRY(plGetSharedFontByType(&localFontData, type));
+                
+                this->m_hasLocalFont = true;
+                u8 *fontBuffer = reinterpret_cast<u8*>(localFontData.address);
+                stbtt_InitFont(&this->m_localFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+                
+                // Re-initialize the shared font manager to use the new local font
                 FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
                                            &this->m_extFont, this->m_hasLocalFont);
                 
