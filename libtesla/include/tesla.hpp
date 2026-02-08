@@ -714,6 +714,15 @@ namespace tsl {
         const std::string langFile = ult::LANG_PATH+defaultLang+".json";
         if (ult::isFileOrDirectory(langFile))
             ult::parseLanguage(langFile);
+
+        // Load local font if needed based on overlay language setting
+        if (defaultLang == "zh-cn") {
+            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseSimplified);
+        } else if (defaultLang == "zh-tw") {
+            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseTraditional);
+        } else if (defaultLang == "ko") {
+            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_KO);
+        }
     }
     #endif
     
@@ -3815,6 +3824,21 @@ namespace tsl {
                     screenshotsAreForceDisabled.store(true, std::memory_order_release);
             }
             
+            Result loadLocalFont(PlSharedFontType type) {
+                PlFontData localFontData;
+                TSL_R_TRY(plGetSharedFontByType(&localFontData, type));
+                
+                this->m_hasLocalFont = true;
+                u8 *fontBuffer = reinterpret_cast<u8*>(localFontData.address);
+                stbtt_InitFont(&this->m_localFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+                
+                // Re-initialize the shared font manager to use the new local font
+                FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
+                                           &this->m_extFont, this->m_hasLocalFont);
+                
+                return 0;
+            }
+
         private:
             Renderer() {
                 updateDrawFunction();
@@ -4092,22 +4116,6 @@ namespace tsl {
                 stbtt_InitFont(&this->m_extFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
                 
                 // Initialize the shared font manager
-                FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
-                                           &this->m_extFont, this->m_hasLocalFont);
-                
-                return 0;
-            }
-
-        public:
-            Result loadLocalFont(PlSharedFontType type) {
-                PlFontData localFontData;
-                TSL_R_TRY(plGetSharedFontByType(&localFontData, type));
-                
-                this->m_hasLocalFont = true;
-                u8 *fontBuffer = reinterpret_cast<u8*>(localFontData.address);
-                stbtt_InitFont(&this->m_localFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
-                
-                // Re-initialize the shared font manager to use the new local font
                 FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
                                            &this->m_extFont, this->m_hasLocalFont);
                 
