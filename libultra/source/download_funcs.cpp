@@ -151,6 +151,36 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         return false;
     }
 
+    // Initialize nifm to check connectivity (only if we're also managing socket init)
+    {
+        if (!R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Failed to initialize nifm");
+            #endif
+            return false;
+        }
+        
+        // Check internet connectivity
+        NifmInternetConnectionStatus connectionStatus;
+        Result nifmResult = nifmGetInternetConnectionStatus(nullptr, nullptr, &connectionStatus);
+        
+        // Clean up nifm immediately after checking
+        nifmExit();
+        
+        if (R_FAILED(nifmResult) || connectionStatus != NifmInternetConnectionStatus_Connected) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("No internet connection available");
+            #endif
+            if (!noPercentagePolling) {
+                downloadPercentage.store(-1, std::memory_order_release);
+            }
+            return false;
+        }
+    }
+
+
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
