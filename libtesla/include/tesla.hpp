@@ -10109,7 +10109,10 @@ namespace tsl {
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         updateAndExecute();
-                        triggerClick = true;
+                        // Only trigger click animation when unlocked
+                        if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerClick = true;
+                        }
                     }
                     return true;
                 }
@@ -10711,7 +10714,10 @@ namespace tsl {
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         updateAndExecute();
-                        triggerClick = true;
+                        // Only trigger click animation when unlocked
+                        if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerClick = true;
+                        }
                     }
                     return true;
                 }
