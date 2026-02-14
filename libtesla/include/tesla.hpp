@@ -1364,24 +1364,36 @@ namespace tsl {
             static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
                 if (!s_initialized) return nullptr;
                 
+                // Check extended font first (icons)
                 if (stbtt_FindGlyphIndex(s_extFont, character)) {
                     return s_extFont;
                 }
                 
-                if (character != 0x00B0) {
-                    if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                        return s_localFont;
-                    }
-                    
-                    if (stbtt_FindGlyphIndex(s_localFontCN, character) != 0) {
-                        return s_localFontCN;
-                    }
-                    if (stbtt_FindGlyphIndex(s_localFontTW, character) != 0) {
-                        return s_localFontTW;
-                    }
-                    if (stbtt_FindGlyphIndex(s_localFontKO, character) != 0) {
-                        return s_localFontKO;
-                    }
+                // Always fetch degree symbol "°" from the standard Latin font
+                if (character == 0x00B0) {
+                    return s_stdFont;
+                }
+                
+                // Check primary local font FIRST (based on system language)
+                if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
+                    return s_localFont;
+                }
+                
+                // Check standard font BEFORE falling back to other CJK fonts
+                // This ensures Latin, Cyrillic, etc. use the correct font
+                if (stbtt_FindGlyphIndex(s_stdFont, character) != 0) {
+                    return s_stdFont;
+                }
+                
+                // Only use these as last resort fallbacks for characters not in standard/primary fonts
+                if (stbtt_FindGlyphIndex(s_localFontCN, character) != 0) {
+                    return s_localFontCN;
+                }
+                if (stbtt_FindGlyphIndex(s_localFontTW, character) != 0) {
+                    return s_localFontTW;
+                }
+                if (stbtt_FindGlyphIndex(s_localFontKO, character) != 0) {
+                    return s_localFontKO;
                 }
                 
                 return s_stdFont;
