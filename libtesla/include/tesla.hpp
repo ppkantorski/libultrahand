@@ -716,13 +716,13 @@ namespace tsl {
             ult::parseLanguage(langFile);
 
         // Load local font if needed based on overlay language setting
-        if (defaultLang == "zh-cn") {
-            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseSimplified);
-        } else if (defaultLang == "zh-tw") {
-            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseTraditional);
-        } else if (defaultLang == "ko") {
-            tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_KO);
-        }
+        //if (defaultLang == "zh-cn") {
+        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseSimplified);
+        //} else if (defaultLang == "zh-tw") {
+        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseTraditional);
+        //} else if (defaultLang == "ko") {
+        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_KO);
+        //}
     }
     #endif
     
@@ -1169,6 +1169,7 @@ namespace tsl {
         #ifdef UI_OVERRIDE_PATH
         inline static std::shared_mutex s_translationCacheMutex;
         #endif
+        
         class FontManager {
         public:
             struct Glyph {
@@ -1179,7 +1180,6 @@ namespace tsl {
                 u8 *glyphBmp;
                 int width, height;
                 
-                // Add destructor to ensure cleanup
                 ~Glyph() {
                     if (glyphBmp) {
                         stbtt_FreeBitmap(glyphBmp, nullptr);
@@ -1187,17 +1187,15 @@ namespace tsl {
                     }
                 }
                 
-                // Prevent copying to avoid double-free
                 Glyph(const Glyph&) = delete;
                 Glyph& operator=(const Glyph&) = delete;
                 
-                // Allow moving
                 Glyph(Glyph&& other) noexcept 
                     : currFont(other.currFont), currFontSize(other.currFontSize)
                     , xAdvance(other.xAdvance), glyphBmp(other.glyphBmp)
                     , width(other.width), height(other.height) {
                     memcpy(bounds, other.bounds, sizeof(bounds));
-                    other.glyphBmp = nullptr; // Prevent double-free
+                    other.glyphBmp = nullptr;
                 }
                 
                 Glyph& operator=(Glyph&& other) noexcept {
@@ -1222,10 +1220,10 @@ namespace tsl {
                     std::memset(bounds, 0, sizeof(bounds));
                 }
             };
-
+        
             struct FontMetrics {
                 int ascent, descent, lineGap;
-                int lineHeight; // ascent - descent + lineGap
+                int lineHeight;
                 stbtt_fontinfo* font;
                 float fontSize;
                 
@@ -1244,71 +1242,58 @@ namespace tsl {
                     }
                 }
             };
-
+        
             enum class CacheType {
                 Regular,
-                Notification,
-                Persistent
+                Notification
             };
             
         private:
             inline static std::shared_mutex s_cacheMutex;
             inline static std::mutex s_initMutex;
             
-            // Existing caches
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
-            //inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_persistentGlyphCache;
-            
-            // NEW: Notification-specific cache
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_notificationGlyphCache;
-            
-            // Font metrics cache
             inline static std::unordered_map<u64, FontMetrics> s_fontMetricsCache;
             
-            // Add cache size limits
             static constexpr size_t MAX_CACHE_SIZE = 600;
             static constexpr size_t CLEANUP_THRESHOLD = 500;
-            static constexpr size_t MAX_NOTIFICATION_CACHE_SIZE = 200; // Separate limit for notifications
+            static constexpr size_t MAX_NOTIFICATION_CACHE_SIZE = 200;
             
-            // font handles & state
-            inline static stbtt_fontinfo* s_stdFont     = nullptr;
-            inline static stbtt_fontinfo* s_localFont   = nullptr;
-            inline static stbtt_fontinfo* s_extFont     = nullptr;
-            inline static bool             s_hasLocalFont = false;
-            inline static bool             s_initialized  = false;
+            // Font handles
+            inline static stbtt_fontinfo* s_stdFont = nullptr;
+            inline static stbtt_fontinfo* s_localFont = nullptr;
+            inline static stbtt_fontinfo* s_localFontCN = nullptr;
+            inline static stbtt_fontinfo* s_localFontTW = nullptr;
+            inline static stbtt_fontinfo* s_localFontKO = nullptr;
+            inline static stbtt_fontinfo* s_extFont = nullptr;
+            inline static bool s_hasLocalFont = false;
+            inline static bool s_initialized = false;
             
-            // Fix cache key generation to prevent collisions
             static u64 generateCacheKey(u32 character, bool monospace, u32 fontSize) {
-                // Use more bits for fontSize and separate monospace bit
                 u64 key = static_cast<u64>(character);
                 key = (key << 32) | static_cast<u64>(fontSize);
                 if (monospace) {
-                    key |= (1ULL << 63); // Use the highest bit for monospace
+                    key |= (1ULL << 63);
                 }
                 return key;
             }
-
-            // Generate cache key for font metrics
+        
             static u64 generateFontMetricsCacheKey(stbtt_fontinfo* font, u32 fontSize) {
-                // Use pointer address as font identifier and fontSize
                 const u64 fontKey = reinterpret_cast<uintptr_t>(font);
                 return (fontKey << 32) | static_cast<u64>(fontSize);
             }
             
-            // Cleanup old entries when cache gets too large
             static void cleanupOldEntries() {
                 if (s_sharedGlyphCache.size() <= CLEANUP_THRESHOLD) return;
                 
-                // Simple cleanup: remove oldest entries
-                // In a real implementation, you might want LRU or other strategies
                 const size_t toRemove = s_sharedGlyphCache.size() - CLEANUP_THRESHOLD;
                 auto it = s_sharedGlyphCache.begin();
                 for (size_t i = 0; i < toRemove && it != s_sharedGlyphCache.end(); ++i) {
                     it = s_sharedGlyphCache.erase(it);
                 }
             }
-
-            // NEW: Cleanup notification cache when it gets too large
+        
             static void cleanupNotificationCache() {
                 if (s_notificationGlyphCache.size() <= MAX_NOTIFICATION_CACHE_SIZE) return;
                 
@@ -1318,74 +1303,39 @@ namespace tsl {
                     it = s_notificationGlyphCache.erase(it);
                 }
             }
-
-            // NEW: Internal unified glyph creation method
+        
             static std::shared_ptr<Glyph> getOrCreateGlyphInternal(u32 character, bool monospace, u32 fontSize, CacheType cacheType) {
                 const u64 key = generateCacheKey(character, monospace, fontSize);
                 
-                // Select target cache based on type
                 std::unordered_map<u64, std::shared_ptr<Glyph>>* targetCache;
-                switch (cacheType) {
-                    case CacheType::Notification:
-                        targetCache = &s_notificationGlyphCache;
-                        break;
-                    //case CacheType::Persistent:
-                    //    targetCache = &s_persistentGlyphCache;
-                    //    break;
-                    default:
-                        targetCache = &s_sharedGlyphCache;
-                        break;
-                }
+                targetCache = (cacheType == CacheType::Notification) ? &s_notificationGlyphCache : &s_sharedGlyphCache;
                 
-                // First, try to find in target cache with shared lock
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
                     
                     if (!s_initialized) return nullptr;
                     
-                    // Check target cache first
                     auto it = targetCache->find(key);
                     if (it != targetCache->end()) {
                         return it->second;
                     }
-                    
-                    // For notification cache, also check persistent cache (but not regular cache)
-                    // For regular cache, also check persistent cache (existing behavior)
-                    //if (cacheType != CacheType::Persistent) {
-                    //    auto persistentIt = s_persistentGlyphCache.find(key);
-                    //    if (persistentIt != s_persistentGlyphCache.end()) {
-                    //        return persistentIt->second;
-                    //    }
-                    //}
                 }
                 
-                // Glyph not found, need to create it with exclusive lock
                 std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
                 
                 if (!s_initialized) return nullptr;
                 
-                // Double-check pattern for target cache
                 auto it = targetCache->find(key);
                 if (it != targetCache->end()) {
                     return it->second;
                 }
                 
-                // Double-check persistent cache
-                //if (cacheType != CacheType::Persistent) {
-                //    auto persistentIt = s_persistentGlyphCache.find(key);
-                //    if (persistentIt != s_persistentGlyphCache.end()) {
-                //        return persistentIt->second;
-                //    }
-                //}
-                
-                // Check cache size and cleanup if needed
                 if (cacheType == CacheType::Regular && s_sharedGlyphCache.size() >= MAX_CACHE_SIZE) {
                     cleanupOldEntries();
                 } else if (cacheType == CacheType::Notification && s_notificationGlyphCache.size() >= MAX_NOTIFICATION_CACHE_SIZE) {
                     cleanupNotificationCache();
                 }
                 
-                // Create new glyph
                 auto glyph = std::make_shared<Glyph>();
                 glyph->currFont = selectFontForCharacterUnsafe(character);
                 if (!glyph->currFont) {
@@ -1406,66 +1356,53 @@ namespace tsl {
                     glyph->currFontSize, glyph->currFontSize, character, 
                     &glyph->width, &glyph->height, nullptr, nullptr);
                 
-                // Store in target cache
                 (*targetCache)[key] = glyph;
                 
                 return glyph;
             }
             
+            static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
+                if (!s_initialized) return nullptr;
+                
+                if (stbtt_FindGlyphIndex(s_extFont, character)) {
+                    return s_extFont;
+                }
+                
+                if (character != 0x00B0) {
+                    if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
+                        return s_localFont;
+                    }
+                    
+                    if (stbtt_FindGlyphIndex(s_localFontCN, character) != 0) {
+                        return s_localFontCN;
+                    }
+                    if (stbtt_FindGlyphIndex(s_localFontTW, character) != 0) {
+                        return s_localFontTW;
+                    }
+                    if (stbtt_FindGlyphIndex(s_localFontKO, character) != 0) {
+                        return s_localFontKO;
+                    }
+                }
+                
+                return s_stdFont;
+            }
+            
         public:
-            // NEW: Preload and persist specific characters
-            //static void preloadPersistentGlyphs(const std::string& characters, u32 fontSize, bool monospace = false) {
-            //    std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
-            //    
-            //    if (!s_initialized) return;
-            //    
-            //    // Convert UTF-8 string to UTF-32 codepoints
-            //    #pragma GCC diagnostic push
-            //    #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-            //    
-            //    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-            //    const std::u32string codepoints = converter.from_bytes(characters);
-            //    
-            //    #pragma GCC diagnostic pop
-            //    
-            //    s32 yAdvance;
-            //    for (char32_t character : codepoints) {
-            //        const u64 key = generateCacheKey(character, monospace, fontSize);
-            //
-            //        if (s_persistentGlyphCache.find(key) != s_persistentGlyphCache.end()) {
-            //            continue;
-            //        }
-            //
-            //        auto glyph = std::make_shared<Glyph>();
-            //        glyph->currFont = selectFontForCharacterUnsafe(character);
-            //        if (!glyph->currFont) continue;
-            //
-            //        glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-            //
-            //        stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character,
-            //                                            glyph->currFontSize, glyph->currFontSize, 0, 0,
-            //                                            &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-            //
-            //        yAdvance = 0;
-            //        stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character,
-            //                                  &glyph->xAdvance, &yAdvance);
-            //
-            //        glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont,
-            //                                                   glyph->currFontSize, glyph->currFontSize, character,
-            //                                                   &glyph->width, &glyph->height, nullptr, nullptr);
-            //
-            //        s_persistentGlyphCache[key] = glyph;
-            //    }
-            //}
-        
-
-            static void initializeFonts(stbtt_fontinfo* stdFont, stbtt_fontinfo* localFont, 
-                                      stbtt_fontinfo* extFont, bool hasLocalFont) {
+            static void initializeFonts(stbtt_fontinfo* stdFont,
+                                      stbtt_fontinfo* localFont,
+                                      stbtt_fontinfo* localFontCN,
+                                      stbtt_fontinfo* localFontTW, 
+                                      stbtt_fontinfo* localFontKO,
+                                      stbtt_fontinfo* extFont,
+                                      bool hasLocalFont) {
                 std::lock_guard<std::mutex> initLock(s_initMutex);
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 
                 s_stdFont = stdFont;
                 s_localFont = localFont;
+                s_localFontCN = localFontCN;
+                s_localFontTW = localFontTW;
+                s_localFontKO = localFontKO;
                 s_extFont = extFont;
                 s_hasLocalFont = hasLocalFont;
                 s_initialized = true;
@@ -1473,25 +1410,14 @@ namespace tsl {
             
             static stbtt_fontinfo* selectFontForCharacter(u32 character) {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-            
-                if (!s_initialized) return nullptr;
-            
-                if (stbtt_FindGlyphIndex(s_extFont, character)) {
-                    return s_extFont;
-                } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                    // Fix: Always fetch degree symbol "°" from the standard Latin font
-                    return (character != 0x00B0) ? s_localFont : s_stdFont;
-                }
-                return s_stdFont;
+                return selectFontForCharacterUnsafe(character);
             }
-
-            // Get font metrics with caching
+        
             static FontMetrics getFontMetrics(stbtt_fontinfo* font, u32 fontSize) {
                 if (!font) return FontMetrics();
-
+        
                 const u64 key = generateFontMetricsCacheKey(font, fontSize);
                 
-                // First, try to find existing metrics with shared lock
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
                     auto it = s_fontMetricsCache.find(key);
@@ -1500,39 +1426,32 @@ namespace tsl {
                     }
                 }
                 
-                // Metrics not found, need to create them with exclusive lock
                 std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
                 
-                // Double-check pattern
                 auto it = s_fontMetricsCache.find(key);
                 if (it != s_fontMetricsCache.end()) {
                     return it->second;
                 }
                 
-                // Create new font metrics
                 FontMetrics metrics(font, static_cast<float>(fontSize));
                 s_fontMetricsCache[key] = metrics;
                 
                 return metrics;
             }
-
-            // Convenience method to get font metrics for a character (selects appropriate font)
+        
             static FontMetrics getFontMetricsForCharacter(u32 character, u32 fontSize) {
                 stbtt_fontinfo* font = selectFontForCharacter(character);
                 return getFontMetrics(font, fontSize);
             }
             
-            // UPDATED: Regular glyph method - now uses internal method
             static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Regular);
             }
-
-            // NEW: Notification-specific glyph method
+        
             static std::shared_ptr<Glyph> getOrCreateNotificationGlyph(u32 character, bool monospace, u32 fontSize) {
                 return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Notification);
             }
-
-            // NEW: Clear only the notification cache
+        
             static void clearNotificationCache() {
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_notificationGlyphCache.clear();
@@ -1540,21 +1459,17 @@ namespace tsl {
             }
             
             static void clearCache() {
-                // Note: This is now safe because any code holding a shared_ptr
-                // will keep the Glyph alive even after the cache is cleared
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
                 s_sharedGlyphCache.rehash(0);
-                s_fontMetricsCache.clear(); // Also clear font metrics cache
+                s_fontMetricsCache.clear();
                 s_fontMetricsCache.rehash(0);
             }
-
+        
             static void clearAllCaches() {
                 std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
                 s_sharedGlyphCache.clear();
                 s_sharedGlyphCache.rehash(0);
-                //s_persistentGlyphCache.clear();
-                //s_persistentGlyphCache.rehash(0);
                 s_notificationGlyphCache.clear();
                 s_notificationGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
@@ -1567,14 +1482,15 @@ namespace tsl {
                 
                 s_sharedGlyphCache.clear();
                 s_sharedGlyphCache.rehash(0);
-                //s_persistentGlyphCache.clear();
-                //s_persistentGlyphCache.rehash(0);
                 s_notificationGlyphCache.clear();
                 s_notificationGlyphCache.rehash(0);
                 s_fontMetricsCache.clear();
                 s_initialized = false;
                 s_stdFont = nullptr;
                 s_localFont = nullptr;
+                s_localFontCN = nullptr;
+                s_localFontTW = nullptr;
+                s_localFontKO = nullptr;
                 s_extFont = nullptr;
                 s_hasLocalFont = false;
             }
@@ -1583,7 +1499,7 @@ namespace tsl {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_sharedGlyphCache.size();
             }
-
+        
             static size_t getFontMetricsCacheSize() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_fontMetricsCache.size();
@@ -1593,40 +1509,23 @@ namespace tsl {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_initialized;
             }
-
-            //static size_t getPersistentCacheSize() {
-            //    std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-            //    return s_persistentGlyphCache.size();
-            //}
-
-            // NEW: Get notification cache size
+        
             static size_t getNotificationCacheSize() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_notificationGlyphCache.size();
             }
             
-            // Add memory usage monitoring
             static size_t getMemoryUsage() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 size_t totalMemory = 0;
                 
-                // Regular cache
                 for (const auto& pair : s_sharedGlyphCache) {
                     const auto& glyph = pair.second;
                     if (glyph && glyph->glyphBmp) {
                         totalMemory += glyph->width * glyph->height;
                     }
                 }
-                
-                // Persistent cache
-                //for (const auto& pair : s_persistentGlyphCache) {
-                //    const auto& glyph = pair.second;
-                //    if (glyph && glyph->glyphBmp) {
-                //        totalMemory += glyph->width * glyph->height;
-                //    }
-                //}
-
-                // Notification cache
+        
                 for (const auto& pair : s_notificationGlyphCache) {
                     const auto& glyph = pair.second;
                     if (glyph && glyph->glyphBmp) {
@@ -1635,19 +1534,6 @@ namespace tsl {
                 }
                 
                 return totalMemory;
-            }
-            
-        private:
-            static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
-                if (!s_initialized) return nullptr;
-                
-                if (stbtt_FindGlyphIndex(s_extFont, character)) {
-                    return s_extFont;
-                } else if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                    // Fix: Always fetch degree symbol "°" from the standard Latin font
-                    return (character != 0x00B0) ? s_localFont : s_stdFont;
-                }
-                return s_stdFont;
             }
         };
 
@@ -1763,8 +1649,12 @@ namespace tsl {
                 return renderer;
             }
             
-            stbtt_fontinfo m_stdFont, m_localFont, m_extFont;
-            bool m_hasLocalFont = false;
+            stbtt_fontinfo m_stdFont, m_extFont;
+            stbtt_fontinfo m_localFont;           // Primary font based on system language
+            stbtt_fontinfo m_localFontCN;         // Chinese Simplified - always loaded
+            stbtt_fontinfo m_localFontTW;         // Chinese Traditional - always loaded
+            stbtt_fontinfo m_localFontKO;         // Korean - always loaded
+            bool m_hasLocalFont = false;          // Whether primary local font is valid
 
             /**
              * @brief Handles opacity of drawn colors for fadeout. Pass all colors through this function in order to apply opacity properly
@@ -3824,20 +3714,20 @@ namespace tsl {
                     screenshotsAreForceDisabled.store(true, std::memory_order_release);
             }
             
-            Result loadLocalFont(PlSharedFontType type) {
-                PlFontData localFontData;
-                TSL_R_TRY(plGetSharedFontByType(&localFontData, type));
-                
-                this->m_hasLocalFont = true;
-                u8 *fontBuffer = reinterpret_cast<u8*>(localFontData.address);
-                stbtt_InitFont(&this->m_localFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
-                
-                // Re-initialize the shared font manager to use the new local font
-                FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
-                                           &this->m_extFont, this->m_hasLocalFont);
-                
-                return 0;
-            }
+            //Result loadLocalFont(PlSharedFontType type) {
+            //    PlFontData localFontData;
+            //    TSL_R_TRY(plGetSharedFontByType(&localFontData, type));
+            //    
+            //    this->m_hasLocalFont = true;
+            //    u8 *fontBuffer = reinterpret_cast<u8*>(localFontData.address);
+            //    stbtt_InitFont(&this->m_localFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+            //    
+            //    // Re-initialize the shared font manager to use the new local font
+            //    FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
+            //                               &this->m_extFont, this->m_hasLocalFont);
+            //    
+            //    return 0;
+            //}
 
         private:
             Renderer() {
@@ -4115,9 +4005,29 @@ namespace tsl {
                 fontBuffer = reinterpret_cast<u8*>(extFontData.address);
                 stbtt_InitFont(&this->m_extFont, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
                 
+                // Load all three local fonts unconditionally for fallback support
+                PlFontData cnFontData, twFontData, koFontData;
+                
+                TSL_R_TRY(plGetSharedFontByType(&cnFontData, PlSharedFontType_ChineseSimplified));
+                fontBuffer = reinterpret_cast<u8*>(cnFontData.address);
+                stbtt_InitFont(&this->m_localFontCN, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+                
+                TSL_R_TRY(plGetSharedFontByType(&twFontData, PlSharedFontType_ChineseTraditional));
+                fontBuffer = reinterpret_cast<u8*>(twFontData.address);
+                stbtt_InitFont(&this->m_localFontTW, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+                
+                TSL_R_TRY(plGetSharedFontByType(&koFontData, PlSharedFontType_KO));
+                fontBuffer = reinterpret_cast<u8*>(koFontData.address);
+                stbtt_InitFont(&this->m_localFontKO, fontBuffer, stbtt_GetFontOffsetForIndex(fontBuffer, 0));
+                
                 // Initialize the shared font manager
-                FontManager::initializeFonts(&this->m_stdFont, &this->m_localFont, 
-                                           &this->m_extFont, this->m_hasLocalFont);
+                FontManager::initializeFonts(&this->m_stdFont, 
+                                           &this->m_localFont,
+                                           &this->m_localFontCN,
+                                           &this->m_localFontTW, 
+                                           &this->m_localFontKO,
+                                           &this->m_extFont,
+                                           this->m_hasLocalFont);
                 
                 return 0;
             }
