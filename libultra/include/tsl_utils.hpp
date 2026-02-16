@@ -150,6 +150,9 @@ namespace ult {
 
     bool loadTranslationsFromJSON(const std::string& filePath);
 
+    // Function to clear the translation cache
+    void clearTranslationCache();
+
     extern u16 activeHeaderHeight;
 
     bool consoleIsDocked();

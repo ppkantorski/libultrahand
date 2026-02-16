@@ -672,21 +672,22 @@ namespace tsl {
         }
         
         #ifdef UI_OVERRIDE_PATH
-        
-        std::string UI_PATH = UI_OVERRIDE_PATH;
-        ult::preprocessPath(UI_PATH);
-        ult::createDirectory(UI_PATH); // create UI override path automatically (when provided)
+        {
+            std::string UI_PATH = UI_OVERRIDE_PATH;
+            ult::preprocessPath(UI_PATH);
+            ult::createDirectory(UI_PATH); // create UI override path automatically (when provided)
 
-        const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
-        const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
-                  
-        const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
-        if (ult::isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
-            ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
-        if (ult::isFileOrDirectory(NEW_WALLPAPER_PATH))
-            ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
-        if (ult::isFileOrDirectory(TRANSLATION_JSON_PATH))
-            ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
+            const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
+            const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
+                      
+            const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
+            if (ult::isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
+                ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
+            if (ult::isFileOrDirectory(NEW_WALLPAPER_PATH))
+                ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
+            if (ult::isFileOrDirectory(TRANSLATION_JSON_PATH))
+                ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
+        }
         #endif
         
         // Set Ultrahand Globals using loaded section (defaults match initialization function)
@@ -1166,9 +1167,9 @@ namespace tsl {
         class Renderer;
         
 
-        #ifdef UI_OVERRIDE_PATH
+        //#ifdef UI_OVERRIDE_PATH
         inline static std::shared_mutex s_translationCacheMutex;
-        #endif
+        //#endif
         
         class FontManager {
         public:
@@ -1568,7 +1569,7 @@ namespace tsl {
             
             // Thread-safe translation cache access
             std::string text;
-            #ifdef UI_OVERRIDE_PATH
+            //#ifdef UI_OVERRIDE_PATH
             {
                 std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
                 auto translatedIt = ult::translationCache.find(originalString);
@@ -1579,9 +1580,9 @@ namespace tsl {
                     text = originalString;
                 }
             }
-            #else
-            text = originalString;
-            #endif
+            //#else
+            //text = originalString;
+            //#endif
             
             // CRITICAL: Use the same data types as drawString
             s32 maxWidth = 0;
@@ -3071,7 +3072,7 @@ namespace tsl {
                 const std::string* text = &originalString;
                 std::string translatedText;
                 
-                #if defined(UI_OVERRIDE_PATH)
+                //#if defined(UI_OVERRIDE_PATH)
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalString);
@@ -3080,7 +3081,7 @@ namespace tsl {
                         text = &translatedText;
                     }
                 }
-                #endif
+                //#endif
                 
                 if (text->empty() || fontSize == 0) return {0, 0};
                 
@@ -3308,7 +3309,7 @@ namespace tsl {
                 
                 // Thread-safe translation cache access
                 std::string text;
-                #ifdef UI_OVERRIDE_PATH
+                //#ifdef UI_OVERRIDE_PATH
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalString);
@@ -3319,9 +3320,9 @@ namespace tsl {
                         text = originalString;
                     }
                 }
-                #else
-                text = originalString;
-                #endif
+                //#else
+                //text = originalString;
+                //#endif
                 
                 if (text.size() < 2) return text;
                 
@@ -8055,7 +8056,7 @@ namespace tsl {
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
                 
-                #ifdef UI_OVERRIDE_PATH
+                //#ifdef UI_OVERRIDE_PATH
                 {
                     const std::string originalKey = target;
                     
@@ -8075,7 +8076,7 @@ namespace tsl {
                         }
                     }
                 }
-                #endif
+                //#endif
             }
         
             void calculateWidths(gfx::Renderer* renderer) {
@@ -10023,18 +10024,27 @@ namespace tsl {
                 }
             
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerEnterFeedback();
+                    
                     
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
                         m_holding = false;
+
+                        if (ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        }
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
-                        updateAndExecute();
                         // Only trigger click animation when unlocked
                         if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
                             triggerClick = true;
+                            triggerEnterFeedback();
+                        } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOffSound.store(true, std::memory_order_release);
                         }
+                        updateAndExecute();
                     }
                     return true;
                 }
@@ -10625,24 +10635,31 @@ namespace tsl {
             
                 // Check if KEY_A is pressed to toggle ult::allowSlide
                 if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
-                    //triggerRumbleClick.store(true, std::memory_order_release);
-                    //triggerEnterSound.store(true, std::memory_order_release);
-                    triggerEnterFeedback();
                     
-
+                    
                     if (!m_unlockedTrackbar) {
                         ult::atomicToggle(ult::allowSlide);
-                        holding = false; // Reset holding state when KEY_A is pressed
+                        m_holding = false;
+
+                        if (ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        }
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
-                        updateAndExecute();
                         // Only trigger click animation when unlocked
                         if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
                             triggerClick = true;
+                            triggerEnterFeedback();
+                        } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOffSound.store(true, std::memory_order_release);
                         }
+                        updateAndExecute();
                     }
                     return true;
                 }
+                
             
                 //if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                 //    triggerRumbleDoubleClick.store(true, std::memory_order_release);

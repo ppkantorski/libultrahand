@@ -128,6 +128,12 @@ namespace ult {
     bool loadTranslationsFromJSON(const std::string& filePath) {
         return parseJsonToMap(filePath, translationCache);
     }
+
+    // Function to clear the translation cache
+    void clearTranslationCache() {
+        translationCache.clear();
+        translationCache.rehash(0);
+    }
     
     
     u16 activeHeaderHeight = 97;
