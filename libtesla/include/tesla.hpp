@@ -5920,6 +5920,9 @@ namespace tsl {
             
                 s_safeToSwap.store(false, std::memory_order_release);
                 
+                // Clear table scrolling flag when list is cleared
+                isTableScrolling.store(false, std::memory_order_release);
+
                 // Initialize instance state
                 m_pendingJump = false;
                 //m_cachingDisabled = false;
@@ -6388,6 +6391,9 @@ namespace tsl {
                 m_clearList = false;
                 actualItemCount = 0;
                 m_hasSetInitialFocusHack = false;
+
+                // Clear table scrolling flag when list is cleared
+                isTableScrolling.store(false, std::memory_order_release);
             }
             
             void addPendingItems(bool skipInvalidate = false) {
@@ -6760,7 +6766,7 @@ namespace tsl {
                 
                 // Check if the next item is non-focusable
                 if (m_focusedIndex + 1 < static_cast<int>(m_items.size()) &&
-                    !m_items[m_focusedIndex + 1]->m_isItem) {
+                    !m_items[m_focusedIndex + 1]->m_isItem && m_listHeight > getHeight()) {
                     isTableScrolling.store(true, std::memory_order_release);
                 }
                 
@@ -6841,7 +6847,7 @@ namespace tsl {
                 updateHoldState();
                 
                 // Check if the previous item is non-focusable
-                if (m_focusedIndex > 0 && m_items[m_focusedIndex - 1]->isTable()) {
+                if (m_focusedIndex > 0 && m_items[m_focusedIndex - 1]->isTable() && m_listHeight > getHeight()) {
                     isTableScrolling.store(true, std::memory_order_release);
                 }
                 
@@ -7043,17 +7049,6 @@ namespace tsl {
             // Core navigation logic
             // Optimized version with variable definitions pulled outside the loop
             inline Element* navigateDown(Element* oldFocus) {
-                // Synchronize m_focusedIndex with actual focus before navigating
-                //if (oldFocus) {
-                //    for (size_t i = 0; i < m_items.size(); ++i) {
-                //        if (m_items[i] == oldFocus) {
-                //            m_focusedIndex = i;
-                //            break;
-                //        }
-                //    }
-                //}
-                
-
                 size_t searchIndex = m_focusedIndex + 1;
                 
                 // If currently on a table that needs more scrolling
@@ -7065,19 +7060,18 @@ namespace tsl {
                         return oldFocus;
                     }
                 }
-
-               // Sync AFTER table check - if we're not mid-table-scroll
-               if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
-                   for (size_t i = 0; i < m_items.size(); ++i) {
-                       if (m_items[i] == oldFocus) {
-                           m_focusedIndex = i;
-                           searchIndex = i + 1;
-                           break;
-                       }
-                   }
-               }
+            
+                // Sync AFTER table check - if we're not mid-table-scroll
+                if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i] == oldFocus) {
+                            m_focusedIndex = i;
+                            searchIndex = i + 1;
+                            break;
+                        }
+                    }
+                }
                 
-                // Cache invariant values (legitimate optimization)
                 const s32 viewBottom = getBottomBound();
                 const float containerHeight = getHeight();
                 const float offsetPlusHeight = m_offset + containerHeight;
@@ -7087,7 +7081,6 @@ namespace tsl {
                     m_focusedIndex = searchIndex;
                     
                     if (item->isTable()) {
-                        // Table needs scrolling
                         const s32 tableBottom = item->getBottomBound();
                         if (tableBottom > viewBottom) {
                             isTableScrolling.store(true, std::memory_order_release);
@@ -7098,18 +7091,15 @@ namespace tsl {
                         continue;
                     }
                     
-                    // Try to focus this item
                     Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Down);
                     if (newFocus && newFocus != oldFocus) {
-                        // ONLY reset when we successfully focus something
                         isTableScrolling.store(false, std::memory_order_release);
                         updateScrollOffset();
                         return newFocus;
                     } else {
-                        // Non-focusable item (gap/header)
                         const float itemBottom = calculateItemPosition(searchIndex) + item->getHeight();
                         if (itemBottom > offsetPlusHeight) {
-                            isTableScrolling.store(true, std::memory_order_release);  // Treat gaps/headers like tables
+                            isTableScrolling.store(true, std::memory_order_release);
                             scrollDown();
                             return oldFocus;
                         }
@@ -7117,22 +7107,17 @@ namespace tsl {
                     }
                 }
                 
+                // ADDED: Clear flag when navigation completes without finding anything
+                isTableScrolling.store(false, std::memory_order_release);
                 return oldFocus;
             }
             
             inline Element* navigateUp(Element* oldFocus) {
-                // Synchronize m_focusedIndex with actual focus before navigating
-                //if (oldFocus) {
-                //    for (size_t i = 0; i < m_items.size(); ++i) {
-                //        if (m_items[i] == oldFocus) {
-                //            m_focusedIndex = i;
-                //            break;
-                //        }
-                //    }
+                //if (m_focusedIndex == 0) {
+                //    isTableScrolling.store(false, std::memory_order_release);
+                //    return oldFocus;
                 //}
-
-
-                if (m_focusedIndex == 0) return oldFocus;
+                
                 ssize_t searchIndex = static_cast<ssize_t>(m_focusedIndex) - 1;
                 
                 // If currently on a table that needs more scrolling
@@ -7144,28 +7129,26 @@ namespace tsl {
                         return oldFocus;
                     }
                 }
-
-               // Sync AFTER table check - if we're not mid-table-scroll
-               if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
-                   for (size_t i = 0; i < m_items.size(); ++i) {
-                       if (m_items[i] == oldFocus) {
-                           m_focusedIndex = i;
-                           searchIndex = static_cast<ssize_t>(i) - 1;
-                           break;
-                       }
-                   }
-               }
+            
+                // Sync AFTER table check - if we're not mid-table-scroll
+                if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i] == oldFocus) {
+                            m_focusedIndex = i;
+                            searchIndex = static_cast<ssize_t>(i) - 1;
+                            break;
+                        }
+                    }
+                }
                 
-                // Cache invariant values (legitimate optimization)
                 const s32 viewTop = getTopBound();
-                const float offset = m_offset;  // Cache in case m_offset is volatile or has accessor overhead
+                const float offset = m_offset;
                 
                 while (searchIndex >= 0) {
                     Element* item = m_items[searchIndex];
                     m_focusedIndex = static_cast<size_t>(searchIndex);
                     
                     if (item->isTable()) {
-                        // Table needs scrolling
                         const s32 tableTop = item->getTopBound();
                         if (tableTop < viewTop) {
                             isTableScrolling.store(true, std::memory_order_release);
@@ -7176,18 +7159,15 @@ namespace tsl {
                         continue;
                     }
                     
-                    // Try to focus this item
                     Element* newFocus = item->requestFocus(oldFocus, FocusDirection::Up);
                     if (newFocus && newFocus != oldFocus) {
-                        // ONLY reset when we successfully focus something
                         isTableScrolling.store(false, std::memory_order_release);
                         updateScrollOffset();
                         return newFocus;
                     } else {
-                        // Non-focusable item (gap/header)
                         const float itemTop = calculateItemPosition(static_cast<size_t>(searchIndex));
                         if (itemTop < offset) {
-                            isTableScrolling.store(true, std::memory_order_release);  // Treat gaps/headers like tables
+                            isTableScrolling.store(true, std::memory_order_release);
                             scrollUp();
                             return oldFocus;
                         }
@@ -7195,6 +7175,8 @@ namespace tsl {
                     }
                 }
                 
+                // ADDED: Clear flag when navigation completes without finding anything
+                isTableScrolling.store(false, std::memory_order_release);
                 return oldFocus;
             }
             
@@ -7304,22 +7286,46 @@ namespace tsl {
             
                 const float oldOffset = m_nextOffset;
                 
-                // Set focused index - check if we need to point at a table or non-focusable element after the last item
+                // Set focused index and scroll to bottom
                 m_focusedIndex = lastFocusableIndex;
+                m_nextOffset = targetOffset;
                 
-                // Search forward from last focusable item to find tables/gaps that extend below
+                // Check if there are tables after the last focusable item
+                bool hasTables = false;
                 for (size_t i = lastFocusableIndex + 1; i < m_items.size(); ++i) {
-                    m_focusedIndex = i;  // Point at the table/gap, just like navigateDown does
                     if (m_items[i]->isTable()) {
-                        isTableScrolling.store(true, std::memory_order_release);
+                        m_focusedIndex = i;  // Point at the last table
+                        hasTables = true;
                     }
                 }
                 
-                m_nextOffset = targetOffset;
+                // Decide if table scrolling should be active based on item position
+                if (hasTables && m_listHeight > getHeight()) {
+                    // Calculate where the focused item (last focusable) actually is
+                    float itemPos = 0.0f;
+                    for (size_t i = 0; i < lastFocusableIndex; ++i) {
+                        itemPos += m_items[i]->getHeight();
+                    }
+                    const float itemHeight = m_items[lastFocusableIndex]->getHeight();
+                    const float itemCenter = itemPos + (itemHeight / 2.0f);
+                    
+                    // Calculate viewport center in absolute coordinates
+                    const float viewHeight = static_cast<float>(getHeight());
+                    const float viewportCenter = m_nextOffset + (viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f);
+                    
+                    // If item center is ABOVE viewport center, content below is pushing it up
+                    // This means table scrolling should be active
+                    if (itemCenter < viewportCenter - 1.0f) {
+                        isTableScrolling.store(true, std::memory_order_release);
+                    } else {
+                        isTableScrolling.store(false, std::memory_order_release);
+                    }
+                } else {
+                    isTableScrolling.store(false, std::memory_order_release);
+                }
                 
                 Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
                 
-                // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
                     triggerNavigationFeedback();
@@ -7360,24 +7366,48 @@ namespace tsl {
             
                 const float oldOffset = m_nextOffset;
                 
-                // Set focused index - check if we need to point at a table/gap before the first focusable item
+                // Set focused index and scroll to top
                 m_focusedIndex = firstFocusableIndex;
+                m_nextOffset = targetOffset;
                 
-                // Search backward from first focusable item to find tables/gaps that extend above
+                // Check if there are tables before the first focusable item
+                bool hasTables = false;
                 if (firstFocusableIndex > 0) {
                     for (ssize_t i = static_cast<ssize_t>(firstFocusableIndex) - 1; i >= 0; --i) {
-                        m_focusedIndex = static_cast<size_t>(i);  // Point at the table/gap, just like navigateUp does
                         if (m_items[i]->isTable()) {
-                            isTableScrolling.store(true, std::memory_order_release);
+                            m_focusedIndex = static_cast<size_t>(i);  // Point at the first table
+                            hasTables = true;
                         }
                     }
                 }
                 
-                m_nextOffset = targetOffset;
+                // Decide if table scrolling should be active based on item position
+                if (hasTables && m_listHeight > getHeight()) {
+                    // Calculate where the focused item (first focusable) actually is
+                    float itemPos = 0.0f;
+                    for (size_t i = 0; i < firstFocusableIndex; ++i) {
+                        itemPos += m_items[i]->getHeight();
+                    }
+                    const float itemHeight = m_items[firstFocusableIndex]->getHeight();
+                    const float itemCenter = itemPos + (itemHeight / 2.0f);
+                    
+                    // Calculate viewport center in absolute coordinates
+                    const float viewHeight = static_cast<float>(getHeight());
+                    const float viewportCenter = m_nextOffset + (viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f);
+                    
+                    // If item center is BELOW viewport center, content above is pushing it down
+                    // This means table scrolling should be active
+                    if (itemCenter > viewportCenter + 1.0f) {
+                        isTableScrolling.store(true, std::memory_order_release);
+                    } else {
+                        isTableScrolling.store(false, std::memory_order_release);
+                    }
+                } else {
+                    isTableScrolling.store(false, std::memory_order_release);
+                }
             
                 Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
             
-                // Trigger feedback if offset or focus changed
                 if ((newFocus && newFocus != oldFocus) ||
                     (std::abs(m_nextOffset - oldOffset) > tolerance)) {
                     triggerNavigationFeedback();

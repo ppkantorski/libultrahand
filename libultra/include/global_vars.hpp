@@ -108,6 +108,8 @@ namespace ult {
     extern const std::string TESLA_STR;
     extern const std::string ERISTA_STR;
     extern const std::string MARIKO_STR;
+    extern const std::string HANDHELD_STR;
+    extern const std::string DOCKED_STR;
     extern const std::string KEY_COMBO_STR;
     extern const std::string DEFAULT_LANG_STR;
 
@@ -130,6 +132,7 @@ namespace ult {
     extern const std::string MODE_STR;
     extern const std::string GROUPING_STR;
     extern const std::string FOOTER_STR;
+    extern const std::string FOOTER_HIGHLIGHT_STR;
     extern const std::string TOGGLE_STR;
     extern const std::string LEFT_STR;
     extern const std::string RIGHT_STR;

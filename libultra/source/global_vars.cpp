@@ -111,6 +111,8 @@ namespace ult {
     CONSTEXPR_STRING std::string TESLA_STR        = "tesla";
     CONSTEXPR_STRING std::string ERISTA_STR       = "erista";
     CONSTEXPR_STRING std::string MARIKO_STR       = "mariko";
+    CONSTEXPR_STRING std::string HANDHELD_STR     = "handheld";
+    CONSTEXPR_STRING std::string DOCKED_STR       = "docked";
     CONSTEXPR_STRING std::string KEY_COMBO_STR    = "key_combo";
     CONSTEXPR_STRING std::string DEFAULT_LANG_STR = "default_lang";
 
@@ -133,6 +135,7 @@ namespace ult {
     CONSTEXPR_STRING std::string MODE_STR             = "mode";
     CONSTEXPR_STRING std::string GROUPING_STR         = "grouping";
     CONSTEXPR_STRING std::string FOOTER_STR           = "footer";
+    const std::string FOOTER_HIGHLIGHT_STR            = "footer_highlight";
     CONSTEXPR_STRING std::string TOGGLE_STR           = "toggle";
     CONSTEXPR_STRING std::string LEFT_STR             = "left";
     CONSTEXPR_STRING std::string RIGHT_STR            = "right";
