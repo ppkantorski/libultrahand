@@ -156,7 +156,7 @@ namespace ult {
         }
     }
     
-    #if !USING_FSTREAM_DIRECTIVE
+    
     void writeLog(FILE* logFile, const std::string& line) {
         if (logFile) {
             std::lock_guard<std::mutex> lock(logMutex2);
@@ -169,20 +169,6 @@ namespace ult {
             #endif
         }
     }
-    #else
-    void writeLog(std::ofstream& logFile, const std::string& line) {
-        if (logFile.is_open()) {
-            std::lock_guard<std::mutex> lock(logMutex2);
-            logFile << line << std::endl;
-            logFile.flush(); // Ensure data is written immediately
-        } else {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to write to log file.");
-            #endif
-        }
-    }
-    #endif
     
     /**
      * @brief Creates a text file with the specified content.
@@ -196,7 +182,6 @@ namespace ult {
         // Create parent directory first
         createDirectory(getParentDirFromPath(filePath));
         
-    #if !USING_FSTREAM_DIRECTIVE
         FileGuard file(fopen(filePath.c_str(), "w"));
         if (file.get()) {
             fputs(content.c_str(), file.get());
@@ -206,18 +191,6 @@ namespace ult {
                 logMessage("Error: Unable to create file " + filePath);
             #endif
         }
-    #else
-        std::ofstream file(filePath);
-        if (file.is_open()) {
-            file << content;
-            file.close();
-        } else {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Error: Unable to create file " + filePath);
-            #endif
-        }
-    #endif
     }
     
     /**
@@ -255,7 +228,6 @@ namespace ult {
             
             // Write log for single file deletion if needed
             if (needsLogging && !successfulDeletions.empty()) {
-    #if !USING_FSTREAM_DIRECTIVE
                 createDirectory(getParentDirFromPath(logSource));
                 if (FILE* logFile = fopen(logSource.c_str(), "a")) {
                     writeLog(logFile, pathToDelete);
@@ -267,20 +239,6 @@ namespace ult {
                         logMessage("Failed to open source log file: " + logSource);
                 }
                 #endif
-    #else
-                createDirectory(getParentDirFromPath(logSource));
-                std::ofstream logSourceFile(logSource, std::ios::app);
-                if (logSourceFile.is_open()) {
-                    writeLog(logSourceFile, pathToDelete);
-                    logSourceFile.close();
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open source log file: " + logSource);
-                }
-                #endif
-    #endif
             }
             return;
         }
@@ -383,7 +341,6 @@ namespace ult {
         
         // Batch write all successful deletions to log file at the end
         if (needsLogging && !successfulDeletions.empty()) {
-    #if !USING_FSTREAM_DIRECTIVE
             createDirectory(getParentDirFromPath(logSource));
             if (FILE* logFile = fopen(logSource.c_str(), "a")) {
                 for (const auto& deletedPath : successfulDeletions) {
@@ -397,22 +354,6 @@ namespace ult {
                     logMessage("Failed to open source log file: " + logSource);
             }
             #endif
-    #else
-            createDirectory(getParentDirFromPath(logSource));
-            std::ofstream logSourceFile(logSource, std::ios::app);
-            if (logSourceFile.is_open()) {
-                for (const auto& deletedPath : successfulDeletions) {
-                    writeLog(logSourceFile, deletedPath);
-                }
-                logSourceFile.close();
-            }
-            #if USING_LOGGING_DIRECTIVE
-            else {
-                if (!disableLogging)
-                    logMessage("Failed to open source log file: " + logSource);
-            }
-            #endif
-    #endif
         }
     }
     
@@ -704,7 +645,6 @@ namespace ult {
         // Only write to log files if the move was successful
         // This is the key optimization - logs are only opened when actually needed!
         if (moveSuccess) {
-    #if !USING_FSTREAM_DIRECTIVE
             if (!logSource.empty()) {
                 createDirectory(getParentDirFromPath(logSource));
                 if (FILE* logFile = fopen(logSource.c_str(), "a")) {
@@ -732,37 +672,6 @@ namespace ult {
                 }
                 #endif
             }
-    #else
-            if (!logSource.empty()) {
-                createDirectory(getParentDirFromPath(logSource));
-                std::ofstream logSourceFile(logSource, std::ios::app);
-                if (logSourceFile.is_open()) {
-                    writeLog(logSourceFile, sourcePath);
-                    logSourceFile.close();
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open source log file: " + logSource);
-                }
-                #endif
-            }
-    
-            if (!logDestination.empty()) {
-                createDirectory(getParentDirFromPath(logDestination));
-                std::ofstream logDestFile(logDestination, std::ios::app);
-                if (logDestFile.is_open()) {
-                    writeLog(logDestFile, finalDestPath);
-                    logDestFile.close();
-                }
-                #if USING_LOGGING_DIRECTIVE
-                else {
-                    if (!disableLogging)
-                        logMessage("Failed to open destination log file: " + logDestination);
-                }
-                #endif
-            }
-    #endif
         }
     
         return moveSuccess;
@@ -848,8 +757,7 @@ namespace ult {
         
         // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
         std::unique_ptr<char[]> buffer(new char[bufferSize]);
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* srcFile = nullptr;
         FILE* destFile = nullptr;
         
@@ -933,67 +841,6 @@ namespace ult {
             copyPercentage.store(-1, std::memory_order_release);
             return;
         }
-    
-    #else
-        std::ifstream srcFile;
-        std::ofstream destFile;
-        
-        // Retry loop for file opening
-        for (size_t retryCount = 0; retryCount <= maxRetries; ++retryCount) {
-            srcFile.open(fromFile, std::ios::binary);
-            destFile.open(toFile, std::ios::binary);
-            
-            if (srcFile.is_open() && destFile.is_open()) {
-                break;
-            }
-            
-            srcFile.close();
-            destFile.close();
-            
-            if (retryCount == maxRetries) {
-                #if USING_LOGGING_DIRECTIVE
-                if (!disableLogging)
-                    logMessage("Error: Failed to open files after " + std::to_string(maxRetries) + " retries");
-                #endif
-                return;
-            }
-        }
-        
-        // Main copy loop
-        char* bufferPtr = buffer.get();
-        while (srcFile.read(bufferPtr, bufferSize) || srcFile.gcount() > 0) {
-            if (abortFileOp.load(std::memory_order_acquire)) {
-                srcFile.close();
-                destFile.close();
-                remove(toFile.c_str());
-                copyPercentage.store(-1, std::memory_order_release);
-                return;
-            }
-            
-            std::streamsize bytesToWrite = srcFile.gcount();
-            destFile.write(bufferPtr, bytesToWrite);
-            
-            if (!destFile.good()) {
-                #if USING_LOGGING_DIRECTIVE
-                if (!disableLogging)
-                    logMessage("Error writing to destination file");
-                #endif
-                srcFile.close();
-                destFile.close();
-                remove(toFile.c_str());
-                copyPercentage.store(-1, std::memory_order_release);
-                return;
-            }
-            
-            totalBytesCopied += bytesToWrite;
-            if (totalSize > 0) {
-                copyPercentage.store(static_cast<int>(100 * totalBytesCopied / totalSize), std::memory_order_release);
-            }
-        }
-        
-        srcFile.close();
-        destFile.close();
-    #endif
         
         // Only open and write to log files if they're needed - this is the key optimization!
         if (!logSource.empty()) {
@@ -1219,7 +1066,6 @@ namespace ult {
                 
                 std::string logToPath = actualToPath;
                 
-    #if !USING_FSTREAM_DIRECTIVE
                 if (!logSource.empty()) {
                     createDirectory(getParentDirFromPath(logSource));
                     if (FILE* logFile = fopen(logSource.c_str(), "a")) {
@@ -1247,37 +1093,6 @@ namespace ult {
                     }
                     #endif
                 }
-    #else
-                if (!logSource.empty()) {
-                    createDirectory(getParentDirFromPath(logSource));
-                    std::ofstream logSourceFile(logSource, std::ios::app);
-                    if (logSourceFile.is_open()) {
-                        writeLog(logSourceFile, logFromPath);
-                        logSourceFile.close();
-                    }
-                    #if USING_LOGGING_DIRECTIVE
-                    else {
-                        if (!disableLogging)
-                            logMessage("Failed to open source log file: " + logSource);
-                    }
-                    #endif
-                }
-    
-                if (!logDestination.empty()) {
-                    createDirectory(getParentDirFromPath(logDestination));
-                    std::ofstream logDestFile(logDestination, std::ios::app);
-                    if (logDestFile.is_open()) {
-                        writeLog(logDestFile, logToPath);
-                        logDestFile.close();
-                    }
-                    #if USING_LOGGING_DIRECTIVE
-                    else {
-                        if (!disableLogging)
-                            logMessage("Failed to open destination log file: " + logDestination);
-                    }
-                    #endif
-                }
-    #endif
             }
         }
     
@@ -1387,7 +1202,6 @@ namespace ult {
     /**
      * @brief For each match of the wildcard pattern, creates an empty text file
      *        named basename.txt inside the output directory.
-     *        Uses FILE* if !USING_FSTREAM_DIRECTIVE is defined, otherwise uses std::ofstream.
      *
      * @param wildcardPattern A path with a wildcard, such as /some/path/[*].
      *                        Each match results in a file named after the basename.
@@ -1418,14 +1232,9 @@ namespace ult {
             }
     
             outFile = outputPrefix + baseName;
-    
-        #if !USING_FSTREAM_DIRECTIVE
+            
             FileGuard fp(std::fopen(outFile.c_str(), "wb"));
             // File automatically closed by FileGuard destructor
-        #else
-            std::ofstream ofs(outFile, std::ios::binary | std::ios::trunc);
-            ofs.close();
-        #endif
             fullPath = "";
         }
         fileList.clear();

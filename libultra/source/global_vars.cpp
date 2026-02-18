@@ -56,7 +56,8 @@ namespace ult {
     const std::string LANG_PATH                   = BASE_CONFIG_PATH + "lang/";
     const std::string THEMES_PATH                 = BASE_CONFIG_PATH + "themes/";
     const std::string WALLPAPERS_PATH             = BASE_CONFIG_PATH + "wallpapers/";
-    const std::string SOUNDS_PATH                 = BASE_CONFIG_PATH + "sounds/";
+    const std::string SOUNDS_PATH                 = BASE_CONFIG_PATH + ".sounds/";
+    const std::string LOADED_SOUNDS_PATH          = BASE_CONFIG_PATH + "sounds/";
     const std::string FLAGS_PATH                  = BASE_CONFIG_PATH + "flags/";
     const std::string NOTIFICATIONS_PATH          = BASE_CONFIG_PATH + "notifications/";
     const std::string PAYLOADS_PATH               = BASE_CONFIG_PATH + "payloads/";
@@ -89,7 +90,7 @@ namespace ult {
     const std::string LATEST_UPDATER_INI_URL        = ULTRAHAND_REPO_URL + "releases/latest/download/update.ini";
     //const std::string NX_OVLLOADER_ZIP_URL          = GITHUB_BASE_URL + "nx-ovlloader/releases/latest/download/nx-ovlloader.zip";
     //const std::string NX_OVLLOADER_PLUS_ZIP_URL     = GITHUB_BASE_URL + "nx-ovlloader/releases/latest/download/nx-ovlloader+.zip";
-    const std::string OLD_NX_OVLLOADER_ZIP_URL      = GITHUB_BASE_URL + "nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
+    //const std::string OLD_NX_OVLLOADER_ZIP_URL      = GITHUB_BASE_URL + "nx-ovlloader/releases/download/v1.0.8/nx-ovlloader.zip";
     //const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL = GITHUB_BASE_URL + "nx-ovlloader/releases/download/v1.0.8/nx-ovlloader+.zip";
     const std::string UPDATER_PAYLOAD_URL           = GITHUB_RAW_BASE_URL + "Ultrahand-Overlay/main/payloads/ultrahand_updater.bin";
     //const std::string SOUND_EFFECTS_URL             = GITHUB_RAW_BASE_URL + "Ultrahand-Overlay/main/sounds/sounds.zip";

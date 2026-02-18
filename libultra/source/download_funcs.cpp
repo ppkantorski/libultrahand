@@ -65,8 +65,6 @@ struct FileDeleter {
     }
 };
 
-// Callback function to write received data to a file.
-#if !USING_FSTREAM_DIRECTIVE
 // Using stdio.h functions (FILE*, fwrite)
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     if (!ptr || !stream) return 0;
@@ -75,16 +73,6 @@ size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     //return writtenBytes;
     return fwrite(ptr, 1, size * nmemb, stream);
 }
-#else
-// Using std::ofstream for writing
-size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
-    if (!ptr || !stream) return 0;
-    auto& file = *static_cast<std::ofstream*>(stream);
-    const size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), totalBytes);
-    return totalBytes;
-}
-#endif
 
 // Your C function
 int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
@@ -200,17 +188,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     const std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
 
-#if USING_FSTREAM_DIRECTIVE
-    // Use ofstream if !USING_FSTREAM_DIRECTIVE is not defined
-    std::ofstream file(tempFilePath, std::ios::binary);
-    if (!file.is_open()) {
-        #if USING_LOGGING_DIRECTIVE
-        if (!disableLogging)
-            logMessage("Error opening file: " + tempFilePath);
-        #endif
-        return false;
-    }
-#else
     // Alternative method of opening file (depending on your platform, like using POSIX open())
     std::unique_ptr<FILE, FileDeleter> file(fopen(tempFilePath.c_str(), "wb"));
     if (!file) {
@@ -231,7 +208,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     //setvbuf(file.get(), NULL, _IOFBF, DOWNLOAD_WRITE_BUFFER);
-#endif
 
     // Ensure curl is initialized
     //initializeCurl();
@@ -277,12 +253,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         if (!disableLogging)
             logMessage("Error initializing curl.");
         #endif
-#if USING_FSTREAM_DIRECTIVE
-        file.close();
-#else
+
         file.reset();
         writeBuffer.reset();
-#endif
         return false;
     }
 
@@ -293,11 +266,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
-#if USING_FSTREAM_DIRECTIVE
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
-#else
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
-#endif
 
     // Conditionally set up progress callback based on noPercentagePolling
     if (noPercentagePolling) {
@@ -338,13 +307,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     long http_code = 0;
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
 
-#if USING_FSTREAM_DIRECTIVE
-    file.close();
-#else
     file.reset();
     writeBuffer.reset();
-#endif
-
     curl.reset();
 
     // Always cleanup global state
@@ -409,23 +373,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         return false;
     }
 
-#if USING_FSTREAM_DIRECTIVE
-    std::ifstream checkFile(tempFilePath);
-    if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
-        #if USING_LOGGING_DIRECTIVE
-        if (!disableLogging)
-            logMessage("Error downloading file: Empty file");
-        #endif
-        deleteFileOrDirectory(tempFilePath);
-        // Only update percentage if we're tracking it
-        if (!noPercentagePolling) {
-            downloadPercentage.store(-1, std::memory_order_release);
-        }
-        checkFile.close();
-        return false;
-    }
-    checkFile.close();
-#else
     // Alternative method for checking if the file is empty (POSIX example)
     struct stat fileStat;
     if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
@@ -440,7 +387,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         }
         return false;
     }
-#endif
 
     // Only update percentage if we're tracking it
     if (!noPercentagePolling) {
@@ -541,7 +487,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // RAII wrapper for output file
     struct OutputFileManager {
-        #if !USING_FSTREAM_DIRECTIVE
         FILE* file = nullptr;
         std::unique_ptr<char[]> buffer;
         size_t bufferSize;
@@ -573,38 +518,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         }
         
         ~OutputFileManager() { close(); }
-        #else
-        std::ofstream file;
-        
-        OutputFileManager(size_t bufSize) {
-            // Constructor for consistency with FILE* version
-        }
-        
-        bool open(const std::string& path) {
-            close();
-            file.open(path, std::ios::binary);
-            if (file.is_open()) {
-                file.rdbuf()->pubsetbuf(nullptr, UNZIP_WRITE_BUFFER);
-            }
-            return file.is_open();
-        }
-        
-        void close() {
-            if (file.is_open()) {
-                file.close();
-            }
-        }
-        
-        bool is_open() const { return file.is_open(); }
-        
-        size_t write(const void* data, size_t size) {
-            if (file.is_open()) {
-                file.write(static_cast<const char*>(data), size);
-                return file.good() ? size : 0;
-            }
-            return 0;
-        }
-        #endif
     };
 
     UnzFileManager zipFile(zipFilePath);

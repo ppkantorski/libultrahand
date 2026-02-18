@@ -60,14 +60,6 @@ namespace ult {
     extern std::atomic<int> downloadPercentage;
     extern std::atomic<int> unzipPercentage;
     
-    
-    // Thread-safe callback functions
-    //#if !USING_FSTREAM_DIRECTIVE
-    //size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
-    //#else
-    //size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
-    //#endif
-    
     //int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
     
     

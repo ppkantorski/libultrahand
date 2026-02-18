@@ -7749,14 +7749,14 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 const bool useClickTextColor = m_flags.m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
-                if (useClickTextColor && !m_isTouchHolding) [[unlikely]] {
+                if (useClickTextColor && !m_flags.m_isTouchHolding) [[unlikely]] {
                     auto drawFunc = ult::expandedMemory ? &gfx::Renderer::drawRectMultiThreaded : &gfx::Renderer::drawRect;
                     (renderer->*drawFunc)(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
                 }
                 
                 #if IS_LAUNCHER_DIRECTIVE
 
-                if (m_isTouchHolding) [[unlikely]] {
+                if (m_flags.m_isTouchHolding) [[unlikely]] {
                     // Determine the active percentage to use
                     const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
@@ -7857,9 +7857,9 @@ namespace tsl {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
                         //m_touchHoldStartTick = armGetSystemTick();  // Start tracking hold
-                        m_isTouchHolding = false;  // Will be set to true when hold activates
-                        m_shortThresholdCrossed = false;
-                        m_longThresholdCrossed = false;
+                        m_flags.m_isTouchHolding = false;  // Will be set to true when hold activates
+                        m_flags.m_shortThresholdCrossed = false;
+                        m_flags.m_longThresholdCrossed = false;
                         triggerNavigationFeedback();
                     }
                 }
@@ -7869,18 +7869,18 @@ namespace tsl {
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
                     // Activate touch hold immediately when Hold event fires
-                    if (m_usingTouchHolding && !m_isTouchHolding && touchDurationInSeconds >= 0.1f) {
-                        m_isTouchHolding = true;
+                    if (m_flags.m_usingTouchHolding && !m_flags.m_isTouchHolding && touchDurationInSeconds >= 0.1f) {
+                        m_flags.m_isTouchHolding = true;
                         // Trigger the click with KEY_A to start hold behavior
                         
                         return onClick(KEY_A);
                     }
                     
-                    if (m_flags.m_useLongThreshold && !m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
-                        m_longThresholdCrossed = true;
+                    if (m_flags.m_useLongThreshold && !m_flags.m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
+                        m_flags.m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
-                    } else if (m_flags.m_useShortThreshold && !m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
-                        m_shortThresholdCrossed = true;
+                    } else if (m_flags.m_useShortThreshold && !m_flags.m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
+                        m_flags.m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
                     }
                     
@@ -7889,8 +7889,8 @@ namespace tsl {
             
                 if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
                     m_flags.m_touched = false;
-                    const bool wasHolding = m_isTouchHolding;
-                    m_isTouchHolding = false;  // Stop tracking hold on release
+                    const bool wasHolding = m_flags.m_isTouchHolding;
+                    m_flags.m_isTouchHolding = false;  // Stop tracking hold on release
                     
                     if (Element::getInputMode() == InputMode::Touch) [[likely]] {
                         m_clickAnimationProgress = 0;
@@ -7978,15 +7978,15 @@ namespace tsl {
             }
 
             inline void enableTouchHolding() {
-                m_usingTouchHolding = true;
+                m_flags.m_usingTouchHolding = true;
             }
 
             inline void disableTouchHolding() {
-                m_usingTouchHolding = false;
+                m_flags.m_usingTouchHolding = false;
             }
 
             inline bool isTouchHolding() const noexcept {
-                return m_isTouchHolding;
+                return m_flags.m_isTouchHolding;
             }
             
             //inline u64 getTouchHoldStartTick() const noexcept {
@@ -7994,7 +7994,7 @@ namespace tsl {
             //}
             
             inline void resetTouchHold() {
-                m_isTouchHolding = false;
+                m_flags.m_isTouchHolding = false;
                 //m_touchHoldStartTick = 0;
             }
 
@@ -8035,9 +8035,6 @@ namespace tsl {
             std::string m_scrollText;
             std::string m_ellipsisText;
             u16 m_listItemHeight;  // Changed from u32 to u16
-
-            bool m_shortThresholdCrossed = false;
-            bool m_longThresholdCrossed = false;
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
             struct {
@@ -8050,6 +8047,10 @@ namespace tsl {
                 bool m_useClickAnimation : 1;
                 bool m_useShortThreshold : 1;
                 bool m_useLongThreshold : 1;
+                bool m_usingTouchHolding : 1;
+                bool m_isTouchHolding: 1;
+                bool m_shortThresholdCrossed : 1;
+                bool m_longThresholdCrossed : 1;
             } m_flags = {};
         
             Color m_customTextColor = {0};
@@ -8059,8 +8060,8 @@ namespace tsl {
             u16 m_maxWidth = 0;     // Changed from u32 to u16
             u16 m_textWidth = 0;     // Changed from u32 to u16
 
-            bool m_usingTouchHolding = false;
-            bool m_isTouchHolding = false;
+            //bool m_usingTouchHolding = false;
+            //bool m_isTouchHolding = false;
             //u64 m_touchHoldStartTick = 0;
         
         private:
@@ -8255,63 +8256,39 @@ namespace tsl {
             }
         
         #if IS_LAUNCHER_DIRECTIVE
-            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter=false) const {
+            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter = false) const {
         #else
             Color determineValueTextColor(bool useClickTextColor) const {
+                constexpr bool lastRunningInterpreter = false;
         #endif
                 if (m_focused && ult::useSelectionValue) {
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? (clickTextColor) :
-                               (m_flags.m_faint ? offTextColor : (useClickTextColor ? clickTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor)));
+                        return useClickTextColor ? clickTextColor :
+                               (m_flags.m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor));
                     }
-                    
-                #if IS_LAUNCHER_DIRECTIVE
-                    const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
-                    if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
-                                     m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
-                                     m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
-                        return m_flags.m_faint ? offTextColor : (inprogressTextColor);
+                    // unique to focused: falls through to shared block below, but returns selectedValueTextColor at end
+                } else {
+                    if (m_flags.m_hasCustomValueColor) return m_customValueColor;
+                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
+                        return useClickTextColor ? clickTextColor :
+                               (m_flags.m_faint ? offTextColor : (m_focused ? (ult::useSelectionText ? selectedTextColor : defaultTextColor) : defaultTextColor));
                     }
-                #endif
-                    
-                    if (m_value == ult::INPROGRESS_SYMBOL) {
-                        return m_flags.m_faint ? offTextColor : (inprogressTextColor);
-                    }
-                    
-                    if (m_value == ult::CROSSMARK_SYMBOL) {
-                        return m_flags.m_faint ? offTextColor : (invalidTextColor);
-                    }
-                    
-                    return useClickTextColor ? clickTextColor : selectedValueTextColor;
                 }
-                
-                if (m_flags.m_hasCustomValueColor) {
-                    return m_customValueColor;
-                }
-                
-                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                    return (m_focused ? (useClickTextColor ? clickTextColor : (m_flags.m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor))) :
-                           (useClickTextColor ? clickTextColor : (m_flags.m_faint ? offTextColor : defaultTextColor)));
-                }
-                
+        
+                // shared logic — only reached once per path
             #if IS_LAUNCHER_DIRECTIVE
                 const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
                 if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
                                  m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
-                                 m_value.find(ult::COPY_SYMBOL) != std::string::npos)) {
-                    return m_flags.m_faint ? offTextColor : (inprogressTextColor);
-                }
+                                 m_value.find(ult::COPY_SYMBOL) != std::string::npos))
+                    return m_flags.m_faint ? offTextColor : inprogressTextColor;
             #endif
-                
-                if (m_value == ult::INPROGRESS_SYMBOL) {
-                    return m_flags.m_faint ? offTextColor : (inprogressTextColor);
-                }
-                
-                if (m_value == ult::CROSSMARK_SYMBOL) {
-                    return m_flags.m_faint ? offTextColor : (invalidTextColor);
-                }
-                
-                return (m_flags.m_faint ? offTextColor : (onTextColor));
+                if (m_value == ult::INPROGRESS_SYMBOL) return m_flags.m_faint ? offTextColor : inprogressTextColor;
+                if (m_value == ult::CROSSMARK_SYMBOL)  return m_flags.m_faint ? offTextColor : invalidTextColor;
+        
+                return (m_focused && ult::useSelectionValue)
+                    ? (useClickTextColor ? clickTextColor : selectedValueTextColor)
+                    : (m_flags.m_faint ? offTextColor : onTextColor);
             }
 
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {

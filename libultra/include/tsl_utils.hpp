@@ -26,12 +26,7 @@
 #ifndef TSL_UTILS_HPP
 #define TSL_UTILS_HPP
 
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <ultra.hpp>
 #include <switch.h>
 #include <arm_neon.h>
@@ -447,11 +442,14 @@ namespace ult {
     extern std::string SOUND_SUPPORT_ENABLED;
     extern std::string EXIT_OVERLAY_SYSTEM;
 
+    extern std::string ULTRAHAND_ABOUT;
+
     //extern std::string MEMORY_EXPANSION;
     //extern std::string REBOOT_REQUIRED;
     extern std::string LOCAL_IP;
     extern std::string WALLPAPER;
     extern std::string THEME;
+    extern std::string SOUNDS;
     extern std::string DEFAULT;
     extern std::string ROOT_PACKAGE;
     extern std::string SORT_PRIORITY;

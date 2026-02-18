@@ -62,7 +62,6 @@ namespace ult {
 
         PackageHeader packageHeader;
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return packageHeader;
@@ -70,14 +69,6 @@ namespace ult {
         
         char buffer[1024];
         std::string line;
-    #else
-        std::ifstream file(filePath);
-        if (!file) {
-            return packageHeader;
-        }
-        
-        std::string line;
-    #endif
     
         // Create field map once outside the loop
         const std::map<std::string_view, std::string*> fieldMap = {
@@ -97,8 +88,7 @@ namespace ult {
         
         size_t startPos, endPos, first, last;
         std::string value;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+
         size_t len;
         while (fgets(buffer, sizeof(buffer), file) && fieldsFound < totalFields) {
             // Reuse line string capacity instead of creating new string
@@ -113,13 +103,6 @@ namespace ult {
                     line.pop_back();
                 }
             }
-    #else
-        while (getline(file, line) && fieldsFound < totalFields) {
-            // Remove carriage return if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-    #endif
             
             // Skip empty lines and non-comment lines
             if (line.empty() || line[0] != ';') {
@@ -169,10 +152,8 @@ namespace ult {
             // Clear line to reuse capacity
             line.clear();
         }
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         fclose(file);
-    #endif
     
         return packageHeader;
     }
@@ -310,8 +291,7 @@ namespace ult {
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
     
         std::map<std::string, std::map<std::string, std::string>> parsedData;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
             return parsedData;
@@ -374,66 +354,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ifstream configFile(configIniPath);
-        if (!configFile) {
-            return parsedData;
-        }
-        
-        std::string line;
-        line.reserve(256);
-        
-        std::map<std::string, std::string>* currentSectionMap = nullptr;
-    
-        while (getline(configFile, line)) {
-            // Strip carriage return
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            if (line.empty()) continue;
-            
-            // Trim using pointers for speed
-            const char* start = line.c_str();
-            const char* end = start + line.length();
-            
-            while (start < end && (*start == ' ' || *start == '\t')) ++start;
-            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
-            
-            if (start >= end) continue;
-            
-            // Section header
-            if (*start == '[' && end[-1] == ']') {
-                if (end - start > 2) {
-                    currentSectionMap = &parsedData[std::string(start + 1, end - 1)];
-                }
-            } else if (currentSectionMap) {
-                // Find '=' delimiter
-                const char* eq = start;
-                while (eq < end && *eq != '=') ++eq;
-                
-                if (eq < end) {
-                    // Trim key
-                    const char* key_end = eq;
-                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
-                    
-                    if (key_end > start) {
-                        // Trim value
-                        const char* val_start = eq + 1;
-                        while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
-                        
-                        currentSectionMap->emplace(
-                            std::piecewise_construct,
-                            std::forward_as_tuple(start, key_end),
-                            std::forward_as_tuple(val_start, end)
-                        );
-                    }
-                }
-            }
-        }
-        
-        configFile.close();
-    #endif
     
         return parsedData;
     }
@@ -457,7 +377,7 @@ namespace ult {
     
         std::map<std::string, std::string> sectionData;
     
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(configIniPath.c_str(), "r");
         if (!file) {
             return sectionData;
@@ -513,53 +433,6 @@ namespace ult {
         }
         
         fclose(file);
-    #else
-        std::ifstream configFile(configIniPath);
-        if (!configFile) {
-            return sectionData;
-        }
-    
-        std::string line;
-        line.reserve(256);
-        
-        std::string key, value;
-        key.reserve(64);
-        value.reserve(128);
-        
-        bool inTargetSection = false;
-        size_t delimiterPos;
-    
-        while (getline(configFile, line)) {
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            trim(line);
-            
-            if (line.empty()) continue;
-            
-            // Skip comment lines
-            if (line[0] == '#' || line[0] == ';') continue;
-            
-            if (line[0] == '[' && line.back() == ']') {
-                inTargetSection = (line.size() - 2 == sectionName.size() && 
-                                 line.compare(1, line.size() - 2, sectionName) == 0);
-                
-                if (!inTargetSection && !sectionData.empty()) {
-                    break;
-                }
-            } else if (inTargetSection) {
-                delimiterPos = line.find('=');
-                if (delimiterPos != std::string::npos) {
-                    key.assign(line, 0, delimiterPos);
-                    trim(key);
-                    value.assign(line, delimiterPos + 1, std::string::npos);
-                    trim(value);
-                    sectionData[std::move(key)] = std::move(value);
-                }
-            }
-        }
-    #endif
     
         return sectionData;
     }
@@ -579,7 +452,7 @@ namespace ult {
 
         std::vector<std::string> sections;
     
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return sections;
@@ -616,36 +489,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ifstream file(filePath);
-        if (!file) {
-            return sections;
-        }
-    
-        std::string line;
-        //line.reserve(1024); // Add reservation for efficiency
-        
-        std::string sectionName;
-        while (std::getline(file, line)) {
-            // Remove carriage return if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            trim(line);
-            
-            // Check if the line contains a section header
-            if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                sectionName.assign(line, 1, line.size() - 2);
-                sections.push_back(std::move(sectionName));
-            }
-            // Clear strings to reuse capacity
-            line.clear();
-            sectionName.clear();
-        }
-        
-        file.close(); // Add explicit close
-    #endif
     
         return sections;
     }
@@ -665,8 +508,7 @@ namespace ult {
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
     
         std::string value;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             return value;
@@ -737,68 +579,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ifstream file(filePath);
-        if (!file) {
-            return value;
-        }
-        
-        std::string line;
-        line.reserve(256);
-        bool inTargetSection = false;
-    
-        while (std::getline(file, line)) {
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            if (line.empty()) continue;
-            
-            // Trim using pointers
-            const char* start = line.c_str();
-            const char* end = start + line.length();
-            
-            while (start < end && (*start == ' ' || *start == '\t')) ++start;
-            while (end > start && (end[-1] == ' ' || end[-1] == '\t')) --end;
-            
-            if (start >= end) continue;
-            
-            // Section header
-            if (*start == '[' && end[-1] == ']') {
-                if (end - start > 2) {
-                    size_t sectionLen = end - start - 2;
-                    inTargetSection = (sectionLen == sectionName.length() && 
-                                       std::memcmp(start + 1, sectionName.data(), sectionLen) == 0);
-                }
-            } else if (inTargetSection) {
-                // Find '=' delimiter
-                const char* eq = start;
-                while (eq < end && *eq != '=') ++eq;
-                
-                if (eq < end) {
-                    // Trim key
-                    const char* key_end = eq;
-                    while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
-                    
-                    if (key_end > start) {
-                        size_t keyLen = key_end - start;
-                        
-                        // Compare directly without constructing string
-                        if (keyLen == keyName.length() && std::memcmp(start, keyName.data(), keyLen) == 0) {
-                            // Trim value
-                            const char* val_start = eq + 1;
-                            while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
-                            
-                            value.assign(val_start, end);
-                            break; // Found it, exit immediately
-                        }
-                    }
-                }
-            }
-        }
-        
-        file.close();
-    #endif
     
         return value;
     }
@@ -817,8 +597,7 @@ namespace ult {
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
         const std::string tempPath = filePath + ".tmp";
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -879,59 +658,6 @@ namespace ult {
     
         fclose(inputFile);
         fclose(outputFile);
-    #else
-        std::ifstream inputFile(filePath);
-        if (!inputFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the input file: " + filePath);
-            #endif
-            return;
-        }
-    
-        std::ofstream outputFile(tempPath);
-        if (!outputFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to create the output file: " + tempPath);
-            #endif
-            return;
-        }
-    
-        // Declare all variables outside the loop
-        std::string line;
-        //line.reserve(1024);
-        
-        bool isNewSection = false;
-        bool isSection = false;
-    
-        while (std::getline(inputFile, line)) {
-            // Remove carriage return if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            trim(line);
-            
-            if (!line.empty()) {
-                isSection = (line[0] == '[' && line.back() == ']');
-                
-                if (isSection) {
-                    if (isNewSection) {
-                        outputFile << '\n';
-                    }
-                    isNewSection = true;
-                }
-                
-                outputFile << line << '\n';
-            }
-            // Clear string to reuse capacity
-            line.clear();
-        }
-        
-        inputFile.close();
-        outputFile.close();
-    #endif
     
         // Replace the original file with the temp file with error checking
         if (std::remove(filePath.c_str()) != 0) {
@@ -977,8 +703,7 @@ namespace ult {
         if (!isFile(fileToEdit)) {
             createDirectory(getParentDirFromPath(fileToEdit));
         }
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* configFile = fopen(fileToEdit.c_str(), "r");
         if (!configFile) {
             configFile = fopen(fileToEdit.c_str(), "w"); // Create a new file if it doesn't exist
@@ -1106,128 +831,6 @@ namespace ult {
             fputs(buffer.str().c_str(), outFile);
             fclose(outFile);
         }
-    #else
-        std::ifstream configFile(fileToEdit);
-        StringStream buffer(""); // Use StringStream to collect results
-    
-        if (!configFile) {
-            std::ofstream outFile(fileToEdit);
-            outFile << "[" << desiredSection << "]\n" << desiredKey << "=" << desiredValue << '\n';
-            return;
-        }
-    
-        std::string line;
-        bool sectionFound = false;
-        bool keyFound = false;
-        bool firstSection = true;  // Flag to control new line before first section
-        std::string currentSection;
-        
-        size_t delimiterPos;
-        std::string key;
-        
-        size_t start, end, key_start, key_end;
-        while (std::getline(configFile, line)) {
-            // Remove carriage return if present (getline already removes \n)
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            // Early exit for empty lines
-            if (line.empty()) continue;
-            
-            // Manual trim for better performance
-            start = 0;
-            end = line.length() - 1;
-            
-            // Find start of non-whitespace
-            while (start < line.length() && (line[start] == ' ' || line[start] == '\t')) {
-                ++start;
-            }
-            
-            // Early exit for whitespace-only lines
-            if (start >= line.length()) continue;
-            
-            // Find end of non-whitespace
-            while (end > start && (line[end] == ' ' || line[end] == '\t')) {
-                --end;
-            }
-            
-            // Create trimmed line if needed
-            if (start > 0 || end < line.length() - 1) {
-                line.assign(line, start, end - start + 1);
-            }
-    
-            if (line[0] == '[' && line.back() == ']') {
-                if (sectionFound && !keyFound) {
-                    buffer << desiredKey << "=" << desiredValue << '\n';  // Add missing key-value pair
-                    keyFound = true;
-                }
-                if (!firstSection) {
-                    buffer << '\n';  // Add a newline before the start of a new section
-                }
-                currentSection.assign(line, 1, line.size() - 2);
-                sectionFound = (currentSection == desiredSection);
-                buffer << line << '\n';
-                firstSection = false;
-
-                // Clear strings to reuse capacity
-                line.clear();
-                currentSection.clear();
-                continue;
-            }
-    
-            if (sectionFound && !keyFound) {
-                delimiterPos = line.find('=');
-                if (delimiterPos != std::string::npos) {
-                    // Extract and trim key manually for better performance
-                    key_start = 0;
-                    key_end = delimiterPos - 1;
-                    
-                    // Find start of key (skip leading whitespace)
-                    while (key_start < delimiterPos && (line[key_start] == ' ' || line[key_start] == '\t')) {
-                        ++key_start;
-                    }
-                    
-                    // Find end of key (skip trailing whitespace)
-                    while (key_end > key_start && (line[key_end] == ' ' || line[key_end] == '\t')) {
-                        --key_end;
-                    }
-                    
-                    if (key_end >= key_start) {
-                        key.assign(line, key_start, key_end - key_start + 1);
-                        
-                        if (key == desiredKey) {
-                            keyFound = true;
-                            // Build the replacement line more efficiently
-                            line.assign(desiredNewKey.empty() ? desiredKey : desiredNewKey);
-                            line += '=';
-                            line += desiredValue;
-                        }
-                    }
-                }
-            }
-    
-            buffer << line << '\n';
-
-            // Clear strings to reuse capacity
-            line.clear();
-            key.clear();
-        }
-    
-        if (!sectionFound && !keyFound) {
-            if (!firstSection) buffer << '\n';  // Ensure newline before adding a new section, unless it's the first section
-            buffer << '[' << desiredSection << ']' << '\n';
-            buffer << desiredKey << "=" << desiredValue << '\n';
-        } else if (!keyFound) {
-            buffer << desiredKey << "=" << desiredValue << '\n';
-        }
-    
-        configFile.close();
-    
-        std::ofstream outFile(fileToEdit);
-        outFile << buffer.str();
-        outFile.close();
-    #endif
     }
     
     
@@ -1280,7 +883,6 @@ namespace ult {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             // Create new file with just the section if file doesn't exist
@@ -1375,85 +977,7 @@ namespace ult {
     
         fclose(inputFile);
         fclose(tempFile);
-    
-    #else
-        std::ifstream inputFile(filePath);
-        if (!inputFile) {
-            // Create new file with just the section if file doesn't exist
-            std::ofstream newFile(filePath);
-            if (newFile) {
-                newFile << "[" << sectionName << "]\n";
-            }
-            #if USING_LOGGING_DIRECTIVE
-            else {
-                if (!disableLogging)
-                    logMessage("Error: Failed to create new INI file.");
-            }
-            #endif
-            return;
-        }
-    
-        const std::string tempPath = filePath + ".tmp";
-        std::ofstream tempFile(tempPath);
-        if (!tempFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Error: Failed to create a temporary file.");
-            #endif
-            return;
-        }
-    
-        // Pre-calculate section comparison values
-        const size_t sectionNameLen = sectionName.length();
-        const size_t fullSectionLen = sectionNameLen + 2; // [ + sectionName + ]
         
-        // Declare variables outside the loop
-        std::string line;
-        bool sectionExists = false;
-        
-        size_t end_pos, content_len;
-        // Read entire file and check for section
-        while (std::getline(inputFile, line)) {
-            // Optimize section detection
-            if (line.length() >= fullSectionLen && line[0] == '[') {
-                // Find end of content (excluding carriage return)
-                end_pos = line.length() - 1;
-                if (line[end_pos] == '\r') --end_pos;
-                
-                // Check if this could be our section
-                if (end_pos < line.length() && line[end_pos] == ']') {
-                    content_len = end_pos + 1;
-                    if (content_len == fullSectionLen) {
-                        // Direct comparison - much faster than string creation
-                        if (line.compare(1, sectionNameLen, sectionName) == 0) {
-                            sectionExists = true;
-                            // Early optimization: write remaining file and exit loop
-                            tempFile << line << '\n';
-                            
-                            // Copy rest of file efficiently
-                            while (std::getline(inputFile, line)) {
-                                tempFile << line << '\n';
-                                line.clear(); // Clear to reuse capacity
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            tempFile << line << '\n';
-            line.clear(); // Clear to reuse capacity
-        }
-    
-        // If the section does not exist, add it
-        if (!sectionExists) {
-            tempFile << "[" << sectionName << "]\n";
-        }
-    
-        inputFile.close();
-        tempFile.close();
-    #endif
-    
         // Replace the original file with the temp file
         if (std::remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
@@ -1489,7 +1013,6 @@ namespace ult {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1529,40 +1052,6 @@ namespace ult {
     
         fclose(configFile);
         fclose(tempFile);
-    #else
-        std::ifstream configFile(filePath);
-        if (!configFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the input file: " + filePath);
-            #endif
-            return;
-        }
-    
-        std::string tempPath = filePath + ".tmp";
-        std::ofstream tempFile(tempPath);
-        if (!tempFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to create the temporary file: " + tempPath);
-            #endif
-            return;
-        }
-    
-        std::string line, sectionName;
-        while (getline(configFile, line)) {
-            trim(line);
-            if (!line.empty() && line.front() == '[' && line.back() == ']') {
-                sectionName = line.substr(1, line.length() - 2);
-                tempFile << "[" << (sectionName == currentSectionName ? newSectionName : sectionName) << "]\n";
-            } else {
-                tempFile << line << '\n';
-            }
-        }
-    
-        configFile.close();
-        tempFile.close();
-    #endif
     
         // Replace the original file with the modified temporary file
         if (remove(filePath.c_str()) != 0) {
@@ -1596,7 +1085,6 @@ namespace ult {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1683,91 +1171,6 @@ namespace ult {
     
         fclose(configFile);
         fclose(tempFile);
-    #else
-        std::ifstream configFile(filePath);
-        if (!configFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the input file: " + filePath);
-            #endif
-            return;
-        }
-    
-        std::string tempPath = filePath + ".tmp";
-        std::ofstream tempFile(tempPath);
-        if (!tempFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to create the temporary file: " + tempPath);
-            #endif
-            return;
-        }
-    
-        // Pre-calculate section comparison values
-        const size_t sectionNameLen = sectionName.length();
-        const size_t fullSectionLen = sectionNameLen + 2; // [ + sectionName + ]
-    
-        std::string line, currentSection;
-        bool inSectionToRemove = false;
-
-        size_t start, end, trimmed_len;
-        while (getline(configFile, line)) {
-            // Early exit for empty lines
-            if (line.empty()) {
-                if (!inSectionToRemove) {
-                    tempFile << line << '\n';
-                }
-                continue;
-            }
-            
-            // Manual trim for better performance
-            start = 0;
-            end = line.length() - 1;
-            
-            // Find start of non-whitespace
-            while (start < line.length() && (line[start] == ' ' || line[start] == '\t')) {
-                ++start;
-            }
-            
-            // Find end of non-whitespace (excluding carriage return)
-            while (end > start && (line[end] == ' ' || line[end] == '\t' || line[end] == '\r')) {
-                --end;
-            }
-            
-            // Early exit for whitespace-only lines
-            if (start >= line.length() || end < start) {
-                if (!inSectionToRemove) {
-                    tempFile << line << '\n';
-                }
-                continue;
-            }
-            
-            // Calculate trimmed length
-            trimmed_len = end - start + 1;
-            
-            // Check if this is a section header
-            if (trimmed_len >= 3 && line[start] == '[' && line[end] == ']') {
-                // Optimize section detection with direct comparison
-                if (trimmed_len == fullSectionLen) {
-                    // Direct string comparison - much faster than substr + comparison
-                    if (line.compare(start + 1, sectionNameLen, sectionName) == 0) {
-                        inSectionToRemove = true;
-                        continue; // Skip writing this section header
-                    }
-                }
-                
-                // Different section - not the one to remove
-                inSectionToRemove = false;
-                tempFile << line << '\n';
-            } else if (!inSectionToRemove) {
-                tempFile << line << '\n';
-            }
-            // If inSectionToRemove is true, skip writing this line
-        }
-    
-        configFile.close();
-        tempFile.close();
-    #endif
     
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
@@ -1794,7 +1197,6 @@ namespace ult {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
             #if USING_LOGGING_DIRECTIVE
@@ -1867,74 +1269,7 @@ namespace ult {
     
         fclose(configFile);
         fclose(tempFile);
-    #else
-        std::ifstream configFile(filePath);
-        if (!configFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the input file: " + filePath);
-            #endif
-            return;
-        }
-    
-        std::string tempPath = filePath + ".tmp";
-        std::ofstream tempFile(tempPath);
-        if (!tempFile) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to create the temporary file: " + tempPath);
-            #endif
-            return;
-        }
-    
-        // Declare all variables outside the loop for efficiency
-        std::string line;
-        //line.reserve(1024);
-        
-        std::string currentSection;
-        //currentSection.reserve(64);
-        
-        std::string trimmedLine;
-        //trimmedLine.reserve(1024);
-        
-        std::string lineKey;
-        //lineKey.reserve(128);
-        
-        bool inTargetSection = false;
-        size_t eqPos;
-    
-        while (getline(configFile, line)) {
-            trimmedLine = line;
-            // Remove carriage return if present
-            if (!trimmedLine.empty() && trimmedLine.back() == '\r') {
-                trimmedLine.pop_back();
-            }
-            trim(trimmedLine);
-    
-            if (!trimmedLine.empty() && trimmedLine.front() == '[' && trimmedLine.back() == ']') {
-                currentSection.assign(trimmedLine, 1, trimmedLine.length() - 2);
-                inTargetSection = (currentSection == sectionName);
-                tempFile << line << '\n';
-            } else if (inTargetSection) {
-                // Better key matching that handles spaces
-                eqPos = trimmedLine.find('=');
-                if (eqPos != std::string::npos) {
-                    lineKey.assign(trimmedLine, 0, eqPos);
-                    trim(lineKey);
-                    if (lineKey == keyName) {
-                        continue; // Skip this line
-                    }
-                }
-                tempFile << line << '\n';
-            } else {
-                tempFile << line << '\n';
-            }
-        }
-    
-        configFile.close();
-        tempFile.close();
-    #endif
-    
+
         // Replace the original file with the temp file
         if (remove(filePath.c_str()) != 0) {
             #if USING_LOGGING_DIRECTIVE
@@ -2061,7 +1396,6 @@ namespace ult {
         auto fileMutex = getFileMutex(packageIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         if (!packageFile) return {};
         
@@ -2102,46 +1436,7 @@ namespace ult {
         }
         
         fclose(packageFile);
-    #else
-        std::ifstream packageFile(packageIniPath);
-        if (!packageFile) return {};
-    
-        std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
-        options.reserve(32);
-        
-        std::string line;
-        line.reserve(256);
-        std::string currentSection;
-        std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(16);
-    
-        while (std::getline(packageFile, line)) {
-            // Remove carriage return if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-    
-            if (line.empty() || line[0] == '#') continue;
-    
-            if (line[0] == '[' && line.back() == ']') {
-                if (!currentSection.empty()) {
-                    options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    sectionCommands = std::vector<std::vector<std::string>>();
-                    sectionCommands.reserve(16);
-                }
-                currentSection.assign(line, 1, line.size() - 2);
-            } else if (!currentSection.empty()) {
-                sectionCommands.push_back(parseCommandLine(line));
-            }
-        }
-    
-        if (!currentSection.empty()) {
-            options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-        }
-        
-        packageFile.close();
-    #endif
-    
+
         return options;
     }
 
@@ -2158,7 +1453,6 @@ namespace ult {
         auto fileMutex = getFileMutex(packageIniPath);
         std::shared_lock<std::shared_mutex> lock(*fileMutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* packageFile = fopen(packageIniPath.c_str(), "r");
         if (!packageFile) return {};
         
@@ -2200,47 +1494,6 @@ namespace ult {
         }
     
         fclose(packageFile);
-    #else
-        std::ifstream packageFile(packageIniPath);
-        if (!packageFile) return {};
-        
-        std::string line;
-        line.reserve(256);
-        std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(16);
-        bool inTargetSection = false;
-    
-        while (std::getline(packageFile, line)) {
-            // Remove carriage return if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-    
-            if (line.empty() || line[0] == '#') continue;
-    
-            // Section header
-            if (line[0] == '[' && line.back() == ']') {
-                size_t sectionLen = line.size() - 2;
-                
-                if (sectionLen > 0) {
-                    // Direct comparison without constructing substring
-                    bool isTarget = (sectionLen == sectionName.length() && 
-                                    std::memcmp(line.data() + 1, sectionName.data(), sectionLen) == 0);
-                    
-                    // Early exit: found target section and now leaving it
-                    if (inTargetSection && !isTarget) {
-                        break;
-                    }
-                    
-                    inTargetSection = isTarget;
-                }
-            } else if (inTargetSection) {
-                sectionCommands.push_back(parseCommandLine(line));
-            }
-        }
-    
-        packageFile.close();
-    #endif
     
         return sectionCommands;
     }
@@ -2259,7 +1512,6 @@ namespace ult {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
             return;
@@ -2294,42 +1546,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ofstream file(filePath);
-        if (!file.is_open()) {
-            return;
-        }
-        
-        // Set larger buffer for better performance
-        char writeBuffer[4096];
-        file.rdbuf()->pubsetbuf(writeBuffer, sizeof(writeBuffer));
-        
-        std::string buffer;
-        buffer.reserve(2048);
-    
-        for (const auto& section : data) {
-            buffer.clear();
-            
-            // Build section header
-            buffer += '[';
-            buffer += section.first;
-            buffer += "]\n";
-            
-            // Build all key-value pairs for this section
-            for (const auto& kv : section.second) {
-                buffer += kv.first;
-                buffer += '=';
-                buffer += kv.second;
-                buffer += '\n';
-            }
-            buffer += '\n';
-            
-            // Write entire section at once
-            file.write(buffer.data(), buffer.size());
-        }
-    
-        file.close();
-    #endif
     }
 
 
@@ -2349,7 +1565,6 @@ namespace ult {
         const std::string tempPath = filePath + ".tmp";
         const bool matchAll = patternKey.empty();
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* in = fopen(filePath.c_str(), "r");
         if (!in) return;
         FILE* out = fopen(tempPath.c_str(), "w");
@@ -2437,91 +1652,6 @@ namespace ult {
         
         fclose(in);
         fclose(out);
-    #else
-        std::ifstream in(filePath);
-        if (!in) return;
-        std::ofstream out(tempPath);
-        if (!out) return;
-        
-        std::vector<std::string> section;
-        std::string line;
-        bool inMatch = matchAll;
-        size_t patIdx = SIZE_MAX, tgtIdx = SIZE_MAX;
-        
-        while (std::getline(in, line)) {
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            
-            std::string tl = line;
-            trim(tl);
-            
-            if (!tl.empty() && tl[0] == '[' && tl.back() == ']') {
-                // Flush previous section
-                if (!section.empty() && inMatch) {
-                    if (operation == KeyOp::ADD) {
-                        size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
-                        for (size_t i = 0; i < section.size(); ++i) {
-                            if (i == tgtIdx) {
-                                out << targetKey << "=" << value << '\n';
-                            } else {
-                                out << section[i] << '\n';
-                            }
-                            if (i + 1 == insertAt) {
-                                out << targetKey << "=" << value << '\n';
-                            }
-                        }
-                    } else if (operation == KeyOp::REMOVE) {
-                        for (size_t i = 0; i < section.size(); ++i) {
-                            if (i != tgtIdx) out << section[i] << '\n';
-                        }
-                    }
-                } else {
-                    for (const auto& l : section) out << l << '\n';
-                }
-                
-                section.clear();
-                out << line << '\n';
-                inMatch = matchAll;
-                patIdx = tgtIdx = SIZE_MAX;
-                continue;
-            }
-            
-            size_t eq = tl.find('=');
-            if (eq != std::string::npos) {
-                std::string k(tl, 0, eq);
-                trim(k);
-                if (!matchAll && k == patternKey) { inMatch = true; patIdx = section.size(); }
-                if (k == targetKey) tgtIdx = section.size();
-            }
-            
-            section.push_back(line);
-        }
-        
-        // Flush last section
-        if (!section.empty() && inMatch) {
-            if (operation == KeyOp::ADD) {
-                size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
-                for (size_t i = 0; i < section.size(); ++i) {
-                    if (i == tgtIdx) {
-                        out << targetKey << "=" << value << '\n';
-                    } else {
-                        out << section[i] << '\n';
-                    }
-                    if (i + 1 == insertAt) {
-                        out << targetKey << "=" << value << '\n';
-                    }
-                }
-            } else if (operation == KeyOp::REMOVE) {
-                for (size_t i = 0; i < section.size(); ++i) {
-                    if (i != tgtIdx) out << section[i] << '\n';
-                }
-            }
-        } else {
-            for (const auto& l : section) out << l << '\n';
-        }
-        
-        in.close();
-        out.close();
-    #endif
         
         std::remove(filePath.c_str());
         std::rename(tempPath.c_str(), filePath.c_str());

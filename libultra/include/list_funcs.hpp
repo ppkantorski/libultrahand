@@ -23,12 +23,7 @@
 #ifndef LIST_FUNCS_HPP
 #define LIST_FUNCS_HPP
 
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <vector>
 #include <string>
 #include <unordered_set>

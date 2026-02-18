@@ -218,8 +218,7 @@ namespace ult {
      */
     std::vector<std::string> findHexDataOffsets(const std::string& filePath, const std::string& hexData) {
         std::vector<std::string> offsets;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
             return offsets;
@@ -312,95 +311,6 @@ namespace ult {
         }
     
         fclose(file);
-        
-    #else
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file.is_open()) {
-            return offsets;
-        }
-    
-        file.seekg(0, std::ios::end);
-        const size_t fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
-    
-        if (hexData.length() % 2 != 0) {
-            file.close();
-            return offsets;
-        }
-        
-        const size_t hexLen = hexData.length();
-        const size_t patternLen = hexLen / 2;
-        
-        // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
-        std::unique_ptr<unsigned char[]> binaryData(new unsigned char[patternLen]);
-        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
-        
-        size_t i = 0;
-        for (; i + 4 <= hexLen; i += 4) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
-        }
-        for (; i < hexLen; i += 2) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-        }
-    
-        const unsigned char* patternPtr = binaryData.get();
-        const unsigned char firstByte = patternPtr[0];
-        
-        // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
-        std::unique_ptr<unsigned char[]> buffer(new unsigned char[HEX_BUFFER_SIZE]);
-        size_t bytesRead = 0;
-        size_t offset = 0;
-    
-        while (file.read(reinterpret_cast<char*>(buffer.get()), HEX_BUFFER_SIZE) || file.gcount() > 0) {
-            bytesRead = file.gcount();
-            const unsigned char* bufPtr = buffer.get();
-            
-            // Same optimized search as FILE* version
-            i = 0;
-            const size_t searchEnd = bytesRead;
-            
-            for (; i + 4 <= searchEnd; i += 4) {
-                if (bufPtr[i] == firstByte) {
-                    if (offset + i + patternLen <= fileSize && 
-                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
-                        offsets.emplace_back(ult::to_string(offset + i));
-                    }
-                }
-                if (bufPtr[i + 1] == firstByte) {
-                    if (offset + i + 1 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 1, patternPtr, patternLen) == 0) {
-                        offsets.emplace_back(ult::to_string(offset + i + 1));
-                    }
-                }
-                if (bufPtr[i + 2] == firstByte) {
-                    if (offset + i + 2 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 2, patternPtr, patternLen) == 0) {
-                        offsets.emplace_back(ult::to_string(offset + i + 2));
-                    }
-                }
-                if (bufPtr[i + 3] == firstByte) {
-                    if (offset + i + 3 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 3, patternPtr, patternLen) == 0) {
-                        offsets.emplace_back(ult::to_string(offset + i + 3));
-                    }
-                }
-            }
-            
-            for (; i < searchEnd; ++i) {
-                if (bufPtr[i] == firstByte) {
-                    if (offset + i + patternLen <= fileSize && 
-                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
-                        offsets.emplace_back(ult::to_string(offset + i));
-                    }
-                }
-            }
-            
-            offset += bytesRead;
-        }
-    
-        file.close();
-    #endif
     
         return offsets;
     }
@@ -421,8 +331,7 @@ namespace ult {
         // Lock file writes to prevent concurrent modifications to the same file
         std::lock_guard<std::mutex> fileWriteLock(fileWriteMutex);
         const std::streampos offset = std::stoll(offsetStr);
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         // Open the file for both reading and writing in binary mode
         FILE* file = fopen(filePath.c_str(), "rb+");
         if (!file) {
@@ -486,67 +395,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        // Open the file for both reading and writing in binary mode
-        std::fstream file(filePath, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the file.");
-            #endif
-            return;
-        }
-    
-        // Retrieve the file size
-        file.seekg(0, std::ios::end);
-        const std::streampos fileSize = file.tellg();
-    
-        if (offset >= fileSize) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Offset exceeds file size.");
-            #endif
-            return;
-        }
-    
-        // Validate hex data length
-        const size_t hexLen = hexData.length();
-        if (hexLen % 2 != 0) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Invalid hex data length.");
-            #endif
-            return;
-        }
-    
-        // Convert the hex string to binary data using optimized lookup table
-        const size_t dataLen = hexLen / 2;
-        std::unique_ptr<unsigned char[]> binaryData(new unsigned char[dataLen]);
-        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
-        
-        // Unrolled hex conversion loop
-        size_t i = 0;
-        for (; i + 4 <= hexLen; i += 4) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
-        }
-        for (; i < hexLen; i += 2) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-        }
-    
-        // Move to the specified offset and write the binary data directly to the file
-        file.seekp(offset);
-        file.write(reinterpret_cast<const char*>(binaryData.get()), dataLen);
-        if (!file) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to write data to the file.");
-            #endif
-            return;
-        }
-    
-        file.close();
-    #endif
     }
     
     
@@ -716,7 +564,6 @@ namespace ult {
         std::string result;
         result.reserve(length * 2);
 
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -770,60 +617,6 @@ namespace ult {
             result[i * 2 + 1] = hexDigits[buffer[i] & 0xF];
         }
         
-    #else
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to open the file.");
-            #endif
-            return "";
-        }
-
-        file.seekg(totalOffset);
-        if (!file) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Error seeking to offset.");
-            #endif
-            return "";
-        }
-
-        // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
-        std::unique_ptr<unsigned char[]> buffer(new unsigned char[length]);
-        file.read(reinterpret_cast<char*>(buffer.get()), length);
-        file.close();
-        
-        if (file.gcount() != static_cast<std::streamsize>(length)) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Error reading data from file or end of file reached.");
-            #endif
-            return "";
-        }
-
-        // Optimized hex conversion - directly build uppercase string
-        static constexpr char hexDigits[] = "0123456789ABCDEF";
-        result.resize(length * 2);
-        
-        // Unrolled loop for better performance
-        size_t i = 0;
-        for (; i + 4 <= length; i += 4) {
-            result[i * 2]     = hexDigits[(buffer[i] >> 4) & 0xF];
-            result[i * 2 + 1] = hexDigits[buffer[i] & 0xF];
-            result[i * 2 + 2] = hexDigits[(buffer[i + 1] >> 4) & 0xF];
-            result[i * 2 + 3] = hexDigits[buffer[i + 1] & 0xF];
-            result[i * 2 + 4] = hexDigits[(buffer[i + 2] >> 4) & 0xF];
-            result[i * 2 + 5] = hexDigits[buffer[i + 2] & 0xF];
-            result[i * 2 + 6] = hexDigits[(buffer[i + 3] >> 4) & 0xF];
-            result[i * 2 + 7] = hexDigits[buffer[i + 3] & 0xF];
-        }
-        // Handle remaining bytes
-        for (; i < length; ++i) {
-            result[i * 2]     = hexDigits[(buffer[i] >> 4) & 0xF];
-            result[i * 2 + 1] = hexDigits[buffer[i] & 0xF];
-        }
-    #endif
 
         return result;
     }
@@ -897,7 +690,6 @@ namespace ult {
      * @return The version string if found; otherwise, an empty string.
      */
     std::string extractVersionFromBinary(const std::string &filePath) {
-    #if !USING_FSTREAM_DIRECTIVE
         // Step 1: Open the binary file
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
@@ -917,21 +709,6 @@ namespace ult {
         if (bytesRead != static_cast<size_t>(size)) {
             return ""; // Return empty string if reading fails
         }
-    #else
-        // Step 1: Read the entire binary file into a vector
-        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-            return ""; // Return empty string if file cannot be opened
-        }
-    
-        const std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-    
-        std::vector<uint8_t> buffer(size);
-        if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-            return ""; // Return empty string if reading fails
-        }
-    #endif
     
         // Step 2: Search for the pattern "v#.#.#"
         const char* data = reinterpret_cast<const char*>(buffer.data());

@@ -18,11 +18,7 @@
 #pragma once
 #ifndef JSON_FUNCS_HPP
 #define JSON_FUNCS_HPP
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
 #include <string>
 #include <cJSON.h>
 #include "string_funcs.hpp"

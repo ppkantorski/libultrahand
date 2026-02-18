@@ -50,6 +50,7 @@ namespace ult {
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
     extern const std::string SOUNDS_PATH;
+    extern const std::string LOADED_SOUNDS_PATH;
     extern const std::string FLAGS_PATH;
     extern const std::string NOTIFICATIONS_PATH;
     extern const std::string PAYLOADS_PATH;
@@ -87,7 +88,7 @@ namespace ult {
     extern const std::string LATEST_UPDATER_INI_URL;
     //extern const std::string NX_OVLLOADER_ZIP_URL;
     //extern const std::string NX_OVLLOADER_PLUS_ZIP_URL;
-    extern const std::string OLD_NX_OVLLOADER_ZIP_URL;
+    //extern const std::string OLD_NX_OVLLOADER_ZIP_URL;
     //extern const std::string OLD_NX_OVLLOADER_PLUS_ZIP_URL;
     extern const std::string UPDATER_PAYLOAD_URL;
     //extern const std::string SOUND_EFFECTS_URL;

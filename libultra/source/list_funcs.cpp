@@ -89,8 +89,7 @@ namespace ult {
     std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines, bool preserveNewlines) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::vector<std::string> lines;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -128,37 +127,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ifstream file(filePath);
-        if (!file.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage(UNABLE_TO_OPEN_FILE + filePath);
-            #endif
-            return lines;
-        }
-    
-        std::string line;
-        while (std::getline(file, line)) {
-            // Check cap before adding
-            if (maxLines > 0 && lines.size() >= maxLines) {
-                break;
-            }
-            
-            if (preserveNewlines) {
-                // Add back the newline that getline removed
-                line += '\n';
-                lines.emplace_back(std::move(line));
-            } else {
-                // Remove carriage return if present (getline removes \n but not \r)
-                if (!line.empty() && line.back() == '\r') {
-                    line.pop_back();
-                }
-                lines.emplace_back(std::move(line));
-            }
-        }
-    
-        file.close();
-    #endif
     
         return lines;
     }
@@ -168,7 +136,6 @@ namespace ult {
     std::string getEntryFromListFile(const std::string& listPath, size_t listIndex) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(listPath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -206,33 +173,6 @@ namespace ult {
         }
         
         return std::string(buffer);
-    
-    #else
-        std::ifstream file(listPath);
-        if (!file.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage(UNABLE_TO_OPEN_FILE + listPath);
-            #endif
-            return "";
-        }
-    
-        std::string line;
-        
-        // Skip lines until reaching the desired index
-        for (size_t i = 0; i < listIndex; ++i) {
-            if (!std::getline(file, line)) {
-                return ""; // Index out of bounds
-            }
-        }
-        
-        // Read the target line
-        if (!std::getline(file, line)) {
-            return ""; // Index out of bounds
-        }
-    
-        file.close();
-        return line;
-    #endif
     }
 
 
@@ -294,8 +234,7 @@ namespace ult {
     std::unordered_set<std::string> readSetFromFile(const std::string& filePath, const std::string& packagePath) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         std::unordered_set<std::string> lines;
-    
-    #if !USING_FSTREAM_DIRECTIVE
+        
         FILE* file = fopen(filePath.c_str(), "r");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -322,25 +261,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ifstream file(filePath);
-        if (!file.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage(UNABLE_TO_OPEN_FILE + filePath);
-            #endif
-            return lines;
-        }
-    
-        std::string line;
-        while (std::getline(file, line)) {
-            if (!packagePath.empty()) {
-                preprocessPath(line, packagePath);
-            }
-            lines.insert(std::move(line));
-        }
-    
-        file.close();
-    #endif
     
         return lines;
     }
@@ -350,7 +270,6 @@ namespace ult {
     void writeSetToFile(const std::unordered_set<std::string>& fileSet, const std::string& filePath) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* file = fopen(filePath.c_str(), "w");
         if (!file) {
             #if USING_LOGGING_DIRECTIVE
@@ -364,21 +283,6 @@ namespace ult {
         }
     
         fclose(file);
-    #else
-        std::ofstream file(filePath);
-        if (!file.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage(UNABLE_TO_OPEN_FILE + filePath);
-            #endif
-            return;
-        }
-        
-        for (const auto& entry : fileSet) {
-            file << entry << '\n';
-        }
-        
-        file.close();
-    #endif
     }
 
     // Helper function for streaming comparison
@@ -387,7 +291,6 @@ namespace ult {
                               const std::string& outputTxtFilePath) {
         std::lock_guard<std::mutex> lock(file_access_mutex);
         
-    #if !USING_FSTREAM_DIRECTIVE
         FILE* streamFile = fopen(streamFilePath.c_str(), "r");
         if (!streamFile) return;
         
@@ -414,21 +317,6 @@ namespace ult {
         
         fclose(streamFile);
         fclose(outputFile);
-        
-    #else
-        std::ifstream streamFile(streamFilePath);
-        if (!streamFile.is_open()) return;
-        
-        std::ofstream outputFile(outputTxtFilePath);
-        if (!outputFile.is_open()) return;
-        
-        std::string line;
-        while (std::getline(streamFile, line)) {
-            if (compareSet.count(line)) {
-                outputFile << line << '\n';
-            }
-        }
-    #endif
     }
     
     // Function to compare two file lists and save duplicates to an output file
@@ -481,7 +369,6 @@ namespace ult {
             
             std::lock_guard<std::mutex> lock(file_access_mutex);
             
-    #if !USING_FSTREAM_DIRECTIVE
             FILE* file = fopen(filePath.c_str(), "r");
             if (!file) {
                 #if USING_LOGGING_DIRECTIVE
@@ -505,24 +392,6 @@ namespace ult {
             }
             fclose(file);
             
-    #else
-            std::ifstream file(filePath);
-            if (!file.is_open()) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage(UNABLE_TO_OPEN_FILE + filePath);
-                #endif
-                continue;
-            }
-            
-            std::string line;
-            while (std::getline(file, line) && !targetLines.empty()) { // Early exit!
-                auto it = targetLines.find(line);
-                if (it != targetLines.end()) {
-                    duplicates.emplace(std::move(*it)); // Move instead of copy
-                    targetLines.erase(it);
-                }
-            }
-    #endif
             filePath = "";  // Clear after processing - reduces vector memory footprint
         }
         

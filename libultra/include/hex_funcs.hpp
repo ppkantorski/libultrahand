@@ -21,12 +21,7 @@
 #ifndef HEX_FUNCS_HPP
 #define HEX_FUNCS_HPP
 
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <string>
 #include <vector>
 #include <algorithm>

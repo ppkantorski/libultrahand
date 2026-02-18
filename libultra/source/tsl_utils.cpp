@@ -44,30 +44,18 @@ namespace ult {
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
-        #if !USING_FSTREAM_DIRECTIVE
-            FILE* file = fopen(filePath.c_str(), "r");
-            if (!file) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to open JSON file: " + filePath);
-                #endif
-                return false;
-            }
-            char buffer[256];
-            while (fgets(buffer, sizeof(buffer), file) != nullptr) {
-                content += buffer;
-            }
-            fclose(file);
-        #else
-            std::ifstream file(filePath);
-            if (!file.is_open()) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Failed to open JSON file: " + filePath);
-                #endif
-                return false;
-            }
-            content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-            file.close();
-        #endif
+        FILE* file = fopen(filePath.c_str(), "r");
+        if (!file) {
+            #if USING_LOGGING_DIRECTIVE
+            logMessage("Failed to open JSON file: " + filePath);
+            #endif
+            return false;
+        }
+        char buffer[256];
+        while (fgets(buffer, sizeof(buffer), file) != nullptr) {
+            content += buffer;
+        }
+        fclose(file);
         
         return true;
     }
@@ -530,12 +518,15 @@ namespace ult {
     std::string WALLPAPER_SUPPORT_ENABLED = "Wallpaper support enabled.";
     std::string SOUND_SUPPORT_ENABLED = "Sound support enabled.";
     std::string EXIT_OVERLAY_SYSTEM = "Exit Overlay System";
+    
+    std::string ULTRAHAND_ABOUT = "Ultrahand Overlay is a customizable overlay ecosystem for commands, overlays, hotkeys, and advanced system interaction.";
 
     //std::string MEMORY_EXPANSION = "Memory Expansion";
     //std::string REBOOT_REQUIRED = "*Reboot required.";
     std::string LOCAL_IP = "Local IP";
     std::string WALLPAPER = "Wallpaper";
     std::string THEME = "Theme";
+    std::string SOUNDS = "Sounds";
     std::string DEFAULT = "default";
     std::string ROOT_PACKAGE = "Root Package";
     std::string SORT_PRIORITY = "Sort Priority";
@@ -761,11 +752,14 @@ namespace ult {
         SOUND_SUPPORT_ENABLED = "Sound support enabled.";
         EXIT_OVERLAY_SYSTEM = "Exit Overlay System";
 
+        ULTRAHAND_ABOUT = "Ultrahand Overlay is a customizable overlay ecosystem for commands, overlays, hotkeys, and advanced system interaction.";
+
         //MEMORY_EXPANSION = "Memory Expansion";
         //REBOOT_REQUIRED = "*Reboot required.";
         LOCAL_IP = "Local IP";
         WALLPAPER = "Wallpaper";
         THEME = "Theme";
+        SOUNDS = "Sounds";
         DEFAULT = "default";
         ROOT_PACKAGE = "Root Package";
         SORT_PRIORITY = "Sort Priority";
@@ -989,11 +983,14 @@ namespace ult {
             {"SOUND_SUPPORT_ENABLED", &SOUND_SUPPORT_ENABLED},
             {"EXIT_OVERLAY_SYSTEM", &EXIT_OVERLAY_SYSTEM},
 
+            {"ULTRAHAND_ABOUT", &ULTRAHAND_ABOUT},
+
             //{"MEMORY_EXPANSION", &MEMORY_EXPANSION},
             //{"REBOOT_REQUIRED", &REBOOT_REQUIRED},
             {"LOCAL_IP", &LOCAL_IP},
             {"WALLPAPER", &WALLPAPER},
             {"THEME", &THEME},
+            {"SOUNDS", &SOUNDS},
             {"DEFAULT", &DEFAULT},
             {"ROOT_PACKAGE", &ROOT_PACKAGE},
             {"SORT_PRIORITY", &SORT_PRIORITY},

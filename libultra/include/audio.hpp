@@ -50,6 +50,13 @@ namespace ult {
         
         static bool initialize();
         static void exit();
+
+        static inline bool allSoundsExist() {
+            for (const auto& path : m_soundPaths)
+                if (!isFile(path)) return false;
+            return true;
+        }
+
         static void playSound(SoundType type);
         
         // Inline wrappers - same API, zero overhead

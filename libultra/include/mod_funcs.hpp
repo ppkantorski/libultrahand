@@ -21,13 +21,7 @@
 #ifndef MOD_FUNCS_HPP
 #define MOD_FUNCS_HPP
 
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
-//#include <sstream>
 #include <vector>
 #include <string>
 #include <sys/stat.h>

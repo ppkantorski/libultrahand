@@ -19,11 +19,7 @@
 #ifndef DEBUG_FUNCS_HPP
 #define DEBUG_FUNCS_HPP
 
-#if !USING_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
 #include <mutex>
 #include <string>
 #include <ctime>
