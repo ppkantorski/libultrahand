@@ -15,7 +15,7 @@
  *   of the project's documentation and must remain intact.
  * 
  *   Licensed under both GPLv2 and CC-BY-4.0
- *   Copyright (c) 2025 ppkantorski
+ *   Copyright (c) 2025-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
