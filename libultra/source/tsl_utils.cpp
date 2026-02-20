@@ -629,7 +629,7 @@ namespace ult {
 
     struct LangEntry { std::string* var; const char* key; const char* defaultVal; };
 
-    static const LangEntry LANG_TABLE[] = {
+    static constexpr LangEntry LANG_TABLE[] = {
         #if IS_LAUNCHER_DIRECTIVE
         {&ENGLISH,                    "ENGLISH",                    "English"},
         {&SPANISH,                    "SPANISH",                    "Spanish"},
@@ -848,8 +848,7 @@ namespace ult {
         }
         for (size_t i = 0; i < LANG_TABLE_SIZE; ++i) {
             auto it = jsonMap.find(LANG_TABLE[i].key);
-            if (it != jsonMap.end())
-                *LANG_TABLE[i].var = it->second;
+            *LANG_TABLE[i].var = (it != jsonMap.end()) ? it->second : LANG_TABLE[i].defaultVal;
         }
     }
 
@@ -890,7 +889,7 @@ namespace ult {
         if (isValue) {
             if (text.length() == 2 && text[0] == 'O') {
                 if (text[1] == 'n') { text = ON; return; }
-                if (text[1] == 'f' && text == "Off") { text = OFF; return; }
+                if (text[1] == 'f' && text[2] == 'f') { text = OFF; return; }
             }
         }
         #if IS_LAUNCHER_DIRECTIVE
