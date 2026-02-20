@@ -421,7 +421,7 @@ namespace ult {
     extern std::string OVERLAY_INFO;
     extern std::string SOFTWARE_UPDATE;
     extern std::string UPDATE_ULTRAHAND;
-    extern std::string UPDATE_LANGUAGES;
+    //extern std::string UPDATE_LANGUAGES;
     extern std::string SYSTEM;
     extern std::string DEVICE_INFO;
     extern std::string FIRMWARE;
@@ -443,6 +443,8 @@ namespace ult {
     extern std::string EXIT_OVERLAY_SYSTEM;
 
     extern std::string ULTRAHAND_ABOUT;
+    extern std::string ULTRAHAND_CREDITS_START;
+    extern std::string ULTRAHAND_CREDITS_END;
 
     //extern std::string MEMORY_EXPANSION;
     //extern std::string REBOOT_REQUIRED;
@@ -459,7 +461,7 @@ namespace ult {
     extern std::string LAUNCH_COMBOS;
     extern std::string STARTUP_NOTIFICATION;
     extern std::string EXTERNAL_NOTIFICATIONS;
-    extern std::string SOUND_EFFECTS;
+    //extern std::string SOUND_EFFECTS;
     extern std::string HAPTIC_FEEDBACK;
     extern std::string OPAQUE_SCREENSHOTS;
 
@@ -585,7 +587,7 @@ namespace ult {
     
     
     // Define the updateIfNotEmpty function
-    void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
+    //void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
     
     void parseLanguage(const std::string& langFile);
     
@@ -640,6 +642,7 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
+    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize);
     void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
     void loadWallpaperFileWhenSafe();
 

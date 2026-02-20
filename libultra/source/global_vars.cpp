@@ -56,6 +56,7 @@ namespace ult {
     const std::string LANG_PATH                   = BASE_CONFIG_PATH + "lang/";
     const std::string THEMES_PATH                 = BASE_CONFIG_PATH + "themes/";
     const std::string WALLPAPERS_PATH             = BASE_CONFIG_PATH + "wallpapers/";
+    const std::string ASSETS_PATH                 = BASE_CONFIG_PATH + "assets/";
     const std::string SOUNDS_PATH                 = BASE_CONFIG_PATH + ".sounds/";
     const std::string LOADED_SOUNDS_PATH          = BASE_CONFIG_PATH + "sounds/";
     const std::string FLAGS_PATH                  = BASE_CONFIG_PATH + "flags/";

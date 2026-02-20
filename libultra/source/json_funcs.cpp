@@ -191,20 +191,18 @@ namespace ult {
         // FIXED: Better value type detection
         cJSON* jsonValue = nullptr;
         
-        // Trim whitespace first
-        std::string trimmedValue = value;
-        // Remove leading whitespace
-        trimmedValue.erase(0, trimmedValue.find_first_not_of(" \t\n\r"));
-        // Remove trailing whitespace  
-        trimmedValue.erase(trimmedValue.find_last_not_of(" \t\n\r") + 1);
-        
-        if (trimmedValue.empty()) {
+        // Remove trimming to preserve leading/trailing spaces for all languages
+        // std::string trimmedValue = value;
+        // trimmedValue.erase(0, trimmedValue.find_first_not_of(" \t\n\r"));
+        // trimmedValue.erase(trimmedValue.find_last_not_of(" \t\n\r") + 1);
+    
+        if (value.empty()) {
             jsonValue = cJSON_CreateString("");
-        } else if (trimmedValue == "true") {
+        } else if (value == "true") {
             jsonValue = cJSON_CreateBool(1);
-        } else if (trimmedValue == "false") {
+        } else if (value == "false") {
             jsonValue = cJSON_CreateBool(0);
-        } else if (trimmedValue == "null") {
+        } else if (value == "null") {
             jsonValue = cJSON_CreateNull();
         } else {
             // Try parsing as number (integer or float)
@@ -212,21 +210,21 @@ namespace ult {
             errno = 0;
             
             // Try as integer first
-            const long longValue = std::strtol(trimmedValue.c_str(), &endPtr, 10);
-            if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
+            const long longValue = std::strtol(value.c_str(), &endPtr, 10);
+            if (endPtr == value.c_str() + value.length() && errno == 0) {
                 // Successfully parsed as integer
                 jsonValue = cJSON_CreateNumber(static_cast<double>(longValue));
             } else {
                 // Try as float
                 endPtr = nullptr;
                 errno = 0;
-                const double doubleValue = std::strtod(trimmedValue.c_str(), &endPtr);
-                if (endPtr == trimmedValue.c_str() + trimmedValue.length() && errno == 0) {
+                const double doubleValue = std::strtod(value.c_str(), &endPtr);
+                if (endPtr == value.c_str() + value.length() && errno == 0) {
                     // Successfully parsed as float
                     jsonValue = cJSON_CreateNumber(doubleValue);
                 } else {
                     // Treat as string
-                    jsonValue = cJSON_CreateString(trimmedValue.c_str());
+                    jsonValue = cJSON_CreateString(value.c_str());
                 }
             }
         }

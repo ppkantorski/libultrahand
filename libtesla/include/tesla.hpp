@@ -713,8 +713,12 @@ namespace tsl {
         ultrahandSection.clear();
 
         const std::string langFile = ult::LANG_PATH+defaultLang+".json";
-        if (ult::isFileOrDirectory(langFile))
+        if (ult::isFile(langFile))
             ult::parseLanguage(langFile);
+        else {
+            //if (defaultLang == "en")
+            reinitializeLangVars();
+        }
 
         // Load local font if needed based on overlay language setting
         //if (defaultLang == "zh-cn") {
@@ -1668,6 +1672,8 @@ namespace tsl {
             stbtt_fontinfo m_localFontTW;         // Chinese Traditional - always loaded
             stbtt_fontinfo m_localFontKO;         // Korean - always loaded
             bool m_hasLocalFont = false;          // Whether primary local font is valid
+
+            static inline float s_opacity = 1.0F;
 
             /**
              * @brief Handles opacity of drawn colors for fadeout. Pass all colors through this function in order to apply opacity properly
@@ -2758,51 +2764,55 @@ namespace tsl {
             // RGBA4444 processing - no expansion needed
             const uint8x16_t mask_low = vdupq_n_u8(0x0F);
             
-            inline void processBMPChunk(const s32 x, const s32 y, const s32 screenW, const u8 *preprocessedData, 
-                                       const s32 startRow, const s32 endRow, const u8 globalAlphaLimit) {
-                static constexpr s32 bytesPerRow = 448 * 2;
-                static constexpr s32 endX16 = 448 & ~15;
+            inline void processBMPChunk(const u32 x, const u32 y, const s32 imageW, const u8 *preprocessedData, 
+                                         const s32 startRow, const s32 endRow, const u8 globalAlphaLimit,
+                                         const bool useBarrier = true) {
+                const s32 bytesPerRow = imageW * 2;
+                const s32 endX16 = imageW & ~15;
                 const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
-                
-                // Get framebuffer once for entire chunk
+            
                 Color* const framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
-                
+            
+                const bool hasScissor = !this->m_scissoringStack.empty();
+                const auto scissor = hasScissor ? this->m_scissoringStack.top() : ScissoringConfig{};
+            
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
+                    const u32 baseY = y + y1;
+            
+                    if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max))
+                        continue;
+            
+                    const u32 yPart = ((((baseY & 127) >> 4) + ((baseY >> 7) * offsetWidthVar)) << 9)
+                                    + ((baseY & 8) << 5) + ((baseY & 6) << 4) + ((baseY & 1) << 3);
+            
                     const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
-                    const s32 baseY = y + y1;
-                    
                     s32 x1 = 0;
-                    
-                    // SIMD processing for 16 pixels at once
+            
                     for (; x1 < endX16; x1 += 16) {
                         const u8* ptr = rowPtr + (x1 << 1);
-                        
-                        // Load and unpack RGBA4444 data - keep as 4-bit
+            
                         uint8x16x2_t packed = vld2q_u8(ptr);
                         uint8x16_t high1 = vshrq_n_u8(packed.val[0], 4);
                         uint8x16_t low1  = vandq_u8(packed.val[0], mask_low);
                         uint8x16_t high2 = vshrq_n_u8(packed.val[1], 4);
                         uint8x16_t low2  = vminq_u8(vandq_u8(packed.val[1], mask_low), alpha_limit_vec);
-                        
-                        // Store results directly
+            
                         alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
-                        vst1q_u8(red_vals, high1);
-                        vst1q_u8(green_vals, low1); 
-                        vst1q_u8(blue_vals, high2);
+                        vst1q_u8(red_vals,   high1);
+                        vst1q_u8(green_vals, low1);
+                        vst1q_u8(blue_vals,  high2);
                         vst1q_u8(alpha_vals, low2);
-                        
-                        const s32 baseX = x + x1;
-                        
-                        // Optimized pixel loop with direct framebuffer access
+            
+                        const u32 baseX = x + x1;
+            
                         for (int i = 0; i < 16; ++i) {
                             const u8 a = alpha_vals[i];
                             if (a == 0) continue;
-                            
-                            const u32 offset = this->getPixelOffset(baseX + i, baseY);
-                            if (offset == UINT32_MAX) continue;
-                            
+                            const u32 px = baseX + i;
+                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+                            const u32 offset = yPart + ((px >> 5) << 12)
+                                             + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
                             const Color src = framebuffer[offset];
-                            
                             framebuffer[offset] = {
                                 blendColor(src.r, red_vals[i], a),
                                 blendColor(src.g, green_vals[i], a),
@@ -2811,60 +2821,50 @@ namespace tsl {
                             };
                         }
                     }
-                    
-                    // Handle remaining pixels
-                    for (; x1 < screenW; ++x1) {
+            
+                    for (; x1 < imageW; ++x1) {
                         const u8 p1 = rowPtr[x1 << 1];
                         const u8 p2 = rowPtr[(x1 << 1) + 1];
                         const u8 alpha = std::min(static_cast<u8>(p2 & 0x0F), globalAlphaLimit);
-                        
-                        setPixelBlendSrc(x + x1, baseY, {
-                            static_cast<u8>(p1 >> 4),
-                            static_cast<u8>(p1 & 0x0F),
-                            static_cast<u8>(p2 >> 4),
-                            alpha
-                        });
+                        if (alpha == 0) continue;
+                        const u32 px = x + x1;
+                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+                        const u32 offset = yPart + ((px >> 5) << 12)
+                                         + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
+                        const Color bg = framebuffer[offset];
+                        framebuffer[offset] = {
+                            blendColor(bg.r, static_cast<u8>(p1 >> 4), alpha),
+                            blendColor(bg.g, static_cast<u8>(p1 & 0x0F), alpha),
+                            blendColor(bg.b, static_cast<u8>(p2 >> 4), alpha),
+                            bg.a
+                        };
                     }
                 }
-                
-                ult::inPlotBarrier.arrive_and_wait();
+            
+                if (useBarrier)
+                    ult::inPlotBarrier.arrive_and_wait();
             }
             
-
-            /**
-             * @brief Draws a scaled RGBA8888 bitmap from memory
-             *
-             * @param x X start position
-             * @param y Y start position
-             * @param w Bitmap width (original width of the bitmap)
-             * @param h Bitmap height (original height of the bitmap)
-             * @param bmp Pointer to bitmap data
-             * @param screenW Target screen width
-             * @param screenH Target screen height
-             */
-
-            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 screenW, const s32 screenH, 
-                                           const u8 *preprocessedData, float opacity = 1.0f) {
-                // Pre-compute alpha limit once
+            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 imageW, const s32 imageH, 
+                                            const u8 *preprocessedData, float opacity = 1.0f) {
                 const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
                 
-                s32 startRow;
+                if (imageW < 448) {
+                    processBMPChunk(x, y, imageW, preprocessedData, 0, imageH, globalAlphaLimit, false);
+                    return;
+                }
+                
                 
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
-                    startRow = i * ult::bmpChunkSize;
-                    
-                    // Pass the alpha limit to each thread
-                    ult::renderThreads[i] = std::thread(std::bind(&tsl::gfx::Renderer::processBMPChunk, 
-                        this, x, y, screenW, preprocessedData, startRow, 
-                        std::min(startRow + ult::bmpChunkSize, screenH), globalAlphaLimit));
+                    const s32 startRow = i * ult::bmpChunkSize;
+                    const s32 endRow = std::min(startRow + ult::bmpChunkSize, imageH);
+                    ult::renderThreads[i] = std::thread([this, x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit](){
+                        processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true);
+                    });
                 }
-            
-                // Join all threads
-                for (auto& t : ult::renderThreads) {
-                    t.join();
-                }
+                for (auto& t : ult::renderThreads) t.join();
             }
-
+            
             inline void drawWallpaper() {
                 if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
                     return;
@@ -2875,7 +2875,6 @@ namespace tsl {
                 if (!ult::wallpaperData.empty() && 
                     !ult::refreshWallpaper.load(std::memory_order_acquire) && 
                     ult::correctFrameSize) {
-                    // Use the renderer's opacity directly
                     drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, 
                                       ult::wallpaperData.data(), Renderer::s_opacity);
                 }
@@ -3769,8 +3768,6 @@ namespace tsl {
             
             std::stack<ScissoringConfig> m_scissoringStack;
             
-
-            static inline float s_opacity = 1.0F;
             
             
             /**
@@ -8624,149 +8621,119 @@ namespace tsl {
 
         class CategoryHeader : public Element {
         public:
-            CategoryHeader(const std::string &title, bool hasSeparator = true) 
-                : m_text(title), m_hasSeparator(hasSeparator), timeIn_ns(0),
-                  m_scroll(false), m_truncated(false), m_scrollOffset(0.0f), 
-                  m_maxWidth(0), m_textWidth(0) {
+            CategoryHeader(const std::string &title, bool hasSeparator = true)
+                : m_text(title),
+                  m_hasSeparator(hasSeparator),
+                  m_scroll(false),
+                  m_truncated(false),
+                  m_scrollOffset(0.0f),
+                  m_maxWidth(0),
+                  m_textWidth(0) {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
                 m_isItem = false;
             }
-            
+        
             virtual ~CategoryHeader() {}
-            
+        
             virtual void draw(gfx::Renderer *renderer) override {
                 static const std::vector<std::string> specialChars = {""};
-                
-                // Calculate widths if not done yet
+        
                 if (!m_maxWidth) {
                     calculateWidths(renderer);
                 }
-                
-                // Draw separator if needed
-                if (this->m_hasSeparator) {
-                    renderer->drawRect(this->getX()+1+1, this->getBottomBound() - 29-4, 4, 22, aWithOpacity(headerSeparatorColor));
+        
+                if (m_hasSeparator) {
+                    renderer->drawRect(
+                        this->getX() + 2,
+                        this->getBottomBound() - 33,
+                        4,
+                        22,
+                        aWithOpacity(headerSeparatorColor));
                 }
-                
-                // Determine text position
-                const int textX = m_hasSeparator ? (this->getX() + 15+1) : this->getX();
-                const int textY = this->getBottomBound() - 12-4;
-                
-                // Handle scrolling text if truncated
+        
+                const int textX = m_hasSeparator ? (this->getX() + 16) : this->getX();
+                const int textY = this->getBottomBound() - 16;
+        
                 if (m_truncated) {
                     if (!m_scroll) {
                         m_scroll = true;
-                        timeIn_ns = armTicksToNs(armGetSystemTick());
                     }
-                    
-                    // Calculate scissoring bounds that respect parent clipping
-                    const int scissorX = textX;
-                    const int scissorY = textY - 16;
-                    const int scissorWidth = m_maxWidth;
-                    const int scissorHeight = 24;
-                    
-                    // Get parent bounds (you'll need to implement this based on your parent system)
-                    // This assumes your parent has some way to get its visible bounds
-                    if (Element* parent = this->getParent()) {
-                        const int parentTop = parent->getY()-8; // or whatever method gets the top bound
-                        const int parentBottom = parent->getBottomBound(); // or equivalent
-                        const int parentLeft = parent->getX();
-                        const int parentRight = parent->getX() + parent->getWidth();
-                        
-                        // Clip scissor rectangle to parent bounds
-                        const int clipLeft = std::max(scissorX, parentLeft);
-                        const int clipRight = std::min(scissorX + scissorWidth, parentRight);
-                        const int clipTop = std::max(scissorY, parentTop);
-                        const int clipBottom = std::min(scissorY + scissorHeight, parentBottom);
-                        
-                        // Only enable scissoring if there's a visible area
-                        if (clipLeft < clipRight && clipTop < clipBottom) {
-                            renderer->enableScissoring(clipLeft, clipTop, 
-                                                     clipRight - clipLeft, 
-                                                     clipBottom - clipTop);
-                            
-                            renderer->drawStringWithColoredSections(m_scrollText, false, specialChars, 
-                                textX - static_cast<s32>(m_scrollOffset), textY, 16, 
-                                headerTextColor, textSeparatorColor);
-                            
-                            renderer->disableScissoring();
-                        } else {
-                            // Draw normal or ellipsis text
-                            //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
-                            renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                                textX, textY, 16, headerTextColor, textSeparatorColor);
-                        }
-                        // If completely clipped, don't draw anything
-                    } else {
-                        // Draw normal or ellipsis text
-                        //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
-                        renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                            textX, textY, 16, headerTextColor, textSeparatorColor);
-                    }
-                    
+        
                     handleScrolling();
+        
+                    renderer->enableScissoring(textX, textY - 16, m_maxWidth, 24);
+        
+                    renderer->drawStringWithColoredSections(
+                        m_scrollText,
+                        false,
+                        specialChars,
+                        textX - static_cast<s32>(m_scrollOffset),
+                        textY,
+                        16,
+                        headerTextColor,
+                        textSeparatorColor);
+        
+                    renderer->disableScissoring();
                 } else {
-                    // Draw normal or ellipsis text
-                    //const std::string& displayText = m_truncated ? m_ellipsisText : m_text;
-                    renderer->drawStringWithColoredSections(m_text, false, specialChars, 
-                        textX, textY, 16, headerTextColor, textSeparatorColor);
+                    renderer->drawStringWithColoredSections(
+                        m_text,
+                        false,
+                        specialChars,
+                        textX,
+                        textY,
+                        16,
+                        headerTextColor,
+                        textSeparatorColor);
                 }
             }
-            
+        
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                // Check if the CategoryHeader is part of a list and if it's the first entry in it, half it's height
-                if (List *list = static_cast<List*>(this->getParent()); list != nullptr) {
+                if (List *list = static_cast<List *>(this->getParent()); list != nullptr) {
                     if (list->getIndexInList(this) == 0) {
-                        this->setBoundaries(this->getX(), this->getY(), this->getWidth(), 29+4);
+                        this->setBoundaries(this->getX(), this->getY(), this->getWidth(), 33);
                         return;
                     }
                 }
-                this->setBoundaries(this->getX(), this->getY(), this->getWidth(), tsl::style::ListItemDefaultHeight *0.90);
+        
+                this->setBoundaries(
+                    this->getX(),
+                    this->getY(),
+                    this->getWidth(),
+                    tsl::style::ListItemDefaultHeight * 0.90);
             }
-            
-            virtual bool onClick(u64 keys) {
-                return false;
-            }
-            
-            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
-                return nullptr;
-            }
-            
-            virtual void setFocused(bool state) override {}
-            
+        
             inline void setText(const std::string &text) {
-                if (this->m_text != text) {
-                    this->m_text = text;
+                if (m_text != text) {
+                    m_text = text;
                     ult::applyLangReplacements(m_text);
                     ult::convertComboToUnicode(m_text);
-                    //resetTextProperties();
+        
+                    resetTextProperties();
                 }
             }
-            
-            inline const std::string& getText() const {
-                return this->m_text;
+        
+            inline const std::string &getText() const {
+                return m_text;
             }
         
         private:
             std::string m_text;
             bool m_hasSeparator;
-            
-            // Scrolling properties (matching ListItem)
-            u64 timeIn_ns;
-            std::string m_scrollText;
-            //std::string m_ellipsisText;
+        
             bool m_scroll;
             bool m_truncated;
             float m_scrollOffset;
             u32 m_maxWidth;
             u32 m_textWidth;
+        
+            std::string m_scrollText;
             
-
-            // Frame rate compensation - cache calculations to reduce stutter
-            u64 lastUpdateTime = 0;
-            float cachedScrollOffset = 0.0f;
-            
-            // Pre-compute constants as statics to avoid recalculation
+            /* Delta-time animation state */
+            u64 lastFrameTime_ns = 0;
+            double accumulatedTime_s = 0.0;
+        
+            /* Cached calculations */
             bool constantsInitialized = false;
             double totalCycleDuration;
             double delayDuration;
@@ -8777,121 +8744,120 @@ namespace tsl {
             double accelDistance;
             double constantVelocityDistance;
             double minScrollDistance;
+        
             double invAccelTime;
             double invDecelTime;
             double invBillion;
-
-            void calculateWidths(gfx::Renderer* renderer) {
-                // Available width (accounting for separator and margins)
-                m_maxWidth = getWidth() - (m_hasSeparator ? 20-3 : 4);
-                
-                // Get actual text width
+        
+            float cachedScrollOffset = 0.0f;
+        
+            void calculateWidths(gfx::Renderer *renderer) {
+                m_maxWidth = getWidth() - (m_hasSeparator ? 17 : 4);
+        
                 const u32 width = renderer->getTextDimensions(m_text, false, 16).first;
                 m_truncated = width > m_maxWidth;
-                
+        
                 if (m_truncated) {
-                    // Build scroll text: "text        text"
                     m_scrollText.clear();
                     m_scrollText.reserve(m_text.size() * 2 + 8);
                     m_scrollText.append(m_text).append("        ");
                     m_textWidth = renderer->getTextDimensions(m_scrollText, false, 16).first;
                     m_scrollText.append(m_text);
-                    
-                    // Create ellipsis text
-                    //m_ellipsisText = renderer->limitStringLength(m_text, false, 16, m_maxWidth);
                 } else {
                     m_textWidth = width;
                 }
+        
+                constantsInitialized = false;
             }
-            
+        
             void handleScrolling() {
                 const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const u64 elapsed_ns = currentTime_ns - timeIn_ns;
-                
-                
+        
                 if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
-                    // Constants for velocity-based scrolling (3 second pauses as requested)
-                    delayDuration = 3.0;  // 3 second pause at start
-                    static constexpr double pauseDuration = 2.0;  // 3 second pause at end
-                    maxVelocity = 100.0;  // Adjust for desired scroll speed
+                    delayDuration = 3.0;
+                    static constexpr double pauseDuration = 2.0;
+        
+                    maxVelocity = 100.0;
                     accelTime = 0.5;
                     static constexpr double decelTime = 0.5;
-                    
-                    // Pre-calculate derived constants
+        
                     minScrollDistance = static_cast<double>(m_textWidth);
                     accelDistance = 0.5 * maxVelocity * accelTime;
                     const double decelDistance = 0.5 * maxVelocity * decelTime;
-                    constantVelocityDistance = std::max(0.0, minScrollDistance - accelDistance - decelDistance);
+        
+                    constantVelocityDistance =
+                        std::max(0.0, minScrollDistance - accelDistance - decelDistance);
+        
                     constantVelocityTime = constantVelocityDistance / maxVelocity;
+        
                     scrollDuration = accelTime + constantVelocityTime + decelTime;
                     totalCycleDuration = delayDuration + scrollDuration + pauseDuration;
-                    
-                    // Pre-calculate reciprocals for faster division
+        
                     invAccelTime = 1.0 / accelTime;
                     invDecelTime = 1.0 / decelTime;
                     invBillion = 1.0 / 1000000000.0;
-                    
+        
                     constantsInitialized = true;
                 }
-                
-                // Fast ns to seconds conversion
-                const double elapsed_seconds = static_cast<double>(elapsed_ns) * invBillion;
-                
-                // Update at consistent intervals regardless of frame rate
-                if (currentTime_ns - lastUpdateTime >= 8333333ULL) { // ~120 FPS update rate
-                    // Use std::fmod for modulo - it's optimized and faster than loops
-                    const double cyclePosition = std::fmod(elapsed_seconds, totalCycleDuration);
-                    
-                    if (cyclePosition < delayDuration) {
-                        // Delay phase - no scrolling (3 second pause)
-                        cachedScrollOffset = 0.0f;
-                    } else if (cyclePosition < delayDuration + scrollDuration) {
-                        // Scrolling phase - velocity-based movement
-                        const double scrollTime = cyclePosition - delayDuration;
-                        double distance;
-                        
-                        if (scrollTime <= accelTime) {
-                            // Acceleration phase - quadratic ease-in
-                            const double t = scrollTime * invAccelTime;
-                            const double smoothT = t * t;
-                            distance = smoothT * accelDistance;
-                        } else if (scrollTime <= accelTime + constantVelocityTime) {
-                            // Constant velocity phase
-                            const double constantTime = scrollTime - accelTime;
-                            distance = accelDistance + (constantTime * maxVelocity);
-                        } else {
-                            // Deceleration phase - quadratic ease-out
-                            const double decelStartTime = accelTime + constantVelocityTime;
-                            const double t = (scrollTime - decelStartTime) * invDecelTime;
-                            const double oneMinusT = 1.0 - t;
-                            const double smoothT = 1.0 - oneMinusT * oneMinusT;
-                            distance = accelDistance + constantVelocityDistance + (smoothT * (minScrollDistance - accelDistance - constantVelocityDistance));
-                        }
-                        
-                        // Use branchless min
-                        cachedScrollOffset = static_cast<float>(distance < minScrollDistance ? distance : minScrollDistance);
+        
+                if (lastFrameTime_ns != 0) {
+                    double delta_s =
+                        static_cast<double>(currentTime_ns - lastFrameTime_ns) * invBillion;
+        
+                    /* Clamp large jumps (list switches / lag spikes) */
+                    delta_s = std::min(delta_s, 0.05);
+        
+                    accumulatedTime_s += delta_s;
+                }
+        
+                lastFrameTime_ns = currentTime_ns;
+        
+                const double cyclePosition =
+                    std::fmod(accumulatedTime_s, totalCycleDuration);
+        
+                if (cyclePosition < delayDuration) {
+                    cachedScrollOffset = 0.0f;
+                } else if (cyclePosition < delayDuration + scrollDuration) {
+                    const double scrollTime = cyclePosition - delayDuration;
+                    double distance;
+        
+                    if (scrollTime <= accelTime) {
+                        const double t = scrollTime * invAccelTime;
+                        distance = (t * t) * accelDistance;
+                    } else if (scrollTime <= accelTime + constantVelocityTime) {
+                        const double t = scrollTime - accelTime;
+                        distance = accelDistance + (t * maxVelocity);
                     } else {
-                        // Pause phase - stay at end (3 second pause)
-                        cachedScrollOffset = static_cast<float>(m_textWidth);
+                        const double decelStart = accelTime + constantVelocityTime;
+                        const double t = (scrollTime - decelStart) * invDecelTime;
+                        const double smooth = 1.0 - (1.0 - t) * (1.0 - t);
+        
+                        distance = accelDistance + constantVelocityDistance +
+                                   smooth * (minScrollDistance - accelDistance - constantVelocityDistance);
                     }
-                    
-                    lastUpdateTime = currentTime_ns;
+        
+                    cachedScrollOffset = static_cast<float>(
+                        distance < minScrollDistance ? distance : minScrollDistance);
+                } else {
+                    cachedScrollOffset = static_cast<float>(m_textWidth);
                 }
-                
-                // Use cached value for consistent display
+        
                 m_scrollOffset = cachedScrollOffset;
-                
-                // Reset timer when cycle completes
-                if (elapsed_seconds >= totalCycleDuration) {
-                    timeIn_ns = currentTime_ns;
-                }
             }
-            
-            //void resetTextProperties() {
-            //    m_scrollText.clear();
-            //    m_ellipsisText.clear();
-            //    m_maxWidth = 0;
-            //}
+        
+            void resetTextProperties() {
+                m_scrollOffset = 0.0f;
+                cachedScrollOffset = 0.0f;
+        
+                lastFrameTime_ns = 0;
+                accumulatedTime_s = 0.0;
+        
+                m_maxWidth = 0;
+                m_textWidth = 0;
+        
+                m_scroll = false;
+                constantsInitialized = false;
+            }
         };
         
 
@@ -13011,7 +12977,6 @@ namespace tsl {
             ult::useSelectionValue = tempStr != ult::FALSE_STR;
 
             //#endif
-            
         }
 
         /**
@@ -13073,7 +13038,7 @@ namespace tsl {
             hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
             eventClear(&captureButtonPressEvent);
             tsl::hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
-        
+
             // Parse Tesla settings
             impl::parseOverlaySettings();
             

@@ -49,6 +49,7 @@ namespace ult {
     extern const std::string LANG_PATH;
     extern const std::string THEMES_PATH;
     extern const std::string WALLPAPERS_PATH;
+    extern const std::string ASSETS_PATH;
     extern const std::string SOUNDS_PATH;
     extern const std::string LOADED_SOUNDS_PATH;
     extern const std::string FLAGS_PATH;
