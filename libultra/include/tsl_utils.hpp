@@ -580,10 +580,10 @@ namespace ult {
     extern std::string DEC;
     #endif
     
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars();
-    #endif
+    //#endif
     
     
     // Define the updateIfNotEmpty function

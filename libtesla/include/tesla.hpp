@@ -717,7 +717,7 @@ namespace tsl {
             ult::parseLanguage(langFile);
         else {
             //if (defaultLang == "en")
-            reinitializeLangVars();
+            ult::reinitializeLangVars();
         }
 
         // Load local font if needed based on overlay language setting
@@ -8256,7 +8256,7 @@ namespace tsl {
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter = false) const {
         #else
             Color determineValueTextColor(bool useClickTextColor) const {
-                constexpr bool lastRunningInterpreter = false;
+                //constexpr bool lastRunningInterpreter = false;
         #endif
                 if (m_focused && ult::useSelectionValue) {
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
