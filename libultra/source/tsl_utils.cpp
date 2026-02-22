@@ -209,7 +209,7 @@ namespace ult {
             return NULL_STR;
         
         u64 buildid;
-        std::memcpy(&buildid, moduleInfos[0].build_id, sizeof(u64));
+        std::memcpy(&buildid, moduleInfos[1].build_id, sizeof(u64));
         
         char buildIdStr[17];
         snprintf(buildIdStr, sizeof(buildIdStr), "%016lX", __builtin_bswap64(buildid));
