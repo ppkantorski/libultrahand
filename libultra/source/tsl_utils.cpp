@@ -197,33 +197,19 @@ namespace ult {
         if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
             return NULL_STR;
         
-        Service srv;
-        if (R_FAILED(smGetService(&srv, "dmnt:cht")))
+        if (R_FAILED(ldrDmntInitialize()))
             return NULL_STR;
         
-        if (R_FAILED(serviceDispatch(&srv, 65003))) {
-            serviceClose(&srv);
-            return NULL_STR;
-        }
+        LoaderModuleInfo moduleInfos[2];
+        s32 count = 0;
+        Result rc = ldrDmntGetProcessModuleInfo(pid, moduleInfos, 2, &count);
+        ldrDmntExit();
         
-        struct {
-            u64 process_id;
-            u64 title_id;
-            struct { u64 base; u64 size; } main_nso_extents;
-            struct { u64 base; u64 size; } heap_extents;
-            struct { u64 base; u64 size; } alias_extents;
-            struct { u64 base; u64 size; } address_space_extents;
-            u8 main_nso_build_id[0x20];
-        } metadata;
-        
-        Result rc = serviceDispatchOut(&srv, 65002, metadata);
-        serviceClose(&srv);
-        
-        if (R_FAILED(rc))
+        if (R_FAILED(rc) || count == 0)
             return NULL_STR;
         
         u64 buildid;
-        std::memcpy(&buildid, metadata.main_nso_build_id, sizeof(u64));
+        std::memcpy(&buildid, moduleInfos[0].build_id, sizeof(u64));
         
         char buildIdStr[17];
         snprintf(buildIdStr, sizeof(buildIdStr), "%016lX", __builtin_bswap64(buildid));
