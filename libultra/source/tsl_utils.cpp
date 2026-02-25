@@ -843,31 +843,31 @@ namespace ult {
 
     #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr) {
-        static std::unordered_map<std::string, std::string*> mappings = {
+        static const struct { const char* key; std::string* val; } mappings[] = {
+            {"Sunday",    &SUNDAY},    {"Monday",    &MONDAY},    {"Tuesday",   &TUESDAY},
+            {"Wednesday", &WEDNESDAY}, {"Thursday",  &THURSDAY},  {"Friday",    &FRIDAY},
+            {"Saturday",  &SATURDAY},
+            {"January",   &JANUARY},   {"February",  &FEBRUARY},  {"March",     &MARCH},
+            {"April",     &APRIL},     {"June",      &JUNE},      {"July",      &JULY},
+            {"August",    &AUGUST},    {"September", &SEPTEMBER}, {"October",   &OCTOBER},
+            {"November",  &NOVEMBER},  {"December",  &DECEMBER},
             {"Sun", &SUN}, {"Mon", &MON}, {"Tue", &TUE}, {"Wed", &WED},
             {"Thu", &THU}, {"Fri", &FRI}, {"Sat", &SAT},
-            {"Sunday", &SUNDAY}, {"Monday", &MONDAY}, {"Tuesday", &TUESDAY},
-            {"Wednesday", &WEDNESDAY}, {"Thursday", &THURSDAY},
-            {"Friday", &FRIDAY}, {"Saturday", &SATURDAY},
             {"Jan", &JAN}, {"Feb", &FEB}, {"Mar", &MAR}, {"Apr", &APR},
             {"May", &MAY_ABBR}, {"Jun", &JUN}, {"Jul", &JUL}, {"Aug", &AUG},
             {"Sep", &SEP}, {"Oct", &OCT}, {"Nov", &NOV}, {"Dec", &DEC},
-            {"January", &JANUARY}, {"February", &FEBRUARY}, {"March", &MARCH},
-            {"April", &APRIL}, {"June", &JUNE}, {"July", &JULY},
-            {"August", &AUGUST}, {"September", &SEPTEMBER}, {"October", &OCTOBER},
-            {"November", &NOVEMBER}, {"December", &DECEMBER}
         };
-
-        std::string timeStrCopy = timeStr;
-        size_t pos;
-        for (const auto& mapping : mappings) {
-            pos = timeStrCopy.find(mapping.first);
-            while (pos != std::string::npos) {
-                timeStrCopy.replace(pos, mapping.first.length(), *(mapping.second));
-                pos = timeStrCopy.find(mapping.first, pos + mapping.second->length());
+    
+        std::string result = timeStr;
+        for (const auto& m : mappings) {
+            size_t pos = 0;
+            const size_t keyLen = strlen(m.key);
+            while ((pos = result.find(m.key, pos)) != std::string::npos) {
+                result.replace(pos, keyLen, *m.val);
+                pos += m.val->size();
             }
         }
-        strcpy(timeStr, timeStrCopy.c_str());
+        strcpy(timeStr, result.c_str());
     }
     #endif
 
@@ -904,100 +904,99 @@ namespace ult {
     
     
     // Prepare a map of default settings
-    std::map<const std::string, std::string> defaultThemeSettingsMap = {
-        {"default_overlay_color", whiteColor},
-        {"default_package_color", whiteColor},
-        {"default_script_color", "FF33FF"},
-        {"clock_color", whiteColor},
-        {"temperature_color", whiteColor},
-        {"battery_color", "ffff45"},
-        {"battery_charging_color", "00FF00"},
-        {"battery_low_color", "FF0000"},
-        {"widget_backdrop_alpha", "15"},
-        {"widget_backdrop_color", blackColor},
-        {"bg_alpha", "13"},
-        {"bg_color", blackColor},
-        {"separator_alpha", "15"},
-        {"separator_color", "404040"},
-        {"text_separator_color", "404040"},
-        {"text_color", whiteColor},
-        {"notification_text_color", whiteColor},
-        {"header_text_color", whiteColor},
-        {"header_separator_color", whiteColor},
-        {"star_color", whiteColor},
-        {"selection_star_color", whiteColor},
-        {"bottom_button_color", whiteColor},
-        {"bottom_text_color", whiteColor},
-        {"bottom_separator_color", whiteColor},
-        {"top_separator_color", "404040"},
-        {"table_bg_color", "2C2C2C"},
-        {"table_bg_alpha", "14"},
-        {"table_section_text_color", whiteColor},
-        //{"table_info_text_color", "00FFDD"},
-        {"table_info_text_color", "9ed0ff"},
-        {"warning_text_color", "FF7777"},
-        {"healthy_ram_text_color", "00FF00"},
-        {"neutral_ram_text_color", "FFAA00"},
-        {"bad_ram_text_color", "FF0000"},
-        {"trackbar_slider_color", "606060"},
-        {"trackbar_slider_border_color", "505050"},
+    const ThemeDefault defaultThemeSettings[] = {
+        // Must stay sorted alphabetically for binary search
+        {"bad_ram_text_color",              "FF0000"},
+        {"banner_version_text_color",       "AAAAAA"},
+        {"battery_charging_color",          "00FF00"},
+        {"battery_color",                   "ffff45"},
+        {"battery_low_color",               "FF0000"},
+        {"bg_alpha",                        "13"},
+        {"bg_color",                        "000000"},
+        {"bottom_button_color",             "FFFFFF"},
+        {"bottom_separator_color",          "FFFFFF"},
+        {"bottom_text_color",               "FFFFFF"},
+        {"click_alpha",                     "7"},
+        {"click_color",                     "3E25F7"},
+        {"click_text_color",                "FFFFFF"},
+        {"clock_color",                     "FFFFFF"},
+        {"default_overlay_color",           "FFFFFF"},
+        {"default_package_color",           "FFFFFF"},
+        {"default_script_color",            "FF33FF"},
+        {"dynamic_logo_color_1",            "00E669"},
+        {"dynamic_logo_color_2",            "8080EA"},
+        {"header_separator_color",          "FFFFFF"},
+        {"header_text_color",               "FFFFFF"},
+        {"healthy_ram_text_color",          "00FF00"},
+        {"highlight_color_1",               "2288CC"},
+        {"highlight_color_2",               "88FFFF"},
+        {"highlight_color_3",               "FFFF45"},
+        {"highlight_color_4",               "F7253E"},
+        {"inprogress_text_color",           "FFFF45"},
+        {"invalid_text_color",              "FF0000"},
+        {"invert_bg_click_color",           "false"},
+        {"logo_color_1",                    "FFFFFF"},
+        {"logo_color_2",                    "FF0000"},
+        {"neutral_ram_text_color",          "FFAA00"},
+        {"notification_text_color",         "FFFFFF"},
+        {"off_text_color",                  "AAAAAA"},
+        {"on_text_color",                   "00FFDD"},
+        {"overlay_text_color",              "FFFFFF"},
+        {"overlay_version_text_color",      "AAAAAA"},
+        {"package_text_color",              "FFFFFF"},
+        {"package_version_text_color",      "AAAAAA"},
+        {"progress_alpha",                  "7"},
+        {"progress_color",                  "253EF7"},
+        {"scrollbar_color",                 "555555"},
+        {"scrollbar_wall_color",            "AAAAAA"},
+        {"selection_bg_alpha",              "11"},
+        {"selection_bg_color",              "000000"},
+        {"selection_star_color",            "FFFFFF"},
+        {"selection_text_color",            "9ed0ff"},
+        {"selection_value_text_color",      "FF7777"},
+        {"separator_alpha",                 "15"},
+        {"separator_color",                 "404040"},
+        {"star_color",                      "FFFFFF"},
+        {"table_bg_alpha",                  "14"},
+        {"table_bg_color",                  "2C2C2C"},
+        {"table_info_text_color",           "9ed0ff"},
+        {"table_section_text_color",        "FFFFFF"},
+        {"temperature_color",               "FFFFFF"},
+        {"text_color",                      "FFFFFF"},
+        {"text_separator_color",            "404040"},
+        {"top_separator_color",             "404040"},
+        {"trackbar_empty_color",            "404040"},
+        {"trackbar_full_color",             "00FFDD"},
+        {"trackbar_slider_border_color",    "505050"},
+        {"trackbar_slider_color",           "606060"},
         {"trackbar_slider_malleable_color", "A0A0A0"},
-        {"trackbar_full_color", "00FFDD"},
-        {"trackbar_empty_color", "404040"},
-        {"overlay_text_color", whiteColor},
-        {"ult_overlay_text_color", "9ed0ff"},
-        {"package_text_color", whiteColor},
-        {"ult_package_text_color", "9ed0ff"},
-        {"banner_version_text_color", greyColor},
-        {"overlay_version_text_color", greyColor},
-        {"ult_overlay_version_text_color", "00FFDD"},
-        {"package_version_text_color", greyColor},
-        {"ult_package_version_text_color", "00FFDD"},
-        {"on_text_color", "00FFDD"},
-        {"off_text_color", greyColor},
-        {"invalid_text_color", "FF0000"},
-        {"inprogress_text_color", "FFFF45"},
-        {"selection_text_color", "9ed0ff"},
-        {"selection_value_text_color", "FF7777"},
-        {"selection_bg_color", blackColor},
-        {"selection_bg_alpha", "11"},
-        {"scrollbar_color", "555555"},
-        {"scrollbar_wall_color", "AAAAAA"},
-        {"highlight_color_1", "2288CC"},
-        {"highlight_color_2", "88FFFF"},
-        {"highlight_color_3", "FFFF45"},
-        {"highlight_color_4", "F7253E"},
-        {"click_text_color", whiteColor},
-        {"click_alpha", "7"},
-        {"click_color", "3E25F7"},
-        {"progress_alpha", "7"},
-        {"progress_color", "253EF7"},
-        {"invert_bg_click_color", FALSE_STR},
-        //{"disable_selection_bg", FALSE_STR},
-        //{"disable_selection_value_color", FALSE_STR},
-        //{"disable_colorful_logo", FALSE_STR},
-        {"logo_color_1", whiteColor},
-        {"logo_color_2", "FF0000"},
-        {"dynamic_logo_color_1", "00E669"},
-        {"dynamic_logo_color_2", "8080EA"}
+        {"ult_overlay_text_color",          "9ed0ff"},
+        {"ult_overlay_version_text_color",  "00FFDD"},
+        {"ult_package_text_color",          "9ed0ff"},
+        {"ult_package_version_text_color",  "00FFDD"},
+        {"warning_text_color",              "FF7777"},
+        {"widget_backdrop_alpha",           "15"},
+        {"widget_backdrop_color",           "000000"},
     };
+    const size_t defaultThemeSettingsCount = sizeof(defaultThemeSettings) / sizeof(defaultThemeSettings[0]);
     
-    bool isNumericCharacter(char c) {
-        return std::isdigit(c);
+    const char* getThemeDefault(const char* key) {
+        size_t lo = 0, hi = defaultThemeSettingsCount;
+        while (lo < hi) {
+            const size_t mid = (lo + hi) / 2;
+            const int cmp = strcmp(defaultThemeSettings[mid].key, key);
+            if (cmp == 0) return defaultThemeSettings[mid].value;
+            if (cmp < 0)  lo = mid + 1;
+            else          hi = mid;
+        }
+        return "";
     }
     
-    bool isValidHexColor(const std::string& hexColor) {
-        // Check if the string is a valid hexadecimal color of the format "#RRGGBB"
-        if (hexColor.size() != 6) {
-            return false; // Must be exactly 6 characters long
-        }
-        
-        for (char c : hexColor) {
-            if (!isxdigit(c)) {
-                return false; // Must contain only hexadecimal digits (0-9, A-F, a-f)
-            }
-        }
-        
+    //bool isNumericCharacter(char c) { return std::isdigit(c); }
+    
+    bool isValidHexColor(const std::string& s) {
+        if (s.size() != 6) return false;
+        for (char c : s) if (!isxdigit(c)) return false;
         return true;
     }
     

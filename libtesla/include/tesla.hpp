@@ -367,7 +367,6 @@ namespace tsl {
      * @brief RGBA4444 Color structure
      */
     struct Color {
-        
         union {
             struct {
                 u16 r: 4, g: 4, b: 4, a: 4;
@@ -375,9 +374,9 @@ namespace tsl {
             u16 rgba;
         };
         
-        constexpr inline Color(u16 raw): rgba(raw) {}
-        constexpr inline Color(u8 r, u8 g, u8 b, u8 a): r(r), g(g), b(b), a(a) {}
-        
+        constexpr inline Color() : rgba(0) {}
+        constexpr inline Color(u16 raw) : rgba(raw) {}
+        constexpr inline Color(u8 r, u8 g, u8 b, u8 a) : r(r), g(g), b(b), a(a) {}
     };
     
     //#if USING_WIDGET_DIRECTIVE
@@ -442,105 +441,100 @@ namespace tsl {
     // Theme color variable definitions
     //static bool disableColorfulLogo = false;
 
+    static Color logoColor1;
+    static Color logoColor2;
     
-    static Color logoColor1 = RGB888(ult::whiteColor);
-    static Color logoColor2 = RGB888("F7253E");
+    static size_t defaultBackgroundAlpha;
     
-
-    static size_t defaultBackgroundAlpha = 13;
+    static Color defaultBackgroundColor;
+    static Color defaultTextColor;
+    static Color notificationTextColor;
+    static Color headerTextColor;
+    static Color headerSeparatorColor;
+    static Color starColor;
+    static Color selectionStarColor;
+    static Color buttonColor;
+    static Color bottomTextColor;
+    static Color bottomSeparatorColor;
+    static Color topSeparatorColor;
     
-    static Color defaultBackgroundColor = RGB888(ult::blackColor, defaultBackgroundAlpha);
-    static Color defaultTextColor = RGB888(ult::whiteColor);
-    static Color notificationTextColor = RGB888(ult::whiteColor);
-    static Color headerTextColor = RGB888(ult::whiteColor);
-    static Color headerSeparatorColor = RGB888(ult::whiteColor);
-    static Color starColor = RGB888(ult::whiteColor);
-    static Color selectionStarColor = RGB888(ult::whiteColor);
-    static Color buttonColor = RGB888(ult::whiteColor);
-    static Color bottomTextColor = RGB888(ult::whiteColor);
-    static Color bottomSeparatorColor = RGB888(ult::whiteColor);
-    static Color topSeparatorColor = RGB888("404040");
-
-    static Color defaultOverlayColor = RGB888(ult::whiteColor);
-    static Color defaultPackageColor = RGB888(ult::whiteColor);//RGB888("#00FF00");
-    static Color defaultScriptColor = RGB888("FF33FF");
-    static Color clockColor = RGB888(ult::whiteColor);
-    static Color temperatureColor = RGB888(ult::whiteColor);
-    static Color batteryColor = RGB888("ffff45");
-    static Color batteryChargingColor = RGB888("00FF00");
-    static Color batteryLowColor = RGB888("FF0000");
-    static size_t widgetBackdropAlpha = 15;
-    static Color widgetBackdropColor = RGB888(ult::blackColor, widgetBackdropAlpha);
-
-    static Color overlayTextColor = RGB888(ult::whiteColor);
-    static Color ultOverlayTextColor = RGB888("9ed0ff");
-    static Color packageTextColor = RGB888(ult::whiteColor);
-    static Color ultPackageTextColor = RGB888("9ed0ff");
-
-    static Color bannerVersionTextColor = RGB888(ult::greyColor);
-    static Color overlayVersionTextColor = RGB888(ult::greyColor);
-    static Color ultOverlayVersionTextColor = RGB888("00FFDD");
-    static Color packageVersionTextColor = RGB888(ult::greyColor);
-    static Color ultPackageVersionTextColor = RGB888("00FFDD");
-    static Color onTextColor = RGB888("00FFDD");
-    static Color offTextColor = RGB888(ult::greyColor);
+    static Color defaultOverlayColor;
+    static Color defaultPackageColor;
+    static Color defaultScriptColor;
+    static Color clockColor;
+    static Color temperatureColor;
+    static Color batteryColor;
+    static Color batteryChargingColor;
+    static Color batteryLowColor;
+    static size_t widgetBackdropAlpha;
+    static Color widgetBackdropColor;
+    
+    static Color overlayTextColor;
+    static Color ultOverlayTextColor;
+    static Color packageTextColor;
+    static Color ultPackageTextColor;
+    
+    static Color bannerVersionTextColor;
+    static Color overlayVersionTextColor;
+    static Color ultOverlayVersionTextColor;
+    static Color packageVersionTextColor;
+    static Color ultPackageVersionTextColor;
+    static Color onTextColor;
+    static Color offTextColor;
     
     #if IS_LAUNCHER_DIRECTIVE
-    static Color dynamicLogoRGB1 = RGB888("00E669");
-    static Color dynamicLogoRGB2 = RGB888("8080EA");
+    static Color dynamicLogoRGB1;
+    static Color dynamicLogoRGB2;
     #endif
-
-    //static bool disableSelectionBG = false;
-    //static bool disableSelectionValueColor = false;
-    static bool invertBGClickColor = false;
-
-    static size_t selectionBGAlpha = 11;
-    static Color selectionBGColor = RGB888(ult::blackColor, selectionBGAlpha);
-
-    static Color highlightColor1 = RGB888("2288CC");
-    static Color highlightColor2 = RGB888("88FFFF");
-    static Color highlightColor3 = RGB888("FFFF45");
-    static Color highlightColor4 = RGB888("F7253E");
-
-    static Color highlightColor = tsl::style::color::ColorHighlight;
     
-    static size_t clickAlpha = 7;
-    static Color clickColor = RGB888("3E25F7", clickAlpha);
-
-    static size_t progressAlpha = 7;
-    static Color progressColor = RGB888("253EF7", progressAlpha);
-
-    static Color scrollBarColor = RGB888("555555");
-    static Color scrollBarWallColor = RGB888("AAAAAA");
-
-    static size_t separatorAlpha = 15;
-    static Color separatorColor = RGB888("404040", separatorAlpha);
-    static Color edgeSeparatorColor = RGB888("303030");
-
-    static Color textSeparatorColor = RGB888("404040");
-
-    static Color selectedTextColor = RGB888("9ed0ff");
-    static Color selectedValueTextColor = RGB888("FF7777");
-    static Color inprogressTextColor = RGB888(ult::whiteColor);
-    static Color invalidTextColor = RGB888("FF0000");
-    static Color clickTextColor = RGB888(ult::whiteColor);
-
-    static size_t tableBGAlpha = 14;
-    static Color tableBGColor = RGB888("2C2C2C", tableBGAlpha); //RGB888("303030", tableBGAlpha);
-    static Color sectionTextColor = RGB888(ult::whiteColor);
-    //static Color infoTextColor = RGB888("00FFDD");
-    static Color infoTextColor =RGB888("9ed0ff");
-    static Color warningTextColor = RGB888("FF7777");
-
-    static Color healthyRamTextColor = RGB888("00FF00");
-    static Color neutralRamTextColor = RGB888("FFAA00");
-    static Color badRamTextColor = RGB888("FF0000");
-
-    static Color trackBarSliderColor = RGB888("606060");
-    static Color trackBarSliderBorderColor = RGB888("505050");
-    static Color trackBarSliderMalleableColor = RGB888("A0A0A0");
-    static Color trackBarFullColor = RGB888("00FFDD");
-    static Color trackBarEmptyColor = RGB888("404040");
+    static bool invertBGClickColor;
+    
+    static size_t selectionBGAlpha;
+    static Color selectionBGColor;
+    
+    static Color highlightColor1;
+    static Color highlightColor2;
+    static Color highlightColor3;
+    static Color highlightColor4;
+    
+    static Color s_highlightColor = tsl::style::color::ColorHighlight;
+    
+    static size_t clickAlpha;
+    static Color clickColor;
+    
+    static size_t progressAlpha;
+    static Color progressColor;
+    
+    static Color scrollBarColor;
+    static Color scrollBarWallColor;
+    
+    static size_t separatorAlpha;
+    static Color separatorColor;
+    static Color edgeSeparatorColor;
+    
+    static Color textSeparatorColor;
+    
+    static Color selectedTextColor;
+    static Color selectedValueTextColor;
+    static Color inprogressTextColor;
+    static Color invalidTextColor;
+    static Color clickTextColor;
+    
+    static size_t tableBGAlpha;
+    static Color tableBGColor;
+    static Color sectionTextColor;
+    static Color infoTextColor;
+    static Color warningTextColor;
+    
+    static Color healthyRamTextColor;
+    static Color neutralRamTextColor;
+    static Color badRamTextColor;
+    
+    static Color trackBarSliderColor;
+    static Color trackBarSliderBorderColor;
+    static Color trackBarSliderMalleableColor;
+    static Color trackBarFullColor;
+    static Color trackBarEmptyColor;
     
     static void initializeThemeVars() {
         auto themeData = ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH);
@@ -548,9 +542,9 @@ namespace tsl {
         
         auto& themeSection = themeData[ult::THEME_STR];
         
-        auto getValue = [&](const char* key) -> const std::string& {
+        auto getValue = [&](const char* key) -> const char* {
             auto it = themeSection.find(key);
-            return it != themeSection.end() ? it->second : ult::defaultThemeSettingsMap[key];
+            return it != themeSection.end() ? it->second.c_str() : ult::getThemeDefault(key);
         };
         
         auto getColor = [&](const char* key, size_t alpha = 15) {
@@ -558,8 +552,7 @@ namespace tsl {
         };
         
         auto getAlpha = [&](const char* key) {
-            const auto& alphaStr = getValue(key);
-            return ult::stoi(alphaStr);
+            return ult::stoi(getValue(key));
         };
         
         #if IS_LAUNCHER_DIRECTIVE
@@ -4382,7 +4375,7 @@ namespace tsl {
                 }
                 
                 // Combine color interpolation into single calculation
-                highlightColor = {
+                s_highlightColor = {
                     static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
                     static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
                     static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b),
@@ -4422,7 +4415,7 @@ namespace tsl {
                     }
                 }
                 
-                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
+                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(s_highlightColor));
             }
             
             /**
@@ -4485,7 +4478,7 @@ namespace tsl {
             
                 if (lastInterpreterState) {
                     // High precision floating point color interpolation for interpreter colors
-                    highlightColor = {
+                    s_highlightColor = {
                         static_cast<u8>(highlightColor4.r + (highlightColor3.r - highlightColor4.r) * progress + 0.5),
                         static_cast<u8>(highlightColor4.g + (highlightColor3.g - highlightColor4.g) * progress + 0.5),
                         static_cast<u8>(highlightColor4.b + (highlightColor3.b - highlightColor4.b) * progress + 0.5),
@@ -4493,7 +4486,7 @@ namespace tsl {
                     };
                 } else {
                     // High precision floating point color interpolation for normal colors
-                    highlightColor = {
+                    s_highlightColor = {
                         static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
                         static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
                         static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
@@ -4554,7 +4547,7 @@ namespace tsl {
                     }
                     #endif
             
-                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(highlightColor));
+                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(s_highlightColor));
                 }
                 
                 ult::onTrackBar.store(false, std::memory_order_release);
@@ -8050,8 +8043,8 @@ namespace tsl {
                 bool m_longThresholdCrossed : 1;
             } m_flags = {};
         
-            Color m_customTextColor = {0};
-            Color m_customValueColor = {0};
+            Color m_customTextColor;
+            Color m_customValueColor;
         
             float m_scrollOffset = 0.0f;
             u16 m_maxWidth = 0;     // Changed from u32 to u16
@@ -9173,14 +9166,14 @@ namespace tsl {
 
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? highlightColor : trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
 
@@ -9249,7 +9242,7 @@ namespace tsl {
                     }
                     const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
                     if (elapsedTime_ns < 500000000ULL) {
-                        highlightColor = {
+                        s_highlightColor = {
                             static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r + 0.5),
                             static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g + 0.5),
                             static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b + 0.5),
@@ -9260,7 +9253,7 @@ namespace tsl {
                     }
                 } else {
                     // Normal highlight animation
-                    highlightColor = {
+                    s_highlightColor = {
                         static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
                         static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
                         static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
@@ -9314,7 +9307,7 @@ namespace tsl {
                         //renderer->drawRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), a(selectionBGColor)); // CUSTOM MODIFICATION 
                     }
                     
-                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
                 } else {
                     if (ult::useSelectionBG) {
                         if (ult::expandedMemory)
@@ -9763,14 +9756,14 @@ namespace tsl {
             
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
-                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? highlightColor : trackBarSliderBorderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
             
@@ -13363,7 +13356,7 @@ namespace tsl {
                             // Clear any pending single click since double-click supersedes it
                             triggerRumbleClick.exchange(false, std::memory_order_acq_rel);
                         } 
-
+                    
                         if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
                             // Only start single click if nothing else is active
                             if (!ult::clickActive.load(std::memory_order_acquire) && !ult::doubleClickActive.load(std::memory_order_acquire)) {
@@ -13383,7 +13376,7 @@ namespace tsl {
                     }
                     
                     // Flush any pending sound triggers when effects are off
-
+                    
                     if (!ult::limitedMemory) {
                         if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
                             triggerNavigationSound.exchange(false, std::memory_order_acq_rel);
@@ -13401,7 +13394,7 @@ namespace tsl {
                             if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
                                 ult::Audio::reloadAllSounds();
                             }
-
+                    
                             if (triggerNavigationSound.exchange(false)) {
                                 ult::Audio::playNavigateSound();
                             } else if (triggerEnterSound.exchange(false)) {
@@ -13419,7 +13412,7 @@ namespace tsl {
                             } else if (triggerMoveSound.exchange(false)) {
                                 ult::Audio::playMoveSound();
                             }
-
+                    
                             //if (clearSoundCacheNow.exchange(false, std::memory_order_acq_rel)) {
                             //    //ult::Audio::unloadAllSounds(ult::Audio::SoundType::Wall);
                             //    ult::Audio::unloadAllSounds({ult::Audio::SoundType::Wall});
@@ -13851,6 +13844,84 @@ namespace tsl {
             eventClose(&captureButtonPressEvent);
 
         }
+
+        /**
+         * @brief Background event polling loop thread
+         *
+         * @param args Used to pass in a pointer to a \ref SharedThreadData struct
+         */
+        //static void backgroundEventPoller2(void *args) {
+        //    SharedThreadData *shData = static_cast<SharedThreadData*>(args);
+        //
+        //    while (shData->running.load(std::memory_order_acquire)) {
+        //
+        //        if (ult::launchingOverlay.load(std::memory_order_acquire))
+        //            break;
+        //
+        //        const u64 nowNs = armTicksToNs(armGetSystemTick());
+        //
+        //        // --- Haptics ---
+        //        if (ult::useHapticFeedback) {
+        //            if (triggerInitHaptics.exchange(false, std::memory_order_acq_rel)) {
+        //                ult::initHaptics();
+        //            } else {
+        //                ult::checkAndReinitHaptics();
+        //            }
+        //
+        //            if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
+        //                triggerRumbleClick.store(false, std::memory_order_release);
+        //                ult::rumbleDoubleClick();
+        //            } else if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
+        //                ult::rumbleClick();
+        //            }
+        //
+        //            // Must be called every loop to advance timing state
+        //            ult::processRumbleStop(nowNs);
+        //            ult::processRumbleDoubleClick(nowNs);
+        //        } else {
+        //            triggerRumbleClick.store(false, std::memory_order_release);
+        //            triggerRumbleDoubleClick.store(false, std::memory_order_release);
+        //        }
+        //
+        //        // --- Sound ---
+        //        if (!ult::limitedMemory) {
+        //            if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
+        //                triggerNavigationSound.store(false, std::memory_order_release);
+        //                triggerEnterSound.store(false, std::memory_order_release);
+        //                triggerExitSound.store(false, std::memory_order_release);
+        //                triggerWallSound.store(false, std::memory_order_release);
+        //                triggerOnSound.store(false, std::memory_order_release);
+        //                triggerOffSound.store(false, std::memory_order_release);
+        //                triggerSettingsSound.store(false, std::memory_order_release);
+        //                triggerMoveSound.store(false, std::memory_order_release);
+        //            } else {
+        //                if (reloadIfDockedChangedNow.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::reloadIfDockedChanged();
+        //                if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::reloadAllSounds();
+        //
+        //                if (triggerNavigationSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playNavigateSound();
+        //                else if (triggerEnterSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playEnterSound();
+        //                else if (triggerExitSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playExitSound();
+        //                else if (triggerWallSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playWallSound();
+        //                else if (triggerOnSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playOnSound();
+        //                else if (triggerOffSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playOffSound();
+        //                else if (triggerSettingsSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playSettingsSound();
+        //                else if (triggerMoveSound.exchange(false, std::memory_order_acq_rel))
+        //                    ult::Audio::playMoveSound();
+        //            }
+        //        }
+        //
+        //        svcSleepThread(8'000'000ULL);
+        //    }
+        //}
     }
     
     /**
@@ -13912,7 +13983,7 @@ namespace tsl {
     static inline std::string nextOverlayName;
     static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         std::lock_guard lk(setNextOverlayMutex);
-        char buffer[512];
+        char buffer[1024];
         char* p = buffer;
         char* bufferEnd = buffer + sizeof(buffer) - 1; // Leave room for null terminator
         
@@ -14191,8 +14262,12 @@ namespace tsl {
         shData.running.store(true, std::memory_order_release);
     
         Thread backgroundThread;
-        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
+        threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x1000, 0x2c, -2);
         threadStart(&backgroundThread);
+
+        //Thread backgroundThread2;
+        //threadCreate(&backgroundThread2, impl::backgroundEventPoller2, &shData, nullptr, 0x1000, 0x20, -2);
+        //threadStart(&backgroundThread2);
     
         eventCreate(&shData.comboEvent, false);
         
@@ -14495,7 +14570,8 @@ namespace tsl {
             shData.running.store(false, std::memory_order_release);
             threadWaitForExit(&backgroundThread);
             threadClose(&backgroundThread);
-
+            //threadWaitForExit(&backgroundThread2);
+            //threadClose(&backgroundThread2);
             
             // Cleanup overlay resources
             //tsl::elm::fullDeconstruction.store(true, std::memory_order_release);

@@ -25,7 +25,8 @@ namespace ult {
     
     // ===== Internal state (private to this file) =====
     //bool rumbleInitialized = false;
-    static HidVibrationDeviceHandle vibHandheld;
+    static HidVibrationDeviceHandle vibHandheldLeft;
+    static HidVibrationDeviceHandle vibHandheldRight;
     static HidVibrationDeviceHandle vibPlayer1Left;
     static HidVibrationDeviceHandle vibPlayer1Right;
     static u64 rumbleStartTick = 0;
@@ -69,11 +70,13 @@ namespace ult {
     
     // ===== Internal helpers =====
     static inline void sendVibration(const HidVibrationValue* value) {
-        if (cachedHandheldStyle)
-            hidSendVibrationValue(vibHandheld, value);
+        if (cachedHandheldStyle) {
+            hidSendVibrationValue(vibHandheldLeft,  value);
+            hidSendVibrationValue(vibHandheldRight, value);
+        }
     
         if (cachedPlayer1Style) {
-            hidSendVibrationValue(vibPlayer1Left, value);
+            hidSendVibrationValue(vibPlayer1Left,  value);
             hidSendVibrationValue(vibPlayer1Right, value);
         }
     }
@@ -88,30 +91,25 @@ namespace ult {
         const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 player1Style  = hidGetNpadStyleSet(HidNpadIdType_No1);
     
-        // Clear previous handles to avoid using stale handles if controllers were removed
-        vibHandheld = (HidVibrationDeviceHandle)0;
-        vibPlayer1Left = (HidVibrationDeviceHandle)0;
-        vibPlayer1Right = (HidVibrationDeviceHandle)0;
+        vibHandheldLeft = vibHandheldRight = vibPlayer1Left = vibPlayer1Right =
+            (HidVibrationDeviceHandle)0;
     
-        // Handheld
+        HidVibrationDeviceHandle tmp[2];
+    
         if (handheldStyle) {
-            hidInitializeVibrationDevices(&vibHandheld, 1,
-                                          HidNpadIdType_Handheld,
+            hidInitializeVibrationDevices(tmp, 2, HidNpadIdType_Handheld,
                                           (HidNpadStyleTag)handheldStyle);
+            vibHandheldLeft  = tmp[0];
+            vibHandheldRight = tmp[1];
         }
     
-        // Player 1 (left + right Joy-Con or Pro Controller)
         if (player1Style) {
-            HidVibrationDeviceHandle tmp[2] = { (HidVibrationDeviceHandle)0, (HidVibrationDeviceHandle)0 };
-            hidInitializeVibrationDevices(tmp, 2,
-                                          HidNpadIdType_No1,
+            hidInitializeVibrationDevices(tmp, 2, HidNpadIdType_No1,
                                           (HidNpadStyleTag)player1Style);
-    
             vibPlayer1Left  = tmp[0];
             vibPlayer1Right = tmp[1];
         }
     
-        // Ensure cache is valid immediately after initHaptics()
         cachedHandheldStyle = handheldStyle;
         cachedPlayer1Style  = player1Style;
     }
@@ -123,22 +121,22 @@ namespace ult {
     void checkAndReinitHaptics() {
         static u32 lastHandheldStyle = 0;
         static u32 lastPlayer1Style  = 0;
-    
+        
         const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 currentPlayer1Style  = hidGetNpadStyleSet(HidNpadIdType_No1);
-    
+        
         // Reinitialize only if something changed (appearance/disappearance or style change)
         //const bool changed =
         //    (currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style);
-    
+        
         if ((currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style)) {
             initHaptics();
         }
-    
+        
         // Update last-known styles for change detection
         lastHandheldStyle = currentHandheldStyle;
         lastPlayer1Style  = currentPlayer1Style;
-    
+        
         // Update cached styles used by sendVibration()/rumble paths
         cachedHandheldStyle = currentHandheldStyle;
         cachedPlayer1Style  = currentPlayer1Style;

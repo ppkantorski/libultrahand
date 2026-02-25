@@ -121,6 +121,23 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 
 //std::unique_ptr<char[]> writeBuffer;
 
+// Quick connectivity pre-check before spinning up curl
+static bool hasInternetAccess() {
+    if (R_FAILED(nifmInitialize(NifmServiceType_User)))
+        return false;
+    NifmInternetConnectionType type;
+    u32 strength;
+    NifmInternetConnectionStatus status;
+    u32 current_addr, subnet_mask, gateway, primary_dns, secondary_dns;
+    bool connected = R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status))
+                     && status == NifmInternetConnectionStatus_Connected
+                     && R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&current_addr, &subnet_mask, &gateway, &primary_dns, &secondary_dns))
+                     && current_addr != 0
+                     && primary_dns != 0;
+    nifmExit();
+    return connected;
+}
+
 /**
  * @brief Downloads a file from a URL to a specified destination.
  *
@@ -140,35 +157,39 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     // Initialize nifm to check connectivity (only if we're also managing socket init)
-    {
-        if (!R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to initialize nifm");
-            #endif
-            return false;
-        }
-        
-        // Check internet connectivity
-        NifmInternetConnectionStatus connectionStatus;
-        Result nifmResult = nifmGetInternetConnectionStatus(nullptr, nullptr, &connectionStatus);
-        
-        // Clean up nifm immediately after checking
-        nifmExit();
-        
-        if (R_FAILED(nifmResult) || connectionStatus != NifmInternetConnectionStatus_Connected) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("No internet connection available");
-            #endif
-            if (!noPercentagePolling) {
-                downloadPercentage.store(-1, std::memory_order_release);
-            }
-            return false;
-        }
+    //{
+    //    if (!R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+    //        #if USING_LOGGING_DIRECTIVE
+    //        if (!disableLogging)
+    //            logMessage("Failed to initialize nifm");
+    //        #endif
+    //        return false;
+    //    }
+    //    
+    //    // Check internet connectivity
+    //    NifmInternetConnectionStatus connectionStatus;
+    //    Result nifmResult = nifmGetInternetConnectionStatus(nullptr, nullptr, &connectionStatus);
+    //    
+    //    // Clean up nifm immediately after checking
+    //    nifmExit();
+    //    
+    //    if (R_FAILED(nifmResult) || connectionStatus != NifmInternetConnectionStatus_Connected) {
+    //        #if USING_LOGGING_DIRECTIVE
+    //        if (!disableLogging)
+    //            logMessage("No internet connection available");
+    //        #endif
+    //        if (!noPercentagePolling) {
+    //            downloadPercentage.store(-1, std::memory_order_release);
+    //        }
+    //        return false;
+    //    }
+    //}
+
+    // Fast pre-flight: ~1.5s max vs curl's unpredictable DNS hang
+    if (!hasInternetAccess()) {
+        return false;
     }
-
-
+    
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
@@ -288,7 +309,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_READ_BUFFER); // Increase buffer size
 
     // Add timeout options
-    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);   // 10 seconds to connect
+    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 4L);   // 10 seconds to connect
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1L);   // 1 byte/s (virtually any progress)
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
 

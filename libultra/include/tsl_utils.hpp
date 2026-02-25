@@ -620,10 +620,12 @@ namespace ult {
     
     
     // Prepare a map of default settings
-    extern std::map<const std::string, std::string> defaultThemeSettingsMap;
+    struct ThemeDefault { const char* key; const char* value; };
+    extern const ThemeDefault defaultThemeSettings[];
+    extern const size_t defaultThemeSettingsCount;
+    const char* getThemeDefault(const char* key);
     
-    bool isNumericCharacter(char c);
-    
+    //bool isNumericCharacter(char c);
     bool isValidHexColor(const std::string& hexColor);
     
     
