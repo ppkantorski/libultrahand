@@ -133,35 +133,35 @@ struct KeyPairEqual {
 
 //std::unordered_map<std::pair<s32, float>, GlyphInfo, KeyPairHash, KeyPairEqual> cache;
 
-u8 TeslaFPS = 60;
+inline u8 TeslaFPS = 60;
 //u8 alphabackground = 0xD;
-std::atomic<bool> triggerExitNow{false};
-std::atomic<bool> isRendering{false};
-std::atomic<bool> delayUpdate{false};
-std::atomic<bool> pendingExit{false};
-std::atomic<bool> wasRendering{false};
+inline std::atomic<bool> triggerExitNow{false};
+inline std::atomic<bool> isRendering{false};
+inline std::atomic<bool> delayUpdate{false};
+inline std::atomic<bool> pendingExit{false};
+inline std::atomic<bool> wasRendering{false};
 
-LEvent renderingStopEvent;
-bool FullMode = true;
-bool deactivateOriginalFooter = false;
+inline LEvent renderingStopEvent;
+inline bool FullMode = true;
+inline bool deactivateOriginalFooter = false;
 //bool fontCache = true;
-bool disableJumpTo = false;
+inline bool disableJumpTo = false;
 
 // Check for mini/micro mode flags
 //bool isMiniOrMicroMode = false;
 inline std::string lastMode;
 inline std::set<std::string> overlayModes = {"full", "mini", "micro", "fps_graph", "fps_counter", "game_resolutions"};
 
-bool isValidOverlayMode() {
+inline bool isValidOverlayMode() {
     return overlayModes.count(lastMode) > 0;
 }
 
 #endif
 
 #if USING_FPS_INDICATOR_DIRECTIVE
-float fps = 0.0;
-int frameCount = 0;
-double elapsedTime;
+inline float fps = 0.0;
+inline int frameCount = 0;
+inline double elapsedTime = 0.0;
 #endif
 
 
@@ -216,22 +216,22 @@ inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
 
-static inline void triggerNavigationFeedback() {
+inline void triggerNavigationFeedback() {
     triggerRumbleClick.store(true, std::memory_order_release);
     triggerNavigationSound.store(true, std::memory_order_release);
 }
 
-static inline void triggerWallFeedback() {
+inline void triggerWallFeedback() {
     triggerRumbleClick.store(true, std::memory_order_release);
     triggerWallSound.store(true, std::memory_order_release);
 }
 
-static inline void triggerEnterFeedback() {
+inline void triggerEnterFeedback() {
     triggerRumbleClick.store(true, std::memory_order_release);
     triggerEnterSound.store(true, std::memory_order_release);
 }
 
-static inline void triggerExitFeedback() {
+inline void triggerExitFeedback() {
     triggerRumbleDoubleClick.store(true, std::memory_order_release);
     triggerExitSound.store(true, std::memory_order_release);
 }
@@ -242,76 +242,9 @@ static inline void triggerExitFeedback() {
  *
  * @param filePath The path to the NRO file.
  * @return true if the file uses new libnx (LNY2 present), false otherwise.
+ * Defined in tesla.cpp — file I/O + malloc body is too large to inline.
  */
-static inline bool usingLNY2(const std::string& filePath) {
-    FILE* file = fopen(filePath.c_str(), "rb");
-    if (!file)
-        return false;
-    
-    // --- Get file size ---
-    fseek(file, 0, SEEK_END);
-    const long fileSize = ftell(file);
-    if (fileSize < (long)(sizeof(NroStart) + sizeof(NroHeader))) {
-        fclose(file);
-        return false;
-    }
-    const size_t fileSz = (size_t)fileSize;
-    fseek(file, 0, SEEK_SET);
-    
-    // --- Read front chunk (header + MOD0 area) ---
-    constexpr size_t FRONT_READ_SIZE = 8192;
-    const size_t frontReadSize = (fileSz < FRONT_READ_SIZE) ? fileSz : FRONT_READ_SIZE;
-    uint8_t* frontBuf = (uint8_t*)malloc(frontReadSize);
-    if (!frontBuf) {
-        fclose(file);
-        return false;
-    }
-    
-    if (fread(frontBuf, 1, frontReadSize, file) != frontReadSize) {
-        free(frontBuf);
-        fclose(file);
-        return false;
-    }
-    
-    // --- Extract offsets directly (no NroHeader copy needed) ---
-    const uint32_t mod0_rel   = *reinterpret_cast<const uint32_t*>(frontBuf + 0x4);
-    const uint32_t text_offset = *reinterpret_cast<const uint32_t*>(frontBuf + 0x20);
-    
-    bool isNew = false;
-    
-    // --- MOD0 detection ---
-    if (text_offset < fileSz && mod0_rel != 0 && text_offset <= fileSz - mod0_rel) {
-        const uint32_t mod0_offset = text_offset + mod0_rel;
-        
-        // --- MOD0 is inside front buffer ---
-        if (mod0_offset <= frontReadSize - 60) {
-            const uint8_t* mod0_ptr = frontBuf + mod0_offset;
-            if (memcmp(mod0_ptr, "MOD0", 4) == 0 &&
-                memcmp(mod0_ptr + 52, "LNY2", 4) == 0)
-            {
-                const uint32_t libnx = *reinterpret_cast<const uint32_t*>(mod0_ptr + 56);
-                isNew = (libnx >= 1);
-            }
-        }
-        // --- MOD0 must be read separately ---
-        else if (mod0_offset <= fileSz - 60) {
-            uint8_t mod0Buf[60];
-            fseek(file, mod0_offset, SEEK_SET);
-            if (fread(mod0Buf, 1, 60, file) == 60) {
-                if (memcmp(mod0Buf, "MOD0", 4) == 0 &&
-                    memcmp(mod0Buf + 52, "LNY2", 4) == 0)
-                {
-                    const uint32_t libnx = *reinterpret_cast<const uint32_t*>(mod0Buf + 56);
-                    isNew = (libnx >= 1);
-                }
-            }
-        }
-    }
-    
-    free(frontBuf);
-    fclose(file);
-    return isNew;
-}
+bool usingLNY2(const std::string& filePath);
 
 /**
  * @brief Checks if the current AMS version is at least the specified version.
@@ -330,12 +263,7 @@ static inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch
     return ((packed_version >> 40) & 0xFFFFFF) >= static_cast<u32>((major << 16) | (minor << 8) | patch);
 }
 
-static bool requiresLNY2 = false;
-
-
-
-
-
+inline bool requiresLNY2 = false;
 
 
 namespace tsl {
@@ -438,291 +366,112 @@ namespace tsl {
     inline bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
     inline bool disableHiding = false; // for manually disabling the hide overlay functionality
 
-    // Theme color variable definitions
+    // Theme color variable definitions — defined once in tesla.cpp
     //static bool disableColorfulLogo = false;
 
-    static Color logoColor1;
-    static Color logoColor2;
-    
-    static size_t defaultBackgroundAlpha;
-    
-    static Color defaultBackgroundColor;
-    static Color defaultTextColor;
-    static Color notificationTextColor;
-    static Color headerTextColor;
-    static Color headerSeparatorColor;
-    static Color starColor;
-    static Color selectionStarColor;
-    static Color buttonColor;
-    static Color bottomTextColor;
-    static Color bottomSeparatorColor;
-    static Color topSeparatorColor;
-    
-    static Color defaultOverlayColor;
-    static Color defaultPackageColor;
-    static Color defaultScriptColor;
-    static Color clockColor;
-    static Color temperatureColor;
-    static Color batteryColor;
-    static Color batteryChargingColor;
-    static Color batteryLowColor;
-    static size_t widgetBackdropAlpha;
-    static Color widgetBackdropColor;
-    
-    static Color overlayTextColor;
-    static Color ultOverlayTextColor;
-    static Color packageTextColor;
-    static Color ultPackageTextColor;
-    
-    static Color bannerVersionTextColor;
-    static Color overlayVersionTextColor;
-    static Color ultOverlayVersionTextColor;
-    static Color packageVersionTextColor;
-    static Color ultPackageVersionTextColor;
-    static Color onTextColor;
-    static Color offTextColor;
-    
+    extern Color logoColor1;
+    extern Color logoColor2;
+
+    extern size_t defaultBackgroundAlpha;
+
+    extern Color defaultBackgroundColor;
+    extern Color defaultTextColor;
+    extern Color notificationTextColor;
+    extern Color headerTextColor;
+    extern Color headerSeparatorColor;
+    extern Color starColor;
+    extern Color selectionStarColor;
+    extern Color buttonColor;
+    extern Color bottomTextColor;
+    extern Color bottomSeparatorColor;
+    extern Color topSeparatorColor;
+
+    extern Color defaultOverlayColor;
+    extern Color defaultPackageColor;
+    extern Color defaultScriptColor;
+    extern Color clockColor;
+    extern Color temperatureColor;
+    extern Color batteryColor;
+    extern Color batteryChargingColor;
+    extern Color batteryLowColor;
+    extern size_t widgetBackdropAlpha;
+    extern Color widgetBackdropColor;
+
+    extern Color overlayTextColor;
+    extern Color ultOverlayTextColor;
+    extern Color packageTextColor;
+    extern Color ultPackageTextColor;
+
+    extern Color bannerVersionTextColor;
+    extern Color overlayVersionTextColor;
+    extern Color ultOverlayVersionTextColor;
+    extern Color packageVersionTextColor;
+    extern Color ultPackageVersionTextColor;
+    extern Color onTextColor;
+    extern Color offTextColor;
+
     #if IS_LAUNCHER_DIRECTIVE
-    static Color dynamicLogoRGB1;
-    static Color dynamicLogoRGB2;
+    extern Color dynamicLogoRGB1;
+    extern Color dynamicLogoRGB2;
     #endif
-    
-    static bool invertBGClickColor;
-    
-    static size_t selectionBGAlpha;
-    static Color selectionBGColor;
-    
-    static Color highlightColor1;
-    static Color highlightColor2;
-    static Color highlightColor3;
-    static Color highlightColor4;
-    
-    static Color s_highlightColor = tsl::style::color::ColorHighlight;
-    
-    static size_t clickAlpha;
-    static Color clickColor;
-    
-    static size_t progressAlpha;
-    static Color progressColor;
-    
-    static Color scrollBarColor;
-    static Color scrollBarWallColor;
-    
-    static size_t separatorAlpha;
-    static Color separatorColor;
-    static Color edgeSeparatorColor;
-    
-    static Color textSeparatorColor;
-    
-    static Color selectedTextColor;
-    static Color selectedValueTextColor;
-    static Color inprogressTextColor;
-    static Color invalidTextColor;
-    static Color clickTextColor;
-    
-    static size_t tableBGAlpha;
-    static Color tableBGColor;
-    static Color sectionTextColor;
-    static Color infoTextColor;
-    static Color warningTextColor;
-    
-    static Color healthyRamTextColor;
-    static Color neutralRamTextColor;
-    static Color badRamTextColor;
-    
-    static Color trackBarSliderColor;
-    static Color trackBarSliderBorderColor;
-    static Color trackBarSliderMalleableColor;
-    static Color trackBarFullColor;
-    static Color trackBarEmptyColor;
-    
-    static void initializeThemeVars() {
-        auto themeData = ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH);
-        if (themeData.count(ult::THEME_STR) == 0) return;
-        
-        auto& themeSection = themeData[ult::THEME_STR];
-        
-        auto getValue = [&](const char* key) -> const char* {
-            auto it = themeSection.find(key);
-            return it != themeSection.end() ? it->second.c_str() : ult::getThemeDefault(key);
-        };
-        
-        auto getColor = [&](const char* key, size_t alpha = 15) {
-            return RGB888(getValue(key), alpha);
-        };
-        
-        auto getAlpha = [&](const char* key) {
-            return ult::stoi(getValue(key));
-        };
-        
-        #if IS_LAUNCHER_DIRECTIVE
-        logoColor1 = getColor("logo_color_1");
-        logoColor2 = getColor("logo_color_2");
-        dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
-        dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
-        #endif
-    
-        defaultBackgroundAlpha = getAlpha("bg_alpha");
-        defaultBackgroundColor = getColor("bg_color", defaultBackgroundAlpha);
-        defaultTextColor = getColor("text_color");
-        notificationTextColor = getColor("notification_text_color");
-        headerTextColor = getColor("header_text_color");
-        headerSeparatorColor = getColor("header_separator_color");
-        starColor = getColor("star_color");
-        selectionStarColor = getColor("selection_star_color");
-        buttonColor = getColor("bottom_button_color");
-        bottomTextColor = getColor("bottom_text_color");
-        bottomSeparatorColor = getColor("bottom_separator_color");
-        topSeparatorColor = getColor("top_separator_color");
-        defaultOverlayColor = getColor("default_overlay_color");
-        defaultPackageColor = getColor("default_package_color");
-        defaultScriptColor = getColor("default_script_color");
-        clockColor = getColor("clock_color");
-        temperatureColor = getColor("temperature_color");
-        batteryColor = getColor("battery_color");
-        batteryChargingColor = getColor("battery_charging_color");
-        batteryLowColor = getColor("battery_low_color");
-        widgetBackdropAlpha = getAlpha("widget_backdrop_alpha");
-        widgetBackdropColor = getColor("widget_backdrop_color", widgetBackdropAlpha);
-        overlayTextColor = getColor("overlay_text_color");
-        ultOverlayTextColor = getColor("ult_overlay_text_color");
-        packageTextColor = getColor("package_text_color");
-        ultPackageTextColor = getColor("ult_package_text_color");
-        bannerVersionTextColor = getColor("banner_version_text_color");
-        overlayVersionTextColor = getColor("overlay_version_text_color");
-        ultOverlayVersionTextColor = getColor("ult_overlay_version_text_color");
-        packageVersionTextColor = getColor("package_version_text_color");
-        ultPackageVersionTextColor = getColor("ult_package_version_text_color");
-        onTextColor = getColor("on_text_color");
-        offTextColor = getColor("off_text_color");
-        invertBGClickColor = (getValue("invert_bg_click_color") == ult::TRUE_STR);
-        selectionBGAlpha = getAlpha("selection_bg_alpha");
-        selectionBGColor = getColor("selection_bg_color", selectionBGAlpha);
-        highlightColor1 = getColor("highlight_color_1");
-        highlightColor2 = getColor("highlight_color_2");
-        highlightColor3 = getColor("highlight_color_3");
-        highlightColor4 = getColor("highlight_color_4");
-        clickAlpha = getAlpha("click_alpha");
-        clickColor = getColor("click_color", clickAlpha);
-        progressAlpha = getAlpha("progress_alpha");
-        progressColor = getColor("progress_color", progressAlpha);
-        scrollBarColor = getColor("scrollbar_color");
-        scrollBarWallColor = getColor("scrollbar_wall_color");
-        separatorAlpha = getAlpha("separator_alpha");
-        separatorColor = getColor("separator_color", separatorAlpha);
-        textSeparatorColor = getColor("text_separator_color");
-        selectedTextColor = getColor("selection_text_color");
-        selectedValueTextColor = getColor("selection_value_text_color");
-        inprogressTextColor = getColor("inprogress_text_color");
-        invalidTextColor = getColor("invalid_text_color");
-        clickTextColor = getColor("click_text_color");
-        tableBGAlpha = getAlpha("table_bg_alpha");
-        tableBGColor = getColor("table_bg_color", tableBGAlpha);
-        sectionTextColor = getColor("table_section_text_color");
-        infoTextColor = getColor("table_info_text_color");
-        warningTextColor = getColor("warning_text_color");
-        healthyRamTextColor = getColor("healthy_ram_text_color");
-        neutralRamTextColor = getColor("neutral_ram_text_color");
-        badRamTextColor = getColor("bad_ram_text_color");
-        trackBarSliderColor = getColor("trackbar_slider_color");
-        trackBarSliderBorderColor = getColor("trackbar_slider_border_color");
-        trackBarSliderMalleableColor = getColor("trackbar_slider_malleable_color");
-        trackBarFullColor = getColor("trackbar_full_color");
-        trackBarEmptyColor = getColor("trackbar_empty_color");
-    }
-    
+
+    extern bool invertBGClickColor;
+
+    extern size_t selectionBGAlpha;
+    extern Color selectionBGColor;
+
+    extern Color highlightColor1;
+    extern Color highlightColor2;
+    extern Color highlightColor3;
+    extern Color highlightColor4;
+
+    extern Color s_highlightColor;
+
+    extern size_t clickAlpha;
+    extern Color clickColor;
+
+    extern size_t progressAlpha;
+    extern Color progressColor;
+
+    extern Color scrollBarColor;
+    extern Color scrollBarWallColor;
+
+    extern size_t separatorAlpha;
+    extern Color separatorColor;
+    extern const Color edgeSeparatorColor;
+
+    extern Color textSeparatorColor;
+
+    extern Color selectedTextColor;
+    extern Color selectedValueTextColor;
+    extern Color inprogressTextColor;
+    extern Color invalidTextColor;
+    extern Color clickTextColor;
+
+    extern size_t tableBGAlpha;
+    extern Color tableBGColor;
+    extern Color sectionTextColor;
+    extern Color infoTextColor;
+    extern Color warningTextColor;
+
+    extern Color healthyRamTextColor;
+    extern Color neutralRamTextColor;
+    extern Color badRamTextColor;
+
+    extern Color trackBarSliderColor;
+    extern Color trackBarSliderBorderColor;
+    extern Color trackBarSliderMalleableColor;
+    extern Color trackBarFullColor;
+    extern Color trackBarEmptyColor;
+
+    // Defined in tesla.cpp — reads theme INI and populates all color vars above
+    void initializeThemeVars();
+
     #if !IS_LAUNCHER_DIRECTIVE
-    static void initializeUltrahandSettings() { // only needed for regular overlays
-        // Load INI data once instead of 4 separate file reads
-        auto ultrahandSection = ult::getKeyValuePairsFromSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
-        
-        // Helper lambda to safely get string values
-        auto getStringValue = [&](const std::string& key, const std::string& defaultValue = "") -> std::string {
-            if (ultrahandSection.count(key) > 0) {
-                const std::string& value = ultrahandSection.at(key);
-                if (!value.empty()) {
-                    return value;
-                }
-            }
-            return defaultValue;
-        };
-        
-        // Helper lambda to safely get boolean values
-        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
-            if (ultrahandSection.count(key) > 0) {
-                const std::string& value = ultrahandSection.at(key);
-                if (!value.empty()) {
-                    return (value == ult::TRUE_STR);
-                }
-            }
-            return defaultValue;
-        };
-        
-        // Get default language with fallback
-        std::string defaultLang = getStringValue(ult::DEFAULT_LANG_STR, "en");
-        if (defaultLang.empty()) {
-            defaultLang = "en";
-        }
-        
-        #ifdef UI_OVERRIDE_PATH
-        {
-            std::string UI_PATH = UI_OVERRIDE_PATH;
-            ult::preprocessPath(UI_PATH);
-            ult::createDirectory(UI_PATH); // create UI override path automatically (when provided)
-
-            const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH+"theme.ini";
-            const std::string NEW_WALLPAPER_PATH = UI_PATH+"wallpaper.rgba";
-                      
-            const std::string TRANSLATION_JSON_PATH = UI_PATH+"lang/"+defaultLang+".json";
-            if (ult::isFileOrDirectory(NEW_THEME_CONFIG_INI_PATH))
-                ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH; // Override theme path (optional)
-            if (ult::isFileOrDirectory(NEW_WALLPAPER_PATH))
-                ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH; // Override wallpaper path (optional)
-            if (ult::isFileOrDirectory(TRANSLATION_JSON_PATH))
-                ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH); // load translations (optional)
-        }
-        #endif
-        
-        // Set Ultrahand Globals using loaded section (defaults match initialization function)
-        ult::useLaunchCombos = getBoolValue("launch_combos", true);       // TRUE_STR default
-        ult::useNotifications = getBoolValue("notifications", false);       // TRUE_STR default
-        if (ult::useNotifications) {
-            if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
-                //ult::createDirectory(ult::FLAGS_PATH);
-                FILE* file = std::fopen((ult::NOTIFICATIONS_FLAG_FILEPATH).c_str(), "w");
-                if (file) {
-                    std::fclose(file);
-                }
-            }
-        } else {
-            ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
-        }
-        ult::useSoundEffects = getBoolValue("sound_effects", false);
-        ult::useHapticFeedback = getBoolValue("haptic_feedback", false);
-
-        ult::useSwipeToOpen = getBoolValue("swipe_to_open", true);        // TRUE_STR default
-        ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true); // TRUE_STR default
-        
-        ultrahandSection.clear();
-
-        const std::string langFile = ult::LANG_PATH+defaultLang+".json";
-        if (ult::isFile(langFile))
-            ult::parseLanguage(langFile);
-        else {
-            //if (defaultLang == "en")
-            ult::reinitializeLangVars();
-        }
-
-        // Load local font if needed based on overlay language setting
-        //if (defaultLang == "zh-cn") {
-        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseSimplified);
-        //} else if (defaultLang == "zh-tw") {
-        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_ChineseTraditional);
-        //} else if (defaultLang == "ko") {
-        //    tsl::gfx::Renderer::get().loadLocalFont(PlSharedFontType_KO);
-        //}
-    }
+    // Defined in tesla.cpp — reads Ultrahand settings INI (non-launcher overlays only)
+    void initializeUltrahandSettings();
     #endif
+
     
     
     // Declarations
@@ -770,11 +519,11 @@ namespace tsl {
         
     }
     
-    static void goBack(u32 count = 1);
+    void goBack(u32 count = 1);
 
-    static void pop(u32 count = 1);
-    
-    static void setNextOverlay(const std::string& ovlPath, std::string args = "");
+    void pop(u32 count = 1);
+
+    void setNextOverlay(const std::string& ovlPath, std::string args = "");
     
     template<typename TOverlay, impl::LaunchFlags launchFlags = impl::LaunchFlags::CloseOnExit>
     int loop(int argc, char** argv);
@@ -1177,43 +926,41 @@ namespace tsl {
                 int xAdvance;
                 u8 *glyphBmp;
                 int width, height;
-                
+        
                 ~Glyph() {
                     if (glyphBmp) {
                         stbtt_FreeBitmap(glyphBmp, nullptr);
                         glyphBmp = nullptr;
                     }
                 }
-                
+        
                 Glyph(const Glyph&) = delete;
                 Glyph& operator=(const Glyph&) = delete;
-                
-                Glyph(Glyph&& other) noexcept 
+        
+                Glyph(Glyph&& other) noexcept
                     : currFont(other.currFont), currFontSize(other.currFontSize)
                     , xAdvance(other.xAdvance), glyphBmp(other.glyphBmp)
                     , width(other.width), height(other.height) {
                     memcpy(bounds, other.bounds, sizeof(bounds));
                     other.glyphBmp = nullptr;
                 }
-                
+        
                 Glyph& operator=(Glyph&& other) noexcept {
                     if (this != &other) {
-                        if (glyphBmp) {
-                            stbtt_FreeBitmap(glyphBmp, nullptr);
-                        }
-                        currFont = other.currFont;
+                        if (glyphBmp) stbtt_FreeBitmap(glyphBmp, nullptr);
+                        currFont     = other.currFont;
                         currFontSize = other.currFontSize;
-                        xAdvance = other.xAdvance;
-                        glyphBmp = other.glyphBmp;
-                        width = other.width;
-                        height = other.height;
+                        xAdvance     = other.xAdvance;
+                        glyphBmp     = other.glyphBmp;
+                        width        = other.width;
+                        height       = other.height;
                         memcpy(bounds, other.bounds, sizeof(bounds));
                         other.glyphBmp = nullptr;
                     }
                     return *this;
                 }
-                
-                Glyph() : currFont(nullptr), currFontSize(0.0f), xAdvance(0), 
+        
+                Glyph() : currFont(nullptr), currFontSize(0.0f), xAdvance(0),
                           glyphBmp(nullptr), width(0), height(0) {
                     std::memset(bounds, 0, sizeof(bounds));
                 }
@@ -1224,16 +971,16 @@ namespace tsl {
                 int lineHeight;
                 stbtt_fontinfo* font;
                 float fontSize;
-                
+        
                 FontMetrics() : ascent(0), descent(0), lineGap(0), lineHeight(0), font(nullptr), fontSize(0.0f) {}
-                
+        
                 FontMetrics(stbtt_fontinfo* f, float size) : font(f), fontSize(size) {
                     if (font) {
                         stbtt_GetFontVMetrics(font, &ascent, &descent, &lineGap);
                         const float scale = stbtt_ScaleForPixelHeight(font, fontSize);
-                        ascent = static_cast<int>(ascent * scale);
-                        descent = static_cast<int>(descent * scale);
-                        lineGap = static_cast<int>(lineGap * scale);
+                        ascent     = static_cast<int>(ascent  * scale);
+                        descent    = static_cast<int>(descent * scale);
+                        lineGap    = static_cast<int>(lineGap * scale);
                         lineHeight = ascent - descent + lineGap;
                     } else {
                         ascent = descent = lineGap = lineHeight = 0;
@@ -1241,183 +988,139 @@ namespace tsl {
                 }
             };
         
-            enum class CacheType {
-                Regular,
-                Notification
-            };
-            
+            enum class CacheType { Regular, Notification };
+        
         private:
             inline static std::shared_mutex s_cacheMutex;
-            inline static std::mutex s_initMutex;
-            
+            inline static std::mutex        s_initMutex;
+        
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_notificationGlyphCache;
-            inline static std::unordered_map<u64, FontMetrics> s_fontMetricsCache;
-            
-            static constexpr size_t MAX_CACHE_SIZE = 600;
-            static constexpr size_t CLEANUP_THRESHOLD = 500;
+            inline static std::unordered_map<u64, FontMetrics>             s_fontMetricsCache;
+        
+            static constexpr size_t MAX_CACHE_SIZE              = 600;
+            static constexpr size_t CLEANUP_THRESHOLD           = 500;
             static constexpr size_t MAX_NOTIFICATION_CACHE_SIZE = 200;
-            
-            // Font handles
-            inline static stbtt_fontinfo* s_stdFont = nullptr;
-            inline static stbtt_fontinfo* s_localFont = nullptr;
+        
+            inline static stbtt_fontinfo* s_stdFont     = nullptr;
+            inline static stbtt_fontinfo* s_localFont   = nullptr;
             inline static stbtt_fontinfo* s_localFontCN = nullptr;
             inline static stbtt_fontinfo* s_localFontTW = nullptr;
             inline static stbtt_fontinfo* s_localFontKO = nullptr;
-            inline static stbtt_fontinfo* s_extFont = nullptr;
+            inline static stbtt_fontinfo* s_extFont     = nullptr;
             inline static bool s_hasLocalFont = false;
-            inline static bool s_initialized = false;
-            
+            inline static bool s_initialized  = false;
+        
             static u64 generateCacheKey(u32 character, bool monospace, u32 fontSize) {
-                u64 key = static_cast<u64>(character);
-                key = (key << 32) | static_cast<u64>(fontSize);
-                if (monospace) {
-                    key |= (1ULL << 63);
-                }
+                u64 key = (static_cast<u64>(character) << 32) | static_cast<u64>(fontSize);
+                if (monospace) key |= (1ULL << 63);
                 return key;
             }
         
             static u64 generateFontMetricsCacheKey(stbtt_fontinfo* font, u32 fontSize) {
-                const u64 fontKey = reinterpret_cast<uintptr_t>(font);
-                return (fontKey << 32) | static_cast<u64>(fontSize);
-            }
-            
-            static void cleanupOldEntries() {
-                if (s_sharedGlyphCache.size() <= CLEANUP_THRESHOLD) return;
-                
-                const size_t toRemove = s_sharedGlyphCache.size() - CLEANUP_THRESHOLD;
-                auto it = s_sharedGlyphCache.begin();
-                for (size_t i = 0; i < toRemove && it != s_sharedGlyphCache.end(); ++i) {
-                    it = s_sharedGlyphCache.erase(it);
-                }
+                return (reinterpret_cast<uintptr_t>(font) << 32) | static_cast<u64>(fontSize);
             }
         
-            static void cleanupNotificationCache() {
-                if (s_notificationGlyphCache.size() <= MAX_NOTIFICATION_CACHE_SIZE) return;
-                
-                const size_t toRemove = s_notificationGlyphCache.size() - (MAX_NOTIFICATION_CACHE_SIZE / 2);
-                auto it = s_notificationGlyphCache.begin();
-                for (size_t i = 0; i < toRemove && it != s_notificationGlyphCache.end(); ++i) {
-                    it = s_notificationGlyphCache.erase(it);
-                }
+            // Consolidated trim — replaces cleanupOldEntries + cleanupNotificationCache
+            static void trimCache(std::unordered_map<u64, std::shared_ptr<Glyph>>& cache, size_t target) {
+                if (cache.size() <= target) return;
+                size_t toRemove = cache.size() - target;
+                for (auto it = cache.begin(); toRemove-- && it != cache.end();)
+                    it = cache.erase(it);
+            }
+        
+            // Single helper to clear + release bucket memory — used everywhere
+            template<typename V>
+            static void clearMap(std::unordered_map<u64, V>& m) {
+                m.clear();
+                m.rehash(0);
+            }
+        
+            // Assumes lock already held by caller
+            static void clearAllUnsafe() {
+                clearMap(s_sharedGlyphCache);
+                clearMap(s_notificationGlyphCache);
+                clearMap(s_fontMetricsCache);
             }
         
             static std::shared_ptr<Glyph> getOrCreateGlyphInternal(u32 character, bool monospace, u32 fontSize, CacheType cacheType) {
                 const u64 key = generateCacheKey(character, monospace, fontSize);
-                
-                std::unordered_map<u64, std::shared_ptr<Glyph>>* targetCache;
-                targetCache = (cacheType == CacheType::Notification) ? &s_notificationGlyphCache : &s_sharedGlyphCache;
-                
+                auto& targetCache = (cacheType == CacheType::Notification)
+                                  ? s_notificationGlyphCache : s_sharedGlyphCache;
+        
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
-                    
                     if (!s_initialized) return nullptr;
-                    
-                    auto it = targetCache->find(key);
-                    if (it != targetCache->end()) {
-                        return it->second;
-                    }
+                    auto it = targetCache.find(key);
+                    if (it != targetCache.end()) return it->second;
                 }
-                
+        
                 std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
-                
                 if (!s_initialized) return nullptr;
-                
-                auto it = targetCache->find(key);
-                if (it != targetCache->end()) {
-                    return it->second;
-                }
-                
-                if (cacheType == CacheType::Regular && s_sharedGlyphCache.size() >= MAX_CACHE_SIZE) {
-                    cleanupOldEntries();
-                } else if (cacheType == CacheType::Notification && s_notificationGlyphCache.size() >= MAX_NOTIFICATION_CACHE_SIZE) {
-                    cleanupNotificationCache();
-                }
-                
+        
+                // Double-checked
+                auto it = targetCache.find(key);
+                if (it != targetCache.end()) return it->second;
+        
+                if (cacheType == CacheType::Regular)
+                    trimCache(s_sharedGlyphCache, CLEANUP_THRESHOLD);
+                else
+                    trimCache(s_notificationGlyphCache, MAX_NOTIFICATION_CACHE_SIZE / 2);
+        
                 auto glyph = std::make_shared<Glyph>();
                 glyph->currFont = selectFontForCharacterUnsafe(character);
-                if (!glyph->currFont) {
-                    return nullptr;
-                }
-                
+                if (!glyph->currFont) return nullptr;
+        
                 glyph->currFontSize = stbtt_ScaleForPixelHeight(glyph->currFont, fontSize);
-                
-                stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character, 
-                    glyph->currFontSize, glyph->currFontSize, 0, 0, 
+        
+                stbtt_GetCodepointBitmapBoxSubpixel(glyph->currFont, character,
+                    glyph->currFontSize, glyph->currFontSize, 0, 0,
                     &glyph->bounds[0], &glyph->bounds[1], &glyph->bounds[2], &glyph->bounds[3]);
-                
+        
                 s32 yAdvance = 0;
-                stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character, 
-                                          &glyph->xAdvance, &yAdvance);
-                
-                glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont, 
-                    glyph->currFontSize, glyph->currFontSize, character, 
+                stbtt_GetCodepointHMetrics(glyph->currFont, monospace ? 'W' : character,
+                                           &glyph->xAdvance, &yAdvance);
+        
+                glyph->glyphBmp = stbtt_GetCodepointBitmap(glyph->currFont,
+                    glyph->currFontSize, glyph->currFontSize, character,
                     &glyph->width, &glyph->height, nullptr, nullptr);
-                
-                (*targetCache)[key] = glyph;
-                
+        
+                targetCache[key] = glyph;
                 return glyph;
             }
-            
+        
             static stbtt_fontinfo* selectFontForCharacterUnsafe(u32 character) {
                 if (!s_initialized) return nullptr;
-                
-                // Check extended font first (icons)
-                if (stbtt_FindGlyphIndex(s_extFont, character)) {
-                    return s_extFont;
-                }
-                
-                // Always fetch degree symbol "°" from the standard Latin font
-                if (character == 0x00B0) {
-                    return s_stdFont;
-                }
-                
-                // Check primary local font FIRST (based on system language)
-                if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont, character) != 0) {
-                    return s_localFont;
-                }
-                
-                // Check standard font BEFORE falling back to other CJK fonts
-                // This ensures Latin, Cyrillic, etc. use the correct font
-                if (stbtt_FindGlyphIndex(s_stdFont, character) != 0) {
-                    return s_stdFont;
-                }
-                
-                // Only use these as last resort fallbacks for characters not in standard/primary fonts
-                if (stbtt_FindGlyphIndex(s_localFontCN, character) != 0) {
-                    return s_localFontCN;
-                }
-                if (stbtt_FindGlyphIndex(s_localFontTW, character) != 0) {
-                    return s_localFontTW;
-                }
-                if (stbtt_FindGlyphIndex(s_localFontKO, character) != 0) {
-                    return s_localFontKO;
-                }
-                
+                if (stbtt_FindGlyphIndex(s_extFont, character))                          return s_extFont;
+                if (character == 0x00B0)                                                 return s_stdFont;
+                if (s_hasLocalFont && stbtt_FindGlyphIndex(s_localFont,   character))   return s_localFont;
+                if (stbtt_FindGlyphIndex(s_stdFont,     character))                      return s_stdFont;
+                if (stbtt_FindGlyphIndex(s_localFontCN, character))                      return s_localFontCN;
+                if (stbtt_FindGlyphIndex(s_localFontTW, character))                      return s_localFontTW;
+                if (stbtt_FindGlyphIndex(s_localFontKO, character))                      return s_localFontKO;
                 return s_stdFont;
             }
-            
+        
         public:
             static void initializeFonts(stbtt_fontinfo* stdFont,
-                                      stbtt_fontinfo* localFont,
-                                      stbtt_fontinfo* localFontCN,
-                                      stbtt_fontinfo* localFontTW, 
-                                      stbtt_fontinfo* localFontKO,
-                                      stbtt_fontinfo* extFont,
-                                      bool hasLocalFont) {
-                std::lock_guard<std::mutex> initLock(s_initMutex);
-                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                
-                s_stdFont = stdFont;
-                s_localFont = localFont;
+                                        stbtt_fontinfo* localFont,
+                                        stbtt_fontinfo* localFontCN,
+                                        stbtt_fontinfo* localFontTW,
+                                        stbtt_fontinfo* localFontKO,
+                                        stbtt_fontinfo* extFont,
+                                        bool hasLocalFont) {
+                std::lock_guard<std::mutex>          initLock(s_initMutex);
+                std::unique_lock<std::shared_mutex>  cacheLock(s_cacheMutex);
+                s_stdFont     = stdFont;
+                s_localFont   = localFont;
                 s_localFontCN = localFontCN;
                 s_localFontTW = localFontTW;
                 s_localFontKO = localFontKO;
-                s_extFont = extFont;
+                s_extFont     = extFont;
                 s_hasLocalFont = hasLocalFont;
-                s_initialized = true;
+                s_initialized  = true;
             }
-            
+        
             static stbtt_fontinfo* selectFontForCharacter(u32 character) {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return selectFontForCharacterUnsafe(character);
@@ -1425,35 +1128,24 @@ namespace tsl {
         
             static FontMetrics getFontMetrics(stbtt_fontinfo* font, u32 fontSize) {
                 if (!font) return FontMetrics();
-        
                 const u64 key = generateFontMetricsCacheKey(font, fontSize);
-                
                 {
                     std::shared_lock<std::shared_mutex> readLock(s_cacheMutex);
                     auto it = s_fontMetricsCache.find(key);
-                    if (it != s_fontMetricsCache.end()) {
-                        return it->second;
-                    }
+                    if (it != s_fontMetricsCache.end()) return it->second;
                 }
-                
                 std::unique_lock<std::shared_mutex> writeLock(s_cacheMutex);
-                
                 auto it = s_fontMetricsCache.find(key);
-                if (it != s_fontMetricsCache.end()) {
-                    return it->second;
-                }
-                
+                if (it != s_fontMetricsCache.end()) return it->second;
                 FontMetrics metrics(font, static_cast<float>(fontSize));
                 s_fontMetricsCache[key] = metrics;
-                
                 return metrics;
             }
         
             static FontMetrics getFontMetricsForCharacter(u32 character, u32 fontSize) {
-                stbtt_fontinfo* font = selectFontForCharacter(character);
-                return getFontMetrics(font, fontSize);
+                return getFontMetrics(selectFontForCharacter(character), fontSize);
             }
-            
+        
             static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Regular);
             }
@@ -1463,90 +1155,69 @@ namespace tsl {
             }
         
             static void clearNotificationCache() {
-                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                s_notificationGlyphCache.clear();
-                s_notificationGlyphCache.rehash(0);
+                std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
+                clearMap(s_notificationGlyphCache);
             }
-            
+        
             static void clearCache() {
-                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                s_sharedGlyphCache.clear();
-                s_sharedGlyphCache.rehash(0);
-                s_fontMetricsCache.clear();
-                s_fontMetricsCache.rehash(0);
+                std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
+                clearMap(s_sharedGlyphCache);
+                clearMap(s_fontMetricsCache);
             }
         
             static void clearAllCaches() {
-                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                s_sharedGlyphCache.clear();
-                s_sharedGlyphCache.rehash(0);
-                s_notificationGlyphCache.clear();
-                s_notificationGlyphCache.rehash(0);
-                s_fontMetricsCache.clear();
-                s_fontMetricsCache.rehash(0);
-            }
-            
-            static void cleanup() {
-                std::lock_guard<std::mutex> initLock(s_initMutex);
-                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
-                
-                s_sharedGlyphCache.clear();
-                s_sharedGlyphCache.rehash(0);
-                s_notificationGlyphCache.clear();
-                s_notificationGlyphCache.rehash(0);
-                s_fontMetricsCache.clear();
-                s_initialized = false;
-                s_stdFont = nullptr;
-                s_localFont = nullptr;
-                s_localFontCN = nullptr;
-                s_localFontTW = nullptr;
-                s_localFontKO = nullptr;
-                s_extFont = nullptr;
-                s_hasLocalFont = false;
-            }
-            
-            static size_t getCacheSize() {
-                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-                return s_sharedGlyphCache.size();
+                std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
+                clearAllUnsafe();
             }
         
-            static size_t getFontMetricsCacheSize() {
-                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-                return s_fontMetricsCache.size();
+            static void cleanup() {
+                std::lock_guard<std::mutex>         initLock(s_initMutex);
+                std::unique_lock<std::shared_mutex> cacheLock(s_cacheMutex);
+                clearAllUnsafe();
+                s_initialized  = false;
+                s_stdFont      = nullptr;
+                s_localFont    = nullptr;
+                s_localFontCN  = nullptr;
+                s_localFontTW  = nullptr;
+                s_localFontKO  = nullptr;
+                s_extFont      = nullptr;
+                s_hasLocalFont = false;
             }
-            
+        
             static bool isInitialized() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_initialized;
+            }
+
+        #ifndef NDEBUG
+            static size_t getCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_sharedGlyphCache.size();
             }
         
             static size_t getNotificationCacheSize() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
                 return s_notificationGlyphCache.size();
             }
-            
+        
+            static size_t getFontMetricsCacheSize() {
+                std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
+                return s_fontMetricsCache.size();
+            }
+        
             static size_t getMemoryUsage() {
                 std::shared_lock<std::shared_mutex> lock(s_cacheMutex);
-                size_t totalMemory = 0;
-                
-                for (const auto& pair : s_sharedGlyphCache) {
-                    const auto& glyph = pair.second;
-                    if (glyph && glyph->glyphBmp) {
-                        totalMemory += glyph->width * glyph->height;
-                    }
-                }
-        
-                for (const auto& pair : s_notificationGlyphCache) {
-                    const auto& glyph = pair.second;
-                    if (glyph && glyph->glyphBmp) {
-                        totalMemory += glyph->width * glyph->height;
-                    }
-                }
-                
-                return totalMemory;
+                size_t total = 0;
+                auto countCache = [&](const std::unordered_map<u64, std::shared_ptr<Glyph>>& cache) {
+                    for (const auto& [k, g] : cache)
+                        if (g && g->glyphBmp) total += g->width * g->height;
+                };
+                countCache(s_sharedGlyphCache);
+                countCache(s_notificationGlyphCache);
+                return total;
             }
+        #endif
         };
-
         
         // Static member definitions
         //std::shared_mutex FontManager::s_cacheMutex;
@@ -1695,14 +1366,10 @@ namespace tsl {
             }
 
             static inline Color a2(const Color& c) {
-                const u8 opacity_limit = static_cast<u8>(0xF);
-                return (c.rgba & 0x0FFF) | (static_cast<u16>(
-                    ult::disableTransparency
-                        ? (ult::useOpaqueScreenshots
-                               ? 0xF                       // fully opaque when both flags on
-                               : (c.a > 0xE ? c.a : 0xE)) // clamp to 14, keep lower values
-                        : (c.a < opacity_limit ? c.a : opacity_limit) // normal fade logic
-                ) << 12);
+                if (!ult::disableTransparency)
+                    return c;
+                const u8 a = ult::useOpaqueScreenshots ? 0xF : (c.a > 0xE ? c.a : 0xE);
+                return (c.rgba & 0x0FFF) | (static_cast<u16>(a) << 12);
             }
             
             /**
@@ -1861,12 +1528,7 @@ namespace tsl {
                 if (x_start >= x_end || y_start >= y_end) [[unlikely]] return;
                 
 
-                // Draw row by row for better cache locality
-                for (s32 yi = y_start; yi < y_end; ++yi) {
-                    for (s32 xi = x_start; xi < x_end; ++xi) {
-                        this->setPixelBlendDst(xi, yi, color);
-                    }
-                }
+                this->processRectChunk(x_start, x_end, y_start, y_end, color);
             }
 
             /**
@@ -2592,17 +2254,11 @@ namespace tsl {
                 processRoundedRectChunk(this, x, y, w, h, radius, color, clampedY, clampedYEnd);
             }
             
-            std::function<void(s32, s32, s32, s32, s32, Color)> drawRoundedRect;
-            inline void updateDrawFunction() {
-                if (ult::expandedMemory) {
-                    drawRoundedRect = [this](s32 x, s32 y, s32 w, s32 h, s32 radius, Color color) {
-                        drawRoundedRectMultiThreaded(x, y, w, h, radius, color);
-                    };
-                } else {
-                    drawRoundedRect = [this](s32 x, s32 y, s32 w, s32 h, s32 radius, Color color) {
-                        drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
-                    };
-                }
+            inline void drawRoundedRect(s32 x, s32 y, s32 w, s32 h, s32 radius, Color color) {
+                if (ult::expandedMemory)
+                    drawRoundedRectMultiThreaded(x, y, w, h, radius, color);
+                else
+                    drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
             }
             
                                                 
@@ -2838,7 +2494,7 @@ namespace tsl {
                     ult::inPlotBarrier.arrive_and_wait();
             }
             
-            inline void drawBitmapRGBA4444(const s32 x, const s32 y, const s32 imageW, const s32 imageH, 
+            inline void drawBitmapRGBA4444(const u32 x, const u32 y, const u32 imageW, const u32 imageH, 
                                             const u8 *preprocessedData, float opacity = 1.0f) {
                 const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
                 
@@ -2849,8 +2505,8 @@ namespace tsl {
                 
                 
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
-                    const s32 startRow = i * ult::bmpChunkSize;
-                    const s32 endRow = std::min(startRow + ult::bmpChunkSize, imageH);
+                    const u32 startRow = i * ult::bmpChunkSize;
+                    const u32 endRow = std::min(startRow + ult::bmpChunkSize, imageH);
                     ult::renderThreads[i] = std::thread([this, x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit](){
                         processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true);
                     });
@@ -3434,9 +3090,9 @@ namespace tsl {
                 }
             }
 
-            static Renderer& getRenderer() {
-                return get();
-            }
+            //static Renderer& getRenderer() {
+            //    return get();
+            //}
 
             inline void setLayerPosImpl(u32 x, u32 y) {
                 // Get the underscan pixel values for both horizontal and vertical borders
@@ -3652,13 +3308,13 @@ namespace tsl {
             //inline static std::unordered_map<u64, Glyph> s_unifiedGlyphCache;
             
             // Helper to select appropriate font for a character
-            inline std::shared_ptr<FontManager::Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
-                return FontManager::getOrCreateGlyph(character, monospace, fontSize);
-            }
+            //inline std::shared_ptr<FontManager::Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
+            //    return FontManager::getOrCreateGlyph(character, monospace, fontSize);
+            //}
             
-            inline stbtt_fontinfo* selectFontForCharacter(u32 character) {
-                return FontManager::selectFontForCharacter(character);
-            }
+            //inline stbtt_fontinfo* selectFontForCharacter(u32 character) {
+            //    return FontManager::selectFontForCharacter(character);
+            //}
             
             // Optimized glyph rendering
             inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color, bool skipAlphaLimit = false) {
@@ -3735,9 +3391,7 @@ namespace tsl {
             //}
 
         private:
-            Renderer() {
-                updateDrawFunction();
-            }
+            Renderer() {}
             
             /**
              * @brief Sets the opacity of the layer
@@ -4197,7 +3851,7 @@ namespace tsl {
              * @param direction Direction in which focus moved. \ref FocusDirection::None is passed for the initial load
              * @return Element to focus
              */
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) {
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return nullptr;
             }
             
@@ -4208,7 +3862,7 @@ namespace tsl {
              * @return true when button press has been consumed
              * @return false when button press should be passed on to the parent
              */
-            virtual inline bool onClick(u64 keys) {
+            virtual bool onClick(u64 keys) {
                 return m_clickListener(keys);
             }
             
@@ -4222,7 +3876,7 @@ namespace tsl {
              * @param rightJoyStick Right joystick position
              * @return Weather or not the input has been consumed
              */
-            virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
                 return false;
             }
             
@@ -4235,7 +3889,7 @@ namespace tsl {
              * @return true when touch input has been consumed
              * @return false when touch input should be passed on to the parent
              */
-            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 return false;
             }
             
@@ -4256,7 +3910,7 @@ namespace tsl {
              * @param parentWidth Parent Width
              * @param parentHeight Parent Height
              */
-            virtual inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) = 0;
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) = 0;
             
             /**
              * @brief Draws highlighting and the element itself
@@ -4575,7 +4229,7 @@ namespace tsl {
              *
              * @param clickListener Click listener called with keys that were pressed last frame. Callback should return true if keys got consumed
              */
-            virtual inline void setClickListener(std::function<bool(u64 keys)> clickListener) {
+            virtual void setClickListener(std::function<bool(u64 keys)> clickListener) {
                 this->m_clickListener = clickListener;
             }
             
@@ -4635,7 +4289,7 @@ namespace tsl {
             inline Element* getParent() { return this->m_parent; }
             
 
-            virtual inline std::vector<Element*> getChildren() const {
+            virtual std::vector<Element*> getChildren() const {
                 return {}; // Return empty vector for simplicity
             }
 
@@ -4644,7 +4298,7 @@ namespace tsl {
              *
              * @param focused Focused
              */
-            virtual inline void setFocused(bool focused) {
+            virtual void setFocused(bool focused) {
                 this->m_focused = focused;
                 this->m_clickAnimationProgress = 0;
             }
@@ -4941,9 +4595,9 @@ namespace tsl {
             
             // CUSTOM SECTION START
             void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
-                    tsl::initializeThemeVars();
-                }
+                //if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                //    tsl::initializeThemeVars();
+                //}
                 
             
                 renderer->fillScreen(a(defaultBackgroundColor));
@@ -5018,7 +4672,7 @@ namespace tsl {
                 
                 calcScrollWidth(renderer, subScroll, subtitle, 15, widgetDrawn);
                 
-                static const std::vector<std::string> specialChars = {""};
+                static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
                 const int subtitleX = 20;
                 const int subtitleY = y + 25;
                 
@@ -5510,10 +5164,10 @@ namespace tsl {
 
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.load(std::memory_order_acquire) && FullMode) {
-                    ult::themeIsInitialized.store(true, std::memory_order_release);
-                    tsl::initializeThemeVars();
-                }
+                //if (!ult::themeIsInitialized.load(std::memory_order_acquire)) {
+                //    ult::themeIsInitialized.store(true, std::memory_order_release);
+                //    tsl::initializeThemeVars();
+                //}
 
                 if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
@@ -5639,14 +5293,14 @@ namespace tsl {
                     this->m_contentElement->invalidate();
                 }
             }
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
                 if (this->m_contentElement != nullptr)
                     return this->m_contentElement->requestFocus(oldFocus, direction);
                 else
                     return nullptr;
             }
             
-            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
                 if (!this->m_contentElement->inBounds(currX, currY))
                     return false;
@@ -5723,9 +5377,9 @@ namespace tsl {
             }
             
             virtual void draw(gfx::Renderer *renderer) override {
-                if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
-                    tsl::initializeThemeVars();
-                }
+                //if (!ult::themeIsInitialized.exchange(true, std::memory_order_acq_rel)) {
+                //    tsl::initializeThemeVars();
+                //}
             
                 renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawWallpaper();
@@ -5790,7 +5444,7 @@ namespace tsl {
                     renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
             }
             
-            virtual inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+            virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
                 this->setBoundaries(parentX, parentY, parentWidth, parentHeight);
                 
                 if (this->m_contentElement != nullptr) {
@@ -5804,7 +5458,7 @@ namespace tsl {
                 }
             }
             
-            virtual inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
+            virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
                 // Discard touches outside bounds
                 if (!this->m_contentElement->inBounds(currX, currY))
                     return false;
@@ -5814,7 +5468,7 @@ namespace tsl {
                 else return false;
             }
             
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
                 if (this->m_contentElement != nullptr)
                     return this->m_contentElement->requestFocus(oldFocus, direction);
                 else
@@ -7902,7 +7556,7 @@ namespace tsl {
                 }
             }
         
-            virtual inline Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
+            virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
                 return this;
             }
         
@@ -8508,7 +8162,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual inline bool getState() {
+            virtual bool getState() {
                 return this->m_state;
             }
             
@@ -8517,7 +8171,7 @@ namespace tsl {
              *
              * @param state State
              */
-            virtual inline void setState(bool state) {
+            virtual void setState(bool state) {
                 #if IS_LAUNCHER_DIRECTIVE
                 if (ult::runningInterpreter.load(std::memory_order_acquire))
                     return;
@@ -8597,7 +8251,7 @@ namespace tsl {
             }
             
             // Override the requestFocus method to allow this item to be focusable
-            virtual inline Element* requestFocus(Element* oldFocus, FocusDirection direction) override {
+            virtual Element* requestFocus(Element* oldFocus, FocusDirection direction) override {
                 return this; // Allow this item to be focusable
             }
             
@@ -8630,7 +8284,7 @@ namespace tsl {
             virtual ~CategoryHeader() {}
         
             virtual void draw(gfx::Renderer *renderer) override {
-                static const std::vector<std::string> specialChars = {""};
+                static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
         
                 if (!m_maxWidth) {
                     calculateWidths(renderer);
@@ -9355,7 +9009,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual inline u8 getProgress() {
+            virtual u8 getProgress() {
                 return this->m_value;
             }
 
@@ -9619,7 +9273,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual inline u8 getProgress() override {
+            virtual u8 getProgress() override {
                 return this->m_value / (100 / (this->m_numSteps - 1));
             }
 
@@ -9966,7 +9620,7 @@ namespace tsl {
                 }
             }
             
-            virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
                 m_prevKeysHeld = keysHeld;
                 
@@ -10481,11 +10135,11 @@ namespace tsl {
                 }
             }
             
-            virtual inline u8 getIndex() {
+            virtual u8 getIndex() {
                 return this->m_index;
             }
 
-            virtual inline u8 getProgress() {
+            virtual u8 getProgress() {
                 return this->m_value;
             }
             
@@ -10572,7 +10226,7 @@ namespace tsl {
             
             virtual ~StepTrackBarV2() {}
             
-            virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
+            virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 static u32 tick = 0;
                 static bool holding = false;
                 static u64 prevKeysHeld = 0;
@@ -10702,7 +10356,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual inline u8 getProgress() override {
+            virtual u8 getProgress() override {
                 return this->m_value / (100 / (this->m_numSteps - 1));
             }
             
@@ -10819,7 +10473,7 @@ namespace tsl {
     static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
-    
+
     struct NotificationFile {
         std::string filename;
         std::string fullPath;
@@ -10832,443 +10486,523 @@ namespace tsl {
         NotificationPrompt()
             : enabled_(true),
               is_active_(false),
-              //pending_event_fire_(false),
               generation_(notificationGeneration.load(std::memory_order_acquire))
         {}
-    
+
         ~NotificationPrompt() {
-            shutdown(); // safe cleanup
+            shutdown();
         }
-    
+
         enum class PromptState {
             Inactive,
             SlidingIn,
             Visible,
             SlidingOut
         };
-    
-        struct NotificationData {
+
+        struct NotifEntry {
             std::string text;
+            std::string title;
+            char        timestamp[20] = {};   // snprintf'd "H:MM AM/PM", always < 20 chars
             std::string fileName;
-            size_t fontSize = 28;
-            s32 promptWidth = 448;
-            s32 promptHeight = 88;
-            u32 durationMs = 2500;
-            u32 priority = 20;
-            u64 arrivalNs = 0;
-    
-            NotificationData() = default;
-    
-            NotificationData(const std::string& t, const std::string& f = "",
-                             size_t fs = 28, s32 w = 448, s32 h = 88,
-                             u32 dur = 2500, u32 prio = 20)
-                : text(t), fileName(f), fontSize(fs), promptWidth(w), promptHeight(h),
-                  durationMs(dur), priority(prio), arrivalNs(0) {}
+            // Ranges are enforced by clamp() in show() — smaller types are safe.
+            // fontSize     : clamped [8,   48]    → u8
+            // promptWidth  : clamped [100, 1280]  → u16
+            // promptHeight : clamped [50,  720]   → u16
+            // durationMs   : clamped [500, 30000] → u16
+            // priority     : values 0 or 20       → u8
+            u8  fontSize     = 28;
+            u16 promptWidth  = 448;
+            u16 promptHeight = 88;
+            u16 durationMs   = 2500;
+            u8  priority     = 20;
+            u64 arrivalNs    = 0;
+            // Active-state fields — meaningless while sitting in the queue
+            PromptState state    = PromptState::Inactive;
+            u64 expireNs         = 0;
+            u64 stateStartNs     = 0;
+            bool hasIcon         = false;
+            bool iconPending     = false;
         };
-    
-        struct NotificationCompare {
-            bool operator()(const NotificationData& a, const NotificationData& b) const {
-                if (a.priority == b.priority) {
-                    return a.arrivalNs > b.arrivalNs; // FIFO
-                }
-                return a.priority > b.priority; // Max-heap
+
+        struct NotifCompare {
+            bool operator()(const NotifEntry& a, const NotifEntry& b) const {
+                if (a.priority == b.priority) return a.arrivalNs > b.arrivalNs;
+                return a.priority > b.priority;
             }
         };
-    
-        struct NotificationState {
-            std::string activeText;
-            std::string fileName;
-            size_t fontSize = 28;
-            s32 promptWidth = 448;
-            s32 promptHeight = 88;
-            PromptState state = PromptState::Inactive;
-            u64 expireNs = 0;
-            u64 stateStartNs = 0;
-    
-            NotificationState() = default;
-            bool isTextEmpty() const { return activeText.empty(); }
+
+        struct Lines {
+            static constexpr size_t MAX_LINES = 8;
+            std::string buf[MAX_LINES];
+            u8          count = 0;    // max is MAX_LINES (8) — u8 is sufficient
+            const std::string& operator[](s32 i) const { return buf[i]; }
         };
-    
-        // ---------------- Public Methods ----------------
-    
+
+        static constexpr size_t TITLE_FONT       = 18;
+        static constexpr size_t MESSAGE_FONT     = 22;
+        static constexpr s32    NOTIF_ICON_DIM   = 50;
+        static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
+
+        // ── Public API ───────────────────────────────────────────────────────────
+
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
-                  const std::string& fileName = "", u32 durationMs = 2500,
-                  s32 promptWidth = 448, s32 promptHeight = 88, bool immediately = false)
-        {
+                  const std::string& fileName = "", const std::string& title = "",
+                  u32 durationMs = 2500, s32 promptWidth = 448, s32 promptHeight = 88,
+                  bool immediately = false) {
+
             if (msg.empty()) return;
-        
-            // Quick reject using atomics (fast-path)
             if (!enabled_.load(std::memory_order_acquire)) return;
-            //if (!ult::useNotifications) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
-        
-            NotificationData data;
-            data.text = msg;
-            data.fileName = fileName;
-            data.fontSize = std::clamp(fontSize, size_t(8), size_t(48));
-            data.promptWidth = std::clamp(promptWidth, s32(100), s32(1280));
-            data.promptHeight = std::clamp(promptHeight, s32(50), s32(720));
-            data.durationMs = std::clamp(durationMs, 500u, 30000u);
-            data.priority = immediately ? 0 : priority;  // Priority 0 for immediate
-            data.arrivalNs = armTicksToNs(armGetSystemTick());
-        
+
+            NotifEntry data;
+            data.text         = msg;
+            data.title        = title;
+            data.fileName     = fileName;
+            // Explicit narrowing casts — ranges are guaranteed by clamp().
+            data.fontSize     = static_cast<u8> (std::clamp(fontSize,     size_t(8),   size_t(48)));
+            data.promptWidth  = static_cast<u16>(std::clamp(promptWidth,  s32(100),    s32(1280)));
+            data.promptHeight = static_cast<u16>(std::clamp(promptHeight, s32(50),     s32(720)));
+            data.durationMs   = static_cast<u16>(std::clamp(durationMs,   500u,        30000u));
+            data.priority     = static_cast<u8> (immediately ? 0u : priority);
+            data.arrivalNs    = armTicksToNs(armGetSystemTick());
+
+            {
+                time_t now = time(nullptr);
+                struct tm t;
+                localtime_r(&now, &t);
+                int hour12 = t.tm_hour % 12;
+                if (hour12 == 0) hour12 = 12;
+                std::snprintf(data.timestamp, sizeof(data.timestamp), "%d:%02d %s",
+                              hour12, t.tm_min,
+                              (t.tm_hour >= 12) ? "PM" : "AM");
+            }
+
             std::lock_guard<std::mutex> lg(state_mutex_);
-        
-            // Re-check under lock to avoid TOCTOU
             if (!enabled_.load(std::memory_order_acquire)) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
             if (pending_queue_.size() >= MAX_NOTIFS) return;
-        
-            // If immediately = true and there's an active notification, force it to complete
+
             if (immediately && is_active_ && current_state_.state != PromptState::Inactive) {
-                // Delete current notification's file if exists
-                const std::string fileToDelete = current_state_.fileName;
-                if (!fileToDelete.empty()) {
-                    std::lock_guard<std::mutex> lg(notificationJsonMutex);
-                    const std::string fullPath = ult::NOTIFICATIONS_PATH + fileToDelete;
-                    remove(fullPath.c_str());
+                if (!current_state_.fileName.empty()) {
+                    std::lock_guard<std::mutex> fg(notificationJsonMutex);
+                    remove((ult::NOTIFICATIONS_PATH + current_state_.fileName).c_str());
                 }
-                
-                // Reset current state
-                current_state_ = NotificationState{};
-                is_active_ = false;
+                notifIconLoaded_ = false;
+                current_state_   = NotifEntry{};
+                is_active_       = false;
             }
-        
-            pending_queue_.push(data);
-        
+
+            pending_queue_.push(std::move(data));
+
             if (!is_active_) {
                 startNext_NoLock();
                 eventFire(&notificationEvent);
-        
                 #if IS_STATUS_MONITOR_DIRECTIVE
                 if (isRendering) {
-                    isRendering = false;
+                    isRendering  = false;
                     wasRendering = true;
-                    
                     leventSignal(&renderingStopEvent);
                 }
                 #endif
             }
         }
-        
-        // Immediate notification function - shows immediately with highest priority
+
         void showNow(const std::string& msg, size_t fontSize = 26) {
-            show(msg, fontSize, 0, "", 2500, 448, 88, true);
+            show(msg, fontSize, 0u, "", "", 2500, 448, 88, true);
         }
-    
 
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
             if (ult::launchingOverlay.load(std::memory_order_acquire) ||
                 generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
             if (!enabled_.load(std::memory_order_acquire)) return;
-        
-            NotificationState copy;
+
+            NotifEntry copy;
+            bool       iconLoaded;
             {
                 std::lock_guard<std::mutex> lg(state_mutex_);
-                if (current_state_.state == PromptState::Inactive || current_state_.activeText.empty()) return;
-                copy = current_state_;
+                if (current_state_.state == PromptState::Inactive ||
+                    current_state_.text.empty()) return;
+                copy       = current_state_;
+                iconLoaded = notifIconLoaded_;
             }
-            
-            const u64 now = armTicksToNs(armGetSystemTick());
+
+            const u64 now       = armTicksToNs(armGetSystemTick());
             const u64 elapsedMs = (now - copy.stateStartNs) / 1'000'000ULL;
-        
-            s32 x = 0, y = 0;
+
+            s32 x = 0;
             switch (copy.state) {
                 case PromptState::SlidingIn: {
                     const float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
-                    x = ult::useRightAlignment ?
-                        (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>((1.0f - t) * copy.promptWidth)) :
-                        static_cast<s32>(-copy.promptWidth + t * copy.promptWidth);
+                    x = ult::useRightAlignment
+                        ? (tsl::cfg::FramebufferWidth - copy.promptWidth
+                           + static_cast<s32>((1.0f - t) * copy.promptWidth))
+                        : static_cast<s32>(-copy.promptWidth + t * copy.promptWidth);
                     break;
                 }
                 case PromptState::Visible:
-                    x = ult::useRightAlignment ? (tsl::cfg::FramebufferWidth - copy.promptWidth) : 0;
+                    x = ult::useRightAlignment
+                        ? (tsl::cfg::FramebufferWidth - copy.promptWidth) : 0;
                     break;
                 case PromptState::SlidingOut: {
                     const float t = std::min(1.0f, float(elapsedMs) / SLIDE_DURATION_MS);
-                    x = ult::useRightAlignment ?
-                        (tsl::cfg::FramebufferWidth - copy.promptWidth + static_cast<s32>(t * copy.promptWidth)) :
-                        static_cast<s32>(-t * copy.promptWidth);
+                    x = ult::useRightAlignment
+                        ? (tsl::cfg::FramebufferWidth - copy.promptWidth
+                           + static_cast<s32>(t * copy.promptWidth))
+                        : static_cast<s32>(-t * copy.promptWidth);
                     break;
                 }
                 default: return;
             }
-        
-            const s32 scissorX = std::max(0, x);
-            const s32 scissorW = std::min(copy.promptWidth, tsl::cfg::FramebufferWidth - scissorX);
-        
-            if (scissorX >= 0 && scissorW > 0 && copy.promptHeight > 0) {
-                renderer->enableScissoring(scissorX, y, scissorW, copy.promptHeight);
 
-            #if IS_STATUS_MONITOR_DIRECTIVE
-                renderer->drawRect(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
-            #else
-                if (!promptOnly && ult::expandedMemory)
-                    renderer->drawRectMultiThreaded(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
-                else
-                    renderer->drawRect(x, y, copy.promptWidth, copy.promptHeight, defaultBackgroundColor);
-            #endif
-            
-                if (!copy.activeText.empty()) {
-                    std::vector<std::string> lines;
-                    const std::string& text = copy.activeText;
-            
-                    size_t start = 0;
-                    while (start < text.size() && lines.size() < 8) {
-                        // Look for escaped "\n"
-                        const size_t pos = text.find("\n", start);
-            
-                        if (pos == std::string::npos) {
-                            // No more "\n", take the rest
-                            lines.emplace_back(text.substr(start));
-                            break;
-                        } else {
-                            // Extract line up to the escape sequence
-                            lines.emplace_back(text.substr(start, pos - start));
-                            start = pos + 1; // Skip past "\n"
+            const s32 scissorX = std::max(0, x);
+            const s32 scissorW = std::min(static_cast<s32>(copy.promptWidth),
+                                          tsl::cfg::FramebufferWidth - scissorX);
+
+            // scissorX is always >= 0 (std::max(0, x)), so only scissorW and height need checking
+            if (scissorW > 0 && copy.promptHeight > 0) {
+                renderer->enableScissoring(scissorX, 0, scissorW, copy.promptHeight);
+
+                #if IS_STATUS_MONITOR_DIRECTIVE
+                    renderer->drawRect(x, 0, copy.promptWidth, copy.promptHeight,
+                                       (defaultBackgroundColor));
+                #else
+                    if (!promptOnly && ult::expandedMemory)
+                        renderer->drawRectMultiThreaded(x, 0, copy.promptWidth,
+                                                        copy.promptHeight,
+                                                        (defaultBackgroundColor));
+                    else
+                        renderer->drawRect(x, 0, copy.promptWidth, copy.promptHeight,
+                                           (defaultBackgroundColor));
+                #endif
+
+                const s32 iconPad = (copy.promptHeight - NOTIF_ICON_DIM) / 2;
+
+                s32 textAreaX = x;
+                s32 textAreaW = copy.promptWidth;
+
+                if ((copy.hasIcon && iconLoaded) || copy.iconPending) {
+                    const s32 colWidth = iconPad + NOTIF_ICON_DIM + iconPad;
+                    textAreaX = x + colWidth;
+                    textAreaW = copy.promptWidth - colWidth;
+
+                    if (copy.hasIcon && iconLoaded) {
+                        const s32 dstX  = x + iconPad;
+                        s32       drawH = NOTIF_ICON_DIM;
+
+                        if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
+                            drawH = 0; // icon would overflow — skip
+                        if (iconPad + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
+                            drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconPad;
+
+                        if (drawH > 0) {
+                            renderer->drawBitmapRGBA4444(
+                                static_cast<u32>(dstX),
+                                static_cast<u32>(iconPad),
+                                static_cast<u32>(NOTIF_ICON_DIM),
+                                static_cast<u32>(drawH),
+                                notifIconBuf_);
                         }
                     }
-            
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', copy.fontSize);
-                    const s32 startY = y + (copy.promptHeight - (static_cast<int>(lines.size()) * fm.lineHeight)) / 2 + fm.ascent;
-            
-                    for (size_t i = 0; i < lines.size(); ++i) {
-                        const std::string& line = lines[i];
-                        
+                }
+
+                if (!copy.text.empty() && textAreaW > 0) {
+                    if (!copy.title.empty() && (copy.hasIcon || copy.iconPending)) {
+                        const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter(
+                                                   'A', TITLE_FONT);
+                        const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter(
+                                                   'A', MESSAGE_FONT);
+
+                        const s32 innerW = textAreaW - iconPad - 2;
+
+                        static constexpr s32 LINE_GAP = 4;
+                        const s32 blockH   = titleFm.lineHeight + LINE_GAP + messageFm.lineHeight;
+                        const s32 originY  = (copy.promptHeight - blockH) / 2;
+                        const s32 titleY   = originY + titleFm.ascent - 3;
+                        const s32 messageY = originY + titleFm.lineHeight + LINE_GAP
+                                           + messageFm.ascent + 1;
+
                         #if IS_LAUNCHER_DIRECTIVE
-                        // Check if line contains "Ultrahand" (case insensitive)
-                        const bool hasUltrahand = (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos);
-                        
-                        if (hasUltrahand) {
-                            // Draw line with dynamic Ultrahand effect
-                            drawUltrahandLine(renderer, line, x, startY + static_cast<int>(i) * fm.lineHeight, 
-                                            copy.fontSize, copy.promptWidth);
+                        if (copy.title.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME)
+                                != std::string::npos) {
+                            drawUltrahandLine(renderer, copy.title,
+                                              textAreaX, titleY, TITLE_FONT);
                         } else {
-                            // Draw normal line
-                            const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, copy.fontSize);
-                            renderer->drawNotificationString(
-                                line, false,
-                                x + (copy.promptWidth - lw) / 2,
-                                startY + static_cast<int>(i) * fm.lineHeight,
-                                copy.fontSize, notificationTextColor
-                            );
-                        }
-                        #else
-                        // Draw normal line
-                        const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, copy.fontSize);
-                        renderer->drawNotificationString(
-                            line, false,
-                            x + (copy.promptWidth - lw) / 2,
-                            startY + static_cast<int>(i) * fm.lineHeight,
-                            copy.fontSize, notificationTextColor
-                        );
                         #endif
+                            renderer->drawNotificationString(copy.title, false,
+                                textAreaX, titleY, TITLE_FONT, notificationTextColor);
+                        #if IS_LAUNCHER_DIRECTIVE
+                        }
+                        #endif
+
+                        if (copy.timestamp[0] != '\0') {
+                            const auto tsW = renderer->getNotificationTextDimensions(
+                                                        copy.timestamp, false, TITLE_FONT).first;
+                            const s32 tsX = textAreaX + innerW - tsW;
+                            if (tsX > textAreaX)
+                                renderer->drawNotificationString(copy.timestamp, false,
+                                    tsX, titleY, TITLE_FONT, notificationTextColor);
+                        }
+
+                        const Lines lines = splitLines(copy.text, 4);
+                        for (s32 i = 0; i < static_cast<s32>(lines.count); ++i) {
+                            renderer->drawNotificationString(
+                                lines[i], false,
+                                textAreaX,
+                                messageY + i * messageFm.lineHeight,
+                                MESSAGE_FONT, notificationTextColor);
+                        }
+
+                    } else {
+                        const Lines lines = splitLines(copy.text, 8);
+                        const auto  fm    = tsl::gfx::FontManager::getFontMetricsForCharacter(
+                                                'A', copy.fontSize);
+                        const s32 startY  =
+                            (copy.promptHeight
+                               - lines.count * fm.lineHeight) / 2
+                            + fm.ascent;
+
+                        for (s32 i = 0; i < static_cast<s32>(lines.count); ++i) {
+                            const std::string& line = lines[i];
+                            const s32 lineY = startY + i * fm.lineHeight;
+
+                            #if IS_LAUNCHER_DIRECTIVE
+                            if (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME)
+                                    != std::string::npos) {
+                                const size_t ultrahandPos =
+                                    line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
+                                const std::string before = line.substr(0, ultrahandPos);
+                                const std::string after  = line.substr(
+                                    ultrahandPos + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
+
+                                s32 beforeWidth = 0, afterWidth = 0;
+                                if (!before.empty())
+                                    beforeWidth = renderer->getNotificationTextDimensions(
+                                                              before, false, copy.fontSize).first;
+                                if (!after.empty())
+                                    afterWidth = renderer->getNotificationTextDimensions(
+                                                              after, false, copy.fontSize).first;
+                                const std::string hand = ult::SPLIT_PROJECT_NAME_2;
+                                const s32 handWidth = renderer->getNotificationTextDimensions(
+                                                          hand, false, copy.fontSize).first;
+                                const s32 ultraWidth =
+                                    tsl::elm::calculateUltraTextWidth(renderer, copy.fontSize, true);
+                                const s32 fullWidth  = beforeWidth + ultraWidth + handWidth + afterWidth;
+                                const s32 centeredX  = textAreaX + (textAreaW - fullWidth) / 2;
+                                drawUltrahandLine(renderer, line,
+                                                  centeredX, lineY, copy.fontSize);
+                            } else
+                            #endif
+                            {
+                                const auto lineW = renderer->getNotificationTextDimensions(
+                                                                line, false, copy.fontSize).first;
+                                const s32 centeredX = textAreaX + (textAreaW - lineW) / 2;
+                                renderer->drawNotificationString(line, false,
+                                    centeredX, lineY, copy.fontSize, notificationTextColor);
+                            }
+                        }
                     }
                 }
-            
+
                 if (!ult::useRightAlignment) {
-                    renderer->drawRect(x + copy.promptWidth - 1, y, 1, copy.promptHeight, edgeSeparatorColor);
-                    renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
+                    renderer->drawRect(x + copy.promptWidth - 1, 0, 1,
+                                       copy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, copy.promptHeight - 1,
+                                       copy.promptWidth, 1, edgeSeparatorColor);
                 } else {
-                    renderer->drawRect(x, y, 1, copy.promptHeight, edgeSeparatorColor);
-                    renderer->drawRect(x, y + copy.promptHeight - 1, copy.promptWidth, 1, edgeSeparatorColor);
+                    renderer->drawRect(x, 0, 1, copy.promptHeight, edgeSeparatorColor);
+                    renderer->drawRect(x, copy.promptHeight - 1,
+                                       copy.promptWidth, 1, edgeSeparatorColor);
                 }
-            
                 renderer->disableScissoring();
             }
         }
 
         #if IS_LAUNCHER_DIRECTIVE
-        void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line, s32 x, s32 y, 
-                              u32 fontSize, s32 promptWidth) {
-            // Find position of "Ultrahand" in the line (case insensitive)
-            size_t ultrahandPos = std::string::npos;
-            std::string ultrahandToReplace;
-            
-            // Check for "Ultrahand" first
-            ultrahandPos = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
-            if (ultrahandPos != std::string::npos) {
-                ultrahandToReplace = ult::CAPITAL_ULTRAHAND_PROJECT_NAME;
-            }
-            
+        void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
+                               s32 x, s32 y, u32 fontSize) {
+            const size_t ultrahandPos = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
             if (ultrahandPos == std::string::npos) {
-                // Fallback to normal drawing if not found
-                const auto [lw, lh] = renderer->getNotificationTextDimensions(line, false, fontSize);
-                renderer->drawNotificationString(line, false, x + (promptWidth - lw) / 2, y, fontSize, notificationTextColor);
+                renderer->drawNotificationString(line, false,
+                    x, y, fontSize, notificationTextColor);
                 return;
             }
-            
-            // Split the line into parts
             const std::string before = line.substr(0, ultrahandPos);
-            const std::string hand = ult::SPLIT_PROJECT_NAME_2;
-            const std::string after = line.substr(ultrahandPos + ultrahandToReplace.length());
-            
-            // Calculate individual part widths to get accurate total width
-            s32 beforeWidth = 0, handWidth = 0, afterWidth = 0;
-            
+            const std::string hand   = ult::SPLIT_PROJECT_NAME_2;
+            const std::string after  = line.substr(
+                ultrahandPos + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
+
+            s32 beforeWidth = 0, handWidth = 0;
+            if (!before.empty())
+                beforeWidth = renderer->getNotificationTextDimensions(
+                                          before, false, fontSize).first;
+            handWidth = renderer->getNotificationTextDimensions(
+                                      hand, false, fontSize).first;
+
+            s32 curX = x;
             if (!before.empty()) {
-                const auto [bw, bh] = renderer->getNotificationTextDimensions(before, false, fontSize);
-                beforeWidth = bw;
+                renderer->drawNotificationString(before, false, curX, y,
+                                                 fontSize, notificationTextColor);
+                curX += beforeWidth;
             }
-            
-            if (!after.empty()) {
-                const auto [aw, ah] = renderer->getNotificationTextDimensions(after, false, fontSize);
-                afterWidth = aw;
-            }
-            
-            const auto [hw, hh] = renderer->getNotificationTextDimensions(hand, false, fontSize);
-            handWidth = hw;
-            
-            // Use shared utility to calculate Ultra width
-            const s32 ultraWidth = tsl::elm::calculateUltraTextWidth(renderer, fontSize, true);
-            
-            // Calculate total width and starting position for centering
-            const s32 totalWidth = beforeWidth + ultraWidth + handWidth + afterWidth;
-            s32 currentX = x + (promptWidth - totalWidth) / 2;
-            
-            // Draw each part in sequence
-            
-            // Draw "before" part
-            if (!before.empty()) {
-                renderer->drawNotificationString(before, false, currentX, y, fontSize, notificationTextColor);
-                currentX += beforeWidth;
-            }
-            
-            // Draw dynamic "Ultra" part using shared utility
-            currentX = tsl::elm::drawDynamicUltraText(renderer, currentX, y, fontSize, logoColor1, true);
-            
-            // Draw static "hand" part
-            renderer->drawNotificationString(hand, false, currentX, y, fontSize, logoColor2);
-            currentX += handWidth;
-            
-            // Draw "after" part
-            if (!after.empty()) {
-                renderer->drawNotificationString(after, false, currentX, y, fontSize, notificationTextColor);
-            }
+            curX = tsl::elm::drawDynamicUltraText(renderer, curX, y,
+                                                   fontSize, logoColor1, true);
+            renderer->drawNotificationString(hand, false, curX, y,
+                                             fontSize, logoColor2);
+            curX += handWidth;
+            if (!after.empty())
+                renderer->drawNotificationString(after, false, curX, y,
+                                                 fontSize, notificationTextColor);
         }
         #endif
 
         void update() {
-            if (!isActive()) {
-                return;
-            }
             std::lock_guard<std::mutex> lg(state_mutex_);
-            // Optional extra safety: skip if already inactive and queue empty
-            if (ult::launchingOverlay.load(std::memory_order_acquire) ||
-                (!is_active_ && current_state_.activeText.empty() && pending_queue_.empty())) {
-                return;
-            }
-    
-            //std::lock_guard<std::mutex> lg(state_mutex_);
+
             if (generation_ != notificationGeneration.load(std::memory_order_acquire) ||
-                !enabled_.load(std::memory_order_acquire))
-            {
-                current_state_ = NotificationState{};
-                is_active_ = false;
+                !enabled_.load(std::memory_order_acquire)) {
+                notifIconLoaded_ = false;
+                current_state_   = NotifEntry{};
+                is_active_       = false;
                 return;
             }
-    
-            const u64 now = armTicksToNs(armGetSystemTick());
-            const u64 elapsedMs = (current_state_.stateStartNs == 0) ? 0 : (now - current_state_.stateStartNs) / 1'000'000ULL;
-    
+
+            if (ult::launchingOverlay.load(std::memory_order_acquire)) return;
+
+            if (!is_active_ && current_state_.text.empty() && pending_queue_.empty())
+                return;
+
+            if (current_state_.iconPending) {
+                current_state_.iconPending = false;
+                if (!current_state_.fileName.empty()) {
+                    std::string base = current_state_.fileName;
+                    const size_t dot = base.rfind('.');
+                    if (dot != std::string::npos) base.erase(dot);
+                    const size_t dash = base.rfind('-');
+                    if (dash != std::string::npos)
+                        base.erase(dash);
+                    const std::string iconPath = ult::ASSETS_PATH + "notifications/" + base + ".rgba";
+                    if (ult::loadRGBA8888toRGBA4444(iconPath,
+                                                    notifIconBuf_,
+                                                    NOTIF_ICON_DIM * NOTIF_ICON_DIM * 4)) {
+                        notifIconLoaded_       = true;
+                        current_state_.hasIcon = true;
+                    }
+                }
+            }
+
+            const u64 now       = armTicksToNs(armGetSystemTick());
+            const u64 elapsedMs = (current_state_.stateStartNs == 0) ? 0
+                                : (now - current_state_.stateStartNs) / 1'000'000ULL;
+
             switch (current_state_.state) {
                 case PromptState::SlidingIn:
                     if (elapsedMs >= SLIDE_DURATION_MS) {
-                        current_state_.state = PromptState::Visible;
+                        current_state_.state        = PromptState::Visible;
                         current_state_.stateStartNs = now;
                     }
                     break;
                 case PromptState::Visible:
                     if (now >= current_state_.expireNs) {
-                        current_state_.state = PromptState::SlidingOut;
+                        current_state_.state        = PromptState::SlidingOut;
                         current_state_.stateStartNs = now;
                     }
                     break;
                 case PromptState::SlidingOut:
                     if (elapsedMs >= SLIDE_DURATION_MS) {
-                        const std::string fileToDelete = current_state_.fileName;
-                        // Delete the JSON file safely
-                        if (!fileToDelete.empty()) {
-                            std::lock_guard<std::mutex> lg(notificationJsonMutex);
-                            const std::string fullPath = ult::NOTIFICATIONS_PATH + fileToDelete;
-                            remove(fullPath.c_str());  // ignore errors for now
+                        if (!current_state_.fileName.empty()) {
+                            std::lock_guard<std::mutex> fg(notificationJsonMutex);
+                            remove((ult::NOTIFICATIONS_PATH +
+                                    current_state_.fileName).c_str());
                         }
-
-                        current_state_ = NotificationState{};
-                        const bool hadNext = startNext_NoLock();
-                        if (!hadNext) {
-                            is_active_ = false;
-                        }
+                        notifIconLoaded_ = false;
+                        current_state_   = NotifEntry{};
+                        if (!startNext_NoLock()) is_active_ = false;
                     }
                     break;
                 default: break;
             }
         }
-    
-        bool isActive() const {
-            //if (!ult::useNotifications) return false;
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+
+        // is_active_ is only ever set false when current_state_ is also cleared,
+        // so the third condition (non-empty text while inactive) is unreachable.
+        [[nodiscard]] bool isActive() const {
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire))
+                return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             if (is_active_) return true;
             if (!pending_queue_.empty()) return true;
-            //if (pending_event_fire_.load(std::memory_order_acquire)) return true;
-            if (!current_state_.activeText.empty() && current_state_.state != PromptState::Inactive) return true;
             return false;
         }
-    
+
         void shutdown() {
             enabled_.store(false, std::memory_order_release);
             notificationGeneration.fetch_add(1, std::memory_order_acq_rel);
             generation_ = notificationGeneration.load(std::memory_order_acquire);
-    
             std::lock_guard<std::mutex> lg(state_mutex_);
             while (!pending_queue_.empty()) pending_queue_.pop();
-            current_state_ = NotificationState{};
-            is_active_ = false;
-            //pending_event_fire_.store(false, std::memory_order_release);
+            notifIconLoaded_ = false;
+            current_state_   = NotifEntry{};
+            is_active_       = false;
         }
-    
+
         void forceShutdown() {
             enabled_.store(false, std::memory_order_release);
-            //pending_event_fire_.store(false, std::memory_order_release);
         }
-    
-    
-    private:
-        static constexpr size_t MAX_NOTIFS = 30;
-        static constexpr u32 SLIDE_DURATION_MS = 200;
-        //static constexpr double cycleDuration = 1.6;
-    
-        mutable std::mutex state_mutex_;
-        NotificationState current_state_;
-        std::priority_queue<NotificationData, std::vector<NotificationData>, NotificationCompare> pending_queue_;
 
-        std::atomic<bool> enabled_{true};
-        bool is_active_{false}; // protected by mutex
-        //std::atomic<bool> pending_event_fire_{false};
-        uint32_t generation_{0};
-    
+    private:
+        static constexpr size_t MAX_NOTIFS        = 30;
+        static constexpr u32    SLIDE_DURATION_MS = 200;
+
+        u8   notifIconBuf_[NOTIF_ICON_BYTES] = {};
+        bool notifIconLoaded_ = false;
+
+        mutable std::mutex state_mutex_;
+        NotifEntry         current_state_;
+        std::priority_queue<NotifEntry, std::vector<NotifEntry>, NotifCompare> pending_queue_;
+        std::atomic<bool>  enabled_{true};
+        bool               is_active_{false};
+        u32                generation_{0};
+
+        static Lines splitLines(const std::string& text, u8 maxLines) {
+            Lines result;
+            size_t start = 0;
+            while (start < text.size() && result.count < maxLines) {
+                size_t pos        = text.find('\n', start);
+                const size_t pos2 = text.find("\\n", start);
+                if (pos2 != std::string::npos &&
+                    (pos == std::string::npos || pos2 < pos))
+                    pos = pos2;
+                if (pos == std::string::npos) {
+                    result.buf[result.count++] = text.substr(start);
+                    break;
+                }
+                result.buf[result.count++] = text.substr(start, pos - start);
+                start = pos + (text[pos] == '\n' ? 1 : 2);
+            }
+            return result;
+        }
+
         bool startNext_NoLock() {
             if (pending_queue_.empty()) return false;
-            const NotificationData next = pending_queue_.top();
+            NotifEntry next = pending_queue_.top();
             pending_queue_.pop();
-    
-            const u64 now = armTicksToNs(armGetSystemTick());
-            current_state_.activeText = next.text;
-            current_state_.fileName = next.fileName;
-            current_state_.fontSize = next.fontSize;
-            current_state_.promptWidth = next.promptWidth;
-            current_state_.promptHeight = next.promptHeight;
-            current_state_.state = PromptState::SlidingIn;
+
+            const u64 durationNs        = next.durationMs * 1'000'000ULL;
+            const u64 now               = armTicksToNs(armGetSystemTick());
+            current_state_              = std::move(next);
+            current_state_.state        = PromptState::SlidingIn;
             current_state_.stateStartNs = now;
-            current_state_.expireNs = now + static_cast<u64>(SLIDE_DURATION_MS) * 1'000'000ULL
-                                        + static_cast<u64>(next.durationMs) * 1'000'000ULL;
+            current_state_.expireNs     = now
+                                          + SLIDE_DURATION_MS * 1'000'000ULL
+                                          + durationNs;
+            current_state_.hasIcon      = false;
+            current_state_.iconPending  = !current_state_.fileName.empty();
             is_active_ = true;
             return true;
         }
     };
-    
-    // Optional: pointer to global notification
+
     static inline NotificationPrompt* notification = nullptr;
     
 
@@ -11327,7 +11061,7 @@ namespace tsl {
          * @param rightJoyStick Right joystick position
          * @return Weather or not the input has been consumed
          */
-        virtual inline bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) {
+        virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) {
             return false;
         }
         
@@ -11822,6 +11556,13 @@ namespace tsl {
             // Notification handling — safe, consistent, and null-guarded
             {
                 if (notification && notification->isActive()) {
+                    #if IS_STATUS_MONITOR_DIRECTIVE
+                    if (isRendering && !wasRendering) {
+                        isRendering  = false;
+                        wasRendering = true;
+                        leventSignal(&renderingStopEvent);
+                    }
+                    #endif
                     notification->update();
                     notification->draw(&renderer, promptOnly);
 
@@ -13106,7 +12847,7 @@ namespace tsl {
             // Notification variables
             u64 lastNotifCheck = 0;
             std::vector<std::string> shownFiles;
-            std::string text;
+            std::string text, title;
             int fontSize;
             int priority;
             time_t creationTime;
@@ -13273,27 +13014,29 @@ namespace tsl {
                                     
                                     // --- Process the best file ---
                                     if (foundAny) {
-                                        text = ult::getStringFromJsonFile(bestFullPath, "text");
-                                        if (!text.empty()) {
-                                            fontSize = 28; // default (reuse existing variable)
-                                            
-                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                                ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
-                                            if (root) {
-                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                                cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-                                                if (fontSizeObj && cJSON_IsNumber(fontSizeObj)) {
-                                                    fontSize = std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34);
-                                                }
+                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                            ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
+                                        if (root) {
+                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                    
+                                            const cJSON* textObj     = cJSON_GetObjectItemCaseSensitive(croot, "text");
+                                            const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(croot, "title");
+                                            const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
+                                    
+                                            if (cJSON_IsString(textObj) && textObj->valuestring && textObj->valuestring[0] != '\0') {
+                                                text  = textObj->valuestring;
+                                                title = (cJSON_IsString(titleObj) && titleObj->valuestring)
+                                                      ? titleObj->valuestring : "";
+                                    
+                                                fontSize = (cJSON_IsNumber(fontSizeObj))
+                                                         ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
+                                                         : 28;
+                                    
+                                                if (notification)
+                                                    notification->show(text, fontSize, bestPriority, bestFilename, title, 3500);
+                                    
+                                                shownFiles.push_back(bestFilename);
                                             }
-                                            
-                                            // --- Show notification safely ---
-                                            if (notification) {
-                                                notification->show(text, fontSize, bestPriority, bestFilename);
-                                            }
-                                            
-                                            // Mark file as shown
-                                            shownFiles.push_back(bestFilename);
                                         }
                                     }
                                     
@@ -13952,11 +13695,11 @@ namespace tsl {
      * @brief Pops the top Gui from the stack and goes back to the last one
      * @note The Overlay gets closed once there are no more Guis on the stack
      */
-    void goBack(u32 count) {
+    inline void goBack(u32 count) {
         Overlay::get()->goBack(count);
     }
     
-    void pop(u32 count) {
+    inline void pop(u32 count) {
         Overlay::get()->pop(count);
     }
         
@@ -13978,99 +13721,77 @@ namespace tsl {
         }
     }
     
-    static inline std::mutex setNextOverlayMutex;
+    inline std::mutex setNextOverlayMutex;
+    inline std::string nextOverlayName;
 
-    static inline std::string nextOverlayName;
-    static void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
+    // Defined in tesla.cpp
+    inline void setNextOverlay(const std::string& ovlPath, std::string origArgs) {
         std::lock_guard lk(setNextOverlayMutex);
         char buffer[1024];
-        char* p = buffer;
-        char* bufferEnd = buffer + sizeof(buffer) - 1; // Leave room for null terminator
-        
-        // Store filename and copy it
+        char* p       = buffer;
+        char* bufferEnd = buffer + sizeof(buffer) - 1;
+    
         const std::string filenameStr = ult::getNameFromPath(ovlPath);
         nextOverlayName = filenameStr;
-
+    
         const char* filename = filenameStr.c_str();
         while (*filename && p < bufferEnd) *p++ = *filename++;
         if (p < bufferEnd) *p++ = ' ';
-        
-        // Single-pass argument filtering
+    
         const char* src = origArgs.c_str();
         const char* end = src + origArgs.length();
         bool hasSkipCombo = false;
-        
+    
         while (src < end && p < bufferEnd) {
-            // Skip whitespace
-            while (src < end && *src == ' ' && p < bufferEnd) {
-                *p++ = *src++;
-            }
-            
+            while (src < end && *src == ' ' && p < bufferEnd) *p++ = *src++;
             if (src >= end || p >= bufferEnd) break;
-            
-            // Check for flags to filter/detect
+    
             if (src[0] == '-' && src[1] == '-') {
-                
-                // Check what flag this is
-                if (strncmp(src, "--skipCombo", 11) == 0 && (src[11] == ' ' || src[11] == '\0')) {
+                if (strncmp(src, "--skipCombo", 11) == 0 &&
+                    (src[11] == ' ' || src[11] == '\0')) {
                     hasSkipCombo = true;
-                    // Copy this flag
                     while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
                 }
                 else if (strncmp(src, "--foregroundFix", 15) == 0) {
-                    // Skip this flag and its value
                     src += 15;
-                    while (src < end && *src == ' ') src++; // Skip spaces
-                    if (src < end && (*src == '0' || *src == '1')) src++; // Skip value
+                    while (src < end && *src == ' ') src++;
+                    if (src < end && (*src == '0' || *src == '1')) src++;
                 }
                 else if (strncmp(src, "--lastTitleID", 13) == 0) {
-                    // Skip this flag and its value
                     src += 13;
-                    while (src < end && *src == ' ') src++; // Skip spaces
-                    while (src < end && *src != ' ' && *src != '\0') src++; // Skip title ID
+                    while (src < end && *src == ' ') src++;
+                    while (src < end && *src != ' ' && *src != '\0') src++;
                 }
                 else {
-                    // Copy unknown flag
                     while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
                 }
             }
             else {
-                // Copy regular argument
                 while (src < end && *src != ' ' && p < bufferEnd) *p++ = *src++;
             }
         }
-        
-        // Add required flags with bounds checking
+    
         if (!hasSkipCombo && (p + 12) < bufferEnd) {
-            memcpy(p, " --skipCombo", 12);
-            p += 12;
+            memcpy(p, " --skipCombo", 12); p += 12;
         }
-        
-        // Add foreground flag with bounds checking
+    
         if ((p + 17) < bufferEnd) {
-            memcpy(p, " --foregroundFix ", 17);
-            p += 17;
+            memcpy(p, " --foregroundFix ", 17); p += 17;
             if (p < bufferEnd) {
-                *p++ = (ult::resetForegroundCheck.load(std::memory_order_acquire) || ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
+                *p++ = (ult::resetForegroundCheck.load(std::memory_order_acquire) ||
+                        ult::lastTitleID != ult::getTitleIdAsString()) ? '1' : '0';
             }
         }
-        
-        // Add last title ID with bounds checking
-        if ((p + 15 + ult::lastTitleID.length()) < bufferEnd) {
-            memcpy(p, " --lastTitleID ", 15);
-            p += 15;
+    
+        if ((p + 15 + (ptrdiff_t)ult::lastTitleID.length()) < bufferEnd) {
+            memcpy(p, " --lastTitleID ", 15); p += 15;
             const char* titleId = ult::lastTitleID.c_str();
             while (*titleId && p < bufferEnd) *p++ = *titleId++;
         }
-        
-        // Safety check - if we're at the end, we might have truncated
-        if (p >= bufferEnd) {
-            p = bufferEnd;
-        }
-        
+    
+        if (p >= bufferEnd) p = bufferEnd;
         *p = '\0';
-        
-        //isLaunchingNextOverlay.store(true, std::memory_order_release);
+    
         envSetNextLoad(ovlPath.c_str(), buffer);
     }
     
@@ -14261,6 +13982,12 @@ namespace tsl {
         impl::SharedThreadData shData;
         shData.running.store(true, std::memory_order_release);
     
+    #if !IS_LAUNCHER_DIRECTIVE
+        tsl::initializeUltrahandSettings();
+    #endif
+
+        tsl::initializeThemeVars();
+
         Thread backgroundThread;
         threadCreate(&backgroundThread, impl::backgroundEventPoller, &shData, nullptr, 0x1000, 0x2c, -2);
         threadStart(&backgroundThread);
@@ -14270,10 +13997,6 @@ namespace tsl {
         //threadStart(&backgroundThread2);
     
         eventCreate(&shData.comboEvent, false);
-        
-    #if !IS_LAUNCHER_DIRECTIVE
-        tsl::initializeUltrahandSettings();
-    #endif
         
 
         bool shouldFireEvent = false;

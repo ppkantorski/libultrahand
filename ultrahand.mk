@@ -22,7 +22,8 @@ endif
 # Now add folder paths relative to TOPDIR (or absolute if fallback)
 SOURCES += \
   $(ULTRA_DIR)/common \
-  $(ULTRA_DIR)/libultra/source
+  $(ULTRA_DIR)/libultra/source \
+  $(ULTRA_DIR)/libtesla/source
 
 INCLUDES += \
   $(ULTRA_DIR)/common \

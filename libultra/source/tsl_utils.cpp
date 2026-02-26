@@ -20,7 +20,7 @@
 
 #include <tsl_utils.hpp>
 
-#include <cstdlib>
+//#include <cstdlib>
 extern "C" { // assertion override
     void __assert_func(const char *_file, int _line, const char *_func, const char *_expr ) {
         abort();
@@ -28,6 +28,28 @@ extern "C" { // assertion override
 }
 
 namespace ult {
+
+    double cos(double x) {
+        static constexpr double PI = 3.14159265358979323846;
+        static constexpr double TWO_PI = 6.28318530717958647692;
+        static constexpr double HALF_PI = 1.57079632679489661923;
+        
+        x = x - TWO_PI * static_cast<int>(x * 0.159154943091895);
+        if (x < 0) x += TWO_PI;
+        
+        int sign = 1;
+        if (x > PI) {
+           x -= PI;
+           sign = -1;
+        }
+        if (x > HALF_PI) {
+           x = PI - x;
+           sign = -sign;
+        }
+        
+        const double x2 = x * x;
+        return sign * (1.0 + x2 * (-0.5 + x2 * (0.04166666666666666 + x2 * (-0.001388888888888889 + x2 * (0.0000248015873015873 - x2 * 0.0000002755731922398589)))));
+    }
 
     bool correctFrameSize; // for detecting the correct Overlay display size
 
@@ -240,8 +262,8 @@ namespace ult {
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
-    bool useNotifications = false;
-    bool useStartupNotification = false;
+    bool useNotifications = true;
+    bool useStartupNotification = true;
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
     bool usePageSwap = false;
@@ -346,7 +368,7 @@ namespace ult {
         { HidNpadButton_Minus, "MINUS", "\uE0B6" }, { HidNpadButton_Plus, "PLUS", "\uE0B5" }
     }};
 
-    std::unordered_map<std::string, std::string> createButtonCharMap() {
+    static std::unordered_map<std::string, std::string> createButtonCharMap() {
         std::unordered_map<std::string, std::string> map;
         for (const auto& keyInfo : KEYS_INFO) {
             map[keyInfo.name] = keyInfo.glyph;
@@ -873,10 +895,8 @@ namespace ult {
 
     void applyLangReplacements(std::string& text, bool isValue) {
         if (isValue) {
-            if (text.length() == 2 && text[0] == 'O') {
-                if (text[1] == 'n') { text = ON; return; }
-                if (text[1] == 'f' && text[2] == 'f') { text = OFF; return; }
-            }
+            if (text.length() == 2 && text[0] == 'O' && text[1] == 'n') { text = ON; return; }
+            if (text.length() == 3 && text[0] == 'O' && text[1] == 'f' && text[2] == 'f') { text = OFF; return; }
         }
         #if IS_LAUNCHER_DIRECTIVE
         else {
@@ -1047,7 +1067,7 @@ namespace ult {
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
         const size_t srcSize = width * height * 4;
         wallpaperData.resize(srcSize / 2);
-        if (!isFileOrDirectory(filePath) ||
+        if (!isFile(filePath) ||
             !loadRGBA8888toRGBA4444(filePath, wallpaperData.data(), srcSize))
             wallpaperData.clear();
     }
@@ -1057,7 +1077,7 @@ namespace ult {
         if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
             std::unique_lock<std::mutex> lock(wallpaperMutex);
             cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire); });
-            if (wallpaperData.empty() && isFileOrDirectory(WALLPAPER_PATH)) {
+            if (wallpaperData.empty() && isFile(WALLPAPER_PATH)) {
                 loadWallpaperFile(WALLPAPER_PATH);
             }
         }
@@ -1078,7 +1098,7 @@ namespace ult {
         wallpaperData.clear();
         
         // Reload the wallpaper file
-        if (isFileOrDirectory(WALLPAPER_PATH)) {
+        if (isFile(WALLPAPER_PATH)) {
             loadWallpaperFile(WALLPAPER_PATH);
         }
         
@@ -1511,6 +1531,11 @@ namespace ult {
     // Number of renderer threads to use
     const unsigned numThreads = 4;//expandedMemory ? 4 : 0;
     std::vector<std::thread> renderThreads(numThreads);
+
+    void InPlotBarrierCompletion::operator()() noexcept {
+        inPlot.store(false, std::memory_order_release);
+    }
+    std::barrier<InPlotBarrierCompletion> inPlotBarrier(numThreads);
 
     const s32 bmpChunkSize = ((720 + numThreads - 1) / numThreads);
     std::atomic<s32> currentRow;
