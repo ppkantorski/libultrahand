@@ -1,21 +1,24 @@
 /********************************************************************************
- * tesla.cpp
+ * Custom Fork Information
+ * 
+ * File: tesla.cpp
+ * Author: ppkantorski
+ * Description: 
+ *   This file serves as the core logic for the Ultrahand Overlay project's custom fork
+ *   of libtesla, an overlay executor. Within this file, you will find a collection of
+ *   functions, menu structures, and interaction logic designed to facilitate the
+ *   smooth execution and flexible customization of overlays within the project.
  *
- * Single translation unit that owns all definitions that were previously
- * duplicated across every TU that included tesla.hpp:
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
  *
- *   - All tsl:: theme Color / size_t / bool variables (extern in tesla.hpp)
- *   - tsl::initializeThemeVars()
- *   - tsl::initializeUltrahandSettings()  (non-launcher builds only)
- *   - tsl::setNextOverlay()
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
  *
- * BUILD: Add tesla.cpp to your Makefile SOURCES alongside your other .cpp files.
- * It must be compiled with the same preprocessor flags as the rest of your project
- * (IS_LAUNCHER_DIRECTIVE, IS_STATUS_MONITOR_DIRECTIVE, USING_WIDGET_DIRECTIVE, etc.)
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
-// DO NOT define TESLA_INIT_IMPL here — it belongs only in your main.cpp
-// (the one translation unit that calls tsl::loop<>)
+
 #include <tesla.hpp>
 
 // ---------------------------------------------------------------------------
