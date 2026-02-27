@@ -20,9 +20,6 @@
 
 #pragma once
 
-#ifndef LIST_FUNCS_HPP
-#define LIST_FUNCS_HPP
-
 #include <stdio.h>
 #include <vector>
 #include <string>
@@ -95,11 +92,5 @@ namespace ult {
     void compareFilesLists(const std::string& txtFilePath1, const std::string& txtFilePath2, const std::string& outputTxtFilePath);
 
     
-    // Helper function to read a text file and process each line with a callback
-    //void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback);
-
-    
     void compareWildcardFilesLists(const std::string& wildcardPatternFilePath, const std::string& txtFilePath, const std::string& outputTxtFilePath);
 }
-
-#endif

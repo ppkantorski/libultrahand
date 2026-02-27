@@ -28,11 +28,6 @@ size_t DOWNLOAD_WRITE_BUFFER = 16*1024;//64 * 1024;
 size_t UNZIP_READ_BUFFER = 32*1024;//131072*2;//4096*4;
 size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
 
-
-// Path to the CA certificate
-//const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
-//const std::string cacertURL = "https://curl.se/ca/cacert.pem";
-
 // User agent string for curl requests
 static constexpr const char* userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
@@ -68,9 +63,6 @@ struct FileDeleter {
 // Using stdio.h functions (FILE*, fwrite)
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     if (!ptr || !stream) return 0;
-    //size_t totalBytes = size * nmemb;
-    //size_t writtenBytes = fwrite(ptr, 1, totalBytes, stream);
-    //return writtenBytes;
     return fwrite(ptr, 1, size * nmemb, stream);
 }
 
@@ -81,7 +73,6 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
     auto percentage = static_cast<std::atomic<int>*>(ptr);
 
     if (totalToDownload > 0) {
-        //int newProgress = static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0);
         percentage->store(static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0), std::memory_order_release);
     }
 
@@ -92,34 +83,6 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
 
     return 0;  // Continue the download
 }
-
-// Global initialization function
-//void initializeCurl() {
-//    std::lock_guard<std::mutex> lock(curlInitMutex);
-//    if (!curlInitialized.load(std::memory_order_acquire)) {
-//        const CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-//        if (res != CURLE_OK) {
-//            #if USING_LOGGING_DIRECTIVE
-//            if (!disableLogging)
-//                logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
-//            #endif
-//            // Handle error appropriately, possibly exit the program
-//        } else {
-//            curlInitialized.store(true, std::memory_order_release);
-//        }
-//    }
-//}
-
-// Global cleanup function
-//void cleanupCurl() {
-//    std::lock_guard<std::mutex> lock(curlInitMutex);
-//    if (curlInitialized.load(std::memory_order_acquire)) {
-//        curl_global_cleanup();
-//        curlInitialized.store(false, std::memory_order_release);
-//    }
-//}
-
-//std::unique_ptr<char[]> writeBuffer;
 
 // Quick connectivity pre-check before spinning up curl
 static bool hasInternetAccess() {
@@ -156,40 +119,11 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         return false;
     }
 
-    // Initialize nifm to check connectivity (only if we're also managing socket init)
-    //{
-    //    if (!R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        if (!disableLogging)
-    //            logMessage("Failed to initialize nifm");
-    //        #endif
-    //        return false;
-    //    }
-    //    
-    //    // Check internet connectivity
-    //    NifmInternetConnectionStatus connectionStatus;
-    //    Result nifmResult = nifmGetInternetConnectionStatus(nullptr, nullptr, &connectionStatus);
-    //    
-    //    // Clean up nifm immediately after checking
-    //    nifmExit();
-    //    
-    //    if (R_FAILED(nifmResult) || connectionStatus != NifmInternetConnectionStatus_Connected) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        if (!disableLogging)
-    //            logMessage("No internet connection available");
-    //        #endif
-    //        if (!noPercentagePolling) {
-    //            downloadPercentage.store(-1, std::memory_order_release);
-    //        }
-    //        return false;
-    //    }
-    //}
-
     // Fast pre-flight: ~1.5s max vs curl's unpredictable DNS hang
     if (!hasInternetAccess()) {
         return false;
     }
-    
+
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
@@ -222,24 +156,10 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     // ADD THIS: Set up write buffer for better performance
     std::unique_ptr<char[]> writeBuffer;
     if (DOWNLOAD_WRITE_BUFFER > 0) {
-        //if (!writeBuffer)
         writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
         // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
         setvbuf(file.get(), writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
     }
-
-    //setvbuf(file.get(), NULL, _IOFBF, DOWNLOAD_WRITE_BUFFER);
-
-    // Ensure curl is initialized
-    //initializeCurl();
-
-    //if (!R_SUCCEEDED(socketInitializeDefault())) {
-    //    #if USING_LOGGING_DIRECTIVE
-    //    if (!disableLogging)
-    //        logMessage("Failed to initialize socket.");
-    //    #endif
-    //    return false;
-    //}
 
     static constexpr SocketInitConfig socketInitConfig = {
         // TCP buffers
@@ -320,10 +240,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
 
     CURLcode result = curl_easy_perform(curl.get());
 
-    // Detect if download was aborted
-    //const bool wasAborted = (result == CURLE_ABORTED_BY_CALLBACK || 
-    //                         abortDownload.load(std::memory_order_acquire));
-
     // Check HTTP response code BEFORE closing file/curl
     long http_code = 0;
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
@@ -331,27 +247,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     file.reset();
     writeBuffer.reset();
     curl.reset();
-
-    // Always cleanup global state
-    //curl_global_cleanup();
-    //
-    //// Sleep to let cleanup finish
-    //for (int i = 0; i < 10; ++i) {
-    //    svcSleepThread(50'000'000ULL);
-    //}
-    //
-    //// Explicitly reinitialize for next download
-    //curl_global_init(CURL_GLOBAL_DEFAULT);
-    
-    // CRITICAL: For aborted downloads, give curl time to clean up network/SSL state
-    // before destroying the handle. This prevents memory leaks in the global heap.
-    //if (wasAborted) {
-    //    for (int i = 0; i < 10; ++i) {
-    //        svcSleepThread(50'000'000ULL); // 50ms x 10 = 500ms total
-    //    }
-    //}
-
-    //cleanupCurl();
 
     if (!noSocketInit) {
         socketExit();
@@ -448,7 +343,6 @@ static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* file
         file = fopen((const char*)filename, mode_fopen);
         if (file && ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)) {
             // Set 64KB buffer for reading the ZIP file - reduces syscalls
-            //static const size_t zipReadBufferSize = UNZIP_READ_BUFFER;
             setvbuf(file, nullptr, _IOFBF, UNZIP_READ_BUFFER);
         }
     }
@@ -479,8 +373,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     unzipPercentage.store(0, std::memory_order_release);
 
     // Time-based abort checking - pre-calculated constants
-    //u64 lastAbortCheck = armTicksToNs(armGetSystemTick());
-    //u64 currentNanos; // Reused for all tick operations
     bool success = true;
 
     // RAII wrapper for unzFile
@@ -577,19 +469,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // First pass: calculate total uncompressed size
     int result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK) {
-        // Time-based abort check at start of each file (only if 2+ seconds have passed)
-        //currentNanos = armTicksToNs(armGetSystemTick());
-        //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-        //    if (abortUnzip.load(std::memory_order_relaxed)) {
-        //        unzipPercentage.store(-1, std::memory_order_release);
-        //        #if USING_LOGGING_DIRECTIVE
-        //        logMessage("Extraction aborted during size calculation");
-        //        #endif
-        //        abortUnzip.store(false, std::memory_order_release);
-        //        return false;
-        //    }
-        //    lastAbortCheck = currentNanos;
-        //}
         if (abortUnzip.load(std::memory_order_relaxed)) {
             unzipPercentage.store(-1, std::memory_order_release);
             #if USING_LOGGING_DIRECTIVE
@@ -625,10 +504,7 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // Pre-allocate ALL reusable strings and variables outside the main loop
     std::string fileName, extractedFilePath, directoryPath;
-    //fileName.reserve(512);
-    //extractedFilePath.reserve(1024);
-    //directoryPath.reserve(1024);
-    
+
     // Single large buffer for extraction - reused for all files
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
     //std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
@@ -662,7 +538,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     
     // Ensure destination ends with '/' - pre-allocate final string
     std::string destination;
-    //destination.reserve(toDestination.size() + 1);
 
     destination = toDestination;
     if (!destination.empty() && destination.back() != '/') {
@@ -674,15 +549,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     // Extract files
     result = unzGoToFirstFile(zipFile);
     while (result == UNZ_OK && success) {
-        // Time-based abort check at start of each file (only if 2+ seconds have passed)
-        //currentNanos = armTicksToNs(armGetSystemTick());
-        //if ((currentNanos - lastAbortCheck) >= 2000000000ULL) {
-        //    if (abortUnzip.load(std::memory_order_relaxed)) {
-        //        success = false;
-        //        break; // RAII will handle cleanup
-        //    }
-        //    lastAbortCheck = currentNanos;
-        //}
 
         if (abortUnzip.load(std::memory_order_relaxed)) {
             success = false;
@@ -712,7 +578,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
         
         // Build extraction path - reuse allocated strings
         fileName.assign(filename, nameLen);
-        //extractedFilePath.clear();
         extractedFilePath = destination;
         extractedFilePath += fileName;
         

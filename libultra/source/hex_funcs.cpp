@@ -36,7 +36,6 @@ namespace ult {
      */
     void clearHexSumCache() {
         std::lock_guard<std::shared_mutex> writeLock(cacheMutex);
-        //hexSumCache.clear();
         hexSumCache = {};
     }
 
@@ -53,12 +52,8 @@ namespace ult {
      * @param asciiStr The ASCII string to convert.
      * @return The corresponding hexadecimal string.
      */
-    
-    
-    // Function to convert ASCII string to Hex string
     std::string asciiToHex(const std::string& asciiStr) {
         std::string hexStr;
-        //hexStr.reserve(asciiStr.length() * 2); // Reserve space for the hexadecimal string
     
         for (unsigned char c : asciiStr) {
             hexStr.push_back(hexLookup[c >> 4]); // High nibble
@@ -193,14 +188,6 @@ namespace ult {
      * @return The reversed hexadecimal string.
      */
     std::string decimalToReversedHex(const std::string& decimalStr, int byteGroupSize) {
-        //std::string hexadecimal = decimalToHex(decimalStr, byteGroupSize);
-        
-        // Reverse the hexadecimal string in groups of byteGroupSize
-        //std::string reversedHex;
-        //for (int i = hexadecimal.length() - byteGroupSize; i >= 0; i -= byteGroupSize) {
-        //    reversedHex += hexadecimal.substr(i, byteGroupSize);
-        //}
-        
         return hexToReversedHex(decimalToHex(decimalStr, byteGroupSize));
     }
     
@@ -461,7 +448,6 @@ namespace ult {
         
         if (hexSum != -1) {
             // Calculate the total offset to seek in the file
-            //int sum = hexSum + ult::stoi(offsetStr);
             hexEditByOffset(filePath, ult::to_string(hexSum + ult::stoi(offsetStr)), hexDataReplacement);
         } else {
             #if USING_LOGGING_DIRECTIVE
@@ -488,17 +474,12 @@ namespace ult {
             if (occurrence == 0) {
                 // Replace all occurrences
                 for (const std::string& offsetStr : offsetStrs) {
-                    //logMessage("offsetStr: "+offsetStr);
-                    //logMessage("hexDataReplacement: "+hexDataReplacement);
                     hexEditByOffset(filePath, offsetStr, hexDataReplacement);
                 }
             } else {
                 // Convert the occurrence string to an integer
                 if (occurrence > 0 && occurrence <= offsetStrs.size()) {
                     // Replace the specified occurrence/index
-                    //std::string offsetStr = offsetStrs[occurrence - 1];
-                    //logMessage("offsetStr: "+offsetStr);
-                    //logMessage("hexDataReplacement: "+hexDataReplacement);
                     hexEditByOffset(filePath, offsetStrs[occurrence - 1], hexDataReplacement);
                 } else {
                     // Invalid occurrence/index specified
@@ -508,7 +489,6 @@ namespace ult {
                     #endif
                 }
             }
-            //std::cout << "Hex data replaced successfully." << std::endl;
         }
     }
     

@@ -26,9 +26,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-#ifndef ULTRA_HPP
-#define ULTRA_HPP
-
 // Include all functional headers used in the libUltra library
 
 #include "global_vars.hpp"
@@ -45,5 +42,3 @@
 #include "tsl_utils.hpp"
 #include "audio.hpp"
 #include "haptics.hpp"
-
-#endif // ULTRA_HPP

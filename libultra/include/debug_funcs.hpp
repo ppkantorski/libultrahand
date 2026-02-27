@@ -16,8 +16,6 @@
  ********************************************************************************/
 
 #pragma once
-#ifndef DEBUG_FUNCS_HPP
-#define DEBUG_FUNCS_HPP
 
 #include <stdio.h>
 #include <mutex>
@@ -45,5 +43,3 @@ namespace ult {
     void logMessage(const std::string& message);
     #endif
 }
-
-#endif // DEBUG_FUNCS_HPP

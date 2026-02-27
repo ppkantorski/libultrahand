@@ -24,18 +24,17 @@
 #include <cstdint>
 
 namespace ult {
-	
-	//extern bool rumbleInitialized;
-	extern std::atomic<bool> clickActive;
-	extern std::atomic<bool> doubleClickActive;
-	
-	void initHaptics();
-	void deinitHaptics();
-	void checkAndReinitHaptics();
-	
-	void rumbleClick();
-	void rumbleDoubleClick();
-	void processRumbleStop(u64 nowNs);
-	void processRumbleDoubleClick(u64 nowNs);
-	void rumbleDoubleClickStandalone();
+    
+    extern std::atomic<bool> clickActive;
+    extern std::atomic<bool> doubleClickActive;
+    
+    void initHaptics();
+    void deinitHaptics();
+    void checkAndReinitHaptics();
+    
+    void rumbleClick();
+    void rumbleDoubleClick();
+    void processRumbleStop(u64 nowNs);
+    void processRumbleDoubleClick(u64 nowNs);
+    void rumbleDoubleClickStandalone();
 }

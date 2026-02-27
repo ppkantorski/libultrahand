@@ -19,15 +19,11 @@
 
 #pragma once
 
-#ifndef STRING_FUNCS_HPP
-#define STRING_FUNCS_HPP
-
 #include <cstring>
 #include <string>
 #include <iterator> 
 #include <vector>
-//#include <jansson.h>
-//#include <regex>
+
 #include <algorithm>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -39,8 +35,6 @@ namespace ult {
     extern std::string to_string(int value);
     extern int stoi(const std::string& str, std::size_t* pos = nullptr, int base = 10);
     extern float stof(const std::string& str);
-
-    //extern bool canConvertToInt(const std::string& str);
 
     /**
      * @brief A lightweight string stream class that mimics basic functionality of std::istringstream.
@@ -123,8 +117,6 @@ namespace ult {
      */
     std::string removeWhiteSpaces(const std::string& str);
     
-    
-    
     /**
      * @brief Removes quotes from a string.
      *
@@ -134,17 +126,6 @@ namespace ult {
      * @return The string with quotes removed.
      */
     void removeQuotes(std::string& str);
-    
-    
-    /**
-     * @brief Replaces multiple consecutive slashes with a single slash in a string.
-     *
-     * This function replaces sequences of two or more consecutive slashes with a single slash in the input string.
-     *
-     * @param input The input string to process.
-     * @return The string with multiple slashes replaced.
-     */
-    //std::string replaceMultipleSlashes(const std::string& input);
     
     
     void resolveDirectoryTraversal(std::string& path);
@@ -270,5 +251,3 @@ namespace ult {
     std::string inputExists(const std::string& input);
     #endif
 }
-
-#endif

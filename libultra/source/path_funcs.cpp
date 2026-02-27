@@ -493,8 +493,7 @@ namespace ult {
     #endif
                 return;
             }
-    
-            //bool hasContent = false;
+
             dirent* entry;
             
             while ((entry = readdir(dir)) != nullptr) {
@@ -502,8 +501,6 @@ namespace ult {
                 if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) {
                     continue;
                 }
-    
-                //hasContent = true;
     
                 // Build full paths
                 std::string fullSrcPath = srcPath;
@@ -1185,7 +1182,6 @@ namespace ult {
         for (auto& path : fileList) {
             // Generate the corresponding path in the target directory by replacing the source path
             updatedPath = targetPath + path.substr(sourcePath.size());
-            //logMessage("mirror-delete: "+path+" "+updatedPath);
             if (mode == "delete")
                 deleteFileOrDirectory(updatedPath);
             else if (mode == "copy") {
@@ -1194,7 +1190,7 @@ namespace ult {
             }
             path = "";
         }
-        //fileList.clear();
+        
         fileList.clear();
         fileList.shrink_to_fit();
     }

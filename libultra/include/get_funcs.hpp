@@ -38,16 +38,6 @@ namespace ult {
     };
     
     
-    
-    /**
-     * @brief Reads the contents of a file and returns it as a string, normalizing line endings.
-     *
-     * @param filePath The path to the file to be read.
-     * @return The content of the file as a string with line endings normalized to '\n'.
-     */
-    //std::string getFileContents(const std::string& filePath);
-    
-    
     /**
      * @brief Concatenates the provided directory and file names to form a destination path.
      *
@@ -120,11 +110,6 @@ namespace ult {
      */
     std::vector<std::string> getSubdirectories(const std::string& directoryPath);
     
-    // Cache to store directory status
-    // Assuming a very simple cache implementation
-    //extern std::vector<std::pair<std::string, bool>> directoryCache;
-    
-    bool isDirectory(struct dirent* entry, const std::string& path);
     
     /**
      * @brief Recursively retrieves a list of files from a directory.
@@ -133,13 +118,6 @@ namespace ult {
      * @return A vector of strings containing the paths of the files.
      */
     std::vector<std::string> getFilesListFromDirectory(const std::string& directoryPath);
-    
-    // Helper function to check if a path is a directory
-    //bool isDirectoryCached(const struct dirent* entry, const std::string& fullPath) {
-    //    struct stat st;
-    //    if (stat(fullPath.c_str(), &st) != 0) return false;
-    //    return S_ISDIR(st.st_mode);
-    //}
     
     
 

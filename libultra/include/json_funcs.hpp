@@ -16,8 +16,7 @@
  ********************************************************************************/
 
 #pragma once
-#ifndef JSON_FUNCS_HPP
-#define JSON_FUNCS_HPP
+
 #include <stdio.h>
 #include <string>
 #include <cJSON.h>
@@ -101,4 +100,3 @@ namespace ult {
 
     void pushNotificationJson(const std::string& appID, const std::string& text, size_t fontSize=28);
 }
-#endif

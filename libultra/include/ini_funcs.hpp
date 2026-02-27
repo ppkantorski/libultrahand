@@ -18,17 +18,12 @@
 
 #pragma once
 
-#ifndef INI_FUNCS_HPP
-#define INI_FUNCS_HPP
-
 #include <stdio.h>
 #include <cstring>  // For std::string, strlen(), etc.
 #include <string>   // For std::string
 #include <vector>   // For std::vector
 #include <map>      // For std::map
-//#include <sstream>  // For std::istringstream
 #include <algorithm> // For std::remove_if
-//#include <cctype>   // For ::isspace
 
 #include <shared_mutex>
 #include <unordered_map>
@@ -265,25 +260,6 @@ namespace ult {
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName);
     
     
-    //void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
-    //    std::ofstream file(filePath);
-    //    if (!file.is_open()) {
-    //        // Handle error: could not open file
-    //        return;
-    //    }
-    //
-    //    for (const auto& section : data) {
-    //        file << "[" << section.first << "]\n";
-    //        for (const auto& kv : section.second) {
-    //            file << kv.first << "=" << kv.second << "\n";
-    //        }
-    //        file << "\n"; // Separate sections with a newline
-    //    }
-    //
-    //    file.close();
-    //}
-    
-    
     bool syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
                        const std::string& packageConfigIniPath,
                        const std::string& optionName,
@@ -364,5 +340,3 @@ namespace ult {
                                         const std::string& keyToRemove);
 
 }
-
-#endif

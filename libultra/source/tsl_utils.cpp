@@ -62,7 +62,6 @@ namespace ult {
     std::atomic<bool> launchingOverlay(false);
     std::atomic<bool> settingsInitialized(false);
     std::atomic<bool> currentForeground(false);
-    //std::mutex simulatedNextPageMutex;
 
     // Helper function to read file content into a string
     bool readFileContent(const std::string& filePath, std::string& content) {
@@ -158,61 +157,6 @@ namespace ult {
         
         return R_SUCCEEDED(rc) && (perfMode == ApmPerformanceMode_Boost);
     }
-    
-    //static bool pminfoInitialized = false;
-    //static u64 lastPid = 0;
-    //static u64 lastTid = 0;
-    //
-    //std::string getTitleIdAsString() {
-    //    Result rc;
-    //    u64 pid = 0;
-    //    u64 tid = 0;
-    //
-    //    // Get the current application PID
-    //    rc = pmdmntGetApplicationProcessId(&pid);
-    //    if (R_FAILED(rc) || pid == 0) {
-    //        return NULL_STR;
-    //    }
-    //
-    //    // If it's the same PID as last time, return cached TID
-    //    if (pid == lastPid && lastTid != 0) {
-    //        char cachedTidStr[17];
-    //        snprintf(cachedTidStr, sizeof(cachedTidStr), "%016lX", lastTid);
-    //        return std::string(cachedTidStr);
-    //    }
-    //
-    //    // Initialize pminfo if not already
-    //    if (!pminfoInitialized) {
-    //        rc = pminfoInitialize();
-    //        if (R_FAILED(rc)) {
-    //            return NULL_STR;
-    //        }
-    //        pminfoInitialized = true;
-    //    }
-    //
-    //    // Retrieve the TID (Program ID)
-    //    rc = pminfoGetProgramId(&tid, pid);
-    //    if (R_FAILED(rc)) {
-    //        return NULL_STR;
-    //    }
-    //
-    //    lastPid = pid;
-    //    lastTid = tid;
-    //
-    //    char titleIdStr[17];
-    //    snprintf(titleIdStr, sizeof(titleIdStr), "%016lX", tid);
-    //    return std::string(titleIdStr);
-    //}
-    
-    //std::string getProcessIdAsString() {
-    //    u64 pid = 0;
-    //    if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
-    //        return NULL_STR;
-    //    
-    //    char pidStr[21];  // Max u64 is 20 digits + null terminator
-    //    snprintf(pidStr, sizeof(pidStr), "%llu", pid);
-    //    return std::string(pidStr);
-    //}
 
     std::string getBuildIdAsString() {
         u64 pid = 0;
@@ -280,25 +224,8 @@ namespace ult {
     std::string requestedOverlayArgs;
     std::mutex overlayLaunchMutex;
     #endif
-
-    // Define the duration boundaries (for smooth scrolling)
-    //const std::chrono::milliseconds initialInterval = std::chrono::milliseconds(67);  // Example initial interval
-    //const std::chrono::milliseconds shortInterval = std::chrono::milliseconds(10);    // Short interval after long hold
-    //const std::chrono::milliseconds transitionPoint = std::chrono::milliseconds(2000); // Point at which the shortest interval is reached
-    
-    // Function to interpolate between two durations
-    //std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t) {
-    //    using namespace std::chrono;
-    //    auto interpolated = start.count() + static_cast<long long>((end.count() - start.count()) * t);
-    //    return milliseconds(interpolated);
-    //}
-    
-    
-    
-    //#include <filesystem> // Comment out filesystem
     
     // CUSTOM SECTION START
-    //float backWidth, selectWidth, nextPageWidth;
     std::atomic<float> backWidth;
     std::atomic<float> selectWidth;
     std::atomic<float> nextPageWidth;
@@ -314,8 +241,6 @@ namespace ult {
     bool firstBoot = true; // for detecting first boot
     bool reloadingBoot = false; // for detecting reloading boots
     
-    //std::unordered_map<std::string, std::string> hexSumCache;
-    
     // Define an atomic bool for interpreter completion
     std::atomic<bool> threadFailure(false);
     std::atomic<bool> runningInterpreter(false);
@@ -324,10 +249,7 @@ namespace ult {
     std::atomic<bool> isHidden(false);
     std::atomic<bool> externalAbortCommands(false);
     
-    //bool progressAnimation = false;
     bool disableTransparency = false;
-    //bool useCustomWallpaper = false;
-    //bool useMemoryExpansion = false;
     bool useOpaqueScreenshots = false;
     
     std::atomic<bool> onTrackBar(false);
@@ -351,9 +273,6 @@ namespace ult {
 
     
     bool updateMenuCombos = false;
-    
-    
-    //void convertComboToUnicode(std::string& combo);
 
 
     std::array<KeyInfo, 18> KEYS_INFO = {{
@@ -911,18 +830,6 @@ namespace ult {
     }
     
     
-    
-    // Predefined hexMap
-    //const std::array<int, 256> hexMap = [] {
-    //    std::array<int, 256> map = {0};
-    //    map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
-    //    map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
-    //    map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
-    //    map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
-    //    return map;
-    //}();
-    
-    
     // Prepare a map of default settings
     const ThemeDefault defaultThemeSettings[] = {
         // Must stay sorted alphabetically for binary search
@@ -1110,13 +1017,6 @@ namespace ult {
     }
 
     
-    
-    // Global variables for FPS calculation
-    //double lastTimeCount = 0.0;
-    //int frameCount = 0;
-    //float fps = 0.0f;
-    //double elapsedTime = 0.0;
-    
     std::atomic<bool> themeIsInitialized(false); // for loading the theme once in OverlayFrame / HeaderOverlayFrame
     
     // Variables for touch commands
@@ -1127,13 +1027,9 @@ namespace ult {
     std::atomic<bool> shortTouchAndRelease(false);
     std::atomic<bool> longTouchAndRelease(false);
     std::atomic<bool> simulatedBack(false);
-    //bool simulatedBackComplete = true;
     std::atomic<bool> simulatedSelect(false);
-    //bool simulatedSelectComplete = true;
     std::atomic<bool> simulatedNextPage(false);
-    //std::atomic<bool> simulatedNextPageComplete(true);
     std::atomic<bool> simulatedMenu(false);
-    //bool simulatedMenuComplete = true;
     std::atomic<bool> stillTouching(false);
     std::atomic<bool> interruptedTouch(false);
     std::atomic<bool> touchInBounds(false);
@@ -1144,20 +1040,11 @@ namespace ult {
     bool powerInitialized = false;
     bool powerCacheInitialized;
     uint32_t powerCacheCharge;
-    //float powerConsumption;
     bool powerCacheIsCharging;
     PsmSession powerSession;
     
-    // Define variables to store previous battery charge and time
-    //uint32_t prevBatteryCharge = 0;
-    //s64 timeOut = 0;
-    
-    
     std::atomic<uint32_t> batteryCharge{0};
     std::atomic<bool> isCharging{false};
-    //bool validPower;
-    
-    
     
     bool powerGetDetails(uint32_t *_batteryCharge, bool *_isCharging) {
         static uint64_t last_call_ns = 0;
@@ -1234,7 +1121,6 @@ namespace ult {
                     ult::powerGetDetails(&charge, &charging);
                     ult::batteryCharge.store(charge, std::memory_order_release);
                     ult::isCharging.store(charging, std::memory_order_release);
-                    //prevBatteryCharge = charge; // if needed
                 }
             }
         }
@@ -1351,7 +1237,6 @@ namespace ult {
     
     
     // Widget settings
-    //std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
     bool hideWidgetBackdrop, centerWidgetAlignment, extendedWidgetBackdrop;
 
@@ -1395,6 +1280,7 @@ namespace ult {
         return static_cast<u32>(bytes / 0x100000);
     }
     
+   
 
     // Helper function to get version-appropriate default heap size
     static OverlayHeapSize getDefaultHeapSize() {
@@ -1443,6 +1329,7 @@ namespace ult {
     }
     
     // Update the global default too
+    HeapSizeCache heapSizeCache;
     OverlayHeapSize currentHeapSize = getDefaultHeapSize();
     
     bool setOverlayHeapSize(OverlayHeapSize heapSize) {
@@ -1516,14 +1403,6 @@ namespace ult {
         cleanVersionLabels = getBoolValue("clean_version_labels", false);        // FALSE_STR default
         hideOverlayVersions = getBoolValue("hide_overlay_versions", false);      // FALSE_STR default  
         hidePackageVersions = getBoolValue("hide_package_versions", false);      // FALSE_STR default
-        //libultrahandTitles = getBoolValue("libultrahand_titles", false);               // FALSE_STR default
-        //useLibultrahandVersions = getBoolValue("libultrahand_versions", true);            // TRUE_STR default
-        //matchPackages = getBoolValue("match_packages", true);            // TRUE_STR default
-        
-        //#ifdef APP_VERSION
-        //versionLabel = cleanVersionLabel(APP_VERSION) + "  (" + loaderTitle + " " + cleanVersionLabel(loaderInfo) + ")";
-        //#endif
-        //versionLabel = (cleanVersionLabels) ? std::string(APP_VERSION) : (std::string(APP_VERSION) + "   (" + extractTitle(loaderInfo) + " v" + cleanVersionLabel(loaderInfo) + ")");
     }
     #endif
     
@@ -1539,18 +1418,4 @@ namespace ult {
 
     const s32 bmpChunkSize = ((720 + numThreads - 1) / numThreads);
     std::atomic<s32> currentRow;
-    
-    //std::atomic<unsigned int> barrierCounter{0};
-    //std::mutex barrierMutex;
-    //std::condition_variable barrierCV;
-    //
-    //void barrierWait() {
-    //    std::unique_lock<std::mutex> lock(barrierMutex);
-    //    if (++barrierCounter == numThreads) {
-    //        barrierCounter = 0; // Reset for the next round
-    //        barrierCV.notify_all();
-    //    } else {
-    //        barrierCV.wait(lock, [] { return barrierCounter == 0; });
-    //    }
-    //}
 }

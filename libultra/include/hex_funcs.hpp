@@ -18,15 +18,11 @@
 
 #pragma once
 
-#ifndef HEX_FUNCS_HPP
-#define HEX_FUNCS_HPP
-
 #include <stdio.h>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <functional>
-//#include <cstdio> // Added for FILE and fopen
 #include <cstring> // Added for std::memcmp
 #include <mutex>
 #include <shared_mutex>
@@ -71,9 +67,6 @@ namespace ult {
      * @param asciiStr The ASCII string to convert.
      * @return The corresponding hexadecimal string.
      */
-    
-    
-    // Function to convert ASCII string to Hex string
     std::string asciiToHex(const std::string& asciiStr);
     
     /**
@@ -205,5 +198,3 @@ namespace ult {
 
     std::string decodeBase64ToString(const std::string& b64);
 }
-
-#endif

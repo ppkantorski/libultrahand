@@ -19,9 +19,6 @@
 
 #pragma once
 
-#ifndef PATH_FUNCS_HPP
-#define PATH_FUNCS_HPP
-
 #include <stdio.h>
 #include <memory>
 #include <dirent.h>
@@ -278,5 +275,3 @@ namespace ult {
      */
     void dotCleanDirectory(const std::string& sourcePath);
 }
-
-#endif

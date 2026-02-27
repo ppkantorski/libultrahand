@@ -174,8 +174,6 @@ namespace ult {
         
         if (str.empty()) return out;
         
-        //out.reserve(std::count(str.begin(), str.end(), delim) + 1);
-        
         const char* data = str.data();
         const char* end = data + str.size();
         const char* start = data;
@@ -620,7 +618,6 @@ namespace ult {
         // Declare all variables outside the loop
         char line[1024];
         std::string lineStr;
-        //lineStr.reserve(1024);
         
         bool isNewSection = false;
         bool isSection = false;
@@ -848,7 +845,6 @@ namespace ult {
      */
     void setIniFileValue(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredValue, const std::string& comment) {
         setIniFile(fileToEdit, desiredSection, desiredKey, desiredValue, "", comment);
-        //cleanIniFormatting(fileToEdit);
     }
     
     /**
@@ -865,7 +861,6 @@ namespace ult {
      */
     void setIniFileKey(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredNewKey, const std::string& comment) {
         setIniFile(fileToEdit, desiredSection, desiredKey, "", desiredNewKey, comment);
-        //cleanIniFormatting(fileToEdit);
     }
     
     
@@ -919,7 +914,6 @@ namespace ult {
         char line[1024];
         bool sectionExists = false;
         size_t len = 0;
-        //const char* start;
         const char* end;
         
         size_t content_len;
@@ -1220,16 +1214,9 @@ namespace ult {
         // Declare all variables outside the loop for efficiency
         char line[1024];
         std::string currentSection;
-        //currentSection.reserve(64);
-        
         std::string lineStr;
-        //lineStr.reserve(1024);
-        
         std::string trimmedLine;
-        //trimmedLine.reserve(1024);
-        
         std::string lineKey;
-        //lineKey.reserve(128);
         
         bool inTargetSection = false;
         size_t eqPos;
@@ -1287,24 +1274,6 @@ namespace ult {
         }
     }
     
-    //void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
-    //    std::ofstream file(filePath);
-    //    if (!file.is_open()) {
-    //        // Handle error: could not open file
-    //        return;
-    //    }
-    //
-    //    for (const auto& section : data) {
-    //        file << "[" << section.first << "]\n";
-    //        for (const auto& kv : section.second) {
-    //            file << kv.first << "=" << kv.second << "\n";
-    //        }
-    //        file << "\n"; // Separate sections with a newline
-    //    }
-    //
-    //    file.close();
-    //}
-    
     
     bool syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
                        const std::string& packageConfigIniPath,
@@ -1340,8 +1309,6 @@ namespace ult {
         const char* const data = line.data();
         const char* const end = data + line.length();
         const char* pos = data;
-        
-        //commandParts.reserve(8);
         
         while (pos < end) {
             // Skip leading whitespace

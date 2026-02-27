@@ -24,78 +24,6 @@
 namespace ult {
     
     /**
-     * @brief Reads the contents of a file and returns it as a string, normalizing line endings.
-     *
-     * @param filePath The path to the file to be read.
-     * @return The content of the file as a string with line endings normalized to '\n'.
-     */
-    //std::string getFileContents(const std::string& filePath) {
-    //    #if !USING_FSTREAM_DIRECTIVE
-    //    FILE* file = fopen(filePath.c_str(), "rb");
-    //    if (!file) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        logMessage("Failed to open file: " + filePath);
-    //        #endif
-    //        return "";
-    //    }
-    //
-    //    // Determine the file size
-    //    fseek(file, 0, SEEK_END);
-    //    long size = ftell(file);
-    //    if (size <= 0) {
-    //        fclose(file);
-    //        return "";
-    //    }
-    //    fseek(file, 0, SEEK_SET);
-    //
-    //    // Read the entire file into a string
-    //    std::string content(size, '\0');
-    //    if (fread(&content[0], 1, size, file) != static_cast<size_t>(size)) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        logMessage("Failed to read file: " + filePath);
-    //        #endif
-    //        fclose(file);
-    //        return "";
-    //    }
-    //
-    //    fclose(file);
-    //
-    //    #else
-    //    std::ifstream file(filePath, std::ios::binary);
-    //    if (!file) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        logMessage("Failed to open file: " + filePath);
-    //        #endif
-    //        return "";
-    //    }
-    //
-    //    // Determine the file size
-    //    file.seekg(0, std::ios::end);
-    //    std::streamsize size = file.tellg();
-    //    if (size <= 0) {
-    //        return "";
-    //    }
-    //    file.seekg(0, std::ios::beg);
-    //
-    //    // Read the entire file into a string
-    //    std::string content(size, '\0');
-    //    if (!file.read(&content[0], size)) {
-    //        #if USING_LOGGING_DIRECTIVE
-    //        logMessage("Failed to read file: " + filePath);
-    //        #endif
-    //        return "";
-    //    }
-    //    #endif
-    //
-    //    // Erase any carriage return characters (normalize line endings)
-    //    content.erase(std::remove(content.begin(), content.end(), '\r'), content.end());
-    //    return content;
-    //}
-
-    
-    
-    
-    /**
      * @brief Concatenates the provided directory and file names to form a destination path.
      *
      * @param destinationDir The directory where the file should be placed.
@@ -248,6 +176,22 @@ namespace ult {
     }
     
     
+    /**
+     * @brief Check if a directory entry is a directory (no caching).
+     * Fast path for known types, stat() only when necessary.
+     */
+    inline bool isEntryDirectory(struct dirent* entry, const std::string& path) {
+        // Fast path - most filesystems populate d_type correctly
+        if (entry->d_type == DT_DIR) {
+            return true;
+        } else if (entry->d_type != DT_UNKNOWN) {
+            return false;  // DT_REG, DT_LNK, etc.
+        }
+        
+        // Only stat when d_type is unknown (rare on modern filesystems)
+        struct stat entryStat;
+        return (stat(path.c_str(), &entryStat) == 0) && S_ISDIR(entryStat.st_mode);
+    }
     
     /**
      * @brief Gets a list of subdirectories in a directory.
@@ -270,7 +214,7 @@ namespace ult {
             
             const std::string fullPath = directoryPath + "/" + entryName;
             
-            if (isDirectory(entry, fullPath)) {
+            if (isEntryDirectory(entry, fullPath)) {
                 subdirectories.emplace_back(entryName);
             }
         }
@@ -278,22 +222,6 @@ namespace ult {
         return subdirectories;
     }
     
-    /**
-     * @brief Check if a directory entry is a directory (no caching).
-     * Fast path for known types, stat() only when necessary.
-     */
-    inline bool isDirectory(struct dirent* entry, const std::string& path) {
-        // Fast path - most filesystems populate d_type correctly
-        if (entry->d_type == DT_DIR) {
-            return true;
-        } else if (entry->d_type != DT_UNKNOWN) {
-            return false;  // DT_REG, DT_LNK, etc.
-        }
-        
-        // Only stat when d_type is unknown (rare on modern filesystems)
-        struct stat entryStat;
-        return (stat(path.c_str(), &entryStat) == 0) && S_ISDIR(entryStat.st_mode);
-    }
     
     
     /**
@@ -343,7 +271,7 @@ namespace ult {
                 if (entry->d_type == DT_REG) {
                     // Definitely a regular file
                     fileList.emplace_back(fullPath);
-                } else if (isDirectory(entry, fullPath)) {
+                } else if (isEntryDirectory(entry, fullPath)) {
                     // Add directory to processing queue
                     dirsToProcess.emplace_back(fullPath);
                 }
@@ -369,14 +297,10 @@ namespace ult {
         std::string fullPath;
         std::string result;
         std::string currentPath;
-        //fullPath.reserve(512);
-        //result.reserve(512);  
-        //currentPath.reserve(512);
 
         struct stat st;
         
         bool isDir;
-        //std::string pathRef;
         size_t currentPartIndex;
 
         while (!stack.empty()) {
@@ -384,9 +308,6 @@ namespace ult {
             
             std::tie(currentPath, currentPartIndex) = stack.back();
             stack.pop_back();
-            
-            // Copy once to avoid repeated access
-            //currentPath = pathRef;
             
             if (currentPartIndex >= parts.size()) continue;
     
@@ -397,9 +318,6 @@ namespace ult {
             const std::string& pattern = parts[currentPartIndex];
             const bool isLastPart = (currentPartIndex == parts.size() - 1);
             const bool needsSlash = currentPath.back() != '/';
-            
-            // Pre-calculate base path for efficiency
-            //const size_t basePathLen = currentPath.length();
     
             struct dirent* entry;
             while ((entry = readdir(dir.get())) != nullptr) {

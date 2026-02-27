@@ -329,7 +329,6 @@ namespace ult {
         
         cJSON_AddStringToObject(notif, "text", text.c_str());
         cJSON_AddNumberToObject(notif, "font_size", static_cast<double>(fontSize));
-        //cJSON_AddNumberToObject(notif, "arrival_ns", static_cast<double>(armTicksToNs(tick)));
         
         // Serialize JSON
         char* rendered = cJSON_PrintUnformatted(notif);
