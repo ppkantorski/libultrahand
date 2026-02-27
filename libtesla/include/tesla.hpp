@@ -252,7 +252,6 @@ namespace tsl {
     inline std::atomic<bool> clearGlyphCacheNow(false);
 
     // Constants
-    
     namespace cfg {
         
         constexpr u32 ScreenWidth = 1920;       ///< Width of the Screen
@@ -7858,7 +7857,6 @@ namespace tsl {
             
             // Override the layout method to set the dimensions to zero
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
-                //this->setBoundaries(parentX, parentY, 0, 0); // Zero size
                 this->setBoundaries(this->getX(), this->getY(), 0, 0);
             }
             
@@ -9835,7 +9833,6 @@ namespace tsl {
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
             
                 if ((keysHeld & KEY_R)) {
-                    //auto currentFocus = currentGui->getFocusedElement();
                     if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
                         this->shakeHighlight(FocusDirection::Up);
                     else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ~KEY_R & ALL_KEYS_MASK))
@@ -11111,7 +11108,6 @@ namespace tsl {
             }
         
             // Calculate and set the opacity using an easing function
-            //float opacity = calculateEaseInOut(static_cast<float>(this->m_animationCounter) / MAX_ANIMATION_COUNTER);
             gfx::Renderer::setOpacity(calculateEaseInOut(static_cast<float>(this->m_animationCounter) / MAX_ANIMATION_COUNTER));
         }
 
@@ -12489,107 +12485,107 @@ namespace tsl {
                                     if (notification && notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) {
                                         closedir(dir);
                                     } else {
-                                    
-                                    // Reuse existing variables - track best file as we scan
-                                    static std::string bestFilename;
-                                    static std::string bestFullPath;
-                                    static time_t bestCreationTime;
-                                    static int bestPriority;
-                                    
-                                    bestFilename.clear();
-                                    bestFullPath.clear();
-                                    bestPriority = -1;
-                                    bestCreationTime = 0;
-                                    bool foundAny = false;
-                                    
-                                    struct dirent* entry;
-                                    
-                                    // --- Find the best notification file in one pass ---
-                                    while ((entry = readdir(dir)) != nullptr) {
-                                        if (entry->d_type != DT_REG) continue;
                                         
-                                        const char* fname = entry->d_name;
-                                        const size_t filenameLen = strlen(fname);
+                                        // Reuse existing variables - track best file as we scan
+                                        static std::string bestFilename;
+                                        static std::string bestFullPath;
+                                        static time_t bestCreationTime;
+                                        static int bestPriority;
                                         
-                                        // Must end with ".notify"
-                                        if (filenameLen <= 7 || strcmp(fname + filenameLen - 7, ".notify") != 0)
-                                            continue;
+                                        bestFilename.clear();
+                                        bestFullPath.clear();
+                                        bestPriority = -1;
+                                        bestCreationTime = 0;
+                                        bool foundAny = false;
                                         
-                                        // Skip if already shown
-                                        if (std::find(shownFiles.begin(), shownFiles.end(), fname) != shownFiles.end())
-                                            continue;
+                                        struct dirent* entry;
                                         
-                                        // --- Build path ---
-                                        static std::string fullPath;
-                                        fullPath = notifPath;
-                                        fullPath += fname;
-                                        
-                                        // --- Get file creation/modification time ---
-                                        struct stat fileStat;
-                                        creationTime = 0;
-                                        if (stat(fullPath.c_str(), &fileStat) == 0) {
-                                            creationTime = fileStat.st_mtime;
-                                        }
-                                        
-                                        // --- Read priority from JSON ---
-                                        priority = 20; // default (reuse existing variable)
-                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                            ult::readJsonFromFile(fullPath), ult::JsonDeleter());
-                                        if (root) {
-                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                            cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(croot, "priority");
-                                            if (priorityObj && cJSON_IsNumber(priorityObj)) {
-                                                priority = static_cast<int>(priorityObj->valuedouble);
+                                        // --- Find the best notification file in one pass ---
+                                        while ((entry = readdir(dir)) != nullptr) {
+                                            if (entry->d_type != DT_REG) continue;
+                                            
+                                            const char* fname = entry->d_name;
+                                            const size_t filenameLen = strlen(fname);
+                                            
+                                            // Must end with ".notify"
+                                            if (filenameLen <= 7 || strcmp(fname + filenameLen - 7, ".notify") != 0)
+                                                continue;
+                                            
+                                            // Skip if already shown
+                                            if (std::find(shownFiles.begin(), shownFiles.end(), fname) != shownFiles.end())
+                                                continue;
+                                            
+                                            // --- Build path ---
+                                            static std::string fullPath;
+                                            fullPath = notifPath;
+                                            fullPath += fname;
+                                            
+                                            // --- Get file creation/modification time ---
+                                            struct stat fileStat;
+                                            creationTime = 0;
+                                            if (stat(fullPath.c_str(), &fileStat) == 0) {
+                                                creationTime = fileStat.st_mtime;
+                                            }
+                                            
+                                            // --- Read priority from JSON ---
+                                            priority = 20; // default (reuse existing variable)
+                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                                ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                            if (root) {
+                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                                cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(croot, "priority");
+                                                if (priorityObj && cJSON_IsNumber(priorityObj)) {
+                                                    priority = static_cast<int>(priorityObj->valuedouble);
+                                                }
+                                            }
+                                            
+                                            // --- Is this better than current best? ---
+                                            const bool isBetter = !foundAny || 
+                                                                  (priority > bestPriority) ||
+                                                                  (priority == bestPriority && creationTime < bestCreationTime);
+                                            
+                                            if (isBetter) {
+                                                bestFilename = fname;
+                                                bestFullPath = fullPath;
+                                                bestCreationTime = creationTime;
+                                                bestPriority = priority;
+                                                foundAny = true;
                                             }
                                         }
                                         
-                                        // --- Is this better than current best? ---
-                                        const bool isBetter = !foundAny || 
-                                                       (priority > bestPriority) ||
-                                                       (priority == bestPriority && creationTime < bestCreationTime);
+                                        closedir(dir);
                                         
-                                        if (isBetter) {
-                                            bestFilename = fname;
-                                            bestFullPath = fullPath;
-                                            bestCreationTime = creationTime;
-                                            bestPriority = priority;
-                                            foundAny = true;
-                                        }
-                                    }
-                                    
-                                    closedir(dir);
-                                    
-                                    // --- Process the best file ---
-                                    // Only dispatch if a slot is actually free; file stays on disk otherwise.
-                                    if (foundAny && notification && notification->activeCount() < NotificationPrompt::MAX_VISIBLE) {
-                                        std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                            ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
-                                        if (root) {
-                                            cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                    
-                                            const cJSON* textObj     = cJSON_GetObjectItemCaseSensitive(croot, "text");
-                                            const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(croot, "title");
-                                            const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-                                    
-                                            if (cJSON_IsString(textObj) && textObj->valuestring && textObj->valuestring[0] != '\0') {
-                                                text  = textObj->valuestring;
-                                                title = (cJSON_IsString(titleObj) && titleObj->valuestring)
-                                                      ? titleObj->valuestring : "";
-                                    
-                                                fontSize = (cJSON_IsNumber(fontSizeObj))
-                                                         ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
-                                                         : 28;
-                                    
-                                                if (notification)
-                                                    notification->show(text, fontSize, bestPriority, bestFilename, title, 3500);
-                                    
-                                                // Only mark shown after actually dispatching to show().
-                                                // If slots were full we never reach here, so the file
-                                                // will be rediscovered and retried next tick.
-                                                shownFiles.push_back(bestFilename);
+                                        // --- Process the best file ---
+                                        // Only dispatch if a slot is actually free; file stays on disk otherwise.
+                                        if (foundAny && notification && notification->activeCount() < NotificationPrompt::MAX_VISIBLE) {
+                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
+                                                ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
+                                            if (root) {
+                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+                                        
+                                                const cJSON* textObj     = cJSON_GetObjectItemCaseSensitive(croot, "text");
+                                                const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(croot, "title");
+                                                const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
+                                        
+                                                if (cJSON_IsString(textObj) && textObj->valuestring && textObj->valuestring[0] != '\0') {
+                                                    text  = textObj->valuestring;
+                                                    title = (cJSON_IsString(titleObj) && titleObj->valuestring)
+                                                          ? titleObj->valuestring : "";
+                                        
+                                                    fontSize = (cJSON_IsNumber(fontSizeObj))
+                                                             ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
+                                                             : 28;
+                                        
+                                                    if (notification)
+                                                        notification->show(text, fontSize, bestPriority, bestFilename, title, 4000);
+                                        
+                                                    // Only mark shown after actually dispatching to show().
+                                                    // If slots were full we never reach here, so the file
+                                                    // will be rediscovered and retried next tick.
+                                                    shownFiles.push_back(bestFilename);
+                                                }
                                             }
                                         }
-                                    }
                                     
                                     } // end activeCount < MAX_VISIBLE branch
                                     
