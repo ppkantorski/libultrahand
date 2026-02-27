@@ -10207,6 +10207,28 @@ namespace tsl {
             show(msg, fontSize, 0u, "", "", 2500, 448, 88, true);
         }
 
+        // Returns true if a slot is currently active with this exact filename.
+        // Called by the JSON poller instead of maintaining a shownFiles list —
+        // cost is always O(MAX_VISIBLE) regardless of how many .notify files exist.
+        [[nodiscard]] bool hasActiveFile(const std::string& fname) const {
+            if (fname.empty()) return false;
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            for (int i = 0; i < MAX_VISIBLE; ++i)
+                if (slots_[i].active && slots_[i].data.fileName == fname) return true;
+            return false;
+        }
+
+        // Overload accepting a raw C-string to avoid allocation in the hot scan loop.
+        [[nodiscard]] bool hasActiveFile(const char* fname) const {
+            if (!fname || fname[0] == '\0') return false;
+            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            for (int i = 0; i < MAX_VISIBLE; ++i)
+                if (slots_[i].active && slots_[i].data.fileName == fname) return true;
+            return false;
+        }
+
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
             if (ult::launchingOverlay.load(std::memory_order_acquire) ||
                 generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
@@ -10295,6 +10317,10 @@ namespace tsl {
                         break;
                     case PromptState::FadingOut:
                         if (elapsedMs >= FADE_DURATION_MS) {
+                            // Delete the file from disk. After this the poller's
+                            // hasActiveFile() check will stop suppressing it (moot,
+                            // since it is gone), and the slot is freed for the next
+                            // pending notification.
                             if (!slot.data.fileName.empty()) {
                                 std::lock_guard<std::mutex> fg(notificationJsonMutex);
                                 remove((ult::NOTIFICATIONS_PATH + slot.data.fileName).c_str());
@@ -10330,8 +10356,7 @@ namespace tsl {
         }
 
         // Returns the number of currently active (visible/fading) slots.
-        // Used by the JSON poller to avoid dispatching new notifications until
-        // all existing ones have cleared, preventing unbounded memory growth.
+        // Used by the JSON poller to avoid dispatching new notifications when full.
         [[nodiscard]] int activeCount() const {
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return 0;
             std::lock_guard<std::mutex> lg(state_mutex_);
@@ -10634,7 +10659,7 @@ namespace tsl {
     };
 
     static inline NotificationPrompt* notification = nullptr;
-    
+
 
     // GUI
     
@@ -12390,11 +12415,11 @@ namespace tsl {
 
             // Notification variables
             u64 lastNotifCheck = 0;
-            std::vector<std::string> shownFiles;
+            //std::vector<std::string> shownFiles;
             std::string text, title;
-            int fontSize;
-            int priority;
-            time_t creationTime;
+            //int fontSize;
+            //int priority;
+            //time_t creationTime;
 
             
             
@@ -12460,151 +12485,175 @@ namespace tsl {
                     // Process notification files every 300ms
                     {
                         std::lock_guard<std::mutex> jsonLock(notificationJsonMutex);
-                        
+
                         if (armTicksToNs(nowTick - lastNotifCheck) >= 300'000'000ULL) {
                             lastNotifCheck = nowTick;
-                            
+
                             DIR* dir = opendir(ult::NOTIFICATIONS_PATH.c_str());
                             if (dir) {
-                                
+
                                 if (ult::useNotifications) {
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
-                                    
-                                    // --- Prune missing files from shownFiles ---
-                                    for (auto it = shownFiles.begin(); it != shownFiles.end();) {
-                                        const std::string fullPath = notifPath + *it;
-                                        if (access(fullPath.c_str(), F_OK) != 0) {
-                                            it = shownFiles.erase(it);
-                                        } else {
-                                            ++it;
-                                        }
-                                    }
-                                    
-                                    // --- If all 3 slots are occupied, don't dispatch anything this tick.
-                                    //     Files stay on disk and will be picked up once a slot frees. ---
+
+                                    // If all slots are occupied don't dispatch anything this tick.
+                                    // Files stay on disk and will be picked up once a slot frees.
                                     if (notification && notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) {
                                         closedir(dir);
                                     } else {
-                                        
-                                        // Reuse existing variables - track best file as we scan
-                                        static std::string bestFilename;
-                                        static std::string bestFullPath;
-                                        static time_t bestCreationTime;
-                                        static int bestPriority;
-                                        
-                                        bestFilename.clear();
-                                        bestFullPath.clear();
-                                        bestPriority = -1;
-                                        bestCreationTime = 0;
-                                        bool foundAny = false;
-                                        
+
+                                        // ── Pass 1: stat-only scan ──────────────────────────────────────
+                                        // Collect every unshown .notify file's name and mtime.
+                                        // No JSON reads, no heap-accumulating shownFiles list.
+                                        // "Unshown" = not currently in an active slot (O(MAX_VISIBLE)
+                                        // check — always 3 comparisons, never grows).
+                                        //
+                                        // We do NOT cap the candidate list here. Capping by mtime
+                                        // before we know priorities would silently drop high-priority
+                                        // newer files and break dispatch order.
+
+                                        struct Candidate {
+                                            std::string  fname;
+                                            struct timespec mtime = {0, 0}; // nanosecond resolution
+                                        };
+                                        static std::vector<Candidate> candidates;
+                                        candidates.clear();
+
                                         struct dirent* entry;
-                                        
-                                        // --- Find the best notification file in one pass ---
                                         while ((entry = readdir(dir)) != nullptr) {
                                             if (entry->d_type != DT_REG) continue;
-                                            
-                                            const char* fname = entry->d_name;
-                                            const size_t filenameLen = strlen(fname);
-                                            
-                                            // Must end with ".notify"
-                                            if (filenameLen <= 7 || strcmp(fname + filenameLen - 7, ".notify") != 0)
+
+                                            const char*  fname = entry->d_name;
+                                            const size_t len   = strlen(fname);
+
+                                            // Must end with ".notify".
+                                            if (len <= 7 || strcmp(fname + len - 7, ".notify") != 0)
                                                 continue;
-                                            
-                                            // Skip if already shown
-                                            if (std::find(shownFiles.begin(), shownFiles.end(), fname) != shownFiles.end())
+
+                                            // Skip files already occupying an active slot.
+                                            // This replaces the old unbounded shownFiles vector.
+                                            if (notification && notification->hasActiveFile(fname))
                                                 continue;
-                                            
-                                            // --- Build path ---
+
+                                            // stat for mtime only — no file open/read yet.
                                             static std::string fullPath;
-                                            fullPath = notifPath;
+                                            fullPath  = notifPath;
                                             fullPath += fname;
-                                            
-                                            // --- Get file creation/modification time ---
+
                                             struct stat fileStat;
-                                            creationTime = 0;
-                                            if (stat(fullPath.c_str(), &fileStat) == 0) {
-                                                creationTime = fileStat.st_mtime;
-                                            }
-                                            
-                                            // --- Read priority from JSON ---
-                                            priority = 20; // default (reuse existing variable)
+                                            struct timespec mtime = {0, 0};
+                                            if (stat(fullPath.c_str(), &fileStat) == 0)
+                                                mtime = fileStat.st_mtim;
+
+                                            candidates.push_back({fname, mtime});
+                                        }
+                                        closedir(dir);
+
+                                        // ── Pass 2: JSON reads — one per candidate ──────────────────────
+                                        // Now that we have all candidates we can correctly evaluate
+                                        // (priority DESC, mtime ASC) across the full set.
+
+                                        static std::string   bestFilename;
+                                        static std::string   bestFullPath;
+                                        static struct timespec bestMtime;
+                                        static int           bestPriority;
+
+                                        bestFilename.clear();
+                                        bestFullPath.clear();
+                                        bestPriority    = -1;
+                                        bestMtime       = {0, 0};
+                                        bool foundAny   = false;
+
+                                        for (const Candidate& c : candidates) {
+                                            static std::string fullPath;
+                                            fullPath  = notifPath;
+                                            fullPath += c.fname;
+
+                                            int prio = 20; // default priority
                                             std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
                                                 ult::readJsonFromFile(fullPath), ult::JsonDeleter());
                                             if (root) {
                                                 cJSON* croot = reinterpret_cast<cJSON*>(root.get());
                                                 cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(croot, "priority");
-                                                if (priorityObj && cJSON_IsNumber(priorityObj)) {
-                                                    priority = static_cast<int>(priorityObj->valuedouble);
-                                                }
+                                                if (priorityObj && cJSON_IsNumber(priorityObj))
+                                                    prio = static_cast<int>(priorityObj->valuedouble);
                                             }
-                                            
-                                            // --- Is this better than current best? ---
-                                            const bool isBetter = !foundAny || 
-                                                                  (priority > bestPriority) ||
-                                                                  (priority == bestPriority && creationTime < bestCreationTime);
-                                            
+
+                                            // Older mtime = written earlier = should appear first.
+                                            // Compare seconds first, then nanoseconds as tiebreaker.
+                                            // This correctly orders files written within the same second.
+                                            const bool olderThanBest =
+                                                (c.mtime.tv_sec < bestMtime.tv_sec) ||
+                                                (c.mtime.tv_sec == bestMtime.tv_sec &&
+                                                 c.mtime.tv_nsec < bestMtime.tv_nsec);
+
+                                            const bool isBetter =
+                                                !foundAny ||
+                                                (prio > bestPriority) ||
+                                                (prio == bestPriority && olderThanBest);
+
                                             if (isBetter) {
-                                                bestFilename = fname;
+                                                bestFilename = c.fname;
                                                 bestFullPath = fullPath;
-                                                bestCreationTime = creationTime;
-                                                bestPriority = priority;
-                                                foundAny = true;
+                                                bestPriority = prio;
+                                                bestMtime    = c.mtime;
+                                                foundAny     = true;
                                             }
                                         }
-                                        
-                                        closedir(dir);
-                                        
-                                        // --- Process the best file ---
-                                        // Only dispatch if a slot is actually free; file stays on disk otherwise.
-                                        if (foundAny && notification && notification->activeCount() < NotificationPrompt::MAX_VISIBLE) {
+
+                                        // ── Dispatch the winner ─────────────────────────────────────────
+                                        if (foundAny &&
+                                            notification &&
+                                            notification->activeCount() < NotificationPrompt::MAX_VISIBLE) {
+
                                             std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
                                                 ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
                                             if (root) {
                                                 cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                        
+
                                                 const cJSON* textObj     = cJSON_GetObjectItemCaseSensitive(croot, "text");
                                                 const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(croot, "title");
                                                 const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-                                        
-                                                if (cJSON_IsString(textObj) && textObj->valuestring && textObj->valuestring[0] != '\0') {
-                                                    text  = textObj->valuestring;
-                                                    title = (cJSON_IsString(titleObj) && titleObj->valuestring)
-                                                          ? titleObj->valuestring : "";
-                                        
-                                                    fontSize = (cJSON_IsNumber(fontSizeObj))
-                                                             ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
-                                                             : 28;
-                                        
-                                                    if (notification)
-                                                        notification->show(text, fontSize, bestPriority, bestFilename, title, 4000);
-                                        
-                                                    // Only mark shown after actually dispatching to show().
-                                                    // If slots were full we never reach here, so the file
-                                                    // will be rediscovered and retried next tick.
-                                                    shownFiles.push_back(bestFilename);
+
+                                                if (cJSON_IsString(textObj) &&
+                                                    textObj->valuestring &&
+                                                    textObj->valuestring[0] != '\0') {
+
+                                                    const std::string text  = textObj->valuestring;
+                                                    const std::string title =
+                                                        (cJSON_IsString(titleObj) && titleObj->valuestring)
+                                                        ? titleObj->valuestring : "";
+
+                                                    const int fontSize =
+                                                        (cJSON_IsNumber(fontSizeObj))
+                                                        ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
+                                                        : 28;
+
+                                                    // show() places the entry in an active slot.
+                                                    // hasActiveFile() will suppress this filename on
+                                                    // future ticks until FadingOut deletes it from disk.
+                                                    notification->show(text, fontSize, bestPriority,
+                                                                       bestFilename, title, 4000);
                                                 }
                                             }
                                         }
-                                    
+
                                     } // end activeCount < MAX_VISIBLE branch
-                                    
+
                                 } else {
-                                    // --- Notifications disabled: delete all files ---
+                                    // Notifications disabled: delete all .notify files.
                                     struct dirent* entry;
                                     static std::string fullPath;
-                                    
+
                                     while ((entry = readdir(dir)) != nullptr) {
                                         if (entry->d_type != DT_REG) continue;
-                                        
-                                        const char* fname = entry->d_name;
-                                        const size_t len = strlen(fname);
-                                        
+
+                                        const char*  fname = entry->d_name;
+                                        const size_t len   = strlen(fname);
+
                                         if (len > 7 && strcmp(fname + len - 7, ".notify") == 0) {
                                             fullPath.clear();
                                             fullPath = ult::NOTIFICATIONS_PATH;
                                             fullPath.append(fname, len);
-                                            
                                             remove(fullPath.c_str());
                                         }
                                     }
