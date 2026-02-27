@@ -187,6 +187,7 @@ inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> triggerNotificationSound{false};
 inline std::atomic<bool> disableSound{false};
+inline std::atomic<bool> disableHaptics{false};
 inline std::atomic<bool> reloadIfDockedChangedNow{false};
 inline std::atomic<bool> reloadSoundCacheNow{false};
 
@@ -4578,7 +4579,7 @@ namespace tsl {
                 
             #if IS_LAUNCHER_DIRECTIVE
                 // Handle optional next page button when in launcher mode and appropriate conditions are met
-                const bool hasNextPage = !interpreterIsRunningNow && (ult::inMainMenu.load(std::memory_order_acquire) ||
+                const bool hasNextPage = !interpreterIsRunningNow && ((ult::inMainMenu.load(std::memory_order_acquire) && ((m_menuMode == ult::OVERLAYS_STR) || (m_menuMode == ult::PACKAGES_STR))) ||
                                          !m_pageLeftName.empty() || !m_pageRightName.empty());
                 
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
@@ -10113,7 +10114,7 @@ namespace tsl {
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
                   u32 durationMs = 2500, s32 promptWidth = 448, s32 promptHeight = 88,
-                  bool immediately = false) {
+                  bool immediately = false, bool resume = false) {
             if (msg.empty()) return;
             if (!enabled_.load(std::memory_order_acquire)) return;
             if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
@@ -10185,7 +10186,7 @@ namespace tsl {
                 for (int i = 0; i < MAX_VISIBLE; ++i)
                     if (!slots_[i].active) { freeSlot = i; break; }
                 if (freeSlot >= 0) {
-                    placeInSlot_NoLock(freeSlot, std::move(data), false, false);
+                    placeInSlot_NoLock(freeSlot, std::move(data), false, resume, resume);
                 } else {
                     if (pending_queue_.size() < MAX_NOTIFS)
                         pending_queue_.push(std::move(data));
@@ -10423,15 +10424,30 @@ namespace tsl {
 
         void clearSlot_NoLock(int i) { slots_[i] = Slot{}; }
 
-        // Sum of promptHeights of all active slots above idx.
+        // Returns the actual rendered height of a slot, accounting for multi-line
+        // message expansion in title+icon notifications.
+        s32 getEffectiveHeight(const Slot& slot) const {
+            s32 h = slot.data.promptHeight;
+            if (!slot.data.text.empty() && !slot.data.title.empty() &&
+                (slot.data.hasIcon || slot.data.iconPending)) {
+                const Lines lines = splitLines(slot.data.text, 4);
+                if (lines.count > 1) {
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
+                    h += static_cast<s32>(lines.count - 1) * fm.lineHeight;
+                }
+            }
+            return h;
+        }
+
+        // Sum of effective heights of all active slots above idx.
         float computeTargetY_NoLock(int idx) const {
             float y = 0.f;
             for (int i = 0; i < idx; ++i)
-                if (slots_[i].active) y += static_cast<float>(slots_[i].data.promptHeight);
+                if (slots_[i].active) y += static_cast<float>(getEffectiveHeight(slots_[i]));
             return y;
         }
 
-        void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow, bool skipFadeIn) {
+        void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow, bool skipFadeIn, bool suppressSound = false) {
             const u64   now = armTicksToNs(armGetSystemTick());
             const float ty  = computeTargetY_NoLock(idx);
             Slot& slot      = slots_[idx];
@@ -10449,7 +10465,7 @@ namespace tsl {
             slot.yTarget           = ty;
             slot.yCurrent          = ty;
             slot.sliding           = false;
-            triggerNotificationSound.store(true, std::memory_order_release);
+            if (!suppressSound) triggerNotificationSound.store(true, std::memory_order_release);
         }
 
         // Compact active slots: showNow first, then regular in order.
@@ -10485,7 +10501,7 @@ namespace tsl {
                     packed[i].sliding      = true;
                 }
                 slots_[i] = std::move(packed[i]);
-                y += static_cast<float>(slots_[i].data.promptHeight);
+                y += static_cast<float>(getEffectiveHeight(slots_[i]));
             }
         }
 
@@ -10499,43 +10515,59 @@ namespace tsl {
             const s32 x = ult::useRightAlignment
                 ? (tsl::cfg::FramebufferWidth - slot.data.promptWidth) : 0;
 
+            // Compute effective height: for title+icon notifications with multi-line messages,
+            // extend the base height by the extra lines so the gap below stays consistent.
+            s32 effectiveHeight = slot.data.promptHeight;
+            if (!slot.data.text.empty() && !slot.data.title.empty() &&
+                (slot.data.hasIcon || slot.data.iconPending)) {
+                const Lines preLines = splitLines(slot.data.text, 4);
+                if (preLines.count > 1) {
+                    const auto msgFmPre = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
+                    effectiveHeight = slot.data.promptHeight + static_cast<s32>(preLines.count - 1) * msgFmPre.lineHeight;
+                }
+            }
+
             // Clip each slot to its own vertical band so slides never bleed into neighbours.
             renderer->enableScissoring(static_cast<u32>(std::max(0, x)),
                                        static_cast<u32>(std::max(0, baseY)),
                                        static_cast<u32>(slot.data.promptWidth),
-                                       static_cast<u32>(slot.data.promptHeight));
+                                       static_cast<u32>(effectiveHeight));
 
             #if IS_STATUS_MONITOR_DIRECTIVE
-                renderer->drawRect(x, baseY, slot.data.promptWidth, slot.data.promptHeight,
+                renderer->drawRect(x, baseY, slot.data.promptWidth, effectiveHeight,
                                    fc(defaultBackgroundColor));
             #else
                 if (!promptOnly && ult::expandedMemory)
                     renderer->drawRectMultiThreaded(x, baseY, slot.data.promptWidth,
-                                                    slot.data.promptHeight, fc(defaultBackgroundColor));
+                                                    effectiveHeight, fc(defaultBackgroundColor));
                 else
-                    renderer->drawRect(x, baseY, slot.data.promptWidth, slot.data.promptHeight,
+                    renderer->drawRect(x, baseY, slot.data.promptWidth, effectiveHeight,
                                        fc(defaultBackgroundColor));
             #endif
 
-            const s32 iconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
+            // baseIconPad governs horizontal layout (column width) — always based on the
+            // base promptHeight so the icon column never shifts as the notification grows.
+            // iconVertPad governs vertical placement — centers the icon in effectiveHeight.
+            const s32 baseIconPad  = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
+            const s32 iconVertPad  = (effectiveHeight - NOTIF_ICON_DIM) / 2;
             s32 textAreaX = x;
             s32 textAreaW = slot.data.promptWidth;
 
             if ((slot.data.hasIcon && slot.iconLoaded) || slot.data.iconPending) {
-                const s32 colWidth = iconPad + NOTIF_ICON_DIM + iconPad;
+                const s32 colWidth = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
                 textAreaX = x + colWidth;
                 textAreaW = slot.data.promptWidth - colWidth;
 
                 if (slot.data.hasIcon && slot.iconLoaded) {
-                    const s32 dstX = x + iconPad;
+                    const s32 dstX = x + baseIconPad;
                     s32 drawH = NOTIF_ICON_DIM;
                     if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
                         drawH = 0;
-                    if (iconPad + baseY + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
-                        drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconPad - baseY;
+                    if (iconVertPad + baseY + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
+                        drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconVertPad - baseY;
                     if (drawH > 0)
                         renderer->drawBitmapRGBA4444(
-                            static_cast<u32>(dstX), static_cast<u32>(iconPad + baseY),
+                            static_cast<u32>(dstX), static_cast<u32>(iconVertPad + baseY),
                             static_cast<u32>(NOTIF_ICON_DIM), static_cast<u32>(drawH),
                             slot.iconBuf, fadeAlpha);
                 }
@@ -10545,10 +10577,11 @@ namespace tsl {
                 if (!slot.data.title.empty() && (slot.data.hasIcon || slot.data.iconPending)) {
                     const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
                     const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
-                    const s32 innerW     = textAreaW - iconPad - 2;
+                    const s32 innerW     = textAreaW - baseIconPad - 2;
                     static constexpr s32 LINE_GAP = 4;
-                    const s32 blockH   = titleFm.lineHeight + LINE_GAP + messageFm.lineHeight;
-                    const s32 originY  = (slot.data.promptHeight - blockH) / 2 + baseY;
+                    const Lines lines  = splitLines(slot.data.text, 4);
+                    const s32 blockH   = titleFm.lineHeight + LINE_GAP + static_cast<s32>(lines.count) * messageFm.lineHeight;
+                    const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
                     const s32 titleY   = originY + titleFm.ascent - 3;
                     const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1;
 
@@ -10572,7 +10605,6 @@ namespace tsl {
                                 tsX, titleY, TITLE_FONT, fc(notificationTextColor));
                     }
 
-                    const Lines lines = splitLines(slot.data.text, 4);
                     for (s32 li = 0; li < static_cast<s32>(lines.count); ++li)
                         renderer->drawNotificationString(lines[li], false, textAreaX,
                             messageY + li * messageFm.lineHeight,
@@ -10615,12 +10647,12 @@ namespace tsl {
 
             if (!ult::useRightAlignment) {
                 renderer->drawRect(x + slot.data.promptWidth - 1, baseY,
-                                   1, slot.data.promptHeight, fc(edgeSeparatorColor));
-                renderer->drawRect(x, baseY + slot.data.promptHeight - 1,
+                                   1, effectiveHeight, fc(edgeSeparatorColor));
+                renderer->drawRect(x, baseY + effectiveHeight - 1,
                                    slot.data.promptWidth, 1, fc(edgeSeparatorColor));
             } else {
-                renderer->drawRect(x, baseY, 1, slot.data.promptHeight, fc(edgeSeparatorColor));
-                renderer->drawRect(x, baseY + slot.data.promptHeight - 1,
+                renderer->drawRect(x, baseY, 1, effectiveHeight, fc(edgeSeparatorColor));
+                renderer->drawRect(x, baseY + effectiveHeight - 1,
                                    slot.data.promptWidth, 1, fc(edgeSeparatorColor));
             }
             renderer->disableScissoring();
@@ -12415,20 +12447,12 @@ namespace tsl {
 
             // Notification variables
             u64 lastNotifCheck = 0;
-            //std::vector<std::string> shownFiles;
             std::string text, title;
-            //int fontSize;
-            //int priority;
-            //time_t creationTime;
-
-            
             
             while (shData->running.load(std::memory_order_acquire)) {
 
                 u64 nowTick = armGetSystemTick();
                 u64 nowNs = armTicksToNs(nowTick);
-                
-                
                 
                 // Scan for input changes from both controllers
                 padUpdate(&pad_p1);
@@ -12493,49 +12517,54 @@ namespace tsl {
                             if (dir) {
 
                                 if (ult::useNotifications) {
+                                    static u32 seenGeneration = UINT32_MAX;
+                                    const u32 curGen = notificationGeneration.load(std::memory_order_acquire);
+                                    const bool firstPoll = (seenGeneration != curGen);
+                                    if (firstPoll) seenGeneration = curGen;
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
 
-                                    // If all slots are occupied don't dispatch anything this tick.
-                                    // Files stay on disk and will be picked up once a slot frees.
-                                    if (notification && notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) {
+                                    if (!firstPoll && notification && notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) {
                                         closedir(dir);
                                     } else {
 
-                                        // ── Pass 1: stat-only scan ──────────────────────────────────────
-                                        // Collect every unshown .notify file's name and mtime.
-                                        // No JSON reads, no heap-accumulating shownFiles list.
-                                        // "Unshown" = not currently in an active slot (O(MAX_VISIBLE)
-                                        // check — always 3 comparisons, never grows).
-                                        //
-                                        // We do NOT cap the candidate list here. Capping by mtime
-                                        // before we know priorities would silently drop high-priority
-                                        // newer files and break dispatch order.
-
-                                        struct Candidate {
-                                            std::string  fname;
-                                            struct timespec mtime = {0, 0}; // nanosecond resolution
+                                        // ── Single-pass: stat + JSON read + top-N insertion ─────────────
+                                        // No candidates vector — filenames never heap-copied unless they
+                                        // beat the current worst slot. Safe on small heap threads.
+                                        struct NotifData {
+                                            std::string fname, text, title;
+                                            struct timespec mtime;
+                                            int priority, fontSize;
                                         };
-                                        static std::vector<Candidate> candidates;
-                                        candidates.clear();
+                                        static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
+                                        static int topCount = 0;
+                                        topCount = 0;
 
+                                        const int activeNow   = notification ? notification->activeCount() : 0;
+                                        const int slotsWanted = firstPoll
+                                            ? (NotificationPrompt::MAX_VISIBLE - activeNow)
+                                            : 1;
+
+                                        auto isBetter = [](const NotifData& a, const NotifData& b) noexcept {
+                                            if (a.priority != b.priority) return a.priority > b.priority;
+                                            if (a.mtime.tv_sec  != b.mtime.tv_sec)  return a.mtime.tv_sec  < b.mtime.tv_sec;
+                                            return a.mtime.tv_nsec < b.mtime.tv_nsec;
+                                        };
+
+                                        static std::string fullPath;
                                         struct dirent* entry;
+
                                         while ((entry = readdir(dir)) != nullptr) {
                                             if (entry->d_type != DT_REG) continue;
 
                                             const char*  fname = entry->d_name;
                                             const size_t len   = strlen(fname);
 
-                                            // Must end with ".notify".
                                             if (len <= 7 || strcmp(fname + len - 7, ".notify") != 0)
                                                 continue;
 
-                                            // Skip files already occupying an active slot.
-                                            // This replaces the old unbounded shownFiles vector.
                                             if (notification && notification->hasActiveFile(fname))
                                                 continue;
 
-                                            // stat for mtime only — no file open/read yet.
-                                            static std::string fullPath;
                                             fullPath  = notifPath;
                                             fullPath += fname;
 
@@ -12544,100 +12573,64 @@ namespace tsl {
                                             if (stat(fullPath.c_str(), &fileStat) == 0)
                                                 mtime = fileStat.st_mtim;
 
-                                            candidates.push_back({fname, mtime});
+                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> r(
+                                                ult::readJsonFromFile(fullPath), ult::JsonDeleter());
+                                            if (!r) continue;
+
+                                            cJSON* cr = reinterpret_cast<cJSON*>(r.get());
+
+                                            const cJSON* textObj = cJSON_GetObjectItemCaseSensitive(cr, "text");
+                                            if (!cJSON_IsString(textObj) || !textObj->valuestring || !textObj->valuestring[0])
+                                                continue;
+
+                                            const cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(cr, "priority");
+
+                                            NotifData nd;
+                                            nd.priority = cJSON_IsNumber(priorityObj) ? (int)priorityObj->valuedouble : 20;
+                                            nd.mtime    = mtime;
+
+                                            // Prune before copying strings — skip heap allocs for non-qualifiers.
+                                            if (topCount == slotsWanted) {
+                                                if (!isBetter(nd, topSlots[topCount - 1])) continue;
+                                            }
+
+                                            const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(cr, "title");
+                                            const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(cr, "font_size");
+
+                                            nd.fname    = fname;
+                                            nd.text     = textObj->valuestring;
+                                            nd.title    = (cJSON_IsString(titleObj) && titleObj->valuestring) ? titleObj->valuestring : "";
+                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 28;
+
+                                            int pos = topCount;
+                                            while (pos > 0 && isBetter(nd, topSlots[pos - 1])) --pos;
+
+                                            if (pos < slotsWanted) {
+                                                if (topCount < slotsWanted) ++topCount;
+                                                for (int i = topCount - 1; i > pos; --i)
+                                                    topSlots[i] = std::move(topSlots[i - 1]);
+                                                topSlots[pos] = std::move(nd);
+                                            }
                                         }
                                         closedir(dir);
 
-                                        // ── Pass 2: JSON reads — one per candidate ──────────────────────
-                                        // Now that we have all candidates we can correctly evaluate
-                                        // (priority DESC, mtime ASC) across the full set.
-
-                                        static std::string   bestFilename;
-                                        static std::string   bestFullPath;
-                                        static struct timespec bestMtime;
-                                        static int           bestPriority;
-
-                                        bestFilename.clear();
-                                        bestFullPath.clear();
-                                        bestPriority    = -1;
-                                        bestMtime       = {0, 0};
-                                        bool foundAny   = false;
-
-                                        for (const Candidate& c : candidates) {
-                                            static std::string fullPath;
-                                            fullPath  = notifPath;
-                                            fullPath += c.fname;
-
-                                            int prio = 20; // default priority
-                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                                ult::readJsonFromFile(fullPath), ult::JsonDeleter());
-                                            if (root) {
-                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-                                                cJSON* priorityObj = cJSON_GetObjectItemCaseSensitive(croot, "priority");
-                                                if (priorityObj && cJSON_IsNumber(priorityObj))
-                                                    prio = static_cast<int>(priorityObj->valuedouble);
-                                            }
-
-                                            // Older mtime = written earlier = should appear first.
-                                            // Compare seconds first, then nanoseconds as tiebreaker.
-                                            // This correctly orders files written within the same second.
-                                            const bool olderThanBest =
-                                                (c.mtime.tv_sec < bestMtime.tv_sec) ||
-                                                (c.mtime.tv_sec == bestMtime.tv_sec &&
-                                                 c.mtime.tv_nsec < bestMtime.tv_nsec);
-
-                                            const bool isBetter =
-                                                !foundAny ||
-                                                (prio > bestPriority) ||
-                                                (prio == bestPriority && olderThanBest);
-
-                                            if (isBetter) {
-                                                bestFilename = c.fname;
-                                                bestFullPath = fullPath;
-                                                bestPriority = prio;
-                                                bestMtime    = c.mtime;
-                                                foundAny     = true;
+                                        // ── Dispatch ────────────────────────────────────────────────────
+                                        if (notification) {
+                                            for (int i = 0; i < topCount; ++i) {
+                                                if (notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) break;
+                                                const NotifData& nd = topSlots[i];
+                                                // Resume: stagger expiry so earlier slots fade first.
+                                                // Slot 0 of N loses (N-1) seconds, slot 1 loses (N-2), …, last loses 0.
+                                                const u32 duration = (firstPoll && topCount > 1)
+                                                    ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 1000))
+                                                    : 4000u;
+                                                notification->show(nd.text, nd.fontSize, nd.priority,
+                                                                   nd.fname, nd.title, duration,
+                                                                   448, 88, false, firstPoll /*resume*/);
                                             }
                                         }
 
-                                        // ── Dispatch the winner ─────────────────────────────────────────
-                                        if (foundAny &&
-                                            notification &&
-                                            notification->activeCount() < NotificationPrompt::MAX_VISIBLE) {
-
-                                            std::unique_ptr<ult::json_t, ult::JsonDeleter> root(
-                                                ult::readJsonFromFile(bestFullPath), ult::JsonDeleter());
-                                            if (root) {
-                                                cJSON* croot = reinterpret_cast<cJSON*>(root.get());
-
-                                                const cJSON* textObj     = cJSON_GetObjectItemCaseSensitive(croot, "text");
-                                                const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(croot, "title");
-                                                const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(croot, "font_size");
-
-                                                if (cJSON_IsString(textObj) &&
-                                                    textObj->valuestring &&
-                                                    textObj->valuestring[0] != '\0') {
-
-                                                    const std::string text  = textObj->valuestring;
-                                                    const std::string title =
-                                                        (cJSON_IsString(titleObj) && titleObj->valuestring)
-                                                        ? titleObj->valuestring : "";
-
-                                                    const int fontSize =
-                                                        (cJSON_IsNumber(fontSizeObj))
-                                                        ? std::clamp(static_cast<int>(fontSizeObj->valuedouble), 1, 34)
-                                                        : 28;
-
-                                                    // show() places the entry in an active slot.
-                                                    // hasActiveFile() will suppress this filename on
-                                                    // future ticks until FadingOut deletes it from disk.
-                                                    notification->show(text, fontSize, bestPriority,
-                                                                       bestFilename, title, 4000);
-                                                }
-                                            }
-                                        }
-
-                                    } // end activeCount < MAX_VISIBLE branch
+                                    } // end dispatch branch
 
                                 } else {
                                     // Notifications disabled: delete all .notify files.
@@ -13073,7 +13066,7 @@ namespace tsl {
                 const u64 nowNs = armTicksToNs(armGetSystemTick());
         
                 // --- Haptics ---
-                if (ult::useHapticFeedback) {
+                if (ult::useHapticFeedback && !disableHaptics.load(std::memory_order_acquire)) {
                     if (triggerInitHaptics.exchange(false, std::memory_order_acq_rel)) {
                         ult::initHaptics();
                     } else {
