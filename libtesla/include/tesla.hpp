@@ -5850,9 +5850,7 @@ namespace tsl {
                 static bool triggerOnce = true;
                 // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
                 if (currentlyAtWall && !m_scrollbarAtWall && !s_directionalKeyReleased.load(std::memory_order_acquire)) {
-                    //m_scrollbarAtWall = true;
                     m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
-                    //m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
 
                     if (triggerOnce) {
                         // NEW: Trigger wall effect here based on scroll position
@@ -6989,7 +6987,6 @@ namespace tsl {
                 // For middle items, use centering logic
                 const float itemCenterPos = itemPos + (itemHeight / 2.0f);
                 const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f; // add slight offset
-                //float idealOffset = itemCenterPos - viewportCenter;
                 
                 // Clamp to valid scroll bounds
                 const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
@@ -7269,7 +7266,6 @@ namespace tsl {
             
             inline void resetTouchHold() {
                 m_flags.m_isTouchHolding = false;
-                //m_touchHoldStartTick = 0;
             }
 
             
@@ -10890,8 +10886,6 @@ namespace tsl {
             // reinitialize audio for changes from handheld to docked and vise versa
             if (!ult::limitedMemory && ult::useSoundEffects)
                 reloadIfDockedChangedNow.store(true, std::memory_order_release);
-                //ult::Audio::reloadIfDockedChanged();
-
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -13098,7 +13092,7 @@ namespace tsl {
                     }
                 }
         
-                svcSleepThread(8'000'000ULL);
+                svcSleepThread(16'000'000ULL);
             }
         }
     }
