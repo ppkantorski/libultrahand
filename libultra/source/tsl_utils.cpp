@@ -197,11 +197,8 @@ namespace ult {
     
     std::string lastTitleID;
     std::atomic<bool> resetForegroundCheck(false); // initialize as true
-
-
-    
-
     std::atomic<bool> internalTouchReleased(true);
+    
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
@@ -754,17 +751,13 @@ namespace ult {
 
 
     // --- reinitializeLangVars: just a loop now ---
-
-    //#if IS_LAUNCHER_DIRECTIVE
     void reinitializeLangVars() {
         for (size_t i = 0; i < LANG_TABLE_SIZE; ++i)
             *LANG_TABLE[i].var = LANG_TABLE[i].defaultVal;
     }
-    //#endif
 
 
     // --- parseLanguage: same loop, different source ---
-
     void parseLanguage(const std::string& langFile) {
         std::unordered_map<std::string, std::string> jsonMap;
         if (!parseJsonToMap(langFile, jsonMap)) {
@@ -781,7 +774,6 @@ namespace ult {
 
 
     // --- localizeTimeStr and applyLangReplacements unchanged ---
-
     #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr) {
         static const struct { const char* key; std::string* val; } mappings[] = {

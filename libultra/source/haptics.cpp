@@ -99,10 +99,6 @@ namespace ult {
         cachedHandheldStyle = handheldStyle;
         cachedPlayer1Style  = player1Style;
     }
-        
-    //void deinitHaptics() {
-    //    rumbleInitialized = false;
-    //}
     
     void checkAndReinitHaptics() {
         static u32 lastHandheldStyle = 0;

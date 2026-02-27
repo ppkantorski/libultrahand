@@ -143,8 +143,7 @@ namespace ult {
         // Iterate over each character in the hexadecimal string
         for (size_t i = 0; i < len; ++i) {
             hexChar = hexStr[i];
-            //int value;
-    
+            
             // Convert hex character to its decimal value
             if (hexChar >= '0' && hexChar <= '9') {
                 value = hexChar - '0';
@@ -154,7 +153,6 @@ namespace ult {
                 value = 10 + (hexChar - 'a');
             } else {
                 break;
-                //throw std::invalid_argument("Invalid hexadecimal character");
             }
     
             // Update the decimal value
