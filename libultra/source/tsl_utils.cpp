@@ -198,7 +198,7 @@ namespace ult {
     std::string lastTitleID;
     std::atomic<bool> resetForegroundCheck(false); // initialize as true
     std::atomic<bool> internalTouchReleased(true);
-    
+
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
@@ -404,6 +404,7 @@ namespace ult {
     std::string MISCELLANEOUS;
     std::string MENU_SETTINGS;
     std::string USER_GUIDE;
+    std::string SHOW_PACKAGES;
     std::string SHOW_HIDDEN;
     std::string SHOW_DELETE;
     std::string SHOW_UNSUPPORTED;
@@ -604,6 +605,7 @@ namespace ult {
         {&MISCELLANEOUS,              "MISCELLANEOUS",              "Miscellaneous"},
         {&MENU_SETTINGS,              "MENU_SETTINGS",              "Menu Settings"},
         {&USER_GUIDE,                 "USER_GUIDE",                 "User Guide"},
+        {&SHOW_PACKAGES,              "SHOW_PACKAGES",              "Show Packages"},
         {&SHOW_HIDDEN,                "SHOW_HIDDEN",                "Show Hidden"},
         {&SHOW_DELETE,                "SHOW_DELETE",                "Show Delete"},
         {&SHOW_UNSUPPORTED,           "SHOW_UNSUPPORTED",           "Show Unsupported"},

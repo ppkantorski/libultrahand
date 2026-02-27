@@ -313,6 +313,7 @@ namespace ult {
     extern std::string MISCELLANEOUS;
     extern std::string MENU_SETTINGS;
     extern std::string USER_GUIDE;
+    extern std::string SHOW_PACKAGES;
     extern std::string SHOW_HIDDEN;
     extern std::string SHOW_DELETE;
     extern std::string SHOW_UNSUPPORTED;
