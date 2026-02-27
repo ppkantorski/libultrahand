@@ -507,7 +507,6 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // Single large buffer for extraction - reused for all files
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
-    //std::unique_ptr<char[]> buffer = std::make_unique<char[]>(bufferSize);
     
     std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(bufferSize);
 

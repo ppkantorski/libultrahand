@@ -919,7 +919,6 @@ namespace ult {
         return "";
     }
     
-    //bool isNumericCharacter(char c) { return std::isdigit(c); }
     
     bool isValidHexColor(const std::string& s) {
         if (s.size() != 6) return false;

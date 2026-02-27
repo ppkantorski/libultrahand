@@ -479,9 +479,6 @@ namespace ult {
     void reinitializeLangVars();
     
     
-    // Define the updateIfNotEmpty function
-    //void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
-    
     void parseLanguage(const std::string& langFile);
     
     #if USING_WIDGET_DIRECTIVE
@@ -493,7 +490,6 @@ namespace ult {
     
     
     // Predefined hexMap
-    //extern const std::array<int, 256> hexMap;
     inline constexpr std::array<int, 256> hexMap = [] {
         std::array<int, 256> map = {0};
         map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
@@ -510,7 +506,6 @@ namespace ult {
     extern const size_t defaultThemeSettingsCount;
     const char* getThemeDefault(const char* key);
     
-    //bool isNumericCharacter(char c);
     bool isValidHexColor(const std::string& hexColor);
             
     

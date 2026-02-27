@@ -267,7 +267,7 @@ namespace tsl {
         extern u16 FramebufferWidth;            ///< Width of the framebuffer
         extern u16 FramebufferHeight;           ///< Height of the framebuffer
         extern u64 launchCombo;                 ///< Overlay activation key combo
-        extern u64 launchCombo2;                 ///< Overlay activation key combo
+        extern u64 launchCombo2;                ///< Overlay activation key combo
         
     }
     
@@ -3836,7 +3836,6 @@ namespace tsl {
                 
                 // Only recalculate progress if enough time has passed (reduce computation frequency)
                 if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
-                    //double time_seconds = currentTime_ns / 1000000000.0;
                     cachedProgress = (ult::cos(2.0 * ult::_M_PI * std::fmod(currentTime_ns / 1000000000.0 - 0.25, 1.0)) + 1.0) / 2.0;
                     lastTimeUpdate = currentTime_ns;
                 }
@@ -4086,7 +4085,6 @@ namespace tsl {
              * @return true if coordinates are in bounds, false otherwise
              */
             bool inBounds(s32 touchX, s32 touchY) {
-                //static u32 ult::layerEdge = cfg::LayerPosX == 0 ? 0 : (1280-448);
                 return touchX >= this->getLeftBound() + int(ult::layerEdge) && touchX <= this->getRightBound() + int(ult::layerEdge) && touchY >= this->getTopBound() && touchY <= this->getBottomBound();
             }
             
@@ -4264,7 +4262,6 @@ namespace tsl {
                     
                     const std::string letterStr(1, letter);
                     if (useNotificationMethod) {
-                        //const auto [letterWidth, letterHeight] = renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor);
                         currentX += renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor).first;
                     } else {
                         currentX += renderer->drawString(letterStr, false, currentX, y, fontSize, highlightColor).first;
@@ -5848,6 +5845,7 @@ namespace tsl {
                                               (m_stoppedAtBoundary || m_justArrivedAtBoundary);
                 
                 static bool triggerOnce = true;
+
                 // Detect transition from "not at wall" to "at wall" - trigger flash ONCE
                 if (currentlyAtWall && !m_scrollbarAtWall && !s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
