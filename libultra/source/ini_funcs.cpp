@@ -67,7 +67,8 @@ namespace ult {
             return packageHeader;
         }
         
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         std::string line;
     
         // Create field map once outside the loop
@@ -90,7 +91,7 @@ namespace ult {
         std::string value;
 
         size_t len;
-        while (fgets(buffer, sizeof(buffer), file) && fieldsFound < totalFields) {
+        while (fgets(buffer, 1024, file) && fieldsFound < totalFields) {
             // Reuse line string capacity instead of creating new string
             line.assign(buffer);
             
@@ -295,24 +296,23 @@ namespace ult {
             return parsedData;
         }
         
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         std::string key, value;
         key.reserve(64);
         value.reserve(256);
         
         std::map<std::string, std::string>* currentSectionMap = nullptr;
         
-        while (fgets(buffer, sizeof(buffer), file)) {
+        while (fgets(buffer, 1024, file)) {
             size_t len = strlen(buffer);
             
-            // Strip trailing newline/carriage return
             if (len > 0 && buffer[len-1] == '\n') {
                 if (--len > 0 && buffer[len-1] == '\r') --len;
             }
             
             if (len == 0) continue;
             
-            // Trim whitespace
             const char* start = buffer;
             const char* end = buffer + len;
             
@@ -321,23 +321,19 @@ namespace ult {
             
             if (start >= end) continue;
             
-            // Section header
             if (*start == '[' && end[-1] == ']') {
                 if (end - start > 2) {
                     currentSectionMap = &parsedData[std::string(start + 1, end - 1)];
                 }
             } else if (currentSectionMap) {
-                // Find '=' delimiter
                 const char* eq = start;
                 while (eq < end && *eq != '=') ++eq;
                 
                 if (eq < end) {
-                    // Trim key
                     const char* key_end = eq;
                     while (key_end > start && (key_end[-1] == ' ' || key_end[-1] == '\t')) --key_end;
                     
                     if (key_end > start) {
-                        // Trim value
                         const char* val_start = eq + 1;
                         while (val_start < end && (*val_start == ' ' || *val_start == '\t')) ++val_start;
                         
@@ -381,7 +377,8 @@ namespace ult {
             return sectionData;
         }
         
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         std::string line;
         line.reserve(256);
         
@@ -392,7 +389,7 @@ namespace ult {
         bool inTargetSection = false;
         size_t len, delimiterPos;
     
-        while (fgets(buffer, sizeof(buffer), file)) {
+        while (fgets(buffer, 1024, file)) {
             // Remove newline characters
             len = strlen(buffer);
             if (len > 0 && buffer[len-1] == '\n') {
@@ -456,13 +453,14 @@ namespace ult {
             return sections;
         }
     
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         std::string line;
         //line.reserve(1024); // Add reservation for efficiency
         
         size_t len;
         std::string sectionName;
-        while (fgets(buffer, sizeof(buffer), file)) {
+        while (fgets(buffer, 1024, file)) {
             // CRITICAL FIX: Remove newlines from fgets
             len = strlen(buffer);
             if (len > 0 && buffer[len-1] == '\n') {
@@ -511,11 +509,12 @@ namespace ult {
         if (!file) {
             return value;
         }
-    
-        char buffer[1024];
+        
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         bool inTargetSection = false;
         
-        while (fgets(buffer, sizeof(buffer), file)) {
+        while (fgets(buffer, 1024, file)) {
             size_t len = strlen(buffer);
             
             // Strip trailing newline/carriage return
@@ -616,14 +615,15 @@ namespace ult {
         }
     
         // Declare all variables outside the loop
-        char line[1024];
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         std::string lineStr;
         
         bool isNewSection = false;
         bool isSection = false;
         size_t len = 0;
         
-        while (fgets(line, sizeof(line), inputFile)) {
+        while (fgets(line, 1024, inputFile)) {
             // Efficient newline removal
             len = strlen(line);
             if (len > 0 && line[len-1] == '\n') {
@@ -712,7 +712,8 @@ namespace ult {
         }
     
         StringStream buffer(""); // Use StringStream to collect results
-        char line[1024];
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         bool sectionFound = false;
         bool keyFound = false;
         bool firstSection = true;  // Flag to control new line before first section
@@ -726,7 +727,7 @@ namespace ult {
         const char* end;
         
         size_t key_start, key_end;
-        while (fgets(line, sizeof(line), configFile)) {
+        while (fgets(line, 1024, configFile)) {
             // More efficient newline removal
             len = strlen(line);
             if (len > 0 && line[len-1] == '\n') {
@@ -911,7 +912,8 @@ namespace ult {
         const size_t fullSectionLen = sectionNameLen + 2; // [ + sectionName + ]
         
         // Declare all variables outside the loop
-        char line[1024];
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         bool sectionExists = false;
         size_t len = 0;
         const char* end;
@@ -919,7 +921,7 @@ namespace ult {
         size_t content_len;
 
         // First pass: check if section exists and copy all content
-        while (fgets(line, sizeof(line), inputFile)) {
+        while (fgets(line, 1024, inputFile)) {
             len = strlen(line);
             
             // Optimize section detection without string copying
@@ -1026,12 +1028,13 @@ namespace ult {
             fclose(configFile);
             return;
         }
-    
-        char line[1024];
+        
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         std::string sectionName;
         std::string lineStr;
 
-        while (fgets(line, sizeof(line), configFile)) {
+        while (fgets(line, 1024, configFile)) {
             lineStr = line;
             trim(lineStr); // Modifying lineStr directly
             sectionName.clear();
@@ -1103,7 +1106,8 @@ namespace ult {
         const size_t sectionNameLen = sectionName.length();
         const size_t fullSectionLen = sectionNameLen + 2; // [ + sectionName + ]
     
-        char line[1024];
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         std::string currentSection;
         bool inSectionToRemove = false;
         
@@ -1112,7 +1116,7 @@ namespace ult {
         const char* end;
         
         size_t trimmed_len;
-        while (fgets(line, sizeof(line), configFile)) {
+        while (fgets(line, 1024, configFile)) {
             len = strlen(line);
             
             // Early exit for empty lines
@@ -1212,7 +1216,8 @@ namespace ult {
         }
     
         // Declare all variables outside the loop for efficiency
-        char line[1024];
+        auto linePtr = std::make_unique<char[]>(1024);
+        char* line = linePtr.get();
         std::string currentSection;
         std::string lineStr;
         std::string trimmedLine;
@@ -1221,7 +1226,7 @@ namespace ult {
         bool inTargetSection = false;
         size_t eqPos;
         
-        while (fgets(line, sizeof(line), configFile)) {
+        while (fgets(line, 1024, configFile)) {
             lineStr.assign(line);
             
             // Create a trimmed copy for parsing
@@ -1369,12 +1374,13 @@ namespace ult {
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
         options.reserve(32); // Reserve reasonable capacity
         
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         std::string currentSection;
         std::vector<std::vector<std::string>> sectionCommands;
         sectionCommands.reserve(16);
     
-        while (fgets(buffer, sizeof(buffer), packageFile)) {
+        while (fgets(buffer, 1024, packageFile)) {
             size_t len = strlen(buffer);
             
             // Strip trailing newline/carriage return
@@ -1426,10 +1432,11 @@ namespace ult {
         std::vector<std::vector<std::string>> sectionCommands;
         sectionCommands.reserve(16);
         
-        char buffer[1024];
+        auto bufferPtr = std::make_unique<char[]>(1024);
+        char* buffer = bufferPtr.get();
         bool inTargetSection = false;
         
-        while (fgets(buffer, sizeof(buffer), packageFile)) {
+        while (fgets(buffer, 1024, packageFile)) {
             size_t len = strlen(buffer);
             
             // Strip trailing newline/carriage return
@@ -1485,8 +1492,8 @@ namespace ult {
         }
     
         // Use larger buffer for better write performance
-        char writeBuffer[4096];
-        setvbuf(file, writeBuffer, _IOFBF, sizeof(writeBuffer));
+        auto writeBuffer = std::make_unique<char[]>(4096);
+        setvbuf(file, writeBuffer.get(), _IOFBF, 4096);
         
         std::string buffer;
         buffer.reserve(2048); // Pre-allocate buffer

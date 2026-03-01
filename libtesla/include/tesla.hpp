@@ -173,7 +173,7 @@ inline bool hideHidden = false;
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
-
+inline std::atomic<bool> feedbackPollerStop{false};
 
 
 // Sound triggering variables
@@ -3213,7 +3213,7 @@ namespace tsl {
                 const s32 startY = std::max(0, -yPos);
                 const s32 endX = std::min(glyph->width, static_cast<s32>(cfg::FramebufferWidth) - xPos);
                 const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
-                const u8 alphaLimit = skipAlphaLimit ? 0xF : static_cast<u8>(0xF * Renderer::s_opacity);
+                const u8 alphaLimit = skipAlphaLimit ? color.a : static_cast<u8>(0xF * Renderer::s_opacity);
                 const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
                 
                 for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpPtr += glyph->width) {
@@ -12390,8 +12390,10 @@ namespace tsl {
             padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
             
             // Initialize separate pad states for both controllers
-            PadState pad_p1;
-            PadState pad_handheld;
+            auto pad_p1_ptr = std::make_unique<PadState>();
+            auto pad_handheld_ptr = std::make_unique<PadState>();
+            PadState& pad_p1 = *pad_p1_ptr;
+            PadState& pad_handheld = *pad_handheld_ptr;
             padInitialize(&pad_p1, HidNpadIdType_No1);
             padInitialize(&pad_handheld, HidNpadIdType_Handheld);
             
@@ -12447,7 +12449,6 @@ namespace tsl {
 
             // Notification variables
             u64 lastNotifCheck = 0;
-            std::string text, title;
             
             while (shData->running.load(std::memory_order_acquire)) {
 
@@ -12803,11 +12804,8 @@ namespace tsl {
         
                             // OPTIMIZED: Batch INI file writes
                             {
-                                auto iniData = ult::getParsedDataFromIniFile(ult::ULTRAHAND_CONFIG_INI_PATH);
-                                auto& section = iniData[ult::ULTRAHAND_PROJECT_NAME];
-                                section[ult::IN_OVERLAY_STR] = ult::TRUE_STR;
-                                section["to_packages"] = ult::TRUE_STR;
-                                ult::saveIniFileData(ult::ULTRAHAND_CONFIG_INI_PATH, iniData);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::TRUE_STR);
                             }
         
                             // Reset navigation state variables (these control slide navigation)
@@ -12906,22 +12904,8 @@ namespace tsl {
                                     // Only check overlay-specific launch args for non-ovlmenu entries
                                     if (overlayFileName.compare("ovlmenu.ovl") != 0) {
                                         // OPTIMIZED: Single INI read for both values
-                                        auto overlaysIniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
-                                        std::string useArgs = "";
-                                        std::string launchArgs = "";
-        
-                                        auto sectionIt = overlaysIniData.find(overlayFileName);
-                                        if (sectionIt != overlaysIniData.end()) {
-                                            auto useArgsIt = sectionIt->second.find(ult::USE_LAUNCH_ARGS_STR);
-                                            if (useArgsIt != sectionIt->second.end()) {
-                                                useArgs = useArgsIt->second;
-                                            }
-                                            
-                                            auto argsIt = sectionIt->second.find(ult::LAUNCH_ARGS_STR);
-                                            if (argsIt != sectionIt->second.end()) {
-                                                launchArgs = argsIt->second;
-                                            }
-                                        }
+                                        const std::string useArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::USE_LAUNCH_ARGS_STR);
+                                        const std::string launchArgs = ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::LAUNCH_ARGS_STR);
                                         
                                         if (useArgs == ult::TRUE_STR) {
                                             finalArgs = launchArgs;
@@ -13056,10 +13040,8 @@ namespace tsl {
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
         static void backgroundFeedbackPoller(void *args) {
-            SharedThreadData *shData = static_cast<SharedThreadData*>(args);
-        
-            while (shData->running.load(std::memory_order_acquire)) {
-        
+            while (!feedbackPollerStop.load(std::memory_order_acquire)) {
+            
                 if (ult::launchingOverlay.load(std::memory_order_acquire))
                     break;
         
@@ -13735,10 +13717,14 @@ namespace tsl {
 
             // Ensure background thread is fully stopped before overlay cleanup
             shData.running.store(false, std::memory_order_release);
-            threadWaitForExit(&backgroundEventThread);
-            threadClose(&backgroundEventThread);
+            feedbackPollerStop.store(true, std::memory_order_release);
+
+
             threadWaitForExit(&backgroundFeedbackThread);
             threadClose(&backgroundFeedbackThread);
+
+            threadWaitForExit(&backgroundEventThread);
+            threadClose(&backgroundEventThread);
             
             // Cleanup overlay resources
             hlp::requestForeground(false);
