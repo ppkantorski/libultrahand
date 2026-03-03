@@ -10527,7 +10527,7 @@ namespace tsl {
                 textAreaX = x + iconColW;
                 textAreaW = slot.data.promptWidth - iconColW;
             }
-            const float innerWf = static_cast<float>(textAreaW - baseIconPad - 2);
+            const float innerWf = static_cast<float>(textAreaW - baseIconPad - 4);
 
             const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty()
                                          && (slot.data.hasIcon || slot.data.iconPending);
@@ -10614,7 +10614,7 @@ namespace tsl {
 
                 } else {
                     const Lines lines = getWrappedLines(slot.data.text,
-                                                        static_cast<float>(textAreaW),
+                                                        static_cast<float>(textAreaW-4),
                                                         slot.data.fontSize, 8);
                     const auto fm     = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
                     const s32 startY  =
@@ -10641,8 +10641,9 @@ namespace tsl {
                         #endif
                         {
                             const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
+                            const s32 padAdjust = hasIconCol ? baseIconPad : 0;
                             renderer->drawNotificationString(line, false,
-                                textAreaX + (textAreaW - lw) / 2, lineY,
+                                textAreaX + (textAreaW - lw - padAdjust) / 2, lineY,
                                 slot.data.fontSize, fc(notificationTextColor));
                         }
                     }

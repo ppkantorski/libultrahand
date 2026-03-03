@@ -534,7 +534,7 @@ std::vector<std::string> wrapText(
         std::string currentWord;
         std::string testLine;
 
-        while (stream >> currentWord) {
+        while (stream.getline(currentWord, ' ')) {
             u32 firstCp = 0;
             decode_utf8(&firstCp, reinterpret_cast<const u8*>(currentWord.c_str()));
 
@@ -569,6 +569,7 @@ std::vector<std::string> wrapText(
                 testLine = currentLine;
                 if (!testLine.empty()) testLine.push_back(' ');
                 testLine += currentWord;
+
                 if (tsl::gfx::calculateStringWidth(testLine, fontSize, false) > currentMaxWidth()) {
                     if (!currentLine.empty()) {
                         pushLine(currentLine);
