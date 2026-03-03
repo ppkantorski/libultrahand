@@ -357,6 +357,8 @@ void initializeUltrahandSettings() {
         ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
     }
 
+    ult::useNotificationsHotkey = getBoolValue("notifications_hotkey", true);
+
     ult::useSoundEffects      = getBoolValue("sound_effects", false);
     ult::useHapticFeedback    = getBoolValue("haptic_feedback", false);
     ult::useSwipeToOpen       = getBoolValue("swipe_to_open", true);
@@ -372,5 +374,242 @@ void initializeUltrahandSettings() {
 }
 #endif
 
+
+
+// Returns true for scripts where every character is a standalone word unit
+static bool isWordPerCharScript(u32 cp) {
+    return (cp >= 0x1100  && cp <= 0x11FF)  // Hangul Jamo
+        || (cp >= 0x2E80  && cp <= 0x2FFF)  // CJK radicals, Kangxi
+        || (cp >= 0x3000  && cp <= 0x303F)  // CJK symbols & punctuation
+        || (cp >= 0x3040  && cp <= 0x30FF)  // Hiragana + Katakana
+        || (cp >= 0x3100  && cp <= 0x318F)  // Bopomofo + Hangul compat jamo
+        || (cp >= 0x3200  && cp <= 0x33FF)  // Enclosed/compat CJK
+        || (cp >= 0x3400  && cp <= 0x4DBF)  // CJK extension A
+        || (cp >= 0x4E00  && cp <= 0x9FFF)  // CJK unified ideographs
+        || (cp >= 0xA000  && cp <= 0xA4FF)  // Yi
+        || (cp >= 0xA960  && cp <= 0xA97F)  // Hangul Jamo extended A
+        || (cp >= 0xAC00  && cp <= 0xD7FF)  // Hangul syllables + Jamo extended B
+        || (cp >= 0xF900  && cp <= 0xFAFF)  // CJK compatibility ideographs
+        || (cp >= 0xFE30  && cp <= 0xFE4F)  // CJK compatibility forms
+        || (cp >= 0x20000 && cp <= 0x2A6DF) // CJK extension B
+        || (cp >= 0x2A700 && cp <= 0x2CEAF) // CJK extensions C/D/E
+        || (cp >= 0x2CEB0 && cp <= 0x2EBEF) // CJK extension F
+        || (cp >= 0x30000 && cp <= 0x3134F); // CJK extension G
+}
+
+static bool isLineStartForbidden(u32 cp) {
+    // Punctuation that must not appear at the start of a line
+    return cp == 0x3001  // 、
+        || cp == 0x3002  // 。
+        || cp == 0xFF0C  // ，
+        || cp == 0xFF0E  // ．
+        || cp == 0xFF1A  // ：
+        || cp == 0xFF1B  // ；
+        || cp == 0xFF01  // ！
+        || cp == 0xFF1F  // ？
+        || cp == 0x30FB  // ・
+        || cp == 0xFF65  // ･
+        || cp == 0xFF09  // ）
+        || cp == 0x3015  // 〕
+        || cp == 0x3011  // 】
+        || cp == 0x3009  // 〉
+        || cp == 0x300B  // 》
+        || cp == 0x3003  // 」
+        || cp == 0x300D  // 」
+        || cp == 0x300F  // 』
+        || cp == 0x2026  // …
+        || cp == 0x2014  // —
+        || cp == 0xFF5D  // ｝
+        || cp == 0x30FC; // ー (prolonged sound mark, also line-start forbidden)
+}
+
+std::vector<std::string> wrapText(
+    const std::string& text,
+    float maxWidth,
+    const std::string& wrappingMode,
+    bool useIndent,
+    const std::string& indent,
+    float indentWidth,
+    size_t fontSize
+) {
+    if (wrappingMode == "none" || (wrappingMode != "char" && wrappingMode != "word"))
+        return { text };
+
+    std::vector<std::string> wrappedLines;
+    bool firstLine = true;
+    std::string currentLine;
+
+    // Single shared helper — replaces two independent space-counting loops
+    auto getLeadingSpaces = [&]() -> size_t {
+        if (wrappedLines.empty()) return 0;
+        const std::string& s = wrappedLines.back();
+        size_t i = 0;
+        while (i < s.size() && s[i] == ' ') i++;
+        return i;
+    };
+
+    auto pushLine = [&](const std::string& line) {
+        if (useIndent && !firstLine) {
+            wrappedLines.push_back(
+                wrappedLines.back().substr(0, getLeadingSpaces()) + indent + line
+            );
+        } else {
+            wrappedLines.push_back(line);
+        }
+    };
+
+    auto currentMaxWidth = [&]() -> float {
+        if (firstLine) return maxWidth;
+        if (!useIndent) return maxWidth - indentWidth;
+        const size_t spaces = getLeadingSpaces();
+        const float gapWidth = tsl::gfx::calculateStringWidth(
+            wrappedLines.empty() ? "" : wrappedLines.back().substr(0, spaces),
+            fontSize, false
+        );
+        return maxWidth - gapWidth - indentWidth;
+    };
+
+    if (wrappingMode == "char") {
+        static constexpr char hyphen = '-';
+        u32 prevCharacter = 0;
+        u32 prevPrevCharacter = 0;
+        auto itStr = text.cbegin();
+        const auto itStrEnd = text.cend();
+
+        while (itStr != itStrEnd) {
+            u32 currCharacter;
+            const ssize_t codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+            if (codepointWidth <= 0) break;
+
+            std::string charStr(itStr, itStr + codepointWidth);
+            const bool overflows = tsl::gfx::calculateStringWidth(currentLine + charStr, fontSize, false) > currentMaxWidth();
+
+            if (overflows && !currentLine.empty()) {
+                if (isLineStartForbidden(currCharacter)) {
+                    pushLine(currentLine + charStr);
+                    currentLine.clear();
+                } else {
+                    const bool needsHyphen = !useIndent
+                                          && (prevCharacter != ' ')
+                                          && (currCharacter != ' ')
+                                          && !isWordPerCharScript(prevCharacter)
+                                          && !isWordPerCharScript(currCharacter);
+                    if (needsHyphen) {
+                        std::string withHyphen = currentLine + hyphen;
+                        if (tsl::gfx::calculateStringWidth(withHyphen, fontSize, false) > currentMaxWidth()) {
+                            auto it = currentLine.end();
+                            while (it != currentLine.begin()) {
+                                --it;
+                                if ((*it & 0xC0) != 0x80) break;
+                            }
+                            charStr = std::string(it, currentLine.end()) + charStr;
+                            currentLine.erase(it, currentLine.end());
+                            withHyphen = (prevPrevCharacter != 0 && prevPrevCharacter != ' ')
+                                       ? currentLine + hyphen
+                                       : currentLine;
+                        }
+                        pushLine(withHyphen);
+                    } else {
+                        pushLine(currentLine);
+                    }
+
+                    currentLine = (currCharacter == ' ') ? std::string{} : charStr;
+                }
+                firstLine = false;
+            } else if (!overflows) {
+                currentLine += charStr;
+            } else {
+                // overflows but currentLine is empty — just start with this char
+                currentLine = charStr;
+                firstLine = false;
+            }
+
+            // Single advance point — was repeated 3x before
+            prevPrevCharacter = prevCharacter;
+            prevCharacter = currCharacter;
+            itStr += codepointWidth;
+        }
+    } else {
+        ult::StringStream stream(text);
+        std::string currentWord;
+        std::string testLine;
+
+        while (stream >> currentWord) {
+            u32 firstCp = 0;
+            decode_utf8(&firstCp, reinterpret_cast<const u8*>(currentWord.c_str()));
+
+            if (isWordPerCharScript(firstCp)) {
+                auto itW = currentWord.cbegin();
+                const auto itWEnd = currentWord.cend();
+                bool firstChar = true;
+                while (itW != itWEnd) {
+                    u32 cp;
+                    const ssize_t w = decode_utf8(&cp, reinterpret_cast<const u8*>(&(*itW)));
+                    if (w <= 0) break;
+                    std::string charStr(itW, itW + w);
+                    testLine = currentLine;
+                    if (firstChar && !testLine.empty())
+                        testLine.push_back(' ');
+                    testLine += charStr;
+                    if (tsl::gfx::calculateStringWidth(testLine, fontSize, false) > currentMaxWidth()) {
+                        if (!currentLine.empty()) {
+                            pushLine(isLineStartForbidden(cp) ? currentLine + charStr : currentLine);
+                            currentLine = isLineStartForbidden(cp) ? std::string{} : charStr;
+                        } else {
+                            currentLine = charStr;
+                        }
+                        firstLine = false;
+                    } else {
+                        currentLine = testLine;
+                    }
+                    firstChar = false;
+                    itW += w;
+                }
+            } else {
+                testLine = currentLine;
+                if (!testLine.empty()) testLine.push_back(' ');
+                testLine += currentWord;
+                if (tsl::gfx::calculateStringWidth(testLine, fontSize, false) > currentMaxWidth()) {
+                    if (!currentLine.empty()) {
+                        pushLine(currentLine);
+                        currentLine.clear();
+                        firstLine = false;
+                    }
+            
+                    // Word is too long to fit on a line — split it char by char with hyphenation
+                    auto itW = currentWord.cbegin();
+                    const auto itWEnd = currentWord.cend();
+                    while (itW != itWEnd) {
+                        u32 cp;
+                        const ssize_t cw = decode_utf8(&cp, reinterpret_cast<const u8*>(&(*itW)));
+                        if (cw <= 0) break;
+                        std::string charStr(itW, itW + cw);
+                        const std::string withHyphen = currentLine + '-';
+                        const std::string withChar   = currentLine + charStr;
+            
+                        if (tsl::gfx::calculateStringWidth(withChar, fontSize, false) > currentMaxWidth()
+                            && !currentLine.empty()) {
+                            // Only hyphenate if more chars remain after this one
+                            const bool moreRemain = (itW + cw) != itWEnd;
+                            pushLine(moreRemain ? withHyphen : currentLine);
+                            currentLine = charStr;
+                            firstLine = false;
+                        } else {
+                            currentLine += charStr;
+                        }
+                        itW += cw;
+                    }
+                } else {
+                    currentLine.swap(testLine);
+                }
+            }
+        }
+    }
+
+    if (!currentLine.empty())
+        pushLine(currentLine);
+
+    return wrappedLines;
+}
 
 } // namespace tsl

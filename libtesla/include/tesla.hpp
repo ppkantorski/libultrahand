@@ -320,6 +320,15 @@ namespace tsl {
         );
     }
     
+    static inline Color lerpColor(const Color& c1, const Color& c2, float t) {
+        return {
+            static_cast<u8>((c1.r - c2.r) * t + c2.r + 0.5f),
+            static_cast<u8>((c1.g - c2.g) * t + c2.g + 0.5f),
+            static_cast<u8>((c1.b - c2.b) * t + c2.b + 0.5f),
+            0xF
+        };
+    }
+
     
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
@@ -448,8 +457,16 @@ namespace tsl {
     void initializeUltrahandSettings();
     #endif
 
-    
-    
+    extern std::vector<std::string> wrapText(
+        const std::string& text,
+        float maxWidth,
+        const std::string& wrappingMode,
+        bool useIndent,
+        const std::string& indent,
+        float indentWidth,
+        size_t fontSize
+    );
+        
     // Declarations
     
     /**
@@ -3850,12 +3867,7 @@ namespace tsl {
                 }
                 
                 // Combine color interpolation into single calculation
-                s_highlightColor = {
-                    static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r),
-                    static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g),
-                    static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b),
-                    0xF
-                };
+                s_highlightColor = lerpColor(clickColor1, clickColor2, progress);
                 
                 x = 0;
                 y = 0;
@@ -6370,6 +6382,16 @@ namespace tsl {
                 return handleInitialFocus(oldFocus);
             }
         
+            inline void syncFocusIndex(Element* oldFocus, ssize_t& searchIndex) {
+                for (size_t i = 0; i < m_items.size(); ++i) {
+                    if (m_items[i] == oldFocus) {
+                        m_focusedIndex = i;
+                        searchIndex = static_cast<ssize_t>(i);
+                        break;
+                    }
+                }
+            }
+
             // Core navigation logic
             // Optimized version with variable definitions pulled outside the loop
             inline Element* navigateDown(Element* oldFocus) {
@@ -6387,14 +6409,10 @@ namespace tsl {
             
                 // Sync AFTER table check - if we're not mid-table-scroll
                 if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        if (m_items[i] == oldFocus) {
-                            m_focusedIndex = i;
-                            searchIndex = i + 1;
-                            break;
-                        }
-                    }
+                    syncFocusIndex(oldFocus, reinterpret_cast<ssize_t&>(searchIndex));
+                    searchIndex++;  // Down increments after sync
                 }
+                
                 
                 const s32 viewBottom = getBottomBound();
                 const float containerHeight = getHeight();
@@ -6452,13 +6470,8 @@ namespace tsl {
             
                 // Sync AFTER table check - if we're not mid-table-scroll
                 if (oldFocus && !isTableScrolling.load(std::memory_order_acquire)) {
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        if (m_items[i] == oldFocus) {
-                            m_focusedIndex = i;
-                            searchIndex = static_cast<ssize_t>(i) - 1;
-                            break;
-                        }
-                    }
+                    syncFocusIndex(oldFocus, searchIndex);
+                    searchIndex--;  // Up decrements after sync
                 }
                 
                 const s32 viewTop = getTopBound();
@@ -6510,54 +6523,25 @@ namespace tsl {
             }
 
 
+            inline float getScrollDelta() {
+                const u64 currentTime = armTicksToNs(armGetSystemTick());
+                float deltaTime = (m_lastScrollTime != 0)
+                    ? static_cast<float>(currentTime - m_lastScrollTime) / 1000000000.0f
+                    : 1.0f / 60.0f;
+                m_lastScrollTime = currentTime;
+                deltaTime = std::min(deltaTime, 0.1f);
+                const float speedPPS = m_isHolding ? TABLE_SCROLL_SPEED_PPS : TABLE_SCROLL_SPEED_CLICK_PPS;
+                return speedPPS * deltaTime;
+            }
+
             // Enhanced scroll methods that snap to exact boundaries
             inline void scrollDown() {
-                const u64 currentTime = armTicksToNs(armGetSystemTick());
-                
-                // Calculate delta time in seconds
-                float deltaTime = 0.0f;
-                if (m_lastScrollTime != 0) {
-                    const u64 deltaTimeNs = currentTime - m_lastScrollTime;
-                    deltaTime = static_cast<float>(deltaTimeNs) / 1000000000.0f; // Convert to seconds
-                } else {
-                    // First frame - assume 60fps
-                    deltaTime = 1.0f / 60.0f;
-                }
-                m_lastScrollTime = currentTime;
-                
-                // Clamp delta time to prevent huge jumps on lag spikes
-                deltaTime = std::min(deltaTime, 0.1f); // Cap at 100ms (10fps minimum)
-                
-                // Calculate scroll amount: pixels_per_second * seconds_elapsed
-                const float speedPPS = m_isHolding ? TABLE_SCROLL_SPEED_PPS : TABLE_SCROLL_SPEED_CLICK_PPS;
-                const float scrollAmount = speedPPS * deltaTime;
-                
-                m_nextOffset = std::min(m_nextOffset + scrollAmount, 
+                m_nextOffset = std::min(m_nextOffset + getScrollDelta(),
                                        static_cast<float>(m_listHeight - getHeight()));
             }
             
             inline void scrollUp() {
-                const u64 currentTime = armTicksToNs(armGetSystemTick());
-                
-                // Calculate delta time in seconds
-                float deltaTime = 0.0f;
-                if (m_lastScrollTime != 0) {
-                    const u64 deltaTimeNs = currentTime - m_lastScrollTime;
-                    deltaTime = static_cast<float>(deltaTimeNs) / 1000000000.0f; // Convert to seconds
-                } else {
-                    // First frame - assume 60fps
-                    deltaTime = 1.0f / 60.0f;
-                }
-                m_lastScrollTime = currentTime;
-                
-                // Clamp delta time to prevent huge jumps on lag spikes
-                deltaTime = std::min(deltaTime, 0.1f); // Cap at 100ms (10fps minimum)
-                
-                // Calculate scroll amount: pixels_per_second * seconds_elapsed
-                const float speedPPS = m_isHolding ? TABLE_SCROLL_SPEED_PPS : TABLE_SCROLL_SPEED_CLICK_PPS;
-                const float scrollAmount = speedPPS * deltaTime;
-                
-                m_nextOffset = std::max(m_nextOffset - scrollAmount, 0.0f);
+                m_nextOffset = std::max(m_nextOffset - getScrollDelta(), 0.0f);
             }
 
             // Jump to Bottom (original behavior + fixed trigger condition)
@@ -8497,23 +8481,13 @@ namespace tsl {
                     }
                     const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
                     if (elapsedTime_ns < 500000000ULL) {
-                        s_highlightColor = {
-                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r + 0.5),
-                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g + 0.5),
-                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b + 0.5),
-                            0xF
-                        };
+                        s_highlightColor = lerpColor(clickColor1, clickColor2, progress);
                     } else {
                         m_clickAnimationActive = false;
                     }
                 } else {
                     // Normal highlight animation
-                    s_highlightColor = {
-                        static_cast<u8>(highlightColor2.r + (highlightColor1.r - highlightColor2.r) * progress + 0.5),
-                        static_cast<u8>(highlightColor2.g + (highlightColor1.g - highlightColor2.g) * progress + 0.5),
-                        static_cast<u8>(highlightColor2.b + (highlightColor1.b - highlightColor2.b) * progress + 0.5),
-                        0xF
-                    };
+                    s_highlightColor = lerpColor(highlightColor1, highlightColor2, progress);
                 }
                 
                 // Initialize position offsets
@@ -9616,12 +9590,7 @@ namespace tsl {
                 if (m_clickActive) {
                     const u64 elapsedTime_ns = currentTime_ns - m_clickStartTime_ns;
                     if (elapsedTime_ns < 500000000ULL) {
-                        highlightColor = {
-                            static_cast<u8>((clickColor1.r - clickColor2.r) * progress + clickColor2.r + 0.5),
-                            static_cast<u8>((clickColor1.g - clickColor2.g) * progress + clickColor2.g + 0.5),
-                            static_cast<u8>((clickColor1.b - clickColor2.b) * progress + clickColor2.b + 0.5),
-                            0xF
-                        };
+                        highlightColor = lerpColor(clickColor1, clickColor2, progress);
                     } else {
                         m_clickActive = false;
                         triggerClick = false;
@@ -9630,19 +9599,9 @@ namespace tsl {
                     const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
                     
                     if ((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked) {
-                        highlightColor = {
-                            static_cast<u8>((highlightColor1.r - highlightColor2.r) * progress + highlightColor2.r + 0.5),
-                            static_cast<u8>((highlightColor1.g - highlightColor2.g) * progress + highlightColor2.g + 0.5),
-                            static_cast<u8>((highlightColor1.b - highlightColor2.b) * progress + highlightColor2.b + 0.5),
-                            0xF
-                        };
+                        highlightColor = lerpColor(highlightColor1, highlightColor2, progress);
                     } else {
-                        highlightColor = {
-                            static_cast<u8>((highlightColor3.r - highlightColor4.r) * progress + highlightColor4.r + 0.5),
-                            static_cast<u8>((highlightColor3.g - highlightColor4.g) * progress + highlightColor4.g + 0.5),
-                            static_cast<u8>((highlightColor3.b - highlightColor4.b) * progress + highlightColor4.b + 0.5),
-                            0xF
-                        };
+                        highlightColor = lerpColor(highlightColor3, highlightColor4, progress);
                     }
                 }
                             
@@ -10079,7 +10038,7 @@ namespace tsl {
             u8  fontSize     = 28;
             u16 promptWidth  = 448;
             u16 promptHeight = 88;
-            u16 durationMs   = 2500;
+            u16 durationMs   = 3000;
             u8  priority     = 20;
             u64 arrivalNs    = 0;
             PromptState state        = PromptState::Inactive;
@@ -10113,11 +10072,10 @@ namespace tsl {
 
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
-                  u32 durationMs = 2500, s32 promptWidth = 448, s32 promptHeight = 88,
+                  u32 durationMs = 3000, s32 promptWidth = 448, s32 promptHeight = 88,
                   bool immediately = false, bool resume = false) {
             if (msg.empty()) return;
-            if (!enabled_.load(std::memory_order_acquire)) return;
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
+            if (isStale()) return;
 
             NotifEntry data;
             data.text         = msg;
@@ -10140,24 +10098,16 @@ namespace tsl {
             }
 
             std::lock_guard<std::mutex> lg(state_mutex_);
-            if (!enabled_.load(std::memory_order_acquire)) return;
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
+            if (isStale()) return;
 
             if (immediately) {
-                // showNow always claims slot 0.
                 bool skipFadeIn = false;
                 Slot& s0 = slots_[0];
                 if (s0.active) {
                     if (s0.isShowNow) {
-                        // Replace existing showNow — delete its file, skip fade-in.
-                        if (!s0.data.fileName.empty()) {
-                            std::lock_guard<std::mutex> fg(notificationJsonMutex);
-                            remove((ult::NOTIFICATIONS_PATH + s0.data.fileName).c_str());
-                        }
-                        clearSlot_NoLock(0);
+                        evictSlot_NoLock(0);
                         skipFadeIn = true;
                     } else {
-                        // Push the regular in slot 0 down to the next free slot.
                         bool moved = false;
                         for (int j = 1; j < MAX_VISIBLE; ++j) {
                             if (!slots_[j].active) {
@@ -10167,21 +10117,12 @@ namespace tsl {
                                 break;
                             }
                         }
-                        if (!moved) {
-                            // No room to push slot 0 down — delete its file before dropping it.
-                            if (!s0.data.fileName.empty()) {
-                                std::lock_guard<std::mutex> fg(notificationJsonMutex);
-                                remove((ult::NOTIFICATIONS_PATH + s0.data.fileName).c_str());
-                            }
-                            clearSlot_NoLock(0);
-                        }
+                        if (!moved) evictSlot_NoLock(0);
                     }
                 }
                 placeInSlot_NoLock(0, std::move(data), true, skipFadeIn);
-                // Repack fixes Y targets for everything (including any pushed-down slot).
                 repackSlots_NoLock(armTicksToNs(armGetSystemTick()));
             } else {
-                // Regular: first free slot, otherwise queue.
                 int freeSlot = -1;
                 for (int i = 0; i < MAX_VISIBLE; ++i)
                     if (!slots_[i].active) { freeSlot = i; break; }
@@ -10208,31 +10149,22 @@ namespace tsl {
             show(msg, fontSize, 0u, "", "", 2500, 448, 88, true);
         }
 
-        // Returns true if a slot is currently active with this exact filename.
-        // Called by the JSON poller instead of maintaining a shownFiles list —
-        // cost is always O(MAX_VISIBLE) regardless of how many .notify files exist.
+        // Single implementation — const char* overload delegates instead of duplicating.
         [[nodiscard]] bool hasActiveFile(const std::string& fname) const {
             if (fname.empty()) return false;
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+            if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             for (int i = 0; i < MAX_VISIBLE; ++i)
                 if (slots_[i].active && slots_[i].data.fileName == fname) return true;
             return false;
         }
 
-        // Overload accepting a raw C-string to avoid allocation in the hot scan loop.
         [[nodiscard]] bool hasActiveFile(const char* fname) const {
-            if (!fname || fname[0] == '\0') return false;
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < MAX_VISIBLE; ++i)
-                if (slots_[i].active && slots_[i].data.fileName == fname) return true;
-            return false;
+            return fname && fname[0] != '\0' && hasActiveFile(std::string(fname));
         }
 
         void draw(gfx::Renderer* renderer, bool promptOnly = false) {
-            if (ult::launchingOverlay.load(std::memory_order_acquire) ||
-                generation_ != notificationGeneration.load(std::memory_order_acquire)) return;
+            if (ult::launchingOverlay.load(std::memory_order_acquire) || isStale()) return;
             if (!enabled_.load(std::memory_order_acquire)) return;
 
             std::lock_guard<std::mutex> lg(state_mutex_);
@@ -10259,12 +10191,7 @@ namespace tsl {
 
         void update() {
             std::lock_guard<std::mutex> lg(state_mutex_);
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire) ||
-                !enabled_.load(std::memory_order_acquire)) {
-                for (int i = 0; i < MAX_VISIBLE; ++i) slots_[i] = Slot{};
-                while (!pending_queue_.empty()) pending_queue_.pop();
-                return;
-            }
+            if (isStale()) { clearAll_NoLock(); return; }
             if (ult::launchingOverlay.load(std::memory_order_acquire)) return;
 
             const u64 now = armTicksToNs(armGetSystemTick());
@@ -10274,7 +10201,6 @@ namespace tsl {
                 Slot& slot = slots_[i];
                 if (!slot.active) continue;
 
-                // Icon loading
                 if (slot.data.iconPending) {
                     slot.data.iconPending = false;
                     if (!slot.data.fileName.empty()) {
@@ -10292,7 +10218,6 @@ namespace tsl {
                     }
                 }
 
-                // Slide animation
                 if (slot.sliding) {
                     const float st = std::min(1.0f,
                         static_cast<float>((now - slot.slideStartNs) / 1'000'000ULL) / SLIDE_DURATION_MS);
@@ -10300,7 +10225,6 @@ namespace tsl {
                     if (st >= 1.0f) { slot.yCurrent = slot.yTarget; slot.sliding = false; }
                 }
 
-                // Fade state machine
                 const u64 elapsedMs = slot.data.stateStartNs == 0 ? 0
                                     : (now - slot.data.stateStartNs) / 1'000'000ULL;
                 switch (slot.data.state) {
@@ -10318,15 +10242,7 @@ namespace tsl {
                         break;
                     case PromptState::FadingOut:
                         if (elapsedMs >= FADE_DURATION_MS) {
-                            // Delete the file from disk. After this the poller's
-                            // hasActiveFile() check will stop suppressing it (moot,
-                            // since it is gone), and the slot is freed for the next
-                            // pending notification.
-                            if (!slot.data.fileName.empty()) {
-                                std::lock_guard<std::mutex> fg(notificationJsonMutex);
-                                remove((ult::NOTIFICATIONS_PATH + slot.data.fileName).c_str());
-                            }
-                            clearSlot_NoLock(i);
+                            evictSlot_NoLock(i);
                             anyCleared = true;
                         }
                         break;
@@ -10336,7 +10252,6 @@ namespace tsl {
 
             if (anyCleared) repackSlots_NoLock(now);
 
-            // Drain queue into any newly freed slots.
             while (!pending_queue_.empty()) {
                 int freeSlot = -1;
                 for (int i = 0; i < MAX_VISIBLE; ++i)
@@ -10349,17 +10264,15 @@ namespace tsl {
         }
 
         [[nodiscard]] bool isActive() const {
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return false;
+            if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             for (int i = 0; i < MAX_VISIBLE; ++i)
                 if (slots_[i].active) return true;
             return !pending_queue_.empty();
         }
 
-        // Returns the number of currently active (visible/fading) slots.
-        // Used by the JSON poller to avoid dispatching new notifications when full.
         [[nodiscard]] int activeCount() const {
-            if (generation_ != notificationGeneration.load(std::memory_order_acquire)) return 0;
+            if (isStale()) return 0;
             std::lock_guard<std::mutex> lg(state_mutex_);
             int count = 0;
             for (int i = 0; i < MAX_VISIBLE; ++i)
@@ -10372,18 +10285,53 @@ namespace tsl {
             notificationGeneration.fetch_add(1, std::memory_order_acq_rel);
             generation_ = notificationGeneration.load(std::memory_order_acquire);
             std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < MAX_VISIBLE; ++i) slots_[i] = Slot{};
-            while (!pending_queue_.empty()) pending_queue_.pop();
+            clearAll_NoLock();
         }
 
         void forceShutdown() {
             enabled_.store(false, std::memory_order_release);
         }
 
+        [[nodiscard]] bool hitTest(s32 tx, s32 ty) const {
+            if (isStale()) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            return findHitSlot_NoLock(tx, ty) >= 0;
+        }
+
+        bool dismissAt(s32 tx, s32 ty) {
+            if (isStale()) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            const int idx = findHitSlot_NoLock(tx, ty);
+            if (idx < 0) return false;
+            Slot& slot = slots_[idx];
+            if (slot.data.state != PromptState::FadingOut) {
+                slot.data.state        = PromptState::FadingOut;
+                slot.data.stateStartNs = armTicksToNs(armGetSystemTick());
+            }
+            return true;
+        }
+
+        bool dismissFront() {
+            if (isStale()) return false;
+            std::lock_guard<std::mutex> lg(state_mutex_);
+            // Find the topmost (lowest yCurrent) active slot not already fading out
+            int best = -1;
+            float bestY = 1.0e9f;
+            for (int i = 0; i < MAX_VISIBLE; ++i) {
+                const Slot& slot = slots_[i];
+                if (!slot.active || slot.data.state == PromptState::FadingOut) continue;
+                if (slot.yCurrent < bestY) { bestY = slot.yCurrent; best = i; }
+            }
+            if (best < 0) return false;
+            slots_[best].data.state        = PromptState::FadingOut;
+            slots_[best].data.stateStartNs = armTicksToNs(armGetSystemTick());
+            return true;
+        }
+
     private:
         static constexpr size_t MAX_NOTIFS        = 30;
-        static constexpr u32    FADE_DURATION_MS  = 83;   // ~5 frames at 60fps, matches overlay
-        static constexpr u32    SLIDE_DURATION_MS = 150;  // slide-up speed, tune freely
+        static constexpr u32    FADE_DURATION_MS  = 83;
+        static constexpr u32    SLIDE_DURATION_MS = 150;
 
         struct Slot {
             NotifEntry  data;
@@ -10404,8 +10352,53 @@ namespace tsl {
         std::atomic<bool>  enabled_{true};
         u32                generation_{0};
 
+        // ── Private helpers ──────────────────────────────────────────────────────
+
+        [[nodiscard]] bool isStale() const {
+            return !enabled_.load(std::memory_order_acquire)
+                || generation_ != notificationGeneration.load(std::memory_order_acquire);
+        }
+
+        void evictSlot_NoLock(int i) {
+            // NOTE: Do NOT acquire notificationJsonMutex here.
+            // The polling thread holds notificationJsonMutex and then calls into
+            // methods that acquire state_mutex_ (activeCount, hasActiveFile, show).
+            // Acquiring notificationJsonMutex here while already holding state_mutex_
+            // creates a lock-inversion deadlock. remove() is a safe atomic syscall
+            // and does not require mutex protection — a concurrent readJsonFromFile
+            // on the same file will simply return null and be skipped gracefully.
+            if (!slots_[i].data.fileName.empty())
+                remove((ult::NOTIFICATIONS_PATH + slots_[i].data.fileName).c_str());
+            clearSlot_NoLock(i);
+        }
+
+        void clearAll_NoLock() {
+            for (int i = 0; i < MAX_VISIBLE; ++i) slots_[i] = Slot{};
+            while (!pending_queue_.empty()) pending_queue_.pop();
+        }
+
+        [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const {
+            for (int i = 0; i < MAX_VISIBLE; ++i) {
+                const Slot& slot = slots_[i];
+                if (!slot.active || slot.data.state == PromptState::Inactive) continue;
+                const s32 sx = ult::useRightAlignment
+                    ? static_cast<s32>(tsl::cfg::FramebufferWidth) - slot.data.promptWidth : 0;
+                const s32 sy = static_cast<s32>(slot.yCurrent);
+                const s32 sh = getEffectiveHeight(slot);
+                if (tx >= sx && tx < sx + slot.data.promptWidth &&
+                    ty >= sy && ty < sy + sh)
+                    return i;
+            }
+            return -1;
+        }
+
         static float easeInOut(float t) {
             return (t < 0.5f) ? (2*t*t) : (-1 + (4 - 2*t)*t);
+        }
+
+        static Color applyAlpha(Color c, float a) {
+            c.a = static_cast<u8>(static_cast<float>(c.a) * a);
+            return c;
         }
 
         static Lines splitLines(const std::string& text, u8 maxLines) {
@@ -10422,15 +10415,35 @@ namespace tsl {
             return result;
         }
 
+        Lines getWrappedLines(const std::string& text, float pixelWidth,
+                              size_t fontSize, u8 maxLines) const {
+            Lines split = splitLines(text, maxLines);
+            Lines result;
+            for (u8 si = 0; si < split.count && result.count < maxLines; ++si) {
+                const auto wrapped = wrapText(split.buf[si], pixelWidth,
+                                              "word", /*useIndent=*/false, "", 0.f, fontSize);
+                for (const auto& wl : wrapped) {
+                    if (result.count >= maxLines) break;
+                    result.buf[result.count++] = wl;
+                }
+            }
+            if (result.count == 0 && split.count > 0)
+                result.buf[result.count++] = "";
+            return result;
+        }
+
         void clearSlot_NoLock(int i) { slots_[i] = Slot{}; }
 
-        // Returns the actual rendered height of a slot, accounting for multi-line
-        // message expansion in title+icon notifications.
         s32 getEffectiveHeight(const Slot& slot) const {
             s32 h = slot.data.promptHeight;
             if (!slot.data.text.empty() && !slot.data.title.empty() &&
                 (slot.data.hasIcon || slot.data.iconPending)) {
-                const Lines lines = splitLines(slot.data.text, 4);
+                const s32   baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
+                const s32   colWidth    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
+                const s32   textAreaW   = slot.data.promptWidth - colWidth;
+                const float innerW      = static_cast<float>(textAreaW - baseIconPad - 2);
+
+                const Lines lines = getWrappedLines(slot.data.text, innerW, MESSAGE_FONT, 4);
                 if (lines.count > 1) {
                     const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
                     h += static_cast<s32>(lines.count - 1) * fm.lineHeight;
@@ -10439,7 +10452,6 @@ namespace tsl {
             return h;
         }
 
-        // Sum of effective heights of all active slots above idx.
         float computeTargetY_NoLock(int idx) const {
             float y = 0.f;
             for (int i = 0; i < idx; ++i)
@@ -10468,66 +10480,69 @@ namespace tsl {
             if (!suppressSound) triggerNotificationSound.store(true, std::memory_order_release);
         }
 
-        // Compact active slots: showNow first, then regular in order.
-        // Recomputes Y targets and triggers slide animations for anything that moved.
         void repackSlots_NoLock(u64 now) {
-            Slot packed[MAX_VISIBLE];
+            // Step 1: build ordered index list (one isShowNow first, then regular)
+            int order[MAX_VISIBLE];
             int count = 0;
-
-            // showNow slot goes first (at most one).
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
-                if (slots_[i].active && slots_[i].isShowNow) {
-                    packed[count++] = std::move(slots_[i]);
-                    slots_[i] = Slot{};
-                    break;
-                }
-            }
-            // Regular slots follow in their existing order.
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
-                if (count >= MAX_VISIBLE) break;
-                if (slots_[i].active && !slots_[i].isShowNow) {
-                    packed[count++] = std::move(slots_[i]);
-                    slots_[i] = Slot{};
-                }
-            }
-
-            // Place back and slide any that have a new target Y.
+        
+            for (int i = 0; i < MAX_VISIBLE; ++i)
+                if (slots_[i].active && slots_[i].isShowNow) { order[count++] = i; break; }
+            for (int i = 0; i < MAX_VISIBLE && count < MAX_VISIBLE; ++i)
+                if (slots_[i].active && !slots_[i].isShowNow) order[count++] = i;
+        
+            // Step 2: assign y-positions before touching slot storage
             float y = 0.f;
             for (int i = 0; i < count; ++i) {
-                if (packed[i].yTarget != y || packed[i].yCurrent != y) {
-                    packed[i].ySlideFrom   = packed[i].yCurrent;
-                    packed[i].yTarget      = y;
-                    packed[i].slideStartNs = now;
-                    packed[i].sliding      = true;
+                Slot& s = slots_[order[i]];
+                if (s.yTarget != y || s.yCurrent != y) {
+                    s.ySlideFrom   = s.yCurrent;
+                    s.yTarget      = y;
+                    s.slideStartNs = now;
+                    s.sliding      = true;
                 }
-                slots_[i] = std::move(packed[i]);
-                y += static_cast<float>(getEffectiveHeight(slots_[i]));
+                y += static_cast<float>(getEffectiveHeight(s));
             }
+        
+            // Step 3: compact into slots_[0..count-1]
+            Slot packed[MAX_VISIBLE];
+            for (int i = 0; i < count; ++i)
+                packed[i] = std::move(slots_[order[i]]);
+            for (int i = 0; i < MAX_VISIBLE; ++i)
+                slots_[i] = (i < count) ? std::move(packed[i]) : Slot{};
         }
 
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
                       s32 baseY, float fadeAlpha, bool promptOnly) {
-            auto fc = [fadeAlpha, renderer](Color c) -> Color {
-                c.a = static_cast<u8>(static_cast<float>(c.a) * fadeAlpha);
-                return renderer->a2(c);
-            };
+            auto fc = [&](Color c) { return renderer->a2(applyAlpha(c, fadeAlpha)); };
 
             const s32 x = ult::useRightAlignment
                 ? (tsl::cfg::FramebufferWidth - slot.data.promptWidth) : 0;
 
-            // Compute effective height: for title+icon notifications with multi-line messages,
-            // extend the base height by the extra lines so the gap below stays consistent.
+            const s32  baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
+            const s32  iconColW    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
+            const bool hasIconCol  = (slot.data.hasIcon && slot.iconLoaded) || slot.data.iconPending;
+            s32 textAreaX = x;
+            s32 textAreaW = slot.data.promptWidth;
+            if (hasIconCol) {
+                textAreaX = x + iconColW;
+                textAreaW = slot.data.promptWidth - iconColW;
+            }
+            const float innerWf = static_cast<float>(textAreaW - baseIconPad - 2);
+
+            const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty()
+                                         && (slot.data.hasIcon || slot.data.iconPending);
+
+            Lines titleIconLines;
             s32 effectiveHeight = slot.data.promptHeight;
-            if (!slot.data.text.empty() && !slot.data.title.empty() &&
-                (slot.data.hasIcon || slot.data.iconPending)) {
-                const Lines preLines = splitLines(slot.data.text, 4);
-                if (preLines.count > 1) {
-                    const auto msgFmPre = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
-                    effectiveHeight = slot.data.promptHeight + static_cast<s32>(preLines.count - 1) * msgFmPre.lineHeight;
+            if (hasTitleIconLayout) {
+                titleIconLines = getWrappedLines(slot.data.text, innerWf, MESSAGE_FONT, 4);
+                if (titleIconLines.count > 1) {
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
+                    effectiveHeight = slot.data.promptHeight
+                                    + static_cast<s32>(titleIconLines.count - 1) * fm.lineHeight;
                 }
             }
 
-            // Clip each slot to its own vertical band so slides never bleed into neighbours.
             renderer->enableScissoring(static_cast<u32>(std::max(0, x)),
                                        static_cast<u32>(std::max(0, baseY)),
                                        static_cast<u32>(slot.data.promptWidth),
@@ -10545,41 +10560,28 @@ namespace tsl {
                                        fc(defaultBackgroundColor));
             #endif
 
-            // baseIconPad governs horizontal layout (column width) — always based on the
-            // base promptHeight so the icon column never shifts as the notification grows.
-            // iconVertPad governs vertical placement — centers the icon in effectiveHeight.
-            const s32 baseIconPad  = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
-            const s32 iconVertPad  = (effectiveHeight - NOTIF_ICON_DIM) / 2;
-            s32 textAreaX = x;
-            s32 textAreaW = slot.data.promptWidth;
-
-            if ((slot.data.hasIcon && slot.iconLoaded) || slot.data.iconPending) {
-                const s32 colWidth = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
-                textAreaX = x + colWidth;
-                textAreaW = slot.data.promptWidth - colWidth;
-
-                if (slot.data.hasIcon && slot.iconLoaded) {
-                    const s32 dstX = x + baseIconPad;
-                    s32 drawH = NOTIF_ICON_DIM;
-                    if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
-                        drawH = 0;
-                    if (iconVertPad + baseY + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
-                        drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconVertPad - baseY;
-                    if (drawH > 0)
-                        renderer->drawBitmapRGBA4444(
-                            static_cast<u32>(dstX), static_cast<u32>(iconVertPad + baseY),
-                            static_cast<u32>(NOTIF_ICON_DIM), static_cast<u32>(drawH),
-                            slot.iconBuf, fadeAlpha);
-                }
+            const s32 iconVertPad = (effectiveHeight - NOTIF_ICON_DIM) / 2;
+            if (hasIconCol && slot.data.hasIcon && slot.iconLoaded) {
+                const s32 dstX = x + baseIconPad;
+                s32 drawH = NOTIF_ICON_DIM;
+                if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
+                    drawH = 0;
+                if (iconVertPad + baseY + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
+                    drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconVertPad - baseY;
+                if (drawH > 0)
+                    renderer->drawBitmapRGBA4444(
+                        static_cast<u32>(dstX), static_cast<u32>(iconVertPad + baseY),
+                        static_cast<u32>(NOTIF_ICON_DIM), static_cast<u32>(drawH),
+                        slot.iconBuf, fadeAlpha);
             }
 
             if (!slot.data.text.empty() && textAreaW > 0) {
-                if (!slot.data.title.empty() && (slot.data.hasIcon || slot.data.iconPending)) {
+                if (hasTitleIconLayout) {
+                    const Lines& lines   = titleIconLines;
                     const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
                     const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
-                    const s32 innerW     = textAreaW - baseIconPad - 2;
+                    const s32  innerW    = static_cast<s32>(innerWf);
                     static constexpr s32 LINE_GAP = 4;
-                    const Lines lines  = splitLines(slot.data.text, 4);
                     const s32 blockH   = titleFm.lineHeight + LINE_GAP + static_cast<s32>(lines.count) * messageFm.lineHeight;
                     const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
                     const s32 titleY   = originY + titleFm.ascent - 3;
@@ -10611,7 +10613,9 @@ namespace tsl {
                             MESSAGE_FONT, fc(notificationTextColor));
 
                 } else {
-                    const Lines lines = splitLines(slot.data.text, 8);
+                    const Lines lines = getWrappedLines(slot.data.text,
+                                                        static_cast<float>(textAreaW),
+                                                        slot.data.fontSize, 8);
                     const auto fm     = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
                     const s32 startY  =
                         (slot.data.promptHeight - static_cast<s32>(lines.count) * fm.lineHeight) / 2
@@ -10648,23 +10652,18 @@ namespace tsl {
             if (!ult::useRightAlignment) {
                 renderer->drawRect(x + slot.data.promptWidth - 1, baseY,
                                    1, effectiveHeight, fc(edgeSeparatorColor));
-                renderer->drawRect(x, baseY + effectiveHeight - 1,
-                                   slot.data.promptWidth, 1, fc(edgeSeparatorColor));
             } else {
                 renderer->drawRect(x, baseY, 1, effectiveHeight, fc(edgeSeparatorColor));
-                renderer->drawRect(x, baseY + effectiveHeight - 1,
-                                   slot.data.promptWidth, 1, fc(edgeSeparatorColor));
             }
+            renderer->drawRect(x, baseY + effectiveHeight - 1,
+                               slot.data.promptWidth, 1, fc(edgeSeparatorColor));
             renderer->disableScissoring();
         }
 
         #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
                                s32 x, s32 y, u32 fontSize, float fadeAlpha) {
-            auto fc = [fadeAlpha](Color c) -> Color {
-                c.a = static_cast<u8>(static_cast<float>(c.a) * fadeAlpha);
-                return c;
-            };
+            auto fc = [&](Color c) { return applyAlpha(c, fadeAlpha); };
             const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
             if (up == std::string::npos) {
                 renderer->drawNotificationString(line, false, x, y, fontSize, fc(notificationTextColor));
@@ -11266,6 +11265,7 @@ namespace tsl {
         
             static u64 buttonPressTime_ns = 0, lastKeyEventTime_ns = 0, keyEventInterval_ns = 67000000ULL;
             static bool singlePressHandled = false;
+            static bool notificationTouchConsumed = false;
             static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL; // 340ms in nanoseconds
             
 
@@ -11312,7 +11312,6 @@ namespace tsl {
                 }
             }
         #endif
-
 
         #if IS_STATUS_MONITOR_DIRECTIVE
             if (FullMode && !deactivateOriginalFooter) {
@@ -11410,7 +11409,6 @@ namespace tsl {
                 singlePressHandled = false;
             }
             
-
         
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
                 if (!isNavigatingBackwards.load(std::memory_order_acquire) &&
@@ -11526,7 +11524,6 @@ namespace tsl {
                             keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
                         }
                         
-        
                         
                         if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
@@ -11576,254 +11573,148 @@ namespace tsl {
                 const bool notzlKeyPressed = (keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
                 const bool notzrKeyPressed = (keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
                 
-                // Handle L button (simple jump to top on release, but not if held too long)
-                {
-                    static bool lKeyWasPressed = false;
-                    static bool lWasIsolated = false;  // Track if L was isolated when first pressed
-                    static u64 lButtonPressStart_ns = 0;
-                    
-                    if (lKeyPressed) {
-                        
-                        if (!lKeyWasPressed) {
-                            // L key physically pressed for the first time (start timer)
-                            lButtonPressStart_ns = currentTime_ns;
-                            lWasIsolated = !notlKeyPressed;  // Remember if it started isolated
+                struct JumpButtonState {
+                    bool keyWasPressed = false;
+                    bool wasIsolated   = false;
+                    u64  pressStart_ns = 0;
+                };
+                static JumpButtonState lState, rState;
+                
+                auto handleJumpButton = [&](JumpButtonState& s,
+                                            bool keyPressed, bool notKeyPressed,
+                                            std::atomic<bool>& jumpSignal) {
+                    if (keyPressed) {
+                        if (!s.keyWasPressed) {
+                            s.pressStart_ns = currentTime_ns;
+                            s.wasIsolated   = !notKeyPressed;
                         }
-                        // Don't reset timer if other keys are pressed after L was already held
-                        lKeyWasPressed = true;
+                        s.keyWasPressed = true;
                     } else {
-                        if (lKeyWasPressed) {
-                            // L key physically released - only jump to top if was isolated when first pressed and not held too long
-                            if (lWasIsolated && !(keysHeld & ~KEY_L & ALL_KEYS_MASK)) {  // Was isolated initially and no other keys held at release
-                                const u64 holdDuration = currentTime_ns - lButtonPressStart_ns;
-                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                    jumpToTop.store(true, std::memory_order_release);
+                        if (s.keyWasPressed) {
+                            if (s.wasIsolated && !notKeyPressed) {
+                                if (currentTime_ns - s.pressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
+                                    jumpSignal.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
                                 }
                             }
                         }
-                        lKeyWasPressed = false;
-                        lWasIsolated = false;
+                        s.keyWasPressed = false;
+                        s.wasIsolated   = false;
                     }
-                }
+                };
+
+                // Handle L button (simple jump to top on release, but not if held too long)
+                handleJumpButton(lState, lKeyPressed, notlKeyPressed, jumpToTop);
                 
                 // Handle R button (simple jump to bottom on release, but not if held too long)
-                {
-                    static bool rKeyWasPressed = false;
-                    static bool rWasIsolated = false;  // Track if R was isolated when first pressed
-                    static u64 rButtonPressStart_ns = 0;
-                    
-                    if (rKeyPressed) {
-                        if (!rKeyWasPressed) {
-                            // R key physically pressed for the first time (start timer)
-                            rButtonPressStart_ns = currentTime_ns;
-                            rWasIsolated = !notrKeyPressed;  // Remember if it started isolated
-                        }
-                        // Don't reset timer if other keys are pressed after R was already held
-                        rKeyWasPressed = true;
-                    } else {
-                        if (rKeyWasPressed) {
-                            // R key physically released - only jump to bottom if was isolated when first pressed and not held too long
-                            if (rWasIsolated && !(keysHeld & ~KEY_R & ALL_KEYS_MASK)) {  // Was isolated initially and no other keys held at release
-                                const u64 holdDuration = currentTime_ns - rButtonPressStart_ns;
-                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                    jumpToBottom.store(true, std::memory_order_release);
-                                    currentGui->requestFocus(topElement, FocusDirection::None);
-                                }
-                            }
-                        }
-                        rKeyWasPressed = false;
-                        rWasIsolated = false;
-                    }
-                }
+                handleJumpButton(rState, rKeyPressed, notrKeyPressed, jumpToBottom);
                 
-                // Handle ZL button (skip up with hold)
-                {
-                    static u64 zlLastClickTime_ns = 0;
-                    static bool zlKeyWasPressed = false;
-                    static bool zlWasIsolated = false;  // Track if ZL was isolated when first pressed
-                    static bool zlInRapidClickMode = false;
-                    static u64 zlFirstClickPressStart_ns = 0;  // Track timing for first clicks only
-                    
-                    // Check if we should exit rapid click mode due to timeout
-                    if (zlInRapidClickMode && (currentTime_ns - zlLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                        zlInRapidClickMode = false;
-                    }
-                    
-                    if (zlKeyPressed) {
-                        if (!zlKeyWasPressed) {
-                            // ZL key physically pressed for the first time
-                            const u64 timeSinceLastClick = currentTime_ns - zlLastClickTime_ns;
-                            
-                            zlWasIsolated = !notzlKeyPressed;  // Remember if it started isolated
-                            
-                            // Track press start time for first clicks (when not in rapid mode)
-                            if (!zlInRapidClickMode) {
-                                zlFirstClickPressStart_ns = currentTime_ns;
-                            }
-                            
-                            // Enter rapid click mode if clicking within window
-                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                                zlInRapidClickMode = true;
-                            }
-                            
-                            // Only trigger immediately if in rapid click mode AND was isolated initially
-                            if (zlInRapidClickMode && zlWasIsolated) {
-                                skipUp.store(true, std::memory_order_release);
+                struct SkipButtonState {
+                    u64  lastClickTime_ns        = 0;
+                    bool keyWasPressed           = false;
+                    bool wasIsolated             = false;
+                    bool inRapidClickMode        = false;
+                    u64  firstClickPressStart_ns = 0;
+                    u64  buttonPressStart_ns     = 0;
+                    u64  lastHoldTrigger_ns      = 0;
+                    bool holdTriggered           = false;
+                };
+                static SkipButtonState zlState, zrState;
+                
+                auto handleSkipButton = [&](SkipButtonState& s,
+                                            bool keyPressed, bool notKeyPressed,
+                                            std::atomic<bool>& skipSignal) {
+                    if (s.inRapidClickMode &&
+                        (currentTime_ns - s.lastClickTime_ns) > RAPID_MODE_TIMEOUT_NS)
+                        s.inRapidClickMode = false;
+                
+                    if (keyPressed) {
+                        if (!s.keyWasPressed) {
+                            const u64 timeSinceLastClick = currentTime_ns - s.lastClickTime_ns;
+                            s.wasIsolated = !notKeyPressed;
+                
+                            if (!s.inRapidClickMode)
+                                s.firstClickPressStart_ns = currentTime_ns;
+                
+                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS)
+                                s.inRapidClickMode = true;
+                
+                            if (s.inRapidClickMode && s.wasIsolated) {
+                                skipSignal.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
-                                zlLastClickTime_ns = currentTime_ns;
+                                s.lastClickTime_ns = currentTime_ns;
                             }
                         }
-                        
-                        // Check for hold behavior - ONLY if in rapid click mode AND was isolated initially
-                        if (zlInRapidClickMode && zlWasIsolated) {
-                            static u64 zlButtonPressStart_ns = 0;
-                            static u64 zlLastHoldTrigger_ns = 0;
-                            static bool zlHoldTriggered = false;
-                            
-                            // Initialize on new press
-                            if (!zlKeyWasPressed) {
-                                zlButtonPressStart_ns = currentTime_ns;
-                                zlLastHoldTrigger_ns = currentTime_ns;
-                                zlHoldTriggered = false;
+                
+                        if (s.inRapidClickMode && s.wasIsolated) {
+                            if (!s.keyWasPressed) {
+                                s.buttonPressStart_ns = currentTime_ns;
+                                s.lastHoldTrigger_ns  = currentTime_ns;
+                                s.holdTriggered       = false;
                             }
-                            
-                            const u64 holdDuration = currentTime_ns - zlButtonPressStart_ns;
-                            
+                
+                            const u64 holdDuration = currentTime_ns - s.buttonPressStart_ns;
                             if (holdDuration >= HOLD_THRESHOLD_NS) {
-                                // Calculate dynamic interval based on hold duration (accelerating)
-                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                               (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                                const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
-                                
-                                const u64 timeSinceLastHoldTrigger = currentTime_ns - zlLastHoldTrigger_ns;
-                                
-                                if (!zlHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
-                                    // Trigger skip
-                                    skipUp.store(true, std::memory_order_release);
+                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f
+                                    : static_cast<float>(holdDuration) / ACCELERATION_POINT_NS;
+                                const u64 interval = static_cast<u64>(
+                                    (1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                
+                                if (!s.holdTriggered ||
+                                    (currentTime_ns - s.lastHoldTrigger_ns) >= interval) {
+                                    skipSignal.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
-                                    zlHoldTriggered = true;
-                                    zlLastHoldTrigger_ns = currentTime_ns;
-                                    zlLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
+                                    s.holdTriggered      = true;
+                                    s.lastHoldTrigger_ns = currentTime_ns;
+                                    s.lastClickTime_ns   = currentTime_ns;
                                 }
                             }
                         }
-                        
-                        zlKeyWasPressed = true;
+                
+                        s.keyWasPressed = true;
                     } else {
-                        if (zlKeyWasPressed) {
-                            // ZL key physically released - only trigger if was isolated initially and no other keys held at release
-                            if (!zlInRapidClickMode && zlWasIsolated && !(keysHeld & ~KEY_ZL & ALL_KEYS_MASK)) {
-                                const u64 holdDuration = currentTime_ns - zlFirstClickPressStart_ns;
-                                
-                                // Only trigger if not held too long
-                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                    skipUp.store(true, std::memory_order_release);
+                        if (s.keyWasPressed) {
+                            if (!s.inRapidClickMode && s.wasIsolated && !notKeyPressed) {
+                                if (currentTime_ns - s.firstClickPressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
+                                    skipSignal.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
-                                    zlLastClickTime_ns = currentTime_ns;
-                                    zlInRapidClickMode = true;  // Enter rapid mode after first release
+                                    s.lastClickTime_ns = currentTime_ns;
+                                    s.inRapidClickMode = true;
                                 }
                             }
                         }
-                        zlKeyWasPressed = false;
-                        zlWasIsolated = false;
+                        s.keyWasPressed = false;
+                        s.wasIsolated   = false;
                     }
-                }
+                };
+
+                // Handle ZL button (skip up with hold)
+                handleSkipButton(zlState, zlKeyPressed, notzlKeyPressed, skipUp);
                 
                 // Handle ZR button (skip down with hold)
-                {
-                    static u64 zrLastClickTime_ns = 0;
-                    static bool zrKeyWasPressed = false;
-                    static bool zrWasIsolated = false;  // Track if ZR was isolated when first pressed
-                    static bool zrInRapidClickMode = false;
-                    static u64 zrFirstClickPressStart_ns = 0;  // Track timing for first clicks only
-                    
-                    // Check if we should exit rapid click mode due to timeout
-                    if (zrInRapidClickMode && (currentTime_ns - zrLastClickTime_ns) > RAPID_MODE_TIMEOUT_NS) {
-                        zrInRapidClickMode = false;
-                    }
-                    
-                    if (zrKeyPressed) {
-                        if (!zrKeyWasPressed) {
-                            // ZR key physically pressed for the first time
-                            const u64 timeSinceLastClick = currentTime_ns - zrLastClickTime_ns;
-                            
-                            zrWasIsolated = !notzrKeyPressed;  // Remember if it started isolated
-                            
-                            // Track press start time for first clicks (when not in rapid mode)
-                            if (!zrInRapidClickMode) {
-                                zrFirstClickPressStart_ns = currentTime_ns;
-                            }
-                            
-                            // Enter rapid click mode if clicking within window
-                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS) {
-                                zrInRapidClickMode = true;
-                            }
-                            
-                            // Only trigger immediately if in rapid click mode AND was isolated initially
-                            if (zrInRapidClickMode && zrWasIsolated) {
-                                skipDown.store(true, std::memory_order_release);
-                                currentGui->requestFocus(topElement, FocusDirection::None);
-                                zrLastClickTime_ns = currentTime_ns;
-                            }
-                        }
-                        
-                        // Check for hold behavior - ONLY if in rapid click mode AND was isolated initially
-                        if (zrInRapidClickMode && zrWasIsolated) {
-                            static u64 zrButtonPressStart_ns = 0;
-                            static u64 zrLastHoldTrigger_ns = 0;
-                            static bool zrHoldTriggered = false;
-                            
-                            // Initialize on new press
-                            if (!zrKeyWasPressed) {
-                                zrButtonPressStart_ns = currentTime_ns;
-                                zrLastHoldTrigger_ns = currentTime_ns;
-                                zrHoldTriggered = false;
-                            }
-                            
-                            const u64 holdDuration = currentTime_ns - zrButtonPressStart_ns;
-                            
-                            if (holdDuration >= HOLD_THRESHOLD_NS) {
-                                // Calculate dynamic interval based on hold duration (accelerating)
-                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f : 
-                                               (float)holdDuration / (float)ACCELERATION_POINT_NS;
-                                const u64 currentInterval = ((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
-                                
-                                const u64 timeSinceLastHoldTrigger = currentTime_ns - zrLastHoldTrigger_ns;
-                                
-                                if (!zrHoldTriggered || timeSinceLastHoldTrigger >= currentInterval) {
-                                    // Trigger skip
-                                    skipDown.store(true, std::memory_order_release);
-                                    currentGui->requestFocus(topElement, FocusDirection::None);
-                                    zrHoldTriggered = true;
-                                    zrLastHoldTrigger_ns = currentTime_ns;
-                                    zrLastClickTime_ns = currentTime_ns;  // Keep rapid mode active
-                                }
-                            }
-                        }
-                        
-                        zrKeyWasPressed = true;
-                    } else {
-                        if (zrKeyWasPressed) {
-                            // ZR key physically released - only trigger if was isolated initially and no other keys held at release
-                            if (!zrInRapidClickMode && zrWasIsolated && !(keysHeld & ~KEY_ZR & ALL_KEYS_MASK)) {
-                                const u64 holdDuration = currentTime_ns - zrFirstClickPressStart_ns;
-                                
-                                // Only trigger if not held too long
-                                if (holdDuration < INITIAL_HOLD_THRESHOLD_NS) {
-                                    skipDown.store(true, std::memory_order_release);
-                                    currentGui->requestFocus(topElement, FocusDirection::None);
-                                    zrLastClickTime_ns = currentTime_ns;
-                                    zrInRapidClickMode = true;  // Enter rapid mode after first release
-                                }
-                            }
-                        }
-                        zrKeyWasPressed = false;
-                        zrWasIsolated = false;
-                    }
-                }
+                handleSkipButton(zrState, zrKeyPressed, notzrKeyPressed, skipDown);
             }
 
+            
+            // On the very first frame of a new touch, check if it lands on a notification.
+            // If so, dismiss that notification and consume the entire gesture so the overlay
+            // never sees a touch, scroll, or footer-button event from it.
+            if (!oldTouchDetected && touchDetected) {
+                if (notification && notification->hitTest(
+                        static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y))) {
+                    notification->dismissAt(
+                        static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y));
+                    notificationTouchConsumed = true;
+                }
+            }
+            if (!touchDetected && oldTouchDetected)
+                notificationTouchConsumed = false;
+            
+            if (notificationTouchConsumed) {
+                oldTouchDetected = touchDetected;
+                oldTouchPos      = touchPos;
+                return;
+            }
             
             if (!touchDetected && oldTouchDetected && currentGui && topElement) {
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
@@ -11853,8 +11744,6 @@ namespace tsl {
             const bool selectTouched = !ult::noClickableItems.load(std::memory_order_acquire) &&
                                        (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) &&
                                        (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
-            
-
 
             const bool nextPageTouched = ult::hasNextPageButton.load(std::memory_order_acquire) && (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
                                           (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
@@ -11866,17 +11755,13 @@ namespace tsl {
             // Only update and trigger rumble on state changes
             bool shouldTriggerRumble = false;
             
-            if (backTouched != ult::touchingBack.exchange(backTouched, std::memory_order_acq_rel)) {
-                if (backTouched) shouldTriggerRumble = true;
-            }
-            
-            if (selectTouched != ult::touchingSelect.exchange(selectTouched, std::memory_order_acq_rel)) {
-                if (selectTouched) shouldTriggerRumble = true;
-            }
-            
-            if (nextPageTouched != ult::touchingNextPage.exchange(nextPageTouched, std::memory_order_acq_rel)) {
-                if (nextPageTouched) shouldTriggerRumble = true;
-            }
+            auto checkTouched = [&](bool touched, std::atomic<bool>& state) {
+                if (touched != state.exchange(touched, std::memory_order_acq_rel))
+                    if (touched) shouldTriggerRumble = true;
+            };
+            checkTouched(backTouched,     ult::touchingBack);
+            checkTouched(selectTouched,   ult::touchingSelect);
+            checkTouched(nextPageTouched, ult::touchingNextPage);
             
             if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
                 if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) || (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) shouldTriggerRumble = true;
@@ -11889,12 +11774,7 @@ namespace tsl {
             
             if (touchDetected) {
                 // Update lastSimulatedTouch with current touch states
-                lastSimulatedTouch = {
-                    backTouched, 
-                    selectTouched, 
-                    nextPageTouched, 
-                    menuTouched
-                };
+                lastSimulatedTouch = {backTouched, selectTouched, nextPageTouched, menuTouched};
 
                 ult::interruptedTouch.store(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_release);
             
@@ -12266,53 +12146,25 @@ namespace tsl {
 
             std::string tempStr;
             
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_clock"];
-            ult::removeQuotes(tempStr);
-            ult::hideClock = tempStr != ult::FALSE_STR;
+            auto& proj = parsedConfig[ult::ULTRAHAND_PROJECT_NAME];
+            auto readBool = [&](const char* key) -> bool {
+                auto s = proj[key];
+                ult::removeQuotes(s);
+                return s != ult::FALSE_STR;
+            };
             
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_battery"];
-            ult::removeQuotes(tempStr);
-            ult::hideBattery = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_pcb_temp"];
-            ult::removeQuotes(tempStr);
-            ult::hidePCBTemp = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_soc_temp"];
-            ult::removeQuotes(tempStr);
-            ult::hideSOCTemp = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_widget_colors"];
-            ult::removeQuotes(tempStr);
-            ult::dynamicWidgetColors = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["hide_widget_backdrop"];
-            ult::removeQuotes(tempStr);
-            ult::hideWidgetBackdrop = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["center_widget_alignment"];
-            ult::removeQuotes(tempStr);
-            ult::centerWidgetAlignment = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["extended_widget_backdrop"];
-            ult::removeQuotes(tempStr);
-            ult::extendedWidgetBackdrop = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["dynamic_logo"];
-            ult::removeQuotes(tempStr);
-            ult::useDynamicLogo = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_bg"];
-            ult::removeQuotes(tempStr);
-            ult::useSelectionBG = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_text"];
-            ult::removeQuotes(tempStr);
-            ult::useSelectionText = tempStr != ult::FALSE_STR;
-            
-            tempStr = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["selection_value"];
-            ult::removeQuotes(tempStr);
-            ult::useSelectionValue = tempStr != ult::FALSE_STR;
+            ult::hideClock              = readBool("hide_clock");
+            ult::hideBattery            = readBool("hide_battery");
+            ult::hidePCBTemp            = readBool("hide_pcb_temp");
+            ult::hideSOCTemp            = readBool("hide_soc_temp");
+            ult::dynamicWidgetColors    = readBool("dynamic_widget_colors");
+            ult::hideWidgetBackdrop     = readBool("hide_widget_backdrop");
+            ult::centerWidgetAlignment  = readBool("center_widget_alignment");
+            ult::extendedWidgetBackdrop = readBool("extended_widget_backdrop");
+            ult::useDynamicLogo         = readBool("dynamic_logo");
+            ult::useSelectionBG         = readBool("selection_bg");
+            ult::useSelectionText       = readBool("selection_text");
+            ult::useSelectionValue      = readBool("selection_value");
 
         }
 
@@ -12370,10 +12222,10 @@ namespace tsl {
         
             // For handling screenshots color alpha
             Event captureButtonPressEvent = {};
-            hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
-            eventClear(&captureButtonPressEvent);
-            hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
-            eventClear(&captureButtonPressEvent);
+            for (int i = 0; i < 2; i++) {
+                hidsysAcquireCaptureButtonEventHandle(&captureButtonPressEvent, false);
+                eventClear(&captureButtonPressEvent);
+            }
             tsl::hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
 
             // Parse Tesla settings
@@ -12449,6 +12301,8 @@ namespace tsl {
 
             // Notification variables
             u64 lastNotifCheck = 0;
+            u64 minusHoldStartTick = 0;
+            bool minusHoldArmed = false;
             
             while (shData->running.load(std::memory_order_acquire)) {
 
@@ -12750,6 +12604,58 @@ namespace tsl {
                     }
                     #endif
                     
+                    // KEY_MINUS: dismiss topmost notification, consume key
+                    // Fires whether overlay is open or hidden.
+                    // Skipped if MINUS is (part of) a launch combo, or if
+                    // other buttons are also held (which means it's mid-combo).
+                    if ((shData->keysDown & KEY_MINUS)
+                        && !(shData->keysHeld & ~KEY_MINUS & ALL_KEYS_MASK)
+                        && tsl::cfg::launchCombo  != KEY_MINUS
+                        && tsl::cfg::launchCombo2 != KEY_MINUS
+                        && notification && notification->isActive()) {
+                        notification->dismissFront();
+                        shData->keysDown &= ~KEY_MINUS;
+                        shData->keysHeld &= ~KEY_MINUS;
+                    }
+
+                    // KEY_MINUS: hold 3s to toggle notifications
+                    if (ult::useNotificationsHotkey && tsl::cfg::launchCombo  != KEY_MINUS
+                                                    && tsl::cfg::launchCombo2 != KEY_MINUS) {
+                        const bool minusAlone = (shData->keysHeld & KEY_MINUS)
+                                             && !(shData->keysHeld & ~KEY_MINUS & ALL_KEYS_MASK);
+                        if (minusAlone) {
+                            if (!minusHoldArmed) {
+                                minusHoldArmed     = true;
+                                minusHoldStartTick = nowTick;
+                            } else if (armTicksToNs(nowTick - minusHoldStartTick) >= 3'000'000'000ULL) {
+                                minusHoldArmed = false;
+                                ult::useNotifications = !ult::useNotifications;
+                                ult::setIniFileValue(
+                                    ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME,
+                                    "notifications",
+                                    ult::useNotifications ? ult::TRUE_STR : ult::FALSE_STR
+                                );
+                                if (ult::useNotifications) {
+                                    if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
+                                        if (FILE* f = std::fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w"))
+                                            std::fclose(f);
+                                    }
+                                    if (notification)
+                                        notification->show(ult::NOTIFY_HEADER+"API notifications enabled.", 22, 0);
+                                } else {
+                                    ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
+                                    if (notification)
+                                        notification->show(ult::NOTIFY_HEADER+"API notifications disabled.", 22, 0);
+                                }
+                                shData->keysDown &= ~KEY_MINUS;
+                                shData->keysHeld &= ~KEY_MINUS;
+                            }
+                        } else {
+                            minusHoldArmed = false;
+                        }
+                    }
+
                     // Check main launch combo first (highest priority)
                     if ((((shData->keysHeld & tsl::cfg::launchCombo) == tsl::cfg::launchCombo) && shData->keysDown & tsl::cfg::launchCombo)) {
                     #if IS_LAUNCHER_DIRECTIVE
@@ -12921,12 +12827,7 @@ namespace tsl {
         
                                 if (overlayFileName.compare("ovlmenu.ovl") == 0) {
                                     finalArgs += " --comboReturn";
-                                    ult::setIniFileValue(
-                                        ult::ULTRAHAND_CONFIG_INI_PATH,
-                                        ult::ULTRAHAND_PROJECT_NAME,
-                                        ult::IN_OVERLAY_STR,
-                                        ult::TRUE_STR
-                                    );
+                                    ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                 }
                                 
                                 eventClose(&homeButtonPressEvent);
@@ -13530,12 +13431,15 @@ namespace tsl {
             bool comboBreakout = false;
             bool firstLoop = !ult::firstBoot;
             
+            auto exitLaunching = [&]() __attribute__((noinline)) {
+                shData.running.store(false, std::memory_order_release);
+                shData.overlayOpen.store(false, std::memory_order_release);
+            };
+
             while (shData.running.load(std::memory_order_acquire)) {
                 // Early exit if launching new overlay
                 if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                    shData.running.store(false, std::memory_order_release);
-                    shData.overlayOpen.store(false, std::memory_order_release);
-                    break;
+                    exitLaunching(); break;
                 }
                 
                 // Wait for events only if no active notification
@@ -13551,11 +13455,28 @@ namespace tsl {
                     while (shData.running.load(std::memory_order_acquire)) {
                         {
                             if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                                shData.running.store(false, std::memory_order_release);
-                                shData.overlayOpen.store(false, std::memory_order_release);
-                                break;
+                                exitLaunching(); break;
                             }
                             overlay->loop(true); // Draw prompts while hidden
+
+                            // ── Notification touch-dismiss while overlay is hidden ──────────────
+                            {
+                                std::scoped_lock lock(shData.dataMutex);
+                                static bool hiddenTouchWasDown = false;
+                                const bool touchNow = shData.touchState.count > 0;
+                    
+                                if (!hiddenTouchWasDown && touchNow) {
+                                    // First frame of a new touch gesture — run hit test
+                                    const HidTouchState& tp = shData.touchState.touches[0];
+                                    if (notification && notification->hitTest(
+                                            static_cast<s32>(tp.x), static_cast<s32>(tp.y))) {
+                                        notification->dismissAt(
+                                            static_cast<s32>(tp.x), static_cast<s32>(tp.y));
+                                    }
+                                }
+                                hiddenTouchWasDown = touchNow;
+                            }
+                            // ───────────────────────────────────────────────────────────────────
                         }
                         
                         if (mainComboHasTriggered.exchange(false, std::memory_order_acq_rel)) {
@@ -13585,8 +13506,7 @@ namespace tsl {
                         if (exitAfterPrompt) {
                             std::scoped_lock lock(shData.dataMutex);
                             exitAfterPrompt = false;
-                            shData.running.store(false, std::memory_order_release);
-                            shData.overlayOpen.store(false, std::memory_order_release);
+                            exitLaunching();
                             ult::launchingOverlay.store(true, std::memory_order_release);
                             launchComboHasTriggered.store(true, std::memory_order_release); // for isolating sound effect
     
@@ -13603,9 +13523,7 @@ namespace tsl {
     
                 {
                     if (ult::launchingOverlay.load(std::memory_order_acquire)) {
-                        shData.running.store(false, std::memory_order_release);
-                        shData.overlayOpen.store(false, std::memory_order_release);
-                        break;
+                        exitLaunching(); break;
                     }
                     firstLoop = false;
                     shData.overlayOpen.store(true, std::memory_order_release);

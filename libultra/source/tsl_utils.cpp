@@ -204,6 +204,7 @@ namespace ult {
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
     bool useNotifications = true;
+    bool useNotificationsHotkey = true;
     bool useStartupNotification = true;
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
@@ -450,7 +451,7 @@ namespace ult {
     std::string FAILED_TO_OPEN;
     std::string LAUNCH_COMBOS;
     std::string STARTUP_NOTIFICATION;
-    std::string EXTERNAL_NOTIFICATIONS;
+    std::string API_NOTIFICATIONS;
     std::string HAPTIC_FEEDBACK;
     std::string OPAQUE_SCREENSHOTS;
     std::string PACKAGE_INFO;
@@ -651,7 +652,7 @@ namespace ult {
         {&FAILED_TO_OPEN,             "FAILED_TO_OPEN",             "Failed to open file"},
         {&LAUNCH_COMBOS,              "LAUNCH_COMBOS",              "Launch Combos"},
         {&STARTUP_NOTIFICATION,       "STARTUP_NOTIFICATION",       "Startup Notification"},
-        {&EXTERNAL_NOTIFICATIONS,     "EXTERNAL_NOTIFICATIONS",     "External Notifications"},
+        {&API_NOTIFICATIONS,          "API_NOTIFICATIONS",          "API Notifications"},
         {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
         {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
         {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},
