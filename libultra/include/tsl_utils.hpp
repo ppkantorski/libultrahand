@@ -501,15 +501,6 @@ namespace ult {
         map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
         return map;
     }();
-    
-    
-    // Prepare a map of default settings
-    struct ThemeDefault { const char* key; const char* value; };
-    extern const ThemeDefault defaultThemeSettings[];
-    extern const size_t defaultThemeSettingsCount;
-    const char* getThemeDefault(const char* key);
-    
-    bool isValidHexColor(const std::string& hexColor);
             
     
     extern std::atomic<bool> refreshWallpaperNow;

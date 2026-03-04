@@ -105,6 +105,8 @@ size_t defaultBackgroundAlpha = 0;
 Color  defaultBackgroundColor;
 Color  defaultTextColor;
 Color  notificationTextColor;
+Color  notificationTitleColor;
+Color  notificationClockColor;
 Color  headerTextColor;
 Color  headerSeparatorColor;
 Color  starColor;
@@ -196,6 +198,103 @@ Color trackBarFullColor;
 Color trackBarEmptyColor;
 
 
+// Prepare a map of default settings
+constexpr ThemeDefault defaultThemeSettings[] = {
+    // Must stay sorted alphabetically for binary search
+    {"bad_ram_text_color",              "FF0000"},
+    {"banner_version_text_color",       "AAAAAA"},
+    {"battery_charging_color",          "00FF00"},
+    {"battery_color",                   "ffff45"},
+    {"battery_low_color",               "FF0000"},
+    {"bg_alpha",                        "13"},
+    {"bg_color",                        "000000"},
+    {"bottom_button_color",             "FFFFFF"},
+    {"bottom_separator_color",          "FFFFFF"},
+    {"bottom_text_color",               "FFFFFF"},
+    {"click_alpha",                     "7"},
+    {"click_color",                     "3E25F7"},
+    {"click_text_color",                "FFFFFF"},
+    {"clock_color",                     "FFFFFF"},
+    {"default_overlay_color",           "FFFFFF"},
+    {"default_package_color",           "FFFFFF"},
+    {"default_script_color",            "FF33FF"},
+    {"dynamic_logo_color_1",            "00E669"},
+    {"dynamic_logo_color_2",            "8080EA"},
+    {"header_separator_color",          "FFFFFF"},
+    {"header_text_color",               "FFFFFF"},
+    {"healthy_ram_text_color",          "00FF00"},
+    {"highlight_color_1",               "2288CC"},
+    {"highlight_color_2",               "88FFFF"},
+    {"highlight_color_3",               "FFFF45"},
+    {"highlight_color_4",               "F7253E"},
+    {"inprogress_text_color",           "FFFF45"},
+    {"invalid_text_color",              "FF0000"},
+    {"invert_bg_click_color",           "false"},
+    {"logo_color_1",                    "FFFFFF"},
+    {"logo_color_2",                    "FF0000"},
+    {"neutral_ram_text_color",          "FFAA00"},
+    {"notification_text_color",         "FFFFFF"},
+    {"notification_title_color",        "FFFFFF"},
+    {"notification_clock_color",        "AAAAAA"},
+    {"off_text_color",                  "AAAAAA"},
+    {"on_text_color",                   "00FFDD"},
+    {"overlay_text_color",              "FFFFFF"},
+    {"overlay_version_text_color",      "AAAAAA"},
+    {"package_text_color",              "FFFFFF"},
+    {"package_version_text_color",      "AAAAAA"},
+    {"progress_alpha",                  "7"},
+    {"progress_color",                  "253EF7"},
+    {"scrollbar_color",                 "555555"},
+    {"scrollbar_wall_color",            "AAAAAA"},
+    {"selection_bg_alpha",              "11"},
+    {"selection_bg_color",              "000000"},
+    {"selection_star_color",            "FFFFFF"},
+    {"selection_text_color",            "9ed0ff"},
+    {"selection_value_text_color",      "FF7777"},
+    {"separator_alpha",                 "15"},
+    {"separator_color",                 "404040"},
+    {"star_color",                      "FFFFFF"},
+    {"table_bg_alpha",                  "14"},
+    {"table_bg_color",                  "2C2C2C"},
+    {"table_info_text_color",           "9ed0ff"},
+    {"table_section_text_color",        "FFFFFF"},
+    {"temperature_color",               "FFFFFF"},
+    {"text_color",                      "FFFFFF"},
+    {"text_separator_color",            "404040"},
+    {"top_separator_color",             "404040"},
+    {"trackbar_empty_color",            "404040"},
+    {"trackbar_full_color",             "00FFDD"},
+    {"trackbar_slider_border_color",    "505050"},
+    {"trackbar_slider_color",           "606060"},
+    {"trackbar_slider_malleable_color", "A0A0A0"},
+    {"ult_overlay_text_color",          "9ed0ff"},
+    {"ult_overlay_version_text_color",  "00FFDD"},
+    {"ult_package_text_color",          "9ed0ff"},
+    {"ult_package_version_text_color",  "00FFDD"},
+    {"warning_text_color",              "FF7777"},
+    {"widget_backdrop_alpha",           "15"},
+    {"widget_backdrop_color",           "000000"},
+};
+const size_t defaultThemeSettingsCount = sizeof(defaultThemeSettings) / sizeof(defaultThemeSettings[0]);
+
+const char* getThemeDefault(const char* key) {
+    size_t lo = 0, hi = defaultThemeSettingsCount;
+    while (lo < hi) {
+        const size_t mid = (lo + hi) / 2;
+        const int cmp = strcmp(defaultThemeSettings[mid].key, key);
+        if (cmp == 0) return defaultThemeSettings[mid].value;
+        if (cmp < 0)  lo = mid + 1;
+        else          hi = mid;
+    }
+    return "";
+}
+
+
+bool isValidHexColor(const std::string& s) {
+    if (s.size() != 6) return false;
+    for (char c : s) if (!isxdigit(c)) return false;
+    return true;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -213,7 +312,7 @@ void initializeThemeVars() {
             auto it = sectionIt->second.find(key);
             if (it != sectionIt->second.end()) return it->second.c_str();
         }
-        return ult::getThemeDefault(key);
+        return getThemeDefault(key);
     };
 
     auto getColor = [&](const char* key, size_t alpha = 15) {
@@ -235,6 +334,8 @@ void initializeThemeVars() {
     defaultBackgroundColor       = getColor("bg_color", defaultBackgroundAlpha);
     defaultTextColor             = getColor("text_color");
     notificationTextColor        = getColor("notification_text_color");
+    notificationTitleColor       = getColor("notification_title_color");
+    notificationClockColor       = getColor("notification_clock_color");
     headerTextColor              = getColor("header_text_color");
     headerSeparatorColor         = getColor("header_separator_color");
     starColor                    = getColor("star_color");

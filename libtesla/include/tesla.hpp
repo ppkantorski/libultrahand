@@ -367,6 +367,8 @@ namespace tsl {
     extern Color defaultBackgroundColor;
     extern Color defaultTextColor;
     extern Color notificationTextColor;
+    extern Color notificationTitleColor;
+    extern Color notificationClockColor;
     extern Color headerTextColor;
     extern Color headerSeparatorColor;
     extern Color starColor;
@@ -453,6 +455,14 @@ namespace tsl {
     extern Color trackBarSliderMalleableColor;
     extern Color trackBarFullColor;
     extern Color trackBarEmptyColor;
+
+    // Prepare a map of default settings
+    struct ThemeDefault { const char* key; const char* value; };
+    extern const ThemeDefault defaultThemeSettings[];
+    extern const size_t defaultThemeSettingsCount;
+    const char* getThemeDefault(const char* key);
+    
+    bool isValidHexColor(const std::string& hexColor);
 
     // Defined in tesla.cpp — reads theme INI and populates all color vars above
     void initializeThemeVars();
@@ -4837,7 +4847,7 @@ namespace tsl {
                         return defaultPackageColor;
                     case 'w': return (len == 5) ? tsl::Color{0xF,0xF,0xF,0xF} : defaultPackageColor;
                     case '#': 
-                        return (len == 7 && ult::isValidHexColor(m_colorSelection.substr(1))) 
+                        return (len == 7 && isValidHexColor(m_colorSelection.substr(1))) 
                             ? RGB888(m_colorSelection.substr(1)) : defaultPackageColor;
                     default: return defaultPackageColor;
                 }
@@ -10561,11 +10571,11 @@ namespace tsl {
 
                     #if IS_LAUNCHER_DIRECTIVE
                     if (slot.data.title.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos)
-                        drawUltrahandLine(renderer, slot.data.title, textAreaX, titleY, TITLE_FONT, fadeAlpha);
+                        drawUltrahandLine(renderer, slot.data.title, textAreaX, titleY, TITLE_FONT, fadeAlpha, notificationTitleColor);
                     else {
                     #endif
                         renderer->drawNotificationString(slot.data.title, false,
-                            textAreaX, titleY, TITLE_FONT, fc(notificationTextColor));
+                            textAreaX, titleY, TITLE_FONT, fc(notificationTitleColor));
                     #if IS_LAUNCHER_DIRECTIVE
                     }
                     #endif
@@ -10576,7 +10586,7 @@ namespace tsl {
                         const s32 tsX = textAreaX + innerW - tsW;
                         if (tsX > textAreaX)
                             renderer->drawNotificationString(slot.data.timestamp, false,
-                                tsX, titleY, TITLE_FONT, fc(notificationTextColor));
+                                tsX, titleY, TITLE_FONT, fc(notificationClockColor));
                     }
 
                     for (s32 li = 0; li < static_cast<s32>(lines.count); ++li)
@@ -10636,11 +10646,13 @@ namespace tsl {
 
         #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
-                               s32 x, s32 y, u32 fontSize, float fadeAlpha) {
+                               s32 x, s32 y, u32 fontSize, float fadeAlpha,
+                               Color textColor = notificationTextColor) {
+
             auto fc = [&](Color c) { return applyAlpha(c, fadeAlpha); };
             const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
             if (up == std::string::npos) {
-                renderer->drawNotificationString(line, false, x, y, fontSize, fc(notificationTextColor));
+                renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));  // use textColor
                 return;
             }
             const std::string before = line.substr(0, up);
@@ -10651,14 +10663,14 @@ namespace tsl {
             hw = renderer->getNotificationTextDimensions(hand, false, fontSize).first;
             s32 curX = x;
             if (!before.empty()) {
-                renderer->drawNotificationString(before, false, curX, y, fontSize, fc(notificationTextColor));
+                renderer->drawNotificationString(before, false, curX, y, fontSize, fc(textColor));  // use textColor
                 curX += bw;
             }
             curX = tsl::elm::drawDynamicUltraText(renderer, curX, y, fontSize, fc(logoColor1), true);
             renderer->drawNotificationString(hand, false, curX, y, fontSize, fc(logoColor2));
             curX += hw;
             if (!after.empty())
-                renderer->drawNotificationString(after, false, curX, y, fontSize, fc(notificationTextColor));
+                renderer->drawNotificationString(after, false, curX, y, fontSize, fc(textColor));  // use textColor
         }
         #endif
     };
@@ -11209,6 +11221,7 @@ namespace tsl {
                     tsl::gfx::FontManager::clearNotificationCache();
                     #if IS_STATUS_MONITOR_DIRECTIVE
                     if (wasRendering) {
+                        pendingExit = false;
                         wasRendering = false;
                         isRendering = true;
                         leventClear(&renderingStopEvent);
@@ -12885,8 +12898,14 @@ namespace tsl {
         
                             #if IS_STATUS_MONITOR_DIRECTIVE
                             if (inOverlayMode) {
-                                isRendering = true;
-                                leventClear(&renderingStopEvent);
+                                if (notification && notification->isActive()) {
+                                    // Notification is still animating — don't re-enable the frame limiter yet.
+                                    // Restore wasRendering so the notification draw loop handles re-enabling when done.
+                                    wasRendering = true;
+                                } else {
+                                    isRendering = true;
+                                    leventClear(&renderingStopEvent);
+                                }
                                 delayUpdate = false;
                             }
                             #endif
@@ -13566,14 +13585,16 @@ namespace tsl {
                         #endif
                     }
     
-    #if IS_STATUS_MONITOR_DIRECTIVE
+                #if IS_STATUS_MONITOR_DIRECTIVE
                     if (pendingExit && wasRendering) {
                         pendingExit = false;
-                        wasRendering = false;
-                        isRendering = true;
-                        leventClear(&renderingStopEvent);
+                        if (!(notification && notification->isActive())) {
+                            wasRendering = false;
+                            isRendering = true;
+                            leventClear(&renderingStopEvent);
+                        }
                     }
-    #endif
+                 #endif
     
                     if (overlay->shouldHide()) {
                         if (overlay->shouldCloseAfter()) {
@@ -13583,9 +13604,9 @@ namespace tsl {
                                 break;
                             } else {
                                 exitAfterPrompt = true;
-    #if IS_STATUS_MONITOR_DIRECTIVE
+                            #if IS_STATUS_MONITOR_DIRECTIVE
                                 pendingExit = true;
-    #endif
+                            #endif
                             }
                         }
                         break;
