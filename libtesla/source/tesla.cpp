@@ -461,6 +461,12 @@ void initializeUltrahandSettings() {
     ult::useNotificationsHotkey = getBoolValue("notifications_hotkey", true);
     ult::silenceNotifications = getBoolValue("silence_notifications", false);
 
+    const std::string maxNotifStr = getStringValue("max_notifications");
+    if (!maxNotifStr.empty()) {
+        const int maxNotifVal = ult::stoi(maxNotifStr);
+        if (maxNotifVal >= 1 && maxNotifVal <= 4) tsl::maxNotifications = maxNotifVal;
+    }
+
     ult::useSoundEffects      = getBoolValue("sound_effects", false);
     ult::useHapticFeedback    = getBoolValue("haptic_feedback", false);
     ult::useSwipeToOpen       = getBoolValue("swipe_to_open", true);

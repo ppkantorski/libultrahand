@@ -9992,6 +9992,9 @@ namespace tsl {
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
 
+    // Max notifications cap (max value of 4)
+    static inline int maxNotifications = 3;
+
     struct NotificationFile {
         std::string filename;
         std::string fullPath;
@@ -10048,7 +10051,7 @@ namespace tsl {
         static constexpr size_t MESSAGE_FONT     = 22;
         static constexpr s32    NOTIF_ICON_DIM   = 50;
         static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
-        static constexpr int    MAX_VISIBLE      = 3;
+        static constexpr int    MAX_VISIBLE      = 4;
 
         // ── Public API ───────────────────────────────────────────────────────────
 
@@ -10091,7 +10094,7 @@ namespace tsl {
                         skipFadeIn = true;
                     } else {
                         bool moved = false;
-                        for (int j = 1; j < MAX_VISIBLE; ++j) {
+                        for (int j = 1; j < maxNotifications; ++j) {
                             if (!slots_[j].active) {
                                 slots_[j] = std::move(s0);
                                 clearSlot_NoLock(0);
@@ -10106,7 +10109,7 @@ namespace tsl {
                 repackSlots_NoLock(armTicksToNs(armGetSystemTick()));
             } else {
                 int freeSlot = -1;
-                for (int i = 0; i < MAX_VISIBLE; ++i)
+                for (int i = 0; i < maxNotifications; ++i)
                     if (!slots_[i].active) { freeSlot = i; break; }
                 if (freeSlot >= 0) {
                     placeInSlot_NoLock(freeSlot, std::move(data), false, resume, resume);
@@ -10136,7 +10139,7 @@ namespace tsl {
             if (fname.empty()) return false;
             if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications; ++i)
                 if (slots_[i].active && slots_[i].data.fileName == fname) return true;
             return false;
         }
@@ -10152,7 +10155,7 @@ namespace tsl {
             std::lock_guard<std::mutex> lg(state_mutex_);
             const u64 now = armTicksToNs(armGetSystemTick());
 
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
+            for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
                 if (!slot.active || slot.data.text.empty() ||
                     slot.data.state == PromptState::Inactive) continue;
@@ -10179,7 +10182,7 @@ namespace tsl {
             const u64 now = armTicksToNs(armGetSystemTick());
             bool anyCleared = false;
 
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
+            for (int i = 0; i < maxNotifications; ++i) {
                 Slot& slot = slots_[i];
                 if (!slot.active) continue;
 
@@ -10236,7 +10239,7 @@ namespace tsl {
 
             while (!pending_queue_.empty()) {
                 int freeSlot = -1;
-                for (int i = 0; i < MAX_VISIBLE; ++i)
+                for (int i = 0; i < maxNotifications; ++i)
                     if (!slots_[i].active) { freeSlot = i; break; }
                 if (freeSlot < 0) break;
                 NotifEntry next = pending_queue_.top();
@@ -10248,7 +10251,7 @@ namespace tsl {
         [[nodiscard]] bool isActive() const {
             if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications; ++i)
                 if (slots_[i].active) return true;
             return !pending_queue_.empty();
         }
@@ -10257,7 +10260,7 @@ namespace tsl {
             if (isStale()) return 0;
             std::lock_guard<std::mutex> lg(state_mutex_);
             int count = 0;
-            for (int i = 0; i < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications; ++i)
                 if (slots_[i].active) ++count;
             return count;
         }
@@ -10299,7 +10302,7 @@ namespace tsl {
             // Find the topmost (lowest yCurrent) active slot not already fading out
             int best = -1;
             float bestY = 1.0e9f;
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
+            for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
                 if (!slot.active || slot.data.state == PromptState::FadingOut) continue;
                 if (slot.yCurrent < bestY) { bestY = slot.yCurrent; best = i; }
@@ -10355,12 +10358,12 @@ namespace tsl {
         }
 
         void clearAll_NoLock() {
-            for (int i = 0; i < MAX_VISIBLE; ++i) slots_[i] = Slot{};
+            for (int i = 0; i < maxNotifications; ++i) slots_[i] = Slot{};
             while (!pending_queue_.empty()) pending_queue_.pop();
         }
 
         [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const {
-            for (int i = 0; i < MAX_VISIBLE; ++i) {
+            for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
                 if (!slot.active || slot.data.state == PromptState::Inactive) continue;
                 const s32 sx = ult::useRightAlignment
@@ -10467,9 +10470,9 @@ namespace tsl {
             int order[MAX_VISIBLE];
             int count = 0;
         
-            for (int i = 0; i < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications; ++i)
                 if (slots_[i].active && slots_[i].isShowNow) { order[count++] = i; break; }
-            for (int i = 0; i < MAX_VISIBLE && count < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications && count < maxNotifications; ++i)
                 if (slots_[i].active && !slots_[i].isShowNow) order[count++] = i;
         
             // Step 2: assign y-positions before touching slot storage
@@ -10489,7 +10492,7 @@ namespace tsl {
             Slot packed[MAX_VISIBLE];
             for (int i = 0; i < count; ++i)
                 packed[i] = std::move(slots_[order[i]]);
-            for (int i = 0; i < MAX_VISIBLE; ++i)
+            for (int i = 0; i < maxNotifications; ++i)
                 slots_[i] = (i < count) ? std::move(packed[i]) : Slot{};
         }
 
@@ -12374,7 +12377,7 @@ namespace tsl {
                                     if (firstPoll) seenGeneration = curGen;
                                     const std::string& notifPath = ult::NOTIFICATIONS_PATH;
 
-                                    if (!firstPoll && notification && notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) {
+                                    if (!firstPoll && notification && notification->activeCount() >= maxNotifications) {
                                         closedir(dir);
                                     } else {
 
@@ -12392,7 +12395,7 @@ namespace tsl {
 
                                         const int activeNow   = notification ? notification->activeCount() : 0;
                                         const int slotsWanted = firstPoll
-                                            ? (NotificationPrompt::MAX_VISIBLE - activeNow)
+                                            ? (maxNotifications - activeNow)
                                             : 1;
 
                                         auto isBetter = [](const NotifData& a, const NotifData& b) noexcept {
@@ -12468,7 +12471,7 @@ namespace tsl {
                                         // ── Dispatch ────────────────────────────────────────────────────
                                         if (notification) {
                                             for (int i = 0; i < topCount; ++i) {
-                                                if (notification->activeCount() >= NotificationPrompt::MAX_VISIBLE) break;
+                                                if (notification->activeCount() >= maxNotifications) break;
                                                 const NotifData& nd = topSlots[i];
                                                 // Resume: stagger expiry so earlier slots fade first.
                                                 // Slot 0 of N loses (N-1) seconds, slot 1 loses (N-2), …, last loses 0.
