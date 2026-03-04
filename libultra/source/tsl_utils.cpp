@@ -30,7 +30,7 @@ extern "C" { // assertion override
 namespace ult {
 
     double cos(double x) {
-        static constexpr double PI = 3.14159265358979323846;
+        //static constexpr double PI = 3.14159265358979323846;
         static constexpr double TWO_PI = 6.28318530717958647692;
         static constexpr double HALF_PI = 1.57079632679489661923;
         
@@ -38,12 +38,12 @@ namespace ult {
         if (x < 0) x += TWO_PI;
         
         int sign = 1;
-        if (x > PI) {
-           x -= PI;
+        if (x > _M_PI) {
+           x -= _M_PI;
            sign = -1;
         }
         if (x > HALF_PI) {
-           x = PI - x;
+           x = _M_PI - x;
            sign = -sign;
         }
         
@@ -160,10 +160,7 @@ namespace ult {
 
     std::string getBuildIdAsString() {
         u64 pid = 0;
-        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)))
-            return NULL_STR;
-        
-        if (R_FAILED(ldrDmntInitialize()))
+        if (R_FAILED(pmdmntGetApplicationProcessId(&pid)) || R_FAILED(ldrDmntInitialize()))
             return NULL_STR;
         
         LoaderModuleInfo moduleInfos[2];
@@ -206,6 +203,7 @@ namespace ult {
     bool useNotifications = true;
     bool useNotificationsHotkey = true;
     bool useStartupNotification = true;
+    bool silenceNotifications = false;
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
     bool usePageSwap = false;
@@ -273,7 +271,7 @@ namespace ult {
     bool updateMenuCombos = false;
 
 
-    std::array<KeyInfo, 18> KEYS_INFO = {{
+    const std::array<KeyInfo, 18> KEYS_INFO = {{
         { HidNpadButton_L, "L", "\uE0E4" }, { HidNpadButton_R, "R", "\uE0E5" },
         { HidNpadButton_ZL, "ZL", "\uE0E6" }, { HidNpadButton_ZR, "ZR", "\uE0E7" },
         { HidNpadButton_AnySL, "SL", "\uE0E8" }, { HidNpadButton_AnySR, "SR", "\uE0E9" },
@@ -826,7 +824,7 @@ namespace ult {
     
     
     // Prepare a map of default settings
-    const ThemeDefault defaultThemeSettings[] = {
+    constexpr ThemeDefault defaultThemeSettings[] = {
         // Must stay sorted alphabetically for binary search
         {"bad_ram_text_color",              "FF0000"},
         {"banner_version_text_color",       "AAAAAA"},

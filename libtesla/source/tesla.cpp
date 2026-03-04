@@ -358,6 +358,7 @@ void initializeUltrahandSettings() {
     }
 
     ult::useNotificationsHotkey = getBoolValue("notifications_hotkey", true);
+    ult::silenceNotifications = getBoolValue("silence_notifications", false);
 
     ult::useSoundEffects      = getBoolValue("sound_effects", false);
     ult::useHapticFeedback    = getBoolValue("haptic_feedback", false);

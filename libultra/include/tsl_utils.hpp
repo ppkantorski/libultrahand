@@ -104,6 +104,7 @@ namespace ult {
     extern bool useNotifications;
     extern bool useNotificationsHotkey;
     extern bool useStartupNotification;
+    extern bool silenceNotifications;
     extern bool useSoundEffects;
     extern bool useHapticFeedback;
     extern bool usePageSwap;
@@ -244,7 +245,7 @@ namespace ult {
      *
      * Ordered as they should be displayed
      */
-    extern std::array<KeyInfo, 18> KEYS_INFO;
+    extern const std::array<KeyInfo, 18> KEYS_INFO;
     extern std::unordered_map<std::string, std::string> buttonCharMap;
     
     
