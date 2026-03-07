@@ -7328,6 +7328,21 @@ namespace tsl {
             }
         };
         
+        class SilentListItem : public tsl::elm::ListItem {
+        public:
+            using tsl::elm::ListItem::ListItem;
+            virtual bool onClick(u64 keys) override {
+                // Skip all sound/rumble triggers, go straight to click listener
+                if (keys & KEY_A) {
+                    if (m_flags.m_useClickAnimation)
+                        triggerClickAnimation();
+                } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+                    m_clickAnimationProgress = 0;
+                }
+                return Element::onClick(keys);
+            }
+        };
+
         class MiniListItem : public ListItem {
         public:
             MiniListItem(const std::string& text, const std::string& value = "")
@@ -12698,8 +12713,8 @@ namespace tsl {
                         
                     }
                 }
-        
-                svcSleepThread(16'000'000ULL);
+                
+                svcSleepThread((ult::useSoundEffects || ult::useHapticFeedback) ? 16'000'000ULL : 160'000'000ULL);
             }
         }
     }

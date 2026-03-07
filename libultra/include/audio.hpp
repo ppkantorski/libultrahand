@@ -12,7 +12,7 @@
  *
  *   Note: Please be aware that this notice cannot be altered or removed. It is a part
  *   of the project's documentation and must remain intact.
- * 
+ *
  *   Licensed under both GPLv2 and CC-BY-4.0
  *   Copyright (c) 2025-2026 ppkantorski
  ********************************************************************************/
@@ -45,21 +45,12 @@ namespace ult {
 
         struct CachedSound {
             // Compact raw PCM — native channel count, 16-bit, no volume applied.
-            // Retained in memory so volume/dock changes can rebake without SD I/O.
-            void*    rawBuf  = nullptr;
-            uint32_t rawSize = 0;   // actual data bytes
-            uint32_t rawCap  = 0;   // allocated (aligned) bytes
-
-            // Pre-baked DMA-ready stereo PCM — mono expanded L+R, volume applied.
-            // Submitted directly to audout so playSound has zero per-sample work.
-            void*    sterBuf  = nullptr;
-            uint32_t sterSize = 0;   // actual stereo data bytes
-            uint32_t sterCap  = 0;   // allocated (aligned) bytes
-
-            AudioOutBuffer audoutBuf = {};  // owns the descriptor submitted to audout
-
-            bool isMono = false;
-            bool stale  = true;  // sterBuf needs rebaking (set after volume/dock change)
+            // This is the only per-sound allocation. No pre-baked stereo copy is kept.
+            void*    rawBuf     = nullptr;
+            uint32_t rawSize    = 0;     // actual data bytes
+            uint32_t rawCap     = 0;     // allocated (aligned) bytes
+            uint32_t sampleRate = 48000; // native rate read from WAV header
+            bool     isMono     = false;
         };
 
         static bool initialize();
@@ -98,6 +89,13 @@ namespace ult {
         static bool                     m_lastDockedState;
         static std::vector<CachedSound> m_cachedSounds;
 
+        // Single shared DMA playback buffer — sized to the largest sound's
+        // 48 kHz stereo output. Reused on every playSound(); safe because audout
+        // is always drained before the buffer is written.
+        static void*          m_playBuf;
+        static uint32_t       m_playBufCap;
+        static AudioOutBuffer m_audoutBuf;
+
         inline static constexpr const char* m_soundPaths[static_cast<size_t>(SoundType::Count)] = {
             "sdmc:/config/ultrahand/sounds/tick.wav",
             "sdmc:/config/ultrahand/sounds/enter.wav",
@@ -110,14 +108,18 @@ namespace ult {
             "sdmc:/config/ultrahand/sounds/notification.wav"
         };
 
-        // Loads WAV into rawBuf (16-bit native channels, no volume),
-        // then immediately bakes sterBuf. Must hold m_audioMutex.
+        // Loads WAV into rawBuf (16-bit, native channels, no volume applied).
+        // Must be called under m_audioMutex.
         static bool loadSoundFromWav(SoundType type, const char* path);
 
-        // Writes rawBuf → sterBuf with current volume. Must hold m_audioMutex.
-        // sterBuf capacity grows on first call and reuses the same allocation
-        // for all subsequent rebakes of the same sound (same sample count → same size).
-        // Returns false only on initial allocation failure.
-        static bool bakeStereo(CachedSound& s);
+        // Ensures m_playBuf is large enough for the largest loaded sound's
+        // 48 kHz stereo output. Call after any load. Must hold m_audioMutex.
+        static void growPlayBuf();
+
+        // Renders rawBuf → m_playBuf on demand: resample to 48 kHz if needed,
+        // expand mono → stereo, apply current volume + dock attenuation.
+        // Returns actual output byte count written, or 0 on error.
+        // Must be called under m_audioMutex.
+        static uint32_t renderToPlayBuf(const CachedSound& s);
     };
 }
