@@ -82,8 +82,9 @@ namespace ult {
         static void unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds = {});
         static std::mutex m_audioMutex;
 
-    private:
         static bool                     m_initialized;
+        
+    private:
         static std::atomic<bool>        m_enabled;
         static std::atomic<int32_t>     m_masterVolumeFixed;  // volume as 0–256 fixed-point
         static bool                     m_lastDockedState;
