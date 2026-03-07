@@ -80,7 +80,7 @@ namespace ult {
         vibHandheldLeft = vibHandheldRight = vibPlayer1Left = vibPlayer1Right =
             (HidVibrationDeviceHandle)0;
     
-        HidVibrationDeviceHandle tmp[2];
+        static HidVibrationDeviceHandle tmp[2];
     
         if (handheldStyle) {
             hidInitializeVibrationDevices(tmp, 2, HidNpadIdType_Handheld,

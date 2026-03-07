@@ -53,6 +53,9 @@ namespace ult {
     extern const std::string LOADED_SOUNDS_PATH;
     extern const std::string FLAGS_PATH;
     extern const std::string NOTIFICATIONS_PATH;
+    extern const std::string NOTIFICATIONS_ICONS_PATH;
+    extern const std::string NOTIFICATIONS_FLAGS_PATH;
+
     extern const std::string PAYLOADS_PATH;
     extern const std::string HB_APPSTORE_JSON;
     

@@ -170,6 +170,7 @@ inline std::atomic<bool> screenshotsAreDisabled{false};
 inline std::atomic<bool> screenshotsAreForceDisabled{false};
 
 inline bool hideHidden = false;
+inline bool usingFocusColor = true;
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
@@ -236,7 +237,7 @@ bool usingLNY2(const std::string& filePath);
  * @param patch Minimum patch version required
  * @return true if current AMS version >= specified version, false otherwise
  */
-static inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch) {
+inline bool amsVersionAtLeast(uint8_t major, uint8_t minor, uint8_t patch) {
     u64 packed_version;
     if (R_FAILED(splGetConfig((SplConfigItem)65000, &packed_version))) {
         return false;
@@ -325,7 +326,7 @@ namespace tsl {
         );
     }
     
-    static inline Color lerpColor(const Color& c1, const Color& c2, float t) {
+    inline Color lerpColor(const Color& c1, const Color& c2, float t) {
         return {
             static_cast<u8>((c1.r - c2.r) * t + c2.r + 0.5f),
             static_cast<u8>((c1.g - c2.g) * t + c2.g + 0.5f),
@@ -376,6 +377,7 @@ namespace tsl {
     extern Color buttonColor;
     extern Color bottomTextColor;
     extern Color bottomSeparatorColor;
+    extern Color unfocusedColor;
     extern Color topSeparatorColor;
 
     extern Color defaultOverlayColor;
@@ -462,15 +464,17 @@ namespace tsl {
     extern const size_t defaultThemeSettingsCount;
     const char* getThemeDefault(const char* key);
     
-    bool isValidHexColor(const std::string& hexColor);
+    bool isValidHexColor(std::string_view hexColor);
 
     // Defined in tesla.cpp — reads theme INI and populates all color vars above
     void initializeThemeVars();
 
-    #if !IS_LAUNCHER_DIRECTIVE
-    // Defined in tesla.cpp — reads Ultrahand settings INI (non-launcher overlays only)
-    void initializeUltrahandSettings();
-    #endif
+    void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
+
+    //#if !IS_LAUNCHER_DIRECTIVE
+    //// Defined in tesla.cpp — reads Ultrahand settings INI (non-launcher overlays only)
+    //void initializeUltrahandSettings();
+    //#endif
 
     extern std::vector<std::string> wrapText(
         const std::string& text,
@@ -572,15 +576,17 @@ namespace tsl {
          */
         template<typename F>
         class ScopeGuard {
+        public:
             ScopeGuard(const ScopeGuard&) = delete;
             ScopeGuard& operator=(const ScopeGuard&) = delete;
-            private:
-                F f;
-                bool canceled = false;
-            public:
-                ALWAYS_INLINE ScopeGuard(F f) : f(std::move(f)) { }
-                ALWAYS_INLINE ~ScopeGuard() { if (!canceled) { f(); } }
-                void dismiss() { canceled = true; }
+        
+            ALWAYS_INLINE explicit ScopeGuard(F func) : f(std::move(func)) { }
+            ALWAYS_INLINE ~ScopeGuard() { if (!canceled) { f(); } }
+            void dismiss() { canceled = true; }
+        
+        private:
+            F f;
+            bool canceled = false;
         };
         
         /**
@@ -627,28 +633,10 @@ namespace tsl {
          *
          * @param enabled Focus Tesla?
          */
-        static void requestForeground(bool enabled, bool updateGlobalFlag = true) {
-            if (updateGlobalFlag)
-                ult::currentForeground.store(enabled, std::memory_order_release);
+        void requestForeground(bool enabled, bool updateGlobalFlag = true);
 
-            u64 applicationAruid = 0, appletAruid = 0;
-            
-            for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
-                pmdmntGetProcessId(&appletAruid, programId);
-                
-                if (appletAruid != 0)
-                    hidsysEnableAppletToGetInput(!enabled, appletAruid);
-            }
-            
 
-            pmdmntGetApplicationProcessId(&applicationAruid);
-            hidsysEnableAppletToGetInput(!enabled, applicationAruid);
-            
-            hidsysEnableAppletToGetInput(true, 0);
-        }
-        
-
-        
+        // Deprecated code, no longer used but preserved for consistency
         namespace ini {
             
             /**
@@ -673,23 +661,7 @@ namespace tsl {
              * @param iniData Ini data
              * @return Ini string
              */
-            static std::string unparseIni(const IniData &iniData) {
-                std::string result;
-                bool addSectionGap = false;
-            
-                for (const auto &section : iniData) {
-                    if (addSectionGap) {
-                        result += '\n';
-                    }
-                    result += '[' + section.first + "]\n";
-                    for (const auto &keyValue : section.second) {
-                        result += keyValue.first + '=' + keyValue.second + '\n';
-                    }
-                    addSectionGap = true;
-                }
-            
-                return result;
-            }
+            std::string unparseIni(const IniData &iniData);
 
             
             /**
@@ -788,7 +760,7 @@ namespace tsl {
          */
         static u64 comboStringToKeys(const std::string &value) {
             u64 keyCombo = 0x00;
-            for (std::string key : ult::split(ult::removeWhiteSpaces(value), '+')) {
+            for (const auto& key : ult::split(ult::removeWhiteSpaces(value), '+')) {
                 keyCombo |= hlp::stringToKeyCode(key);
             }
             return keyCombo;
@@ -800,79 +772,12 @@ namespace tsl {
          * @param keys Key codes
          * @return Combo string
          */
-        static std::string keysToComboString(u64 keys) {
-            if (keys == 0) return "";  // Early return for empty input
-        
-            std::string result;
-            bool first = true;
-        
-            for (const auto &keyInfo : ult::KEYS_INFO) {
-                if (keys & keyInfo.key) {
-                    if (!first) {
-                        result += "+";
-                    }
-                    result += keyInfo.name;
-                    first = false;
-                }
-            }
-        
-            return result;
-        }
+        std::string keysToComboString(u64 keys);
 
         inline static std::mutex comboMutex;
 
         // Function to load key combo mappings from both overlays.ini and packages.ini
-        static void loadEntryKeyCombos() {
-            std::lock_guard<std::mutex> lock(comboMutex);
-            ult::g_entryCombos.clear();
-        
-            // Load overlay combos from overlays.ini
-            auto overlayData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
-            std::string fullPath;
-            u64 keys;
-
-            std::vector<std::string> modeList, comboList;
-            for (auto& [fileName, settings] : overlayData) {
-                fullPath = ult::OVERLAY_PATH + fileName;
-        
-                // 1) main key_combo
-                if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
-                    keys = hlp::comboStringToKeys(it->second);
-                    if (keys) ult::g_entryCombos[keys] = { fullPath, "" };
-                }
-        
-                // 2) per-mode combos
-                auto modesIt = settings.find("mode_args");
-                auto argsIt  = settings.find("mode_combos");
-                if (modesIt != settings.end()) {
-                    modeList  = ult::splitIniList(modesIt->second);
-                    comboList = (argsIt != settings.end())
-                                   ? ult::splitIniList(argsIt->second)
-                                   : std::vector<std::string>();
-                    if (comboList.size() < modeList.size())
-                        comboList.resize(modeList.size());
-        
-                    for (size_t i = 0; i < modeList.size(); ++i) {
-                        const std::string& comboStr = comboList[i];
-                        if (comboStr.empty()) continue;
-                        keys = hlp::comboStringToKeys(comboStr);
-                        if (!keys) continue;
-                        // launchArg is the *mode* (i.e. modeList[i])
-                        ult::g_entryCombos[keys] = { fullPath, modeList[i] };
-                    }
-                }
-            }
-        
-            // Load package combos from packages.ini
-            auto packageData = ult::getParsedDataFromIniFile(ult::PACKAGES_INI_FILEPATH);
-            for (auto& [packageName, settings] : packageData) {
-                // Only handle main key_combo for packages (no modes for packages)
-                if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
-                    keys = hlp::comboStringToKeys(it->second);
-                    if (keys) ult::g_entryCombos[keys] = { ult::OVERLAY_PATH + "ovlmenu.ovl", "--package " + packageName};
-                }
-            }
-        }
+        void loadEntryKeyCombos();
         
         // Function to check if a key combination matches any overlay key combo
         static OverlayCombo getEntryForKeyCombo(u64 keys) {
@@ -982,7 +887,7 @@ namespace tsl {
         
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_sharedGlyphCache;
             inline static std::unordered_map<u64, std::shared_ptr<Glyph>> s_notificationGlyphCache;
-            inline static std::unordered_map<u64, FontMetrics>             s_fontMetricsCache;
+            inline static std::unordered_map<u64, FontMetrics>            s_fontMetricsCache;
         
             static constexpr size_t MAX_CACHE_SIZE              = 600;
             static constexpr size_t CLEANUP_THRESHOLD           = 500;
@@ -1132,11 +1037,11 @@ namespace tsl {
                 return getFontMetrics(selectFontForCharacter(character), fontSize);
             }
         
-            static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
+            [[nodiscard]] static std::shared_ptr<Glyph> getOrCreateGlyph(u32 character, bool monospace, u32 fontSize) {
                 return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Regular);
             }
         
-            static std::shared_ptr<Glyph> getOrCreateNotificationGlyph(u32 character, bool monospace, u32 fontSize) {
+            [[nodiscard]] static std::shared_ptr<Glyph> getOrCreateNotificationGlyph(u32 character, bool monospace, u32 fontSize) {
                 return getOrCreateGlyphInternal(character, monospace, fontSize, CacheType::Notification);
             }
         
@@ -1206,76 +1111,7 @@ namespace tsl {
         };
         
         // Updated thread-safe calculateStringWidth function
-        static float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace = false) {
-            if (originalString.empty() || !FontManager::isInitialized()) {
-                return 0.0f;
-            }
-            
-            // Thread-safe translation cache access
-            std::string text;
-            {
-                std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
-                auto translatedIt = ult::translationCache.find(originalString);
-                if (translatedIt != ult::translationCache.end()) {
-                    text = translatedIt->second;
-                } else {
-                    // Don't insert anything, just fallback to original string
-                    text = originalString;
-                }
-            }
-            
-            // CRITICAL: Use the same data types as drawString
-            s32 maxWidth = 0;
-            s32 currentLineWidth = 0;
-            ssize_t codepointWidth;
-            u32 currCharacter = 0;
-            
-            // Convert fontSize to u32 to match drawString behavior
-            const u32 fontSizeInt = static_cast<u32>(fontSize);
-            
-            auto itStrEnd = text.cend();
-            auto itStr = text.cbegin();
-            
-            // Fast ASCII check
-            bool isAsciiOnly = true;
-            for (unsigned char c : text) {
-                if (c > 127) {
-                    isAsciiOnly = false;
-                    break;
-                }
-            }
-            
-            while (itStr != itStrEnd) {
-                // Decode UTF-8 codepoint
-                if (isAsciiOnly) {
-                    currCharacter = static_cast<u32>(*itStr);
-                    codepointWidth = 1;
-                } else {
-                    codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
-                    if (codepointWidth <= 0) break;
-                }
-                
-                itStr += codepointWidth;
-                
-                // Handle newlines
-                if (currCharacter == '\n') {
-                    maxWidth = std::max(currentLineWidth, maxWidth);
-                    currentLineWidth = 0;
-                    continue;
-                }
-                
-                // Use u32 fontSize to match drawString - now thread-safe
-                std::shared_ptr<FontManager::Glyph> glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSizeInt);
-                if (!glyph) continue;
-                
-                // CRITICAL: Use the same calculation as drawString
-                currentLineWidth += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
-            }
-            
-            // Final width calculation
-            maxWidth = std::max(currentLineWidth, maxWidth);
-            return static_cast<float>(maxWidth);
-        }
+        float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace = false);
 
         static std::pair<int, int> getUnderscanPixels();
 
@@ -4414,33 +4250,31 @@ namespace tsl {
                 offset = 0;
                 
             #if IS_LAUNCHER_DIRECTIVE
-                // Current interpreter state (atomic<bool>)
-                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) && (ult::downloadPercentage.load(std::memory_order_acquire) != -1 || ult::unzipPercentage.load(std::memory_order_acquire) != -1 || ult::copyPercentage.load(std::memory_order_acquire) != -1);
+                const bool interpreterIsRunningNow = ult::runningInterpreter.load(std::memory_order_acquire) &&
+                    (ult::downloadPercentage.load(std::memory_order_acquire)  != -1 ||
+                     ult::unzipPercentage.load(std::memory_order_acquire)     != -1 ||
+                     ult::copyPercentage.load(std::memory_order_acquire)      != -1);
                 
-                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire))
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
-                }
             
-                // Use cached or current data for rendering
                 const bool renderIsUltrahandMenu = (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME && 
                                                      m_subtitle.find("Ultrahand Package") == std::string::npos && 
-                                                     m_subtitle.find("Ultrahand Script") == std::string::npos);
+                                                     m_subtitle.find("Ultrahand Script")  == std::string::npos);
                 
                 bool widgetDrawn = false;
                 if (renderIsUltrahandMenu) {
                 #if USING_WIDGET_DIRECTIVE
                     widgetDrawn = renderer->drawWidget();
                 #endif
-            
-                    if (ult::touchingMenu.load(std::memory_order_acquire) && (ult::inMainMenu.load(std::memory_order_acquire) ||
-                        (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
+                    if (ult::touchingMenu.load(std::memory_order_acquire) &&
+                        (ult::inMainMenu.load(std::memory_order_acquire) ||
+                         (ult::inHiddenMode.load(std::memory_order_acquire) &&
+                          !ult::inSettingsMenu.load(std::memory_order_acquire) &&
+                          !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
                         renderer->drawRoundedRect(7.0f, 12.0f, 232.0f, 73.0f, 12.0f, a(clickColor));
                     }
-                    
-                    x = 20;
-                    fontSize = 42;
-                    offset = 6;
-                    
+                    x = 20; fontSize = 42; offset = 6;
                     if (ult::useDynamicLogo) {
                         x = drawDynamicUltraText(renderer, x, y + offset, fontSize, logoColor1, false);
                     } else {
@@ -4449,276 +4283,185 @@ namespace tsl {
                             x += renderer->drawString(letterStr, false, x, y + offset, fontSize, logoColor1).first;
                         }
                     }
-                    
                     renderer->drawString(ult::SPLIT_PROJECT_NAME_2, false, x, y + offset, fontSize, logoColor2);
-                    
                 } else {
                 #if USING_WIDGET_DIRECTIVE
                     widgetDrawn = m_showWidget && renderer->drawWidget();
                 #endif
-                    
-                    x = 20;
-                    y = 50;
-                    fontSize = 32;
-            
-                    // Calculate title widths and handle scrolling
+                    x = 20; y = 50; fontSize = 32;
                     calcScrollWidth(renderer, titleScroll, m_title, 32, widgetDrawn);
-                    
                     const bool isScript = m_subtitle.find("Ultrahand Script") != std::string::npos;
-                    const tsl::Color titleClr = isScript ? defaultScriptColor : getPackageColor();
-                    
-                    drawScrollableText(renderer, titleScroll, titleClr, x, y, 32, 27, 35);
+                    drawScrollableText(renderer, titleScroll, isScript ? defaultScriptColor : getPackageColor(), x, y, 32, 27, 35);
                 }
                 
-                // Calculate subtitle widths and handle scrolling
-                std::string subtitle = m_subtitle;
-                const size_t pos = subtitle.find("?Ultrahand Script");
-                if (pos != std::string::npos) {
-                    subtitle.erase(pos, 17);
-                }
-                
-                calcScrollWidth(renderer, subScroll, subtitle, 15, widgetDrawn);
-                
-                const int subtitleX = 20;
-                const int subtitleY = y + 25;
-                
-                if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
-                    // Version label - no scrolling needed
-                    renderer->drawStringWithColoredSections(ult::versionLabel, false, tsl::s_dividerSpecialChars, 
-                                                           subtitleX, subtitleY, 15, 
-                                                           bannerVersionTextColor, textSeparatorColor);
-                } else {
-                    // Handle scrolling subtitle
-                    if (subScroll.trunc) {
-                        if (!subScroll.active) {
-                            subScroll.active = true;
-                            subScroll.timeIn = armTicksToNs(armGetSystemTick());
-                        }
-                        
+                {
+                    std::string subtitle = m_subtitle;
+                    const size_t pos = subtitle.find("?Ultrahand Script");
+                    if (pos != std::string::npos) subtitle.erase(pos, 17);
+                    calcScrollWidth(renderer, subScroll, subtitle, 15, widgetDrawn);
+                    const int subtitleX = 20, subtitleY = y + 25;
+                    if (m_title == ult::CAPITAL_ULTRAHAND_PROJECT_NAME) {
+                        renderer->drawStringWithColoredSections(ult::versionLabel, false, tsl::s_dividerSpecialChars,
+                                                               subtitleX, subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
+                    } else if (subScroll.trunc) {
+                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = armTicksToNs(armGetSystemTick()); }
                         renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
-                        
                         renderer->drawStringWithColoredSections(subScroll.scrollText, false, tsl::s_dividerSpecialChars,
-                            subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
-                            bannerVersionTextColor, textSeparatorColor);
-                        
+                            subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
                         renderer->disableScissoring();
-                        
                         updateScroll(subScroll);
                     } else {
-                        // Normal subtitle drawing
                         renderer->drawStringWithColoredSections(subtitle, false, tsl::s_dividerSpecialChars,
-                            subtitleX, subtitleY, 15,
-                            bannerVersionTextColor, textSeparatorColor);
+                            subtitleX, subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
                     }
                 }
-                
+    
             #else
-                // NON-LAUNCHER PATH
-                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire)) {
+                if (m_noClickableItems != ult::noClickableItems.load(std::memory_order_acquire))
                     ult::noClickableItems.store(m_noClickableItems, std::memory_order_release);
-                }
                 
                 bool widgetDrawn = false;
                 #if USING_WIDGET_DIRECTIVE
                 widgetDrawn = m_showWidget && renderer->drawWidget();
                 #endif
-                
-                // Calculate title widths and handle scrolling
                 calcScrollWidth(renderer, titleScroll, m_title, 32, widgetDrawn);
                 drawScrollableText(renderer, titleScroll, defaultOverlayColor, 20, 50, 32, 27, 35);
-                
-                // Calculate subtitle widths and handle scrolling
                 calcScrollWidth(renderer, subScroll, m_subtitle, 15, widgetDrawn);
-                
-                const int subtitleX = 20;
-                const int subtitleY = y + 25;
-                
-                if (subScroll.trunc) {
-                    if (!subScroll.active) {
-                        subScroll.active = true;
-                        subScroll.timeIn = armTicksToNs(armGetSystemTick());
+                {
+                    const int subtitleX = 20, subtitleY = y + 25;
+                    if (subScroll.trunc) {
+                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = armTicksToNs(armGetSystemTick()); }
+                        renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
+                        renderer->drawString(subScroll.scrollText, false,
+                            subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15, bannerVersionTextColor);
+                        renderer->disableScissoring();
+                        updateScroll(subScroll);
+                    } else {
+                        renderer->drawString(m_subtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
                     }
-                    
-                    renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
-                    
-                    renderer->drawString(subScroll.scrollText, false,
-                        subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15,
-                        bannerVersionTextColor);
-                    
-                    renderer->disableScissoring();
-                    
-                    updateScroll(subScroll);
-                } else {
-                    renderer->drawString(m_subtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
                 }
             #endif
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
             
-                // Compute gap width once from GAP_1 and derive halfGap
+                // Atomic update helper
+                const auto updateAtomic = [](std::atomic<float>& atom, float val) {
+                    if (val != atom.load(std::memory_order_acquire))
+                        atom.store(val, std::memory_order_release);
+                };
+    
                 const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                
-                // Calculate text widths for buttons depending on launch mode and interpreter state
             #if IS_LAUNCHER_DIRECTIVE
-                const float backTextWidth = renderer->getTextDimensions(
-                    "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK : ult::HIDE), false, 23).first;
-                const float selectTextWidth = renderer->getTextDimensions(
-                    "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK : ult::CANCEL), false, 23).first;
+                const float backTextWidth   = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK   : ult::HIDE),   false, 23).first;
+                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK     : ult::CANCEL), false, 23).first;
             #else
-                const float backTextWidth = renderer->getTextDimensions(
-                    "\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                const float selectTextWidth = renderer->getTextDimensions(
-                    "\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
+                const float backTextWidth   = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
+                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK,   false, 23).first;
             #endif
-                
-                const float _halfGap = gapWidth * 0.5f;
-                if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
-                    ult::halfGap.store(_halfGap, std::memory_order_release);
-            
-                // Total button widths include half-gap padding on both sides
-                const float _backWidth = backTextWidth + gapWidth;
-                if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
-                    ult::backWidth.store(_backWidth, std::memory_order_release);
+                const float _halfGap    = gapWidth * 0.5f;
+                const float _backWidth  = backTextWidth  + gapWidth;
                 const float _selectWidth = selectTextWidth + gapWidth;
-                if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
-                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
+                updateAtomic(ult::halfGap,    _halfGap);
+                updateAtomic(ult::backWidth,  _backWidth);
+                updateAtomic(ult::selectWidth, _selectWidth);
                 
-                // Set initial button position
                 static constexpr float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
-                // Draw back button if touched
-                if (ult::touchingBack) {
+                if (ult::touchingBack)
                     renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
-                }
-                
-                // Draw select button (to the right of back) if touched
-                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                              _selectWidth-2, 73.0f, 12.0f, a(clickColor));
-                }
+                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems)
+                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY, _selectWidth-2, 73.0f, 12.0f, a(clickColor));
                 
             #if IS_LAUNCHER_DIRECTIVE
-                // Handle optional next page button when in launcher mode and appropriate conditions are met
-                const bool hasNextPage = !interpreterIsRunningNow && ((ult::inMainMenu.load(std::memory_order_acquire) && ((m_menuMode == ult::OVERLAYS_STR) || (m_menuMode == ult::PACKAGES_STR))) ||
-                                         !m_pageLeftName.empty() || !m_pageRightName.empty());
-                
+                const bool hasNextPage = !interpreterIsRunningNow &&
+                    ((ult::inMainMenu.load(std::memory_order_acquire) &&
+                      ((m_menuMode == ult::OVERLAYS_STR) || (m_menuMode == ult::PACKAGES_STR))) ||
+                     !m_pageLeftName.empty() || !m_pageRightName.empty());
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
-                
                 if (hasNextPage) {
-                    // Construct next-page label inline without creating temporary strings
                     const float _nextPageWidth = renderer->getTextDimensions(
-                            !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
-                            !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
-                            (ult::inMainMenu.load(std::memory_order_acquire) ?
-                                (((m_menuMode == "packages") ?
-                                    (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
-                                    (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
-                                ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ?
-                                    ult::PACKAGES : ult::OVERLAYS_ABBR)) :
-                                ""),
-                            false, 23).first + gapWidth;
-            
-                    if (_nextPageWidth != ult::nextPageWidth.load(std::memory_order_acquire))
-                        ult::nextPageWidth.store(_nextPageWidth, std::memory_order_release);
-                
-                    // Draw next-page button if touched
+                        !m_pageLeftName.empty()  ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
+                        !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
+                        (ult::inMainMenu.load(std::memory_order_acquire) ?
+                            (((m_menuMode == "packages") ? (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
+                                                           (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
+                             ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ? ult::PACKAGES : ult::OVERLAYS_ABBR)) : ""),
+                        false, 23).first + gapWidth;
+                    updateAtomic(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
-                        float nextX = buttonStartX+2 - _halfGap + _backWidth +1;
-                        if (!m_noClickableItems)
-                            nextX += _selectWidth;
-                
-                        renderer->drawRoundedRect(nextX, buttonY,
-                                                  _nextPageWidth-2,
-                                                  73.0f, 12.0f, a(clickColor));
+                        float nextX = buttonStartX+2 - _halfGap + _backWidth + 1;
+                        if (!m_noClickableItems) nextX += _selectWidth;
+                        renderer->drawRoundedRect(nextX, buttonY, _nextPageWidth-2, 73.0f, 12.0f, a(clickColor));
                     }
                 }
             #else
-                // NON-LAUNCHER
                 const bool hasNextPage = !m_pageLeftName.empty() || !m_pageRightName.empty();
-
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
-                
                 if (hasNextPage) {
                     const float _nextPageWidth = renderer->getTextDimensions(
-                            !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
-                                                     ("\uE0EE" + ult::GAP_2 + m_pageRightName),
-                            false, 23).first + gapWidth;
-            
-                    if (_nextPageWidth != ult::nextPageWidth.load(std::memory_order_acquire))
-                        ult::nextPageWidth.store(_nextPageWidth, std::memory_order_release);
-                    
-                    // Draw next-page button if touched
+                        !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName)
+                                                : ("\uE0EE" + ult::GAP_2 + m_pageRightName),
+                        false, 23).first + gapWidth;
+                    updateAtomic(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
-                        float nextX = buttonStartX+2 - _halfGap + _backWidth +1;
-                        if (!m_noClickableItems)
-                            nextX += _selectWidth;
-                
+                        float nextX = buttonStartX+2 - _halfGap + _backWidth + 1;
+                        if (!m_noClickableItems) nextX += _selectWidth;
                         renderer->drawRoundedRect(nextX, buttonY, _nextPageWidth-2, 73.0f, 12.0f, a(clickColor));
                     }
                 } else {
-                    // Button doesn't exist, ensure width is reset to prevent stale touch regions
                     ult::nextPageWidth.store(0.0f, std::memory_order_release);
                 }
             #endif
-                
+    
             #if IS_LAUNCHER_DIRECTIVE
                 const std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 +
                     (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
-                    (!m_noClickableItems && !interpreterIsRunningNow
-                        ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1
-                        : "") +
-                    (interpreterIsRunningNow
-                        ? "\uE0E5" + ult::GAP_2 + ult::CANCEL + ult::GAP_1
-                        : "") +
+                    (!m_noClickableItems && !interpreterIsRunningNow ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
+                    (interpreterIsRunningNow ? "\uE0E5" + ult::GAP_2 + ult::CANCEL + ult::GAP_1 : "") +
                     (!interpreterIsRunningNow
                         ? (!ult::usePageSwap
-                            ? ((m_menuMode == "packages")
-                                ? "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : (m_menuMode == "overlays")
-                                    ? "\uE0EE" + ult::GAP_2 + ult::PACKAGES
-                                    : "")
-                            : ((m_menuMode == "packages")
-                                ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
-                                : (m_menuMode == "overlays")
-                                    ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES
-                                    : ""))
+                            ? ((m_menuMode == "packages") ? "\uE0ED" + ult::GAP_2 + ult::OVERLAYS_ABBR
+                               : (m_menuMode == "overlays") ? "\uE0EE" + ult::GAP_2 + ult::PACKAGES : "")
+                            : ((m_menuMode == "packages") ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
+                               : (m_menuMode == "overlays") ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES : ""))
                         : "") +
-                    (!interpreterIsRunningNow && !m_pageLeftName.empty()
-                        ? "\uE0ED" + ult::GAP_2 + m_pageLeftName
-                        : !interpreterIsRunningNow && !m_pageRightName.empty()
-                            ? "\uE0EE" + ult::GAP_2 + m_pageRightName
-                            : "");
+                    (!interpreterIsRunningNow && !m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
+                     !interpreterIsRunningNow && !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                const bool _hasOkBtn = !m_noClickableItems && !interpreterIsRunningNow;
             #else
                 const std::string currentBottomLine =
-                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 + (!m_noClickableItems ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
-                    (!m_pageLeftName.empty() ? "\uE0ED" + ult::GAP_2 + m_pageLeftName : !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                    "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
+                    (!m_noClickableItems ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
+                    (!m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
+                     !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                const bool _hasOkBtn = !m_noClickableItems;
             #endif
-                
-                // Render the text - it starts halfGap inside the first button, so edgePadding + halfGap
+    
                 renderer->drawStringWithColoredSections(currentBottomLine, false, tsl::s_footerSpecialChars,
-                                                        buttonStartX, 693, 23, 
-                                                        bottomTextColor, buttonColor);
-            
-            #if USING_FPS_INDICATOR_DIRECTIVE
-                // Update and display FPS
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
-                const double currentTime_seconds = currentTime_ns / 1e9;
-                const float currentFps = updateFPS(currentTime_seconds);
-            
-                static char fpsBuffer[32];
-                static float lastFps = -1.0f;
-                
-                // Only update string if FPS changed significantly
-                if (std::abs(currentFps - lastFps) > 0.1f) {
-                    snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.2f", currentFps);
-                    lastFps = currentFps;
+                                                        buttonStartX, 693, 23, bottomTextColor, buttonColor);
+                if (_hasOkBtn && !usingFocusColor) {
+                    static const std::string okOverdraw = "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
+                    renderer->drawStringWithColoredSections(okOverdraw, false, tsl::s_footerSpecialChars,
+                                                            buttonStartX + _backWidth, 693, 23, unfocusedColor, unfocusedColor);
                 }
-                static constexpr tsl::Color whiteColor = {0xF,0xF,0xF,0xF};
-                renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, whiteColor);
+    
+            #if USING_FPS_INDICATOR_DIRECTIVE
+                {
+                    const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    const float currentFps = updateFPS(currentTime_ns / 1e9);
+                    static char fpsBuffer[32];
+                    static float lastFps = -1.0f;
+                    if (std::abs(currentFps - lastFps) > 0.1f) {
+                        snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.2f", currentFps);
+                        lastFps = currentFps;
+                    }
+                    static constexpr tsl::Color whiteColor = {0xF,0xF,0xF,0xF};
+                    renderer->drawString(fpsBuffer, false, 20, tsl::cfg::FramebufferHeight - 60, 20, whiteColor);
+                }
             #endif
             
                 if (m_contentElement != nullptr)
@@ -4728,7 +4471,6 @@ namespace tsl {
                     renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
                 else
                     renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
-            
             }
         
             inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -5035,8 +4777,15 @@ namespace tsl {
                 const std::string& menuBottomLine = currentBottomLine;
                 
                 // Render the text with special character handling
-                if (!deactivateOriginalFooter)  {
-                    renderer->drawStringWithColoredSections(menuBottomLine, false, tsl::s_footerSpecialChars, buttonStartX, 693, 23, bottomTextColor, buttonColor);
+                if (!deactivateOriginalFooter) {
+                    renderer->drawStringWithColoredSections(menuBottomLine, false, tsl::s_footerSpecialChars,
+                                                            buttonStartX, 693, 23, bottomTextColor, buttonColor);
+                    if (!m_noClickableItems && !usingFocusColor) {
+                        renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
+                                                                tsl::s_footerSpecialChars,
+                                                                buttonStartX + ult::backWidth.load(std::memory_order_acquire),
+                                                                693, 23, unfocusedColor, unfocusedColor);
+                    }
                 }
                 
                 if (this->m_contentElement != nullptr)
@@ -5194,6 +4943,12 @@ namespace tsl {
                                                         {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
                                                         buttonStartX, 693, 23,
                                                         bottomTextColor, buttonColor);
+                if (!usingFocusColor) {
+                    renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
+                                                            {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
+                                                            buttonStartX + _backWidth, 693, 23,
+                                                            unfocusedColor, unfocusedColor);
+                }
             
                 if (this->m_header != nullptr)
                     this->m_header->frame(renderer);
@@ -5280,6 +5035,8 @@ namespace tsl {
         };
     #endif
         
+
+
         /**
          * @brief Single color rectangle element mainly used for debugging to visualize boundaries
          *
@@ -9992,8 +9749,8 @@ namespace tsl {
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
 
-    // Max notifications cap (max value of 4)
-    static inline int maxNotifications = 3;
+    // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
+    extern int maxNotifications;
 
     struct NotificationFile {
         std::string filename;
@@ -10011,7 +9768,7 @@ namespace tsl {
 
         ~NotificationPrompt() { shutdown(); }
 
-        enum class PromptState {
+        enum class PromptState : u8 {
             Inactive, FadingIn, Visible, FadingOut
         };
 
@@ -10029,6 +9786,7 @@ namespace tsl {
             PromptState state        = PromptState::Inactive;
             u64 expireNs             = 0;
             u64 stateStartNs         = 0;
+            bool showTime            = true;
             bool hasIcon             = false;
             bool iconPending         = false;
         };
@@ -10041,7 +9799,7 @@ namespace tsl {
         };
 
         struct Lines {
-            static constexpr size_t MAX_LINES = 8;
+            static constexpr size_t MAX_LINES = 10; // must be > max getWrappedLines call (9) to hold overflow slot
             std::string buf[MAX_LINES];
             u8 count = 0;
             const std::string& operator[](s32 i) const { return buf[i]; }
@@ -10051,14 +9809,14 @@ namespace tsl {
         static constexpr size_t MESSAGE_FONT     = 22;
         static constexpr s32    NOTIF_ICON_DIM   = 50;
         static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
-        static constexpr int    MAX_VISIBLE      = 4;
+        static constexpr int    MAX_VISIBLE      = 8;
 
         // ── Public API ───────────────────────────────────────────────────────────
 
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
                   u32 durationMs = 3000, s32 promptWidth = 448, s32 promptHeight = 88,
-                  bool immediately = false, bool resume = false) {
+                  bool immediately = false, bool resume = false, bool showTime = true) {
             if (msg.empty()) return;
             if (isStale()) return;
 
@@ -10071,6 +9829,7 @@ namespace tsl {
             data.promptHeight = static_cast<u16>(std::clamp(promptHeight, s32(50),    s32(720)));
             data.durationMs   = static_cast<u16>(std::clamp(durationMs,   500u,       30000u));
             data.priority     = static_cast<u8> (immediately ? 0u : priority);
+            data.showTime     = showTime;
             data.arrivalNs    = armTicksToNs(armGetSystemTick());
             {
                 time_t now = time(nullptr);
@@ -10088,14 +9847,14 @@ namespace tsl {
             if (immediately) {
                 bool skipFadeIn = false;
                 Slot& s0 = slots_[0];
-                if (s0.active) {
-                    if (s0.isShowNow) {
+                if (s0.flags & SLOT_ACTIVE) {
+                    if (s0.flags & SLOT_SHOW_NOW) {
                         evictSlot_NoLock(0);
                         skipFadeIn = true;
                     } else {
                         bool moved = false;
                         for (int j = 1; j < maxNotifications; ++j) {
-                            if (!slots_[j].active) {
+                            if (!(slots_[j].flags & SLOT_ACTIVE)) {
                                 slots_[j] = std::move(s0);
                                 clearSlot_NoLock(0);
                                 moved = true;
@@ -10110,7 +9869,7 @@ namespace tsl {
             } else {
                 int freeSlot = -1;
                 for (int i = 0; i < maxNotifications; ++i)
-                    if (!slots_[i].active) { freeSlot = i; break; }
+                    if (!(slots_[i].flags & SLOT_ACTIVE)) { freeSlot = i; break; }
                 if (freeSlot >= 0) {
                     placeInSlot_NoLock(freeSlot, std::move(data), false, resume, resume);
                 } else {
@@ -10140,7 +9899,7 @@ namespace tsl {
             if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].active && slots_[i].data.fileName == fname) return true;
+                if ((slots_[i].flags & SLOT_ACTIVE) && slots_[i].data.fileName == fname) return true;
             return false;
         }
 
@@ -10157,7 +9916,7 @@ namespace tsl {
 
             for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
-                if (!slot.active || slot.data.text.empty() ||
+                if (!(slot.flags & SLOT_ACTIVE) || slot.data.text.empty() ||
                     slot.data.state == PromptState::Inactive) continue;
 
                 const u64 elapsedMs = (now - slot.data.stateStartNs) / 1'000'000ULL;
@@ -10170,7 +9929,8 @@ namespace tsl {
                     default: continue;
                 }
 
-                drawSlot(renderer, slot, static_cast<s32>(slot.yCurrent), fadeAlpha, promptOnly);
+                if (static_cast<s32>(slot.yCurrent) + getEffectiveHeight(slot) <= static_cast<s32>(tsl::cfg::FramebufferHeight))
+                    drawSlot(renderer, slot, static_cast<s32>(slot.yCurrent), fadeAlpha, promptOnly);
             }
         }
 
@@ -10184,7 +9944,17 @@ namespace tsl {
 
             for (int i = 0; i < maxNotifications; ++i) {
                 Slot& slot = slots_[i];
-                if (!slot.active) continue;
+                if (!(slot.flags & SLOT_ACTIVE)) continue;
+
+                const bool outOfBounds = static_cast<s32>(slot.yTarget) + getEffectiveHeight(slot) > static_cast<s32>(tsl::cfg::FramebufferHeight);
+                if (outOfBounds) {
+                    slot.data.stateStartNs = now;
+                    slot.data.expireNs     = now + static_cast<u64>(slot.data.durationMs) * 1'000'000ULL
+                                           + FADE_DURATION_MS * 1'000'000ULL;
+                } else if (slot.flags & SLOT_SOUND_PENDING) {
+                    slot.flags &= ~SLOT_SOUND_PENDING;
+                    triggerNotificationSound.store(true, std::memory_order_release);
+                }
 
                 if (slot.data.iconPending) {
                     slot.data.iconPending = false;
@@ -10194,25 +9964,28 @@ namespace tsl {
                         if (dot  != std::string::npos) base.erase(dot);
                         const size_t dash = base.rfind('-');
                         if (dash != std::string::npos) base.erase(dash);
-                        const std::string iconPath = ult::ASSETS_PATH + "notifications/" + base + ".rgba";
-                        if (ult::loadRGBA8888toRGBA4444(iconPath, slot.iconBuf,
+                        const std::string iconPath = ult::NOTIFICATIONS_ICONS_PATH + base + ".rgba";
+                        slot.iconBuf = std::make_unique<u8[]>(NOTIF_ICON_BYTES);
+                        if (ult::loadRGBA8888toRGBA4444(iconPath, slot.iconBuf.get(),
                                                         NOTIF_ICON_DIM * NOTIF_ICON_DIM * 4)) {
-                            slot.iconLoaded   = true;
-                            slot.data.hasIcon = true;
+                            slot.flags        |= SLOT_ICON_LOADED;
+                            slot.data.hasIcon  = true;
+                        } else {
+                            slot.iconBuf.reset();
                         }
                     }
                 }
 
-                if (slot.sliding) {
+                if (slot.flags & SLOT_SLIDING) {
                     const float st = std::min(1.0f,
                         static_cast<float>((now - slot.slideStartNs) / 1'000'000ULL) / SLIDE_DURATION_MS);
                     slot.yCurrent = slot.ySlideFrom + (slot.yTarget - slot.ySlideFrom) * easeInOut(st);
-                    if (st >= 1.0f) { slot.yCurrent = slot.yTarget; slot.sliding = false; }
+                    if (st >= 1.0f) { slot.yCurrent = slot.yTarget; slot.flags &= ~SLOT_SLIDING; }
                 }
 
                 const u64 elapsedMs = slot.data.stateStartNs == 0 ? 0
                                     : (now - slot.data.stateStartNs) / 1'000'000ULL;
-                switch (slot.data.state) {
+                if (!outOfBounds) switch (slot.data.state) {
                     case PromptState::FadingIn:
                         if (elapsedMs >= FADE_DURATION_MS) {
                             slot.data.state        = PromptState::Visible;
@@ -10240,7 +10013,7 @@ namespace tsl {
             while (!pending_queue_.empty()) {
                 int freeSlot = -1;
                 for (int i = 0; i < maxNotifications; ++i)
-                    if (!slots_[i].active) { freeSlot = i; break; }
+                    if (!(slots_[i].flags & SLOT_ACTIVE)) { freeSlot = i; break; }
                 if (freeSlot < 0) break;
                 NotifEntry next = pending_queue_.top();
                 pending_queue_.pop();
@@ -10252,7 +10025,7 @@ namespace tsl {
             if (isStale()) return false;
             std::lock_guard<std::mutex> lg(state_mutex_);
             for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].active) return true;
+                if (slots_[i].flags & SLOT_ACTIVE) return true;
             return !pending_queue_.empty();
         }
 
@@ -10261,7 +10034,7 @@ namespace tsl {
             std::lock_guard<std::mutex> lg(state_mutex_);
             int count = 0;
             for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].active) ++count;
+                if (slots_[i].flags & SLOT_ACTIVE) ++count;
             return count;
         }
 
@@ -10304,7 +10077,7 @@ namespace tsl {
             float bestY = 1.0e9f;
             for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
-                if (!slot.active || slot.data.state == PromptState::FadingOut) continue;
+                if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::FadingOut) continue;
                 if (slot.yCurrent < bestY) { bestY = slot.yCurrent; best = i; }
             }
             if (best < 0) return false;
@@ -10318,17 +10091,21 @@ namespace tsl {
         static constexpr u32    FADE_DURATION_MS  = 83;
         static constexpr u32    SLIDE_DURATION_MS = 150;
 
+        // Slot flag bits
+        static constexpr u8 SLOT_ACTIVE        = 1 << 0;
+        static constexpr u8 SLOT_SHOW_NOW      = 1 << 1;
+        static constexpr u8 SLOT_SLIDING       = 1 << 2;
+        static constexpr u8 SLOT_ICON_LOADED   = 1 << 3;
+        static constexpr u8 SLOT_SOUND_PENDING = 1 << 4;
+
         struct Slot {
-            NotifEntry  data;
-            float       yCurrent     = 0.f;
-            float       yTarget      = 0.f;
-            float       ySlideFrom   = 0.f;
-            u64         slideStartNs = 0;
-            bool        active       = false;
-            bool        isShowNow    = false;
-            bool        sliding      = false;
-            bool        iconLoaded   = false;
-            u8          iconBuf[NOTIF_ICON_BYTES] = {};
+            NotifEntry            data;
+            float                 yCurrent     = 0.f;
+            float                 yTarget      = 0.f;
+            float                 ySlideFrom   = 0.f;
+            u64                   slideStartNs = 0;
+            u8                    flags        = 0; // SLOT_ACTIVE | SLOT_SHOW_NOW | SLOT_SLIDING | SLOT_ICON_LOADED | SLOT_SOUND_PENDING
+            std::unique_ptr<u8[]> iconBuf;
         };
 
         Slot               slots_[MAX_VISIBLE];
@@ -10339,19 +10116,12 @@ namespace tsl {
 
         // ── Private helpers ──────────────────────────────────────────────────────
 
-        [[nodiscard]] bool isStale() const {
+        bool isStale() const {
             return !enabled_.load(std::memory_order_acquire)
                 || generation_ != notificationGeneration.load(std::memory_order_acquire);
         }
 
         void evictSlot_NoLock(int i) {
-            // NOTE: Do NOT acquire notificationJsonMutex here.
-            // The polling thread holds notificationJsonMutex and then calls into
-            // methods that acquire state_mutex_ (activeCount, hasActiveFile, show).
-            // Acquiring notificationJsonMutex here while already holding state_mutex_
-            // creates a lock-inversion deadlock. remove() is a safe atomic syscall
-            // and does not require mutex protection — a concurrent readJsonFromFile
-            // on the same file will simply return null and be skipped gracefully.
             if (!slots_[i].data.fileName.empty())
                 remove((ult::NOTIFICATIONS_PATH + slots_[i].data.fileName).c_str());
             clearSlot_NoLock(i);
@@ -10365,7 +10135,7 @@ namespace tsl {
         [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const {
             for (int i = 0; i < maxNotifications; ++i) {
                 const Slot& slot = slots_[i];
-                if (!slot.active || slot.data.state == PromptState::Inactive) continue;
+                if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::Inactive) continue;
                 const s32 sx = ult::useRightAlignment
                     ? static_cast<s32>(tsl::cfg::FramebufferWidth) - slot.data.promptWidth : 0;
                 const s32 sy = static_cast<s32>(slot.yCurrent);
@@ -10421,16 +10191,18 @@ namespace tsl {
 
         s32 getEffectiveHeight(const Slot& slot) const {
             s32 h = slot.data.promptHeight;
-            if (!slot.data.text.empty() && !slot.data.title.empty() &&
-                (slot.data.hasIcon || slot.data.iconPending)) {
+            if (!slot.data.text.empty() && !slot.data.title.empty()) {
                 const s32   baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
+                const bool  hasIconCol  = (slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED)) || slot.data.iconPending;
                 const s32   colWidth    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
-                const s32   textAreaW   = slot.data.promptWidth - colWidth;
-                const float innerW      = static_cast<float>(textAreaW - baseIconPad - 2);
+                const s32   textAreaW   = hasIconCol ? (slot.data.promptWidth - colWidth)
+                                                     : (slot.data.promptWidth - 2 * (baseIconPad + 2));
+                const float innerW      = hasIconCol ? static_cast<float>(textAreaW - baseIconPad - 2)
+                                                     : static_cast<float>(textAreaW);
 
-                const Lines lines = getWrappedLines(slot.data.text, innerW, MESSAGE_FONT, 4);
+                const Lines lines = getWrappedLines(slot.data.text, innerW, slot.data.fontSize, 4);
                 if (lines.count > 1) {
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
                     h += static_cast<s32>(lines.count - 1) * fm.lineHeight;
                 }
             }
@@ -10440,7 +10212,7 @@ namespace tsl {
         float computeTargetY_NoLock(int idx) const {
             float y = 0.f;
             for (int i = 0; i < idx; ++i)
-                if (slots_[i].active) y += static_cast<float>(getEffectiveHeight(slots_[i]));
+                if (slots_[i].flags & SLOT_ACTIVE) y += static_cast<float>(getEffectiveHeight(slots_[i]));
             return y;
         }
 
@@ -10456,25 +10228,24 @@ namespace tsl {
                                      + slot.data.durationMs * 1'000'000ULL;
             slot.data.hasIcon      = false;
             slot.data.iconPending  = !slot.data.fileName.empty();
-            slot.isShowNow         = isShowNow;
-            slot.active            = true;
-            slot.iconLoaded        = false;
             slot.yTarget           = ty;
             slot.yCurrent          = ty;
-            slot.sliding           = false;
-            if (!suppressSound) triggerNotificationSound.store(true, std::memory_order_release);
+            slot.iconBuf.reset();
+            slot.flags             = SLOT_ACTIVE
+                                   | (isShowNow     ? SLOT_SHOW_NOW      : 0)
+                                   | (suppressSound ? 0                  : SLOT_SOUND_PENDING);
         }
 
         void repackSlots_NoLock(u64 now) {
             // Step 1: build ordered index list (one isShowNow first, then regular)
             int order[MAX_VISIBLE];
             int count = 0;
-        
+
             for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].active && slots_[i].isShowNow) { order[count++] = i; break; }
+                if ((slots_[i].flags & SLOT_ACTIVE) && (slots_[i].flags & SLOT_SHOW_NOW)) { order[count++] = i; break; }
             for (int i = 0; i < maxNotifications && count < maxNotifications; ++i)
-                if (slots_[i].active && !slots_[i].isShowNow) order[count++] = i;
-        
+                if ((slots_[i].flags & SLOT_ACTIVE) && !(slots_[i].flags & SLOT_SHOW_NOW)) order[count++] = i;
+
             // Step 2: assign y-positions before touching slot storage
             float y = 0.f;
             for (int i = 0; i < count; ++i) {
@@ -10483,17 +10254,32 @@ namespace tsl {
                     s.ySlideFrom   = s.yCurrent;
                     s.yTarget      = y;
                     s.slideStartNs = now;
-                    s.sliding      = true;
+                    s.flags       |= SLOT_SLIDING;
                 }
                 y += static_cast<float>(getEffectiveHeight(s));
             }
-        
+
             // Step 3: compact into slots_[0..count-1]
             Slot packed[MAX_VISIBLE];
             for (int i = 0; i < count; ++i)
                 packed[i] = std::move(slots_[order[i]]);
             for (int i = 0; i < maxNotifications; ++i)
                 slots_[i] = (i < count) ? std::move(packed[i]) : Slot{};
+        }
+
+        void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth, size_t fontSize, gfx::Renderer* renderer) const {
+            if (lines.count <= maxLines) return;
+            const std::string overflow = lines.buf[maxLines];
+            lines.count = maxLines;
+            std::string& last = lines.buf[maxLines - 1];
+            last += " " + overflow;
+            while (!last.empty()) {
+                const std::string candidate = last + "...";
+                const auto w = renderer->getNotificationTextDimensions(candidate, false, fontSize).first;
+                if (static_cast<float>(w) <= pixelWidth) { last = candidate; return; }
+                last.pop_back();
+            }
+            last = "...";
         }
 
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
@@ -10505,26 +10291,39 @@ namespace tsl {
 
             const s32  baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
             const s32  iconColW    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
-            const bool hasIconCol  = (slot.data.hasIcon && slot.iconLoaded) || slot.data.iconPending;
+            const bool hasIconCol  = (slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED)) || slot.data.iconPending;
             s32 textAreaX = x;
             s32 textAreaW = slot.data.promptWidth;
             if (hasIconCol) {
                 textAreaX = x + iconColW;
                 textAreaW = slot.data.promptWidth - iconColW;
             }
-            const float innerWf = static_cast<float>(textAreaW - baseIconPad - 2);
+            const float innerWf        = static_cast<float>(textAreaW - baseIconPad - 2);
+            const s32   titleTextAreaX = hasIconCol ? textAreaX : x + (baseIconPad + 2);
+            const s32   titleTextAreaW = hasIconCol ? textAreaW : slot.data.promptWidth - 2 * (baseIconPad + 2);
+            const float titleInnerWf   = hasIconCol ? innerWf   : static_cast<float>(titleTextAreaW);
 
-            const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty()
-                                         && (slot.data.hasIcon || slot.data.iconPending);
+            const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty();
 
             Lines titleIconLines;
             s32 effectiveHeight = slot.data.promptHeight;
             if (hasTitleIconLayout) {
-                titleIconLines = getWrappedLines(slot.data.text, innerWf, MESSAGE_FONT, 4);
+                titleIconLines = getWrappedLines(slot.data.text, titleInnerWf, slot.data.fontSize, 5);
+                applyEllipsis(titleIconLines, 4, titleInnerWf, slot.data.fontSize, renderer);
                 if (titleIconLines.count > 1) {
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
                     effectiveHeight = slot.data.promptHeight
                                     + static_cast<s32>(titleIconLines.count - 1) * fm.lineHeight;
+                }
+            }
+            Lines regularLines;
+            s32 regularExtraSpacing = 0;
+            if (!hasTitleIconLayout && !slot.data.text.empty() && textAreaW > 0) {
+                regularLines = getWrappedLines(slot.data.text, static_cast<float>(textAreaW-4), slot.data.fontSize, 9);
+                applyEllipsis(regularLines, 8, static_cast<float>(textAreaW-4), slot.data.fontSize, renderer);
+                if (regularLines.count > 1) {
+                    regularExtraSpacing = static_cast<s32>(regularLines.count - 1) * 3;
+                    effectiveHeight += regularExtraSpacing;
                 }
             }
 
@@ -10546,7 +10345,7 @@ namespace tsl {
             #endif
 
             const s32 iconVertPad = (effectiveHeight - NOTIF_ICON_DIM) / 2;
-            if (hasIconCol && slot.data.hasIcon && slot.iconLoaded) {
+            if (hasIconCol && slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED) && slot.iconBuf) {
                 const s32 dstX = x + baseIconPad;
                 s32 drawH = NOTIF_ICON_DIM;
                 if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
@@ -10557,15 +10356,15 @@ namespace tsl {
                     renderer->drawBitmapRGBA4444(
                         static_cast<u32>(dstX), static_cast<u32>(iconVertPad + baseY),
                         static_cast<u32>(NOTIF_ICON_DIM), static_cast<u32>(drawH),
-                        slot.iconBuf, fadeAlpha);
+                        slot.iconBuf.get(), fadeAlpha);
             }
 
             if (!slot.data.text.empty() && textAreaW > 0) {
                 if (hasTitleIconLayout) {
                     const Lines& lines   = titleIconLines;
                     const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
-                    const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', MESSAGE_FONT);
-                    const s32  innerW    = static_cast<s32>(innerWf);
+                    const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
+                    const s32  innerW    = static_cast<s32>(titleInnerWf);
                     static constexpr s32 LINE_GAP = 4;
                     const s32 blockH   = titleFm.lineHeight + LINE_GAP + static_cast<s32>(lines.count) * messageFm.lineHeight;
                     const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
@@ -10574,16 +10373,16 @@ namespace tsl {
 
                     #if IS_LAUNCHER_DIRECTIVE
                     if (slot.data.title.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos)
-                        drawUltrahandLine(renderer, slot.data.title, textAreaX, titleY, TITLE_FONT, fadeAlpha, notificationTitleColor);
+                        drawUltrahandLine(renderer, slot.data.title, titleTextAreaX, titleY, TITLE_FONT, fadeAlpha, notificationTitleColor);
                     else {
                     #endif
                         renderer->drawNotificationString(slot.data.title, false,
-                            textAreaX, titleY, TITLE_FONT, fc(notificationTitleColor));
+                            titleTextAreaX, titleY, TITLE_FONT, fc(notificationTitleColor));
                     #if IS_LAUNCHER_DIRECTIVE
                     }
                     #endif
 
-                    if (slot.data.timestamp[0] != '\0') {
+                    if (slot.data.showTime && slot.data.timestamp[0] != '\0') {
                         const auto tsW = renderer->getNotificationTextDimensions(
                                                     slot.data.timestamp, false, TITLE_FONT).first;
                         const s32 tsX = textAreaX + innerW - tsW;
@@ -10593,22 +10392,20 @@ namespace tsl {
                     }
 
                     for (s32 li = 0; li < static_cast<s32>(lines.count); ++li)
-                        renderer->drawNotificationString(lines[li], false, textAreaX,
-                            messageY + li * messageFm.lineHeight,
-                            MESSAGE_FONT, fc(notificationTextColor));
+                        renderer->drawNotificationString(lines[li], false, titleTextAreaX,
+                            messageY + li * messageFm.lineHeight + li * 3,
+                            slot.data.fontSize, fc(notificationTextColor));
 
                 } else {
-                    const Lines lines = getWrappedLines(slot.data.text,
-                                                        static_cast<float>(textAreaW-4),
-                                                        slot.data.fontSize, 8);
+                    const Lines& lines = regularLines;
                     const auto fm     = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-                    const s32 startY  =
-                        (slot.data.promptHeight - static_cast<s32>(lines.count) * fm.lineHeight) / 2
-                        + fm.ascent + baseY;
+
+                    const s32 totalTextHeight = static_cast<s32>(lines.count) * fm.lineHeight + (lines.count > 1 ? regularExtraSpacing : 0);
+                    const s32 startY = (effectiveHeight - totalTextHeight) / 2 + fm.ascent + baseY;
 
                     for (s32 li = 0; li < static_cast<s32>(lines.count); ++li) {
                         const std::string& line = lines[li];
-                        const s32 lineY = startY + li * fm.lineHeight;
+                        const s32 lineY = startY + li * fm.lineHeight + (lines.count > 1 ? li * 3 : 0);
                         #if IS_LAUNCHER_DIRECTIVE
                         if (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos) {
                             const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
@@ -10655,7 +10452,7 @@ namespace tsl {
             auto fc = [&](Color c) { return applyAlpha(c, fadeAlpha); };
             const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
             if (up == std::string::npos) {
-                renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));  // use textColor
+                renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));
                 return;
             }
             const std::string before = line.substr(0, up);
@@ -10666,14 +10463,14 @@ namespace tsl {
             hw = renderer->getNotificationTextDimensions(hand, false, fontSize).first;
             s32 curX = x;
             if (!before.empty()) {
-                renderer->drawNotificationString(before, false, curX, y, fontSize, fc(textColor));  // use textColor
+                renderer->drawNotificationString(before, false, curX, y, fontSize, fc(textColor));
                 curX += bw;
             }
             curX = tsl::elm::drawDynamicUltraText(renderer, curX, y, fontSize, fc(logoColor1), true);
             renderer->drawNotificationString(hand, false, curX, y, fontSize, fc(logoColor2));
             curX += hw;
             if (!after.empty())
-                renderer->drawNotificationString(after, false, curX, y, fontSize, fc(textColor));  // use textColor
+                renderer->drawNotificationString(after, false, curX, y, fontSize, fc(textColor));
         }
         #endif
     };
@@ -11247,28 +11044,22 @@ namespace tsl {
             if (!ult::internalTouchReleased.load(std::memory_order_acquire) || ult::launchingOverlay.load(std::memory_order_acquire))
                 return;
 
-            // Static variables to maintain state between function calls
             static HidTouchState initialTouchPos = { 0 };
             static HidTouchState oldTouchPos = { 0 };
             static bool oldTouchDetected = false;
             static elm::TouchEvent touchEvent, oldTouchEvent;
-        
             static u64 buttonPressTime_ns = 0, lastKeyEventTime_ns = 0, keyEventInterval_ns = 67000000ULL;
             static bool singlePressHandled = false;
             static bool notificationTouchConsumed = false;
-            static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL; // 340ms in nanoseconds
-            
-
+            static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL;
             static bool hasScrolled = false;
-            static void* lastGuiPtr = nullptr;  // Use void* instead
+            static void* lastGuiPtr = nullptr;
+            static std::array<bool, 4> lastSimulatedTouch = {};
         
             auto& currentGui = this->getCurrentGui();
 
-            // Return early if current GUI is not available or internal touch is not released
             if (!currentGui) {
-
                 elm::Element::setInputMode(InputMode::Controller);
-                
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
@@ -11277,28 +11068,37 @@ namespace tsl {
                 return;
             }
 
-            // Retrieve current focus and top/bottom elements of the GUI
             auto currentFocus = currentGui->getFocusedElement();
             
+            // Focus color debounce — snap true immediately, delay false
+            {
+                static u64 focusLostTime_ns = 0;
+                static constexpr u64 UNFOCUS_DELAY_NS = 10'000'000ULL;
+                if (currentFocus) {
+                    usingFocusColor = true;
+                    focusLostTime_ns = 0;
+                } else {
+                    const u64 now = armTicksToNs(armGetSystemTick());
+                    if (focusLostTime_ns == 0) focusLostTime_ns = now;
+                    if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) usingFocusColor = false;
+                }
+            }
 
             const bool interpreterIsRunning = ult::runningInterpreter.load(std::memory_order_acquire);
+
         #if !IS_STATUS_MONITOR_DIRECTIVE
             if (interpreterIsRunning) {
-                if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK)) {
-                    currentFocus->shakeHighlight(FocusDirection::Up);
-                    return;
-                }
-                else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
-                    currentFocus->shakeHighlight(FocusDirection::Down);
-                    return;
-                }
-                else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK)) {
-                    currentFocus->shakeHighlight(FocusDirection::Left);
-                    return;
-                }
-                else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK)) {
-                    currentFocus->shakeHighlight(FocusDirection::Right);
-                    return;
+                const struct { u64 key; FocusDirection dir; } shakes[] = {
+                    {KEY_UP,    FocusDirection::Up},
+                    {KEY_DOWN,  FocusDirection::Down},
+                    {KEY_LEFT,  FocusDirection::Left},
+                    {KEY_RIGHT, FocusDirection::Right},
+                };
+                for (auto& s : shakes) {
+                    if (keysDown & s.key && !(keysHeld & ~s.key & ALL_KEYS_MASK)) {
+                        currentFocus->shakeHighlight(s.dir);
+                        return;
+                    }
                 }
             }
         #endif
@@ -11309,20 +11109,13 @@ namespace tsl {
                     triggerWallFeedback();
                     return;
                 }
-
-                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
-                    keysDown |= KEY_A;
-                
-                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
-                    keysDown |= KEY_B;
-
+                if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) keysDown |= KEY_A;
+                if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))   keysDown |= KEY_B;
                 if (!overrideBackButton) {
                     if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                         if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                             this->goBack();
-                            if (this->m_guiStack.size() >= 1) {
-                                triggerExitFeedback();
-                            }
+                            if (this->m_guiStack.size() >= 1) triggerExitFeedback();
                         }
                         return;
                     }
@@ -11332,200 +11125,147 @@ namespace tsl {
                 ult::simulatedBack.exchange(false, std::memory_order_acq_rel);
             }
         #else
-
-            if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel))
-                keysDown |= KEY_A;
-            
-            if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))
-                keysDown |= KEY_B;
+            if (ult::simulatedSelect.exchange(false, std::memory_order_acq_rel)) keysDown |= KEY_A;
+            if (ult::simulatedBack.exchange(false, std::memory_order_acq_rel))   keysDown |= KEY_B;
 
             if ((keysDown & ALL_KEYS_MASK) && ult::stillTouching && ult::currentForeground.load(std::memory_order_acquire)) {
                 triggerWallFeedback();
                 return;
             }
-
             if (!overrideBackButton) {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
-                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
-                            triggerExitFeedback();
-                        }
+                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) triggerExitFeedback();
                     }
                     return;
                 }
             } else {
                 #if IS_LAUNCHER_DIRECTIVE
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) {
-                        triggerExitFeedback();
-                    }
+                    if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) triggerExitFeedback();
                 }
                 #endif
             }
         #endif
         
-            // Reset touch state when GUI changes
-            if (currentGui.get() != lastGuiPtr) {  // or just currentGui != lastGuiPtr if it's not a smart pointer
+            if (currentGui.get() != lastGuiPtr) {
                 hasScrolled = false;
                 oldTouchEvent = elm::TouchEvent::None;
                 oldTouchDetected = false;
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
-                lastGuiPtr = currentGui.get();  // or just currentGui
+                lastGuiPtr = currentGui.get();
             }
             
             auto topElement = currentGui->getTopElement();
-
             const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
 
-            if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) && !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
+            if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) &&
+                !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
                 if (!topElement) return;
-                
-                // Only set initial focus if NO directional keys are pressed
                 if (!currentGui->initialFocusSet() && !(keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))) {
                     currentGui->requestFocus(topElement, FocusDirection::None);
                     currentGui->markInitialFocusSet();
                 }
             }
-            if (isNavigatingBackwards.load(std::memory_order_acquire) && !currentFocus && topElement && keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+
+            if (isNavigatingBackwards.load(std::memory_order_acquire) && !currentFocus && topElement &&
+                keysDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
                 currentGui->requestFocus(topElement, FocusDirection::None);
                 currentGui->markInitialFocusSet();
                 isNavigatingBackwards.store(false, std::memory_order_release);
-                
-                // Reset navigation timing to prevent fast scrolling
-                buttonPressTime_ns = currentTime_ns;
-                lastKeyEventTime_ns = buttonPressTime_ns;
+                buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                 singlePressHandled = false;
             }
             
-        
             if (!currentFocus && !touchDetected && (!oldTouchDetected || oldTouchEvent == elm::TouchEvent::Scroll)) {
                 if (!isNavigatingBackwards.load(std::memory_order_acquire) &&
                     !ult::shortTouchAndRelease.load(std::memory_order_acquire) &&
                     !ult::longTouchAndRelease.load(std::memory_order_acquire) &&
                     !ult::simulatedSelect.load(std::memory_order_acquire) &&
                     !ult::simulatedBack.load(std::memory_order_acquire) &&
-                    !ult::simulatedNextPage.load(std::memory_order_acquire)
-                    && topElement) {
-
-                    if (oldTouchEvent == elm::TouchEvent::Scroll) {
-                        hasScrolled = true;
-                    }
+                    !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
+                    if (oldTouchEvent == elm::TouchEvent::Scroll) hasScrolled = true;
                     if (!hasScrolled) {
                         currentGui->removeFocus();
                         currentGui->requestFocus(topElement, FocusDirection::None);
                     }
-                } else if (ult::longTouchAndRelease.exchange(false, std::memory_order_acq_rel)) {
-                    hasScrolled = true;
-                } else if (ult::shortTouchAndRelease.exchange(false, std::memory_order_acq_rel)) {
+                } else if (ult::longTouchAndRelease.exchange(false, std::memory_order_acq_rel) ||
+                           ult::shortTouchAndRelease.exchange(false, std::memory_order_acq_rel)) {
                     hasScrolled = true;
                 }
             }
             
             bool handled = false;
-            elm::Element* parentElement = currentFocus;
-            
-            while (!handled && parentElement) {
-                handled = parentElement->onClick(keysDown) || parentElement->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
-                parentElement = parentElement->getParent();
-            }
+            for (elm::Element* p = currentFocus; !handled && p; p = p->getParent())
+                handled = p->onClick(keysDown) || p->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
             if (currentGui != this->getCurrentGui()) return;
-            
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
-            
 
-            // Navigational boundary cases for handling wrapping
-            static bool lastDirectionPressed = true;
-            const bool directionPressed = ((keysHeld & KEY_UP) || (keysHeld & KEY_DOWN) || (keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT));
-
-            if (!directionPressed && lastDirectionPressed)
-                tsl::elm::s_directionalKeyReleased.store(true, std::memory_order_release);
-            else if (directionPressed && lastDirectionPressed)
-                tsl::elm::s_directionalKeyReleased.store(false, std::memory_order_release);
-
-            lastDirectionPressed = directionPressed;
+            // Directional key release tracking
+            {
+                static bool lastDirectionPressed = true;
+                const bool directionPressed = (keysHeld & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) != 0;
+                if (!directionPressed && lastDirectionPressed)
+                    tsl::elm::s_directionalKeyReleased.store(true, std::memory_order_release);
+                else if (directionPressed && lastDirectionPressed)
+                    tsl::elm::s_directionalKeyReleased.store(false, std::memory_order_release);
+                lastDirectionPressed = directionPressed;
+            }
 
             const float currentScrollVelocity = tsl::elm::s_currentScrollVelocity.load(std::memory_order_acquire);
+            const u64 velMask = currentScrollVelocity != 0.0f ? (KEY_A | KEY_UP) : KEY_UP;
+            const bool singleArrowKeyPress =
+                ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) +
+                ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 &&
+                !(keysHeld & ~(velMask | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
 
             if (hasScrolled) {
-                const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP : KEY_UP) | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
-                
                 if (singleArrowKeyPress) {
-                    buttonPressTime_ns = currentTime_ns;
-                    lastKeyEventTime_ns = currentTime_ns;
+                    buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                     hasScrolled = false;
                     isNavigatingBackwards.store(false, std::memory_order_release);
                 }
             } else {
-                if (!touchDetected && !oldTouchDetected && !handled && currentFocus && !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
+                if (!touchDetected && !oldTouchDetected && !handled && currentFocus &&
+                    !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
-                    const bool singleArrowKeyPress = ((keysHeld & KEY_UP) != 0) + ((keysHeld & KEY_DOWN) != 0) + ((keysHeld & KEY_LEFT) != 0) + ((keysHeld & KEY_RIGHT) != 0) == 1 && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP: KEY_UP) | KEY_DOWN | KEY_LEFT | KEY_RIGHT) & ALL_KEYS_MASK);
-                    
                     if (singleArrowKeyPress) {
-                        
                         if (keysDown) {
-                            buttonPressTime_ns = currentTime_ns;
-                            lastKeyEventTime_ns = currentTime_ns;
+                            buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                             singlePressHandled = false;
-                            // Immediate single press action
-                            if (keysHeld & KEY_UP && !(keysHeld & ~KEY_UP & ALL_KEYS_MASK))
-                                currentGui->requestFocus(topElement, FocusDirection::Up, shouldShake);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ALL_KEYS_MASK)) {
-                                // FIXED: Use topElement instead of currentFocus->getParent() when no focus exists
-                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Down, shouldShake);
-                            }
-                            else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Left, shouldShake);
-                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Right, shouldShake);
+                            if      (keysHeld & KEY_UP    && !(keysHeld & ~KEY_UP    & ALL_KEYS_MASK)) currentGui->requestFocus(topElement, FocusDirection::Up, shouldShake);
+                            else if (keysHeld & KEY_DOWN  && !(keysHeld & ~KEY_DOWN  & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Down, shouldShake);
+                            else if (keysHeld & KEY_LEFT  && !(keysHeld & ~KEY_LEFT  & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Left, shouldShake);
+                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus ? currentFocus->getParent() : topElement, FocusDirection::Right, shouldShake);
                         }
-                        
-                        if (keysHeld & ~KEY_DOWN & ~KEY_UP & ~KEY_LEFT & ~KEY_RIGHT & ALL_KEYS_MASK) // reset
+                        if (keysHeld & ~KEY_DOWN & ~KEY_UP & ~KEY_LEFT & ~KEY_RIGHT & ALL_KEYS_MASK)
                             buttonPressTime_ns = currentTime_ns;
                         
                         const u64 durationSincePress_ns = currentTime_ns - buttonPressTime_ns;
-                        const u64 durationSinceLastEvent_ns = currentTime_ns - lastKeyEventTime_ns;
-                        
-                        if (!singlePressHandled && durationSincePress_ns >= CLICK_THRESHOLD_NS) {
+                        if (!singlePressHandled && durationSincePress_ns >= CLICK_THRESHOLD_NS)
                             singlePressHandled = true;
+                        
+                        // Compute repeat interval with acceleration
+                        {
+                            const bool tableScroll = tsl::elm::isTableScrolling.load(std::memory_order_acquire);
+                            const u64 tp  = tableScroll ? 200000000ULL  : 2000000000ULL;
+                            const u64 ini = tableScroll ?  33000000ULL  :   67000000ULL;
+                            const u64 sht = tableScroll ?   5000000ULL  :   10000000ULL;
+                            const float t = durationSincePress_ns >= tp ? 1.0f : (float)durationSincePress_ns / (float)tp;
+                            keyEventInterval_ns = (u64)((1.0f - t) * ini + t * sht);
                         }
                         
-                        if (!tsl::elm::isTableScrolling.load(std::memory_order_acquire)) {
-                            // Calculate transition factor (t) from 0 to 1 based on how far we are from the transition point
-                            static constexpr u64 transitionPoint_ns = 2000000000ULL; // 2000ms in nanoseconds
-                            static constexpr u64 initialInterval_ns = 67000000ULL;   // 67ms in nanoseconds
-                            static constexpr u64 shortInterval_ns = 10000000ULL;     // 10ms in nanoseconds
-                            
-                            const float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
-                                     (float)durationSincePress_ns / (float)transitionPoint_ns;
-                            // Smooth transition between intervals using linear interpolation
-                            keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
-                        } else {
-                            // Table scrolling - faster timing
-                            static constexpr u64 transitionPoint_ns = 200000000ULL; // 300ms (faster transition)
-                            static constexpr u64 initialInterval_ns = 33000000ULL;   // 33ms (faster initial)
-                            static constexpr u64 shortInterval_ns = 5000000ULL;      // 5ms (faster sustained)
-                            
-                            const float t = (durationSincePress_ns >= transitionPoint_ns) ? 1.0f : 
-                                     (float)durationSincePress_ns / (float)transitionPoint_ns;
-                            // Smooth transition between intervals using linear interpolation
-                            keyEventInterval_ns = ((1.0f - t) * initialInterval_ns + t * shortInterval_ns);
-                        }
-                        
-                        
-                        if (singlePressHandled && durationSinceLastEvent_ns >= keyEventInterval_ns) {
+                        if (singlePressHandled && (currentTime_ns - lastKeyEventTime_ns) >= keyEventInterval_ns) {
                             lastKeyEventTime_ns = currentTime_ns;
-                            if (keysHeld & KEY_UP && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_UP: KEY_UP)) & ALL_KEYS_MASK))
-                                currentGui->requestFocus(topElement, FocusDirection::Up, false);
-                            else if (keysHeld & KEY_DOWN && !(keysHeld & ~((currentScrollVelocity != 0.0f ? KEY_A | KEY_DOWN: KEY_DOWN)) & ALL_KEYS_MASK)) {
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
-                            }
-                            else if (keysHeld & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
-                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK))
-                                currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, false);
+                            const u64 upMask   = currentScrollVelocity != 0.0f ? (KEY_A | KEY_UP)   : KEY_UP;
+                            const u64 downMask = currentScrollVelocity != 0.0f ? (KEY_A | KEY_DOWN) : KEY_DOWN;
+                            if      (keysHeld & KEY_UP    && !(keysHeld & ~upMask   & ALL_KEYS_MASK)) currentGui->requestFocus(topElement, FocusDirection::Up, false);
+                            else if (keysHeld & KEY_DOWN  && !(keysHeld & ~downMask & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Down, false);
+                            else if (keysHeld & KEY_LEFT  && !(keysHeld & ~KEY_LEFT  & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Left, false);
+                            else if (keysHeld & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ALL_KEYS_MASK)) currentGui->requestFocus(currentFocus->getParent(), FocusDirection::Right, false);
                         }
         #if !IS_STATUS_MONITOR_DIRECTIVE
                     } else {
@@ -11540,327 +11280,213 @@ namespace tsl {
         #else
             if (!disableJumpTo && !touchDetected && !interpreterIsRunning && topElement) {
         #endif
-                // Shared constants used by ZL/ZR buttons
                 static constexpr u64 INITIAL_HOLD_THRESHOLD_NS = 400000000ULL;
-                static constexpr u64 HOLD_THRESHOLD_NS = 300000000ULL;         // 300ms to start continuous
-                static constexpr u64 RAPID_CLICK_WINDOW_NS = 500000000ULL;     // 500ms window for rapid clicking
-                static constexpr u64 RAPID_MODE_TIMEOUT_NS = 1000000000ULL;    // 1s timeout to exit rapid mode
+                static constexpr u64 HOLD_THRESHOLD_NS         = 300000000ULL;
+                static constexpr u64 RAPID_CLICK_WINDOW_NS     = 500000000ULL;
+                static constexpr u64 RAPID_MODE_TIMEOUT_NS     = 1000000000ULL;
+                static constexpr u64 ACCELERATION_POINT_NS     = 1500000000ULL;
+                static constexpr u64 INITIAL_INTERVAL_NS       =   67000000ULL;
+                static constexpr u64 FAST_INTERVAL_NS          =   10000000ULL;
 
-                // Acceleration timing constants
-                static constexpr u64 ACCELERATION_POINT_NS = 1500000000ULL;    // 1.5s transition point
-                static constexpr u64 INITIAL_INTERVAL_NS = 67000000ULL;        // 67ms initial interval
-                static constexpr u64 FAST_INTERVAL_NS = 10000000ULL;           // 10ms fast interval
-                                
-                // Detect PHYSICAL key states (whether key is actually pressed)
-                const bool lKeyPressed = (keysHeld & KEY_L);
-                const bool rKeyPressed = (keysHeld & KEY_R);
+                const bool lKeyPressed  = (keysHeld & KEY_L);
+                const bool rKeyPressed  = (keysHeld & KEY_R);
                 const bool zlKeyPressed = (keysHeld & KEY_ZL);
                 const bool zrKeyPressed = (keysHeld & KEY_ZR);
-                
-                // Detect if other keys are pressed (for preventing timer resets)
-                const bool notlKeyPressed = (keysHeld & ~KEY_L & ALL_KEYS_MASK);
-                const bool notrKeyPressed = (keysHeld & ~KEY_R & ALL_KEYS_MASK);
+                const bool notlKeyPressed  = (keysHeld & ~KEY_L  & ALL_KEYS_MASK);
+                const bool notrKeyPressed  = (keysHeld & ~KEY_R  & ALL_KEYS_MASK);
                 const bool notzlKeyPressed = (keysHeld & ~KEY_ZL & ALL_KEYS_MASK);
                 const bool notzrKeyPressed = (keysHeld & ~KEY_ZR & ALL_KEYS_MASK);
-                
-                struct JumpButtonState {
-                    bool keyWasPressed = false;
-                    bool wasIsolated   = false;
-                    u64  pressStart_ns = 0;
-                };
+
+                struct JumpButtonState { bool keyWasPressed = false, wasIsolated = false; u64 pressStart_ns = 0; };
                 static JumpButtonState lState, rState;
                 
-                auto handleJumpButton = [&](JumpButtonState& s,
-                                            bool keyPressed, bool notKeyPressed,
-                                            std::atomic<bool>& jumpSignal) {
+                auto handleJumpButton = [&](JumpButtonState& s, bool keyPressed, bool notKeyPressed, std::atomic<bool>& jumpSignal) {
                     if (keyPressed) {
-                        if (!s.keyWasPressed) {
-                            s.pressStart_ns = currentTime_ns;
-                            s.wasIsolated   = !notKeyPressed;
-                        }
+                        if (!s.keyWasPressed) { s.pressStart_ns = currentTime_ns; s.wasIsolated = !notKeyPressed; }
                         s.keyWasPressed = true;
                     } else {
-                        if (s.keyWasPressed) {
-                            if (s.wasIsolated && !notKeyPressed) {
-                                if (currentTime_ns - s.pressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
-                                    jumpSignal.store(true, std::memory_order_release);
-                                    currentGui->requestFocus(topElement, FocusDirection::None);
-                                }
-                            }
+                        if (s.keyWasPressed && s.wasIsolated && !notKeyPressed &&
+                            currentTime_ns - s.pressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
+                            jumpSignal.store(true, std::memory_order_release);
+                            currentGui->requestFocus(topElement, FocusDirection::None);
                         }
-                        s.keyWasPressed = false;
-                        s.wasIsolated   = false;
+                        s.keyWasPressed = s.wasIsolated = false;
                     }
                 };
-
-                // Handle L button (simple jump to top on release, but not if held too long)
                 handleJumpButton(lState, lKeyPressed, notlKeyPressed, jumpToTop);
-                
-                // Handle R button (simple jump to bottom on release, but not if held too long)
                 handleJumpButton(rState, rKeyPressed, notrKeyPressed, jumpToBottom);
-                
+
                 struct SkipButtonState {
-                    u64  lastClickTime_ns        = 0;
-                    bool keyWasPressed           = false;
-                    bool wasIsolated             = false;
-                    bool inRapidClickMode        = false;
-                    u64  firstClickPressStart_ns = 0;
-                    u64  buttonPressStart_ns     = 0;
-                    u64  lastHoldTrigger_ns      = 0;
-                    bool holdTriggered           = false;
+                    u64  lastClickTime_ns = 0, firstClickPressStart_ns = 0, buttonPressStart_ns = 0, lastHoldTrigger_ns = 0;
+                    bool keyWasPressed = false, wasIsolated = false, inRapidClickMode = false, holdTriggered = false;
                 };
                 static SkipButtonState zlState, zrState;
                 
-                auto handleSkipButton = [&](SkipButtonState& s,
-                                            bool keyPressed, bool notKeyPressed,
-                                            std::atomic<bool>& skipSignal) {
-                    if (s.inRapidClickMode &&
-                        (currentTime_ns - s.lastClickTime_ns) > RAPID_MODE_TIMEOUT_NS)
+                auto handleSkipButton = [&](SkipButtonState& s, bool keyPressed, bool notKeyPressed, std::atomic<bool>& skipSignal) {
+                    if (s.inRapidClickMode && (currentTime_ns - s.lastClickTime_ns) > RAPID_MODE_TIMEOUT_NS)
                         s.inRapidClickMode = false;
-                
                     if (keyPressed) {
                         if (!s.keyWasPressed) {
-                            const u64 timeSinceLastClick = currentTime_ns - s.lastClickTime_ns;
                             s.wasIsolated = !notKeyPressed;
-                
-                            if (!s.inRapidClickMode)
-                                s.firstClickPressStart_ns = currentTime_ns;
-                
-                            if (timeSinceLastClick <= RAPID_CLICK_WINDOW_NS)
-                                s.inRapidClickMode = true;
-                
+                            if (!s.inRapidClickMode) s.firstClickPressStart_ns = currentTime_ns;
+                            if (currentTime_ns - s.lastClickTime_ns <= RAPID_CLICK_WINDOW_NS) s.inRapidClickMode = true;
                             if (s.inRapidClickMode && s.wasIsolated) {
                                 skipSignal.store(true, std::memory_order_release);
                                 currentGui->requestFocus(topElement, FocusDirection::None);
                                 s.lastClickTime_ns = currentTime_ns;
                             }
+                            s.buttonPressStart_ns = s.lastHoldTrigger_ns = currentTime_ns;
+                            s.holdTriggered = false;
                         }
-                
                         if (s.inRapidClickMode && s.wasIsolated) {
-                            if (!s.keyWasPressed) {
-                                s.buttonPressStart_ns = currentTime_ns;
-                                s.lastHoldTrigger_ns  = currentTime_ns;
-                                s.holdTriggered       = false;
-                            }
-                
                             const u64 holdDuration = currentTime_ns - s.buttonPressStart_ns;
                             if (holdDuration >= HOLD_THRESHOLD_NS) {
-                                const float t = (holdDuration >= ACCELERATION_POINT_NS) ? 1.0f
-                                    : static_cast<float>(holdDuration) / ACCELERATION_POINT_NS;
-                                const u64 interval = static_cast<u64>(
-                                    (1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
-                
-                                if (!s.holdTriggered ||
-                                    (currentTime_ns - s.lastHoldTrigger_ns) >= interval) {
+                                const float t = holdDuration >= ACCELERATION_POINT_NS ? 1.0f : (float)holdDuration / ACCELERATION_POINT_NS;
+                                const u64 interval = (u64)((1.0f - t) * INITIAL_INTERVAL_NS + t * FAST_INTERVAL_NS);
+                                if (!s.holdTriggered || (currentTime_ns - s.lastHoldTrigger_ns) >= interval) {
                                     skipSignal.store(true, std::memory_order_release);
                                     currentGui->requestFocus(topElement, FocusDirection::None);
-                                    s.holdTriggered      = true;
-                                    s.lastHoldTrigger_ns = currentTime_ns;
-                                    s.lastClickTime_ns   = currentTime_ns;
+                                    s.holdTriggered = true;
+                                    s.lastHoldTrigger_ns = s.lastClickTime_ns = currentTime_ns;
                                 }
                             }
                         }
-                
                         s.keyWasPressed = true;
                     } else {
-                        if (s.keyWasPressed) {
-                            if (!s.inRapidClickMode && s.wasIsolated && !notKeyPressed) {
-                                if (currentTime_ns - s.firstClickPressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
-                                    skipSignal.store(true, std::memory_order_release);
-                                    currentGui->requestFocus(topElement, FocusDirection::None);
-                                    s.lastClickTime_ns = currentTime_ns;
-                                    s.inRapidClickMode = true;
-                                }
-                            }
+                        if (s.keyWasPressed && !s.inRapidClickMode && s.wasIsolated && !notKeyPressed &&
+                            currentTime_ns - s.firstClickPressStart_ns < INITIAL_HOLD_THRESHOLD_NS) {
+                            skipSignal.store(true, std::memory_order_release);
+                            currentGui->requestFocus(topElement, FocusDirection::None);
+                            s.lastClickTime_ns = currentTime_ns;
+                            s.inRapidClickMode = true;
                         }
-                        s.keyWasPressed = false;
-                        s.wasIsolated   = false;
+                        s.keyWasPressed = s.wasIsolated = false;
                     }
                 };
-
-                // Handle ZL button (skip up with hold)
                 handleSkipButton(zlState, zlKeyPressed, notzlKeyPressed, skipUp);
-                
-                // Handle ZR button (skip down with hold)
                 handleSkipButton(zrState, zrKeyPressed, notzrKeyPressed, skipDown);
             }
 
-            
-            // On the very first frame of a new touch, check if it lands on a notification.
-            // If so, dismiss that notification and consume the entire gesture so the overlay
-            // never sees a touch, scroll, or footer-button event from it.
+            // Notification touch consume
             if (!oldTouchDetected && touchDetected) {
-                if (notification && notification->hitTest(
-                        static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y))) {
-                    notification->dismissAt(
-                        static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y));
+                if (notification && notification->hitTest(static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y))) {
+                    notification->dismissAt(static_cast<s32>(touchPos.x), static_cast<s32>(touchPos.y));
                     notificationTouchConsumed = true;
                 }
             }
-            if (!touchDetected && oldTouchDetected)
-                notificationTouchConsumed = false;
-            
+            if (!touchDetected && oldTouchDetected) notificationTouchConsumed = false;
             if (notificationTouchConsumed) {
                 oldTouchDetected = touchDetected;
                 oldTouchPos      = touchPos;
                 return;
             }
             
-            if (!touchDetected && oldTouchDetected && currentGui && topElement) {
+            if (!touchDetected && oldTouchDetected && currentGui && topElement)
                 topElement->onTouch(elm::TouchEvent::Release, oldTouchPos.x, oldTouchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
-            }
 
-            // Cache common calculations
-            // Use consistent edge padding equal to halfGap (matching drawing code)
-            const float edgePadding = ult::halfGap.load(std::memory_order_acquire) - 5;
-            const float buttonStartX = edgePadding;
-            
-            // Calculate button positions matching the drawing code
-            const float backLeftEdge = buttonStartX + ult::layerEdge;
-            const float backRightEdge = backLeftEdge + ult::backWidth.load(std::memory_order_acquire);
+            // Footer touch regions
+            const float edgePadding    = ult::halfGap.load(std::memory_order_acquire) - 5;
+            const float backLeftEdge   = edgePadding + ult::layerEdge;
+            const float backRightEdge  = backLeftEdge  + ult::backWidth.load(std::memory_order_acquire);
             const float selectLeftEdge = backRightEdge;
             const float selectRightEdge = selectLeftEdge + ult::selectWidth.load(std::memory_order_acquire);
-            const float nextPageLeftEdge = ult::noClickableItems.load(std::memory_order_acquire) ? backRightEdge : selectRightEdge;
+            const bool  noClickable    = ult::noClickableItems.load(std::memory_order_acquire);
+            const float nextPageLeftEdge  = noClickable ? backRightEdge : selectRightEdge;
             const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth.load(std::memory_order_acquire);
-            
-            const float menuRightEdge = 245.0f + ult::layerEdge - 13;
-            const u32 footerY = cfg::FramebufferHeight - 73U + 1;
-            static std::vector<bool> lastSimulatedTouch = {false, false, false, false};
-            
-            // Touch region calculations
+            const float menuRightEdge  = 245.0f + ult::layerEdge - 13;
+            const u32   footerY        = cfg::FramebufferHeight - 73U + 1;
+
             const bool backTouched = (touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) &&
                                      (initialTouchPos.x >= backLeftEdge && initialTouchPos.x < backRightEdge && initialTouchPos.y > footerY);
-            
-            const bool selectTouched = !ult::noClickableItems.load(std::memory_order_acquire) &&
+            const bool selectTouched = !noClickable &&
                                        (touchPos.x >= selectLeftEdge && touchPos.x < selectRightEdge && touchPos.y > footerY) &&
                                        (initialTouchPos.x >= selectLeftEdge && initialTouchPos.x < selectRightEdge && initialTouchPos.y > footerY);
-
-            const bool nextPageTouched = ult::hasNextPageButton.load(std::memory_order_acquire) && (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
-                                          (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
-            
+            const bool nextPageTouched = ult::hasNextPageButton.load(std::memory_order_acquire) &&
+                                         (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
+                                         (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
             const bool menuTouched = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
                                      (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
-            
 
-            // Only update and trigger rumble on state changes
             bool shouldTriggerRumble = false;
-            
             auto checkTouched = [&](bool touched, std::atomic<bool>& state) {
-                if (touched != state.exchange(touched, std::memory_order_acq_rel))
-                    if (touched) shouldTriggerRumble = true;
+                if (touched != state.exchange(touched, std::memory_order_acq_rel) && touched)
+                    shouldTriggerRumble = true;
             };
             checkTouched(backTouched,     ult::touchingBack);
-            checkTouched(selectTouched,   ult::touchingSelect);
+            if (usingFocusColor) checkTouched(selectTouched, ult::touchingSelect);
             checkTouched(nextPageTouched, ult::touchingNextPage);
-            
             if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
-                if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) || (ult::inHiddenMode.load(std::memory_order_acquire) && !ult::inSettingsMenu.load(std::memory_order_acquire) && !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) shouldTriggerRumble = true;
+                if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) ||
+                    (ult::inHiddenMode.load(std::memory_order_acquire) &&
+                     !ult::inSettingsMenu.load(std::memory_order_acquire) &&
+                     !ult::inSubSettingsMenu.load(std::memory_order_acquire))))
+                    shouldTriggerRumble = true;
             }
-            
-            if (shouldTriggerRumble) {
-                triggerNavigationFeedback();
-            }
+            if (shouldTriggerRumble) triggerNavigationFeedback();
 
-            
             if (touchDetected) {
-                // Update lastSimulatedTouch with current touch states
                 lastSimulatedTouch = {backTouched, selectTouched, nextPageTouched, menuTouched};
+                ult::interruptedTouch.store((keysHeld & ALL_KEYS_MASK) != 0, std::memory_order_release);
 
-                ult::interruptedTouch.store(((keysHeld & ALL_KEYS_MASK) != 0), std::memory_order_release);
-            
-                const u32 xDistance = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
-                const u32 yDistance = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
-                
-                const bool isScroll = (xDistance * xDistance + yDistance * yDistance) > 1000;
-                if (isScroll) {
+                const u32 xd = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
+                const u32 yd = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));
+                if (xd*xd + yd*yd > 1000) {
                     elm::Element::setInputMode(InputMode::TouchScroll);
                     touchEvent = elm::TouchEvent::Scroll;
-                } else {
-                    if (touchEvent != elm::TouchEvent::Scroll) {
-                        touchEvent = elm::TouchEvent::Hold;
-                    }
+                } else if (touchEvent != elm::TouchEvent::Scroll) {
+                    touchEvent = elm::TouchEvent::Hold;
                 }
                 
                 if (!oldTouchDetected) {
                     initialTouchPos = touchPos;
                     elm::Element::setInputMode(InputMode::Touch);
                     if (!interpreterIsRunning) {
-                        ult::touchInBounds = (initialTouchPos.y <= footerY && initialTouchPos.y > 73U && 
-                                            initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U && 
-                                            initialTouchPos.x > 40U + ult::layerEdge);
-                        if (ult::touchInBounds) {
-                            currentGui->removeFocus();
-                        }
+                        ult::touchInBounds = (initialTouchPos.y <= footerY && initialTouchPos.y > 73U &&
+                                              initialTouchPos.x <= ult::layerEdge + cfg::FramebufferWidth - 30U &&
+                                              initialTouchPos.x > 40U + ult::layerEdge);
+                        if (ult::touchInBounds) currentGui->removeFocus();
                     }
                     touchEvent = elm::TouchEvent::Touch;
                 }
                 
                 if (currentGui && topElement && !interpreterIsRunning) {
-                    
-                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth - 30U + ult::layerEdge && 
-                        touchPos.y > 73U && touchPos.y <= footerY) {
+                    if (touchPos.x > 40U + ult::layerEdge && touchPos.x <= cfg::FramebufferWidth - 30U + ult::layerEdge &&
+                        touchPos.y > 73U && touchPos.y <= footerY)
                         currentGui->removeFocus();
-                    }
                     topElement->onTouch(touchEvent, touchPos.x, touchPos.y, oldTouchPos.x, oldTouchPos.y, initialTouchPos.x, initialTouchPos.y);
                 }
                 
                 oldTouchPos = touchPos;
-                if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) && tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) &&
+                    tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
             #if IS_STATUS_MONITOR_DIRECTIVE
-                    if (FullMode && !deactivateOriginalFooter) {
-                        this->hide();
-                    }
+                    if (FullMode && !deactivateOriginalFooter) this->hide();
             #else
-                    if (!disableHiding)
-                        this->hide();
+                    if (!disableHiding) this->hide();
             #endif
                 }
                 ult::stillTouching.store(true, std::memory_order_release);
             } else {
-                // Process touch release using stored touch states - no need to recalculate boundaries
                 for (int i = 0; i < 4; ++i) {
-                    if (lastSimulatedTouch[i]) {
-                        if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
-                            switch (i) {
-                                case 0: // Back button
-                                    ult::simulatedBack.store(true, std::memory_order_release);
-                                    break;
-                                case 1: // Select button
-                                    ult::simulatedSelect.store(true, std::memory_order_release);
-                                    break;
-                                case 2: // Next page button
-                                    ult::simulatedNextPage.store(true, std::memory_order_release);
-                                    break;
-                                case 3: // Menu button
-                                    ult::simulatedMenu.store(true, std::memory_order_release);
-                                    break;
-                            }
-                        } else if (interpreterIsRunning) {
-                            switch (i) {
-                                case 0: // Back button when interpreter is running
-                                    this->hide();
-                                    break;
-                                case 1: // Select button when interpreter is running
-                                    ult::externalAbortCommands.store(true, std::memory_order_release);
-                                    break;
-                                // cases 2 and 3 don't have interpreter running logic in original code
-                            }
+                    if (!lastSimulatedTouch[i]) continue;
+                    if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
+                        switch (i) {
+                            case 0: ult::simulatedBack.store(true,     std::memory_order_release); break;
+                            case 1: ult::simulatedSelect.store(true,   std::memory_order_release); break;
+                            case 2: ult::simulatedNextPage.store(true, std::memory_order_release); break;
+                            case 3: ult::simulatedMenu.store(true,     std::memory_order_release); break;
+                        }
+                    } else if (interpreterIsRunning) {
+                        switch (i) {
+                            case 0: this->hide(); break;
+                            case 1: ult::externalAbortCommands.store(true, std::memory_order_release); break;
                         }
                     }
                 }
-                
-                // Update lastSimulatedTouch with current touch states
-                lastSimulatedTouch = {
-                    false, 
-                    false, 
-                    false, 
-                    false
-                };
-
+                lastSimulatedTouch.fill(false);
                 elm::Element::setInputMode(InputMode::Controller);
-                
                 oldTouchPos = { 0 };
                 initialTouchPos = { 0 };
                 touchEvent = elm::TouchEvent::None;
@@ -11870,7 +11496,6 @@ namespace tsl {
             
             oldTouchDetected = touchDetected;
             oldTouchEvent = touchEvent;
-
         }
         
 
@@ -12114,48 +11739,100 @@ namespace tsl {
          *
          */
         static void parseOverlaySettings() {
-            hlp::ini::IniData parsedConfig = hlp::ini::readOverlaySettings(ULTRAHAND_CONFIG_FILE);
-            
-            u64 decodedKeys = hlp::comboStringToKeys(parsedConfig[ult::ULTRAHAND_PROJECT_NAME][ult::KEY_COMBO_STR]);
-            if (decodedKeys)
-                tsl::cfg::launchCombo = decodedKeys;
-            else {
-                parsedConfig = hlp::ini::readOverlaySettings(TESLA_CONFIG_FILE);
-                decodedKeys = hlp::comboStringToKeys(parsedConfig["tesla"][ult::KEY_COMBO_STR]);
-                if (decodedKeys)
-                    tsl::cfg::launchCombo = decodedKeys;
-            }
-            
-            ult::datetimeFormat = parsedConfig[ult::ULTRAHAND_PROJECT_NAME]["datetime_format"]; // read datetime_format
-            ult::removeQuotes(ult::datetimeFormat);
-            if (ult::datetimeFormat.empty()) {
-                ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
-                ult::removeQuotes(ult::datetimeFormat);
-            }
-
-
-            std::string tempStr;
-            
-            auto& proj = parsedConfig[ult::ULTRAHAND_PROJECT_NAME];
-            auto readBool = [&](const char* key) -> bool {
-                auto s = proj[key];
-                ult::removeQuotes(s);
-                return s != ult::FALSE_STR;
+            const auto section = ult::getKeyValuePairsFromSection(
+                ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
+        
+            auto getBool = [&](const char* key, bool def = false) -> bool {
+                auto it = section.find(key);
+                if (it == section.end() || it->second.empty()) return def;
+                return it->second != ult::FALSE_STR;
             };
-            
-            ult::hideClock              = readBool("hide_clock");
-            ult::hideBattery            = readBool("hide_battery");
-            ult::hidePCBTemp            = readBool("hide_pcb_temp");
-            ult::hideSOCTemp            = readBool("hide_soc_temp");
-            ult::dynamicWidgetColors    = readBool("dynamic_widget_colors");
-            ult::hideWidgetBackdrop     = readBool("hide_widget_backdrop");
-            ult::centerWidgetAlignment  = readBool("center_widget_alignment");
-            ult::extendedWidgetBackdrop = readBool("extended_widget_backdrop");
-            ult::useDynamicLogo         = readBool("dynamic_logo");
-            ult::useSelectionBG         = readBool("selection_bg");
-            ult::useSelectionText       = readBool("selection_text");
-            ult::useSelectionValue      = readBool("selection_value");
-
+            auto getStr = [&](const char* key, const char* def = "") -> std::string {
+                auto it = section.find(key);
+                return (it != section.end() && !it->second.empty()) ? it->second : def;
+            };
+        
+            // Key combo — ultrahand first, tesla as fallback
+            u64 decodedKeys = hlp::comboStringToKeys(getStr(ult::KEY_COMBO_STR.c_str()));
+            if (!decodedKeys)
+                decodedKeys = hlp::comboStringToKeys(
+                    ult::parseValueFromIniSection(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR));
+            if (decodedKeys) tsl::cfg::launchCombo = decodedKeys;
+        
+            // Datetime format
+            ult::datetimeFormat = getStr("datetime_format", ult::DEFAULT_DT_FORMAT.c_str());
+            ult::removeQuotes(ult::datetimeFormat);
+            if (ult::datetimeFormat.empty()) ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
+        
+            // Language
+            std::string lang = getStr(ult::DEFAULT_LANG_STR.c_str(), "en");
+            if (lang.empty()) lang = "en";
+        
+            #ifdef UI_OVERRIDE_PATH
+            {
+                std::string UI_PATH = UI_OVERRIDE_PATH;
+                ult::preprocessPath(UI_PATH);
+                ult::createDirectory(UI_PATH);
+                const std::string langOverride = UI_PATH + "lang/" + lang + ".json";
+                if (ult::isFile(UI_PATH + "theme.ini"))      ult::THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
+                if (ult::isFile(UI_PATH + "wallpaper.rgba")) ult::WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
+                if (ult::isFile(langOverride))               ult::loadTranslationsFromJSON(langOverride);
+            }
+            #endif
+        
+            // Behavior flags — shared across all overlays
+            ult::useLaunchCombos        = getBool("launch_combos",        true);
+            ult::useNotifications       = getBool("notifications",        true);
+            ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
+            ult::silenceNotifications   = getBool("silence_notifications");
+            ult::useSoundEffects        = getBool("sound_effects",        true);
+            ult::useHapticFeedback      = getBool("haptic_feedback");
+            ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
+            ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
+        
+            // max_notifications — default to 3 so it's always clamped correctly
+            {
+                const std::string maxStr = getStr("max_notifications", "3");
+                const int cap = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
+                tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
+            }
+        
+            // Widget / display flags — shared
+            ult::hideClock              = getBool("hide_clock");
+            ult::hideBattery            = getBool("hide_battery",            true);
+            ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
+            ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
+            ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
+            ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
+            ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
+            ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
+            ult::useDynamicLogo         = getBool("dynamic_logo",            true);
+            ult::useSelectionBG         = getBool("selection_bg",            true);
+            ult::useSelectionText       = getBool("selection_text");
+            ult::useSelectionValue      = getBool("selection_value");
+        
+            #if IS_LAUNCHER_DIRECTIVE
+            // Launcher-only vars that live in ult:: or global scope — readable here
+            hideHidden               = getBool("hide_hidden");
+            ult::usePageSwap         = getBool("page_swap");
+            ult::useRightAlignment   = getBool("right_alignment");
+            #endif
+        
+            // Notifications flag file
+            if (ult::useNotifications) {
+                if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH))
+                    if (FILE* f = fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w")) fclose(f);
+            } else {
+                ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
+            }
+        
+            // Theme and language
+            const std::string langFile = ult::LANG_PATH + lang + ".json";
+            if (ult::isFile(langFile)) ult::parseLanguage(langFile);
+            else ult::reinitializeLangVars();
+        
+            tsl::initializeTheme();
+            tsl::initializeThemeVars();
         }
 
         /**
@@ -12163,18 +11840,11 @@ namespace tsl {
          *
          * @param keys the new combo keys
          */
-        [[maybe_unused]] static void updateCombo(u64 keys) {
+        static void updateCombo(u64 keys) {
             tsl::cfg::launchCombo = keys;
-            hlp::ini::updateOverlaySettings({
-                { ult::TESLA_STR, {
-                    { ult::KEY_COMBO_STR , tsl::hlp::keysToComboString(keys) }
-                }}
-            }, TESLA_CONFIG_FILE);
-            hlp::ini::updateOverlaySettings({
-                { ult::ULTRAHAND_PROJECT_NAME, {
-                    { ult::KEY_COMBO_STR , tsl::hlp::keysToComboString(keys) }
-                }}
-            }, ULTRAHAND_CONFIG_FILE);
+            const std::string comboStr = tsl::hlp::keysToComboString(keys);
+            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::KEY_COMBO_STR, comboStr);
+            ult::setIniFileValue(ult::TESLA_CONFIG_INI_PATH,     ult::TESLA_STR,              ult::KEY_COMBO_STR, comboStr);
         }
         
         static auto currentUnderscanPixels = std::make_pair(0, 0);
@@ -12224,9 +11894,6 @@ namespace tsl {
                 eventClear(&captureButtonPressEvent);
             }
             tsl::hlp::ScopeGuard captureButtonEventGuard([&] { eventClose(&captureButtonPressEvent); });
-
-            // Parse Tesla settings
-            impl::parseOverlaySettings();
             
         
             // Allow only Player 1 and handheld mode
@@ -12388,6 +12055,7 @@ namespace tsl {
                                             std::string fname, text, title;
                                             struct timespec mtime;
                                             int priority, fontSize;
+                                            bool showTime;
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
                                         static int topCount = 0;
@@ -12418,7 +12086,26 @@ namespace tsl {
 
                                             if (notification && notification->hasActiveFile(fname))
                                                 continue;
-
+                                            
+                                            // ── Flag check: suppress & delete if {APP_NAME}.flag exists ──────
+                                            {
+                                                const char* dash = strchr(fname, '-');
+                                                if (dash) {
+                                                    static std::string flagPath;
+                                                    flagPath  = ult::NOTIFICATIONS_FLAGS_PATH;
+                                                    flagPath.append(fname, dash - fname);  // extract APP_NAME
+                                                    flagPath += ".flag";
+                                            
+                                                    if (ult::isFile(flagPath)) {
+                                                        fullPath  = notifPath;
+                                                        fullPath += fname;
+                                                        remove(fullPath.c_str());
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                            // ── End flag check ────────────────────────────────────────────────
+                                            
                                             fullPath  = notifPath;
                                             fullPath += fname;
 
@@ -12450,11 +12137,13 @@ namespace tsl {
 
                                             const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(cr, "title");
                                             const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(cr, "font_size");
+                                            const cJSON* showTimeObj = cJSON_GetObjectItemCaseSensitive(cr, "show_time");
 
+                                            nd.showTime = !(cJSON_IsString(showTimeObj) && showTimeObj->valuestring && strcmp(showTimeObj->valuestring, ult::FALSE_STR.c_str()) == 0);
                                             nd.fname    = fname;
                                             nd.text     = textObj->valuestring;
                                             nd.title    = (cJSON_IsString(titleObj) && titleObj->valuestring) ? titleObj->valuestring : "";
-                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 28;
+                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
 
                                             int pos = topCount;
                                             while (pos > 0 && isBetter(nd, topSlots[pos - 1])) --pos;
@@ -12476,11 +12165,11 @@ namespace tsl {
                                                 // Resume: stagger expiry so earlier slots fade first.
                                                 // Slot 0 of N loses (N-1) seconds, slot 1 loses (N-2), …, last loses 0.
                                                 const u32 duration = (firstPoll && topCount > 1)
-                                                    ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 1000))
+                                                    ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 200))
                                                     : 4000u;
                                                 notification->show(nd.text, nd.fontSize, nd.priority,
                                                                    nd.fname, nd.title, duration,
-                                                                   448, 88, false, firstPoll /*resume*/);
+                                                                   448, 88, false, firstPoll /*resume*/, nd.showTime);
                                             }
                                         }
 
@@ -12660,13 +12349,19 @@ namespace tsl {
                         
                         #if IS_STATUS_MONITOR_DIRECTIVE
                         isRendering = false;
-                        leventSignal(&renderingStopEvent);
+                        leventSignal(&renderingStopEvent);  // always — wakes frame limiter immediately
                         #endif
                         
                         if (shData->overlayOpen) {
                             if (!disableHiding) {
-                                tsl::Overlay::get()->hide();
-                                shData->overlayOpen = false;
+                        #if IS_STATUS_MONITOR_DIRECTIVE
+                                if (!isValidOverlayMode()) {  // only guard the hide
+                        #endif
+                                    tsl::Overlay::get()->hide();
+                                    shData->overlayOpen = false;
+                        #if IS_STATUS_MONITOR_DIRECTIVE
+                                }
+                        #endif
                             }
                         }
                         else {
@@ -12955,7 +12650,7 @@ namespace tsl {
                     } else if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
                         ult::rumbleClick();
                     }
-        
+                    
                     // Must be called every loop to advance timing state
                     ult::processRumbleStop(nowNs);
                     ult::processRumbleDoubleClick(nowNs);
@@ -13322,21 +13017,22 @@ namespace tsl {
         impl::SharedThreadData shData;
         shData.running.store(true, std::memory_order_release);
     
-    #if !IS_LAUNCHER_DIRECTIVE
-        tsl::initializeUltrahandSettings();
-    #endif
+        auto& overlay = tsl::Overlay::s_overlayInstance;
+        overlay = new TOverlay();
+        overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
 
-        tsl::initializeThemeVars();
+        // Parse Tesla settings
+        impl::parseOverlaySettings();
 
         eventCreate(&shData.comboEvent, false);
-
-        Thread backgroundEventThread;
-        threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
-        threadStart(&backgroundEventThread);
 
         Thread backgroundFeedbackThread;
         threadCreate(&backgroundFeedbackThread, impl::backgroundFeedbackPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
         threadStart(&backgroundFeedbackThread);
+
+        Thread backgroundEventThread;
+        threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
+        threadStart(&backgroundEventThread);
         
 
         bool shouldFireEvent = false;
@@ -13403,9 +13099,6 @@ namespace tsl {
         }
     #endif
         
-        auto& overlay = tsl::Overlay::s_overlayInstance;
-        overlay = new TOverlay();
-        overlay->m_closeOnExit = (u8(launchFlags) & u8(impl::LaunchFlags::CloseOnExit)) == u8(impl::LaunchFlags::CloseOnExit);
     
         tsl::hlp::doWithSmSession([&overlay]{
             overlay->initServices();
@@ -13638,12 +13331,11 @@ namespace tsl {
             shData.running.store(false, std::memory_order_release);
             feedbackPollerStop.store(true, std::memory_order_release);
 
+            threadWaitForExit(&backgroundEventThread);
+            threadClose(&backgroundEventThread);
 
             threadWaitForExit(&backgroundFeedbackThread);
             threadClose(&backgroundFeedbackThread);
-
-            threadWaitForExit(&backgroundEventThread);
-            threadClose(&backgroundEventThread);
             
             // Cleanup overlay resources
             hlp::requestForeground(false);
@@ -13673,7 +13365,6 @@ namespace tsl {
 #ifdef TESLA_INIT_IMPL
 
 namespace tsl::cfg {
-    
     u16 LayerWidth  = 0;
     u16 LayerHeight = 0;
     u16 LayerPosX   = 0;
@@ -13683,6 +13374,7 @@ namespace tsl::cfg {
     u64 launchCombo = KEY_ZL | KEY_ZR | KEY_DDOWN;
     u64 launchCombo2 = KEY_L | KEY_DDOWN | KEY_RSTICK;
 }
+
 extern "C" void __libnx_init_time(void);
 
 extern "C" {

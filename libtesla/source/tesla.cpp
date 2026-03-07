@@ -102,19 +102,20 @@ Color logoColor1;
 Color logoColor2;
 
 size_t defaultBackgroundAlpha = 0;
-Color  defaultBackgroundColor;
-Color  defaultTextColor;
-Color  notificationTextColor;
-Color  notificationTitleColor;
-Color  notificationClockColor;
-Color  headerTextColor;
-Color  headerSeparatorColor;
-Color  starColor;
-Color  selectionStarColor;
-Color  buttonColor;
-Color  bottomTextColor;
-Color  bottomSeparatorColor;
-Color  topSeparatorColor;
+Color defaultBackgroundColor;
+Color defaultTextColor;
+Color notificationTextColor;
+Color notificationTitleColor;
+Color notificationClockColor;
+Color headerTextColor;
+Color headerSeparatorColor;
+Color starColor;
+Color selectionStarColor;
+Color buttonColor;
+Color bottomTextColor;
+Color bottomSeparatorColor;
+Color unfocusedColor;
+Color topSeparatorColor;
 
 Color defaultOverlayColor;
 Color defaultPackageColor;
@@ -125,7 +126,7 @@ Color batteryColor;
 Color batteryChargingColor;
 Color batteryLowColor;
 size_t widgetBackdropAlpha = 0;
-Color  widgetBackdropColor;
+Color widgetBackdropColor;
 
 Color overlayTextColor;
 Color ultOverlayTextColor;
@@ -210,6 +211,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"bg_color",                        "000000"},
     {"bottom_button_color",             "FFFFFF"},
     {"bottom_separator_color",          "FFFFFF"},
+    {"unfocused_color",                 "666666"},
     {"bottom_text_color",               "FFFFFF"},
     {"click_alpha",                     "7"},
     {"click_color",                     "3E25F7"},
@@ -290,7 +292,7 @@ const char* getThemeDefault(const char* key) {
 }
 
 
-bool isValidHexColor(const std::string& s) {
+bool isValidHexColor(std::string_view s) {
     if (s.size() != 6) return false;
     for (char c : s) if (!isxdigit(c)) return false;
     return true;
@@ -343,6 +345,7 @@ void initializeThemeVars() {
     buttonColor                  = getColor("bottom_button_color");
     bottomTextColor              = getColor("bottom_text_color");
     bottomSeparatorColor         = getColor("bottom_separator_color");
+    unfocusedColor               = getColor("unfocused_color");
     topSeparatorColor            = getColor("top_separator_color");
     defaultOverlayColor          = getColor("default_overlay_color");
     defaultPackageColor          = getColor("default_package_color");
@@ -401,86 +404,320 @@ void initializeThemeVars() {
     trackBarEmptyColor           = getColor("trackbar_empty_color");
 }
 
+
+void initializeTheme(const std::string& themeIniPath) {
+    auto themeData = ult::getParsedDataFromIniFile(themeIniPath);
+    auto& themeSection = themeData[ult::THEME_STR];
+    bool needsUpdate = false;
+
+    const bool hasThemeSection = ult::isFile(themeIniPath) && (themeData.count(ult::THEME_STR) > 0);
+    for (size_t i = 0; i < tsl::defaultThemeSettingsCount; ++i) {
+        const auto& setting = tsl::defaultThemeSettings[i];
+        if (!hasThemeSection || themeSection.count(setting.key) == 0) {
+            themeSection[setting.key] = setting.value;
+            needsUpdate = true;
+        }
+    }
+
+    if (needsUpdate)
+        ult::saveIniFileData(themeIniPath, themeData);
+    if (!ult::isDirectory(ult::THEMES_PATH))
+        ult::createDirectory(ult::THEMES_PATH);
+}
+
+
+namespace gfx {
+        
+    // Updated thread-safe calculateStringWidth function
+    float calculateStringWidth(const std::string& originalString, const float fontSize, const bool monospace) {
+        if (originalString.empty() || !FontManager::isInitialized()) {
+            return 0.0f;
+        }
+        
+        // Thread-safe translation cache access
+        std::string text;
+        {
+            std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+            auto translatedIt = ult::translationCache.find(originalString);
+            if (translatedIt != ult::translationCache.end()) {
+                text = translatedIt->second;
+            } else {
+                // Don't insert anything, just fallback to original string
+                text = originalString;
+            }
+        }
+        
+        // CRITICAL: Use the same data types as drawString
+        s32 maxWidth = 0;
+        s32 currentLineWidth = 0;
+        ssize_t codepointWidth;
+        u32 currCharacter = 0;
+        
+        // Convert fontSize to u32 to match drawString behavior
+        const u32 fontSizeInt = static_cast<u32>(fontSize);
+        
+        auto itStrEnd = text.cend();
+        auto itStr = text.cbegin();
+        
+        // Fast ASCII check
+        bool isAsciiOnly = true;
+        for (unsigned char c : text) {
+            if (c > 127) {
+                isAsciiOnly = false;
+                break;
+            }
+        }
+        
+        while (itStr != itStrEnd) {
+            // Decode UTF-8 codepoint
+            if (isAsciiOnly) {
+                currCharacter = static_cast<u32>(*itStr);
+                codepointWidth = 1;
+            } else {
+                codepointWidth = decode_utf8(&currCharacter, reinterpret_cast<const u8*>(&(*itStr)));
+                if (codepointWidth <= 0) break;
+            }
+            
+            itStr += codepointWidth;
+            
+            // Handle newlines
+            if (currCharacter == '\n') {
+                maxWidth = std::max(currentLineWidth, maxWidth);
+                currentLineWidth = 0;
+                continue;
+            }
+            
+            // Use u32 fontSize to match drawString - now thread-safe
+            std::shared_ptr<FontManager::Glyph> glyph = FontManager::getOrCreateGlyph(currCharacter, monospace, fontSizeInt);
+            if (!glyph) continue;
+            
+            // CRITICAL: Use the same calculation as drawString
+            currentLineWidth += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
+        }
+        
+        // Final width calculation
+        maxWidth = std::max(currentLineWidth, maxWidth);
+        return static_cast<float>(maxWidth);
+    }
+}
+
+namespace hlp {
+
+    /**
+     * @brief Toggles focus between the Tesla overlay and the rest of the system
+     *
+     * @param enabled Focus Tesla?
+     */
+    void requestForeground(bool enabled, bool updateGlobalFlag) {
+        if (updateGlobalFlag)
+            ult::currentForeground.store(enabled, std::memory_order_release);
+
+        u64 applicationAruid = 0, appletAruid = 0;
+        
+        for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
+            pmdmntGetProcessId(&appletAruid, programId);
+            
+            if (appletAruid != 0)
+                hidsysEnableAppletToGetInput(!enabled, appletAruid);
+        }
+        
+
+        pmdmntGetApplicationProcessId(&applicationAruid);
+        hidsysEnableAppletToGetInput(!enabled, applicationAruid);
+        
+        hidsysEnableAppletToGetInput(true, 0);
+    }
+
+    namespace ini {
+        /**
+         * @brief Unparses ini data into a string
+         *
+         * @param iniData Ini data
+         * @return Ini string
+         */
+        std::string unparseIni(const IniData &iniData) {
+            std::string result;
+            bool addSectionGap = false;
+        
+            for (const auto &section : iniData) {
+                if (addSectionGap) {
+                    result += '\n';
+                }
+                result += '[' + section.first + "]\n";
+                for (const auto &keyValue : section.second) {
+                    result += keyValue.first + '=' + keyValue.second + '\n';
+                }
+                addSectionGap = true;
+            }
+        
+            return result;
+        }
+    }
+
+    /**
+     * @brief Encodes key codes into a combo string
+     *
+     * @param keys Key codes
+     * @return Combo string
+     */
+    std::string keysToComboString(u64 keys) {
+        if (keys == 0) return "";  // Early return for empty input
+    
+        std::string result;
+        bool first = true;
+    
+        for (const auto &keyInfo : ult::KEYS_INFO) {
+            if (keys & keyInfo.key) {
+                if (!first) {
+                    result += "+";
+                }
+                result += keyInfo.name;
+                first = false;
+            }
+        }
+    
+        return result;
+    }
+
+    // Function to load key combo mappings from both overlays.ini and packages.ini
+    void loadEntryKeyCombos() {
+        std::lock_guard<std::mutex> lock(comboMutex);
+        ult::g_entryCombos.clear();
+    
+        // Load overlay combos from overlays.ini
+        auto overlayData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+        std::string fullPath;
+        u64 keys;
+
+        std::vector<std::string> modeList, comboList;
+        for (auto& [fileName, settings] : overlayData) {
+            fullPath = ult::OVERLAY_PATH + fileName;
+    
+            // 1) main key_combo
+            if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
+                keys = hlp::comboStringToKeys(it->second);
+                if (keys) ult::g_entryCombos[keys] = { fullPath, "" };
+            }
+    
+            // 2) per-mode combos
+            auto modesIt = settings.find("mode_args");
+            auto argsIt  = settings.find("mode_combos");
+            if (modesIt != settings.end()) {
+                modeList  = ult::splitIniList(modesIt->second);
+                comboList = (argsIt != settings.end())
+                               ? ult::splitIniList(argsIt->second)
+                               : std::vector<std::string>();
+                if (comboList.size() < modeList.size())
+                    comboList.resize(modeList.size());
+    
+                for (size_t i = 0; i < modeList.size(); ++i) {
+                    const std::string& comboStr = comboList[i];
+                    if (comboStr.empty()) continue;
+                    keys = hlp::comboStringToKeys(comboStr);
+                    if (!keys) continue;
+                    // launchArg is the *mode* (i.e. modeList[i])
+                    ult::g_entryCombos[keys] = { fullPath, modeList[i] };
+                }
+            }
+        }
+    
+        // Load package combos from packages.ini
+        auto packageData = ult::getParsedDataFromIniFile(ult::PACKAGES_INI_FILEPATH);
+        for (auto& [packageName, settings] : packageData) {
+            // Only handle main key_combo for packages (no modes for packages)
+            if (auto it = settings.find(ult::KEY_COMBO_STR); it != settings.end() && !it->second.empty()) {
+                keys = hlp::comboStringToKeys(it->second);
+                if (keys) ult::g_entryCombos[keys] = { ult::OVERLAY_PATH + "ovlmenu.ovl", "--package " + packageName};
+            }
+        }
+    }
+}
+
+
+// Max notifications cap (max value of 4 on limited memory, 8 otherwise)
+int maxNotifications = 3;
+
+
 // ---------------------------------------------------------------------------
 // initializeUltrahandSettings  (non-launcher overlays only)
 // ---------------------------------------------------------------------------
-#if !IS_LAUNCHER_DIRECTIVE
-void initializeUltrahandSettings() {
-    auto ultrahandSection = ult::getKeyValuePairsFromSection(
-        ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
-
-    auto getStringValue = [&](const std::string& key,
-                               const std::string& defaultValue = "") -> std::string {
-        auto it = ultrahandSection.find(key);
-        if (it != ultrahandSection.end() && !it->second.empty())
-            return it->second;
-        return defaultValue;
-    };
-
-    auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
-        auto it = ultrahandSection.find(key);
-        if (it != ultrahandSection.end() && !it->second.empty())
-            return (it->second == ult::TRUE_STR);
-        return defaultValue;
-    };
-
-    std::string defaultLang = getStringValue(ult::DEFAULT_LANG_STR, "en");
-    if (defaultLang.empty()) defaultLang = "en";
-
-    #ifdef UI_OVERRIDE_PATH
-    {
-        std::string UI_PATH = UI_OVERRIDE_PATH;
-        ult::preprocessPath(UI_PATH);
-        ult::createDirectory(UI_PATH);
-
-        const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
-        const std::string NEW_WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
-        const std::string TRANSLATION_JSON_PATH     = UI_PATH + "lang/" + defaultLang + ".json";
-
-        if (ult::isFile(NEW_THEME_CONFIG_INI_PATH))
-            ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH;
-        if (ult::isFile(NEW_WALLPAPER_PATH))
-            ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH;
-        if (ult::isFile(TRANSLATION_JSON_PATH))
-            ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH);
-    }
-    #endif
-
-    ult::useLaunchCombos    = getBoolValue("launch_combos", true);
-    ult::useNotifications   = getBoolValue("notifications", true);
-
-    if (ult::useNotifications) {
-        if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
-            if (FILE* file = std::fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w"))
-                std::fclose(file);
-        }
-    } else {
-        ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
-    }
-
-    ult::useNotificationsHotkey = getBoolValue("notifications_hotkey", true);
-    ult::silenceNotifications = getBoolValue("silence_notifications", false);
-
-    const std::string maxNotifStr = getStringValue("max_notifications");
-    if (!maxNotifStr.empty()) {
-        const int maxNotifVal = ult::stoi(maxNotifStr);
-        if (maxNotifVal >= 1 && maxNotifVal <= 4) tsl::maxNotifications = maxNotifVal;
-    }
-
-    ult::useSoundEffects      = getBoolValue("sound_effects", false);
-    ult::useHapticFeedback    = getBoolValue("haptic_feedback", false);
-    ult::useSwipeToOpen       = getBoolValue("swipe_to_open", true);
-    ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true);
-
-    ultrahandSection.clear();
-
-    const std::string langFile = ult::LANG_PATH + defaultLang + ".json";
-    if (ult::isFile(langFile))
-        ult::parseLanguage(langFile);
-    else
-        ult::reinitializeLangVars();
-}
-#endif
+//#if !IS_LAUNCHER_DIRECTIVE
+//void initializeUltrahandSettings() {
+//    auto ultrahandSection = ult::getKeyValuePairsFromSection(
+//        ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
+//
+//    auto getStringValue = [&](const std::string& key,
+//                               const std::string& defaultValue = "") -> std::string {
+//        auto it = ultrahandSection.find(key);
+//        if (it != ultrahandSection.end() && !it->second.empty())
+//            return it->second;
+//        return defaultValue;
+//    };
+//
+//    auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
+//        auto it = ultrahandSection.find(key);
+//        if (it != ultrahandSection.end() && !it->second.empty())
+//            return (it->second == ult::TRUE_STR);
+//        return defaultValue;
+//    };
+//
+//    std::string defaultLang = getStringValue(ult::DEFAULT_LANG_STR, "en");
+//    if (defaultLang.empty()) defaultLang = "en";
+//
+//    #ifdef UI_OVERRIDE_PATH
+//    {
+//        std::string UI_PATH = UI_OVERRIDE_PATH;
+//        ult::preprocessPath(UI_PATH);
+//        ult::createDirectory(UI_PATH);
+//
+//        const std::string NEW_THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
+//        const std::string NEW_WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
+//        const std::string TRANSLATION_JSON_PATH     = UI_PATH + "lang/" + defaultLang + ".json";
+//
+//        if (ult::isFile(NEW_THEME_CONFIG_INI_PATH))
+//            ult::THEME_CONFIG_INI_PATH = NEW_THEME_CONFIG_INI_PATH;
+//        if (ult::isFile(NEW_WALLPAPER_PATH))
+//            ult::WALLPAPER_PATH = NEW_WALLPAPER_PATH;
+//        if (ult::isFile(TRANSLATION_JSON_PATH))
+//            ult::loadTranslationsFromJSON(TRANSLATION_JSON_PATH);
+//    }
+//    #endif
+//
+//    ult::useLaunchCombos    = getBoolValue("launch_combos", true);
+//    ult::useNotifications   = getBoolValue("notifications", true);
+//
+//    if (ult::useNotifications) {
+//        if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH)) {
+//            if (FILE* file = fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w"))
+//                fclose(file);
+//        }
+//    } else {
+//        ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
+//    }
+//
+//    ult::useNotificationsHotkey = getBoolValue("notifications_hotkey", true);
+//    ult::silenceNotifications = getBoolValue("silence_notifications", false);
+//
+//    const std::string maxNotifStr = getStringValue("max_notifications");
+//    if (!maxNotifStr.empty()) {
+//        const int maxAllowed = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
+//        tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxNotifStr), maxAllowed));
+//    }
+//
+//    ult::useSoundEffects      = getBoolValue("sound_effects", false);
+//    ult::useHapticFeedback    = getBoolValue("haptic_feedback", false);
+//    ult::useSwipeToOpen       = getBoolValue("swipe_to_open", true);
+//    ult::useOpaqueScreenshots = getBoolValue("opaque_screenshots", true);
+//
+//    ultrahandSection.clear();
+//
+//    const std::string langFile = ult::LANG_PATH + defaultLang + ".json";
+//    if (ult::isFile(langFile))
+//        ult::parseLanguage(langFile);
+//    else
+//        ult::reinitializeLangVars();
+//}
+//#endif
 
 
 

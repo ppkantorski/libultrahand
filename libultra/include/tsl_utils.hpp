@@ -365,8 +365,14 @@ namespace ult {
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
+    extern std::string NOTIFICATIONS;
+    extern std::string NOTIFICATION_SETTINGS;
+    extern std::string SILENCE_NOTIFICATIONS;
     extern std::string STARTUP_NOTIFICATION;
     extern std::string API_NOTIFICATIONS;
+    extern std::string API_TOGGLE_HOTKEY;
+    extern std::string MAX_SLOTS;
+
     extern std::string HAPTIC_FEEDBACK;
     extern std::string OPAQUE_SCREENSHOTS;
 

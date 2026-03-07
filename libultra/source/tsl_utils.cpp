@@ -448,8 +448,13 @@ namespace ult {
     std::string OPTIONS;
     std::string FAILED_TO_OPEN;
     std::string LAUNCH_COMBOS;
+    std::string NOTIFICATIONS;
+    std::string NOTIFICATION_SETTINGS;
+    std::string SILENCE_NOTIFICATIONS;
     std::string STARTUP_NOTIFICATION;
     std::string API_NOTIFICATIONS;
+    std::string API_TOGGLE_HOTKEY;
+    std::string MAX_SLOTS;
     std::string HAPTIC_FEEDBACK;
     std::string OPAQUE_SCREENSHOTS;
     std::string PACKAGE_INFO;
@@ -649,8 +654,13 @@ namespace ult {
         {&OPTIONS,                    "OPTIONS",                    "Options"},
         {&FAILED_TO_OPEN,             "FAILED_TO_OPEN",             "Failed to open file"},
         {&LAUNCH_COMBOS,              "LAUNCH_COMBOS",              "Launch Combos"},
+        {&NOTIFICATIONS,              "NOTIFICATIONS",              "Notifications"},
+        {&NOTIFICATION_SETTINGS,      "NOTIFICATION_SETTINGS",      "Notification Settings"},
+        {&SILENCE_NOTIFICATIONS,      "SILENCE_NOTIFICATIONS",      "Silence Notifications"},
         {&STARTUP_NOTIFICATION,       "STARTUP_NOTIFICATION",       "Startup Notification"},
+        {&MAX_SLOTS,                  "MAX_SLOTS",                  "Max Slots"},
         {&API_NOTIFICATIONS,          "API_NOTIFICATIONS",          "API Notifications"},
+        {&API_TOGGLE_HOTKEY,          "API_TOGGLE_HOTKEY",          "API Toggle Hotkey"},
         {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
         {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
         {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},
