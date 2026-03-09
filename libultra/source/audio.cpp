@@ -395,7 +395,7 @@ namespace ult {
 
     // Volume is read live in renderToPlayBuf() — no stale marking needed.
     void Audio::setMasterVolume(float v) {
-        const int32_t fixed = static_cast<int32_t>(ult::clamp(v, 0.0f, 1.0f) * 256.0f);
+        const int32_t fixed = static_cast<int32_t>(std::clamp(v, 0.0f, 1.0f) * 256.0f);
         m_masterVolumeFixed.store(fixed, std::memory_order_relaxed);
     }
 

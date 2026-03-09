@@ -3142,7 +3142,7 @@ namespace tsl {
              * @param opacity Opacity
              */
             inline static void setOpacity(float opacity) {
-                opacity = ult::clamp(opacity, 0.0F, 1.0F);
+                opacity = std::clamp(opacity, 0.0F, 1.0F);
                 
                 Renderer::s_opacity = opacity;
             }
@@ -5329,7 +5329,7 @@ namespace tsl {
                 if (event != TouchEvent::Release && Element::getInputMode() == InputMode::TouchScroll) {
                     if (prevX && prevY) {
                         m_nextOffset += (prevY - currY);
-                        m_nextOffset = ult::clamp(m_nextOffset, 0.0f, static_cast<float>(m_listHeight - getHeight()));
+                        m_nextOffset = std::clamp(m_nextOffset, 0.0f, static_cast<float>(m_listHeight - getHeight()));
                         
                         // Track that we're touch scrolling
                         m_touchScrollActive = true;
@@ -9663,9 +9663,9 @@ namespace tsl {
             data.text         = msg;
             data.title        = title;
             data.fileName     = fileName;
-            data.fontSize     = static_cast<u8>(ult::clamp(fontSize, size_t(8), size_t(48)));
+            data.fontSize     = static_cast<u8>(std::clamp(fontSize, size_t(8), size_t(48)));
             data.durationMs   = (durationMs == 0) ? 0
-                              : static_cast<u16>(ult::clamp(durationMs, 500u, 30000u));
+                              : static_cast<u16>(std::clamp(durationMs, 500u, 30000u));
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
             data.alignment    = !alignment.empty()
@@ -11509,9 +11509,9 @@ namespace tsl {
                                             nd.fname    = fname;
                                             nd.text     = textObj->valuestring;
                                             nd.title    = (cJSON_IsString(titleObj) && titleObj->valuestring) ? titleObj->valuestring : "";
-                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? ult::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
+                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
                                             nd.duration = cJSON_IsNumber(durationObj)
-                                                ? ((int)durationObj->valuedouble == 0 ? -1 : ult::clamp((int)durationObj->valuedouble, 500, 30000))
+                                                ? ((int)durationObj->valuedouble == 0 ? -1 : std::clamp((int)durationObj->valuedouble, 500, 30000))
                                                 : 0;
 
                                             const bool alignmentExplicit = cJSON_IsString(alignmentObj) && alignmentObj->valuestring && alignmentObj->valuestring[0];

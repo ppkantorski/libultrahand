@@ -63,11 +63,6 @@ namespace ult {
         return armTicksToNs(armGetSystemTick());
     }
 
-    template <typename T>
-    constexpr inline T clamp(T v, T lo, T hi) {
-        return (v < lo) ? lo : ((v > hi) ? hi : v);
-    }
-
     void formatTimestamp(time_t t, char* buf, size_t bufSize);
 
     // math funcs
