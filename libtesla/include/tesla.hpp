@@ -9781,7 +9781,7 @@ namespace tsl {
             Inactive, FadingIn, Visible, FadingOut
         };
 
-        enum class Alignment : u8 { Center = 0, Left = 1 };
+        enum class Alignment : u8 { Center = 0, Left = 1, Right = 2 };
         enum class SplitType : u8 { Word   = 0, Char = 1 };
 
         struct NotifEntry {
@@ -9844,8 +9844,8 @@ namespace tsl {
                   const std::string& fileName = "", const std::string& title = "",
                   u32 durationMs = 3000,
                   bool immediately = false, bool resume = false, bool showTime = true,
-                  const char* alignment = nullptr,
-                  const char* splitType = nullptr) {
+                  std::string_view alignment = {},
+                  std::string_view splitType = {}) {
 
             if (msg.empty()) return;
             if (isStale()) return;
@@ -9859,10 +9859,12 @@ namespace tsl {
                             : static_cast<u16>(ult::clamp(durationMs, 500u, 30000u));
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
-            data.alignment    = (alignment && alignment[0])
-                                ? (alignment[0] == 'l' ? Alignment::Left : Alignment::Center)
-                                : (title.empty() ? Alignment::Center : Alignment::Left);
-            data.splitType    = (splitType && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
+            data.alignment = !alignment.empty()
+                ? (alignment[0] == 'l' ? Alignment::Left
+                 : alignment[0] == 'r' ? Alignment::Right
+                 :                       Alignment::Center)
+                : (title.empty() ? Alignment::Center : Alignment::Left);
+            data.splitType = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
             data.arrivalNs    = ult::nowNs();
             {
                 time_t now = time(nullptr);
@@ -9924,11 +9926,12 @@ namespace tsl {
 
         void showNow(const std::string& msg, size_t fontSize = 26,
                      const std::string& title = "",
+                     u32 durationMs = 2500,
                      bool showTime = true,
                      const std::string& fileName = "",
-                     const char* alignment = nullptr,
-                     const char* splitType = nullptr) {
-            show(msg, fontSize, 0u, fileName, title, 2500, true, false, showTime, alignment, splitType);
+                     std::string_view alignment = {},
+                     std::string_view splitType = {}) {
+            show(msg, fontSize, 0u, fileName, title, durationMs, true, false, showTime, alignment, splitType);
         }
 
         [[nodiscard]] bool hasActiveFile(const std::string& fname) const;
@@ -11625,7 +11628,7 @@ namespace tsl {
                                             int priority, fontSize;
                                             int duration = 0;
                                             bool showTime;
-                                            bool alignLeft  = false;
+                                            std::string alignment;
                                             bool splitChar  = false;
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
@@ -11723,8 +11726,8 @@ namespace tsl {
                                                 : 0;
 
                                             const bool alignmentExplicit = cJSON_IsString(alignmentObj) && alignmentObj->valuestring && alignmentObj->valuestring[0];
-                                            nd.alignLeft = alignmentExplicit ? (strcmp(alignmentObj->valuestring, ult::LEFT_STR.c_str()) == 0)
-                                                                             : !nd.title.empty();
+                                            nd.alignment = alignmentExplicit ? alignmentObj->valuestring
+                                                                             : (nd.title.empty() ? "" : ult::LEFT_STR);
                                             nd.splitChar = cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring
                                                            && strcmp(splitTypeObj->valuestring, ult::CHAR_STR.c_str()) == 0;
 
@@ -11747,15 +11750,15 @@ namespace tsl {
                                                 const NotifData& nd = topSlots[i];
                                                 // Resume: stagger expiry so earlier slots fade first.
                                                 // Slot 0 of N loses (N-1) seconds, slot 1 loses (N-2), …, last loses 0.
+                                                const int baseDuration = nd.duration > 0 ? nd.duration : 4000;
                                                 const u32 duration = nd.duration == -1 ? 0u
-                                                    : nd.duration > 0 ? static_cast<u32>(nd.duration)
                                                     : (firstPoll && topCount > 1)
-                                                        ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 200))
-                                                        : 4000u;
+                                                        ? static_cast<u32>(std::max(500, baseDuration - (topCount - 1 - i) * 200))
+                                                        : static_cast<u32>(baseDuration);
                                                 notification->show(nd.text, nd.fontSize, nd.priority,
                                                                    nd.fname, nd.title, duration,
                                                                    false, firstPoll, nd.showTime,
-                                                                   nd.alignLeft ? ult::LEFT_STR.c_str() : ult::CENTER_STR.c_str(),
+                                                                   nd.alignment,
                                                                    nd.splitChar ? ult::CHAR_STR.c_str() : ult::WORD_STR.c_str());
                                             }
                                         }

@@ -1408,6 +1408,9 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                 if (slot.data.alignment == Alignment::Center) {
                     const auto lw = renderer->getNotificationTextDimensions(lines[li], false, slot.data.fontSize).first;
                     msgX = titleTextAreaX + (static_cast<s32>(titleInnerWf) - lw) / 2;
+                } else if (slot.data.alignment == Alignment::Right) {
+                    const auto lw = renderer->getNotificationTextDimensions(lines[li], false, slot.data.fontSize).first;
+                    msgX = titleTextAreaX + static_cast<s32>(titleInnerWf) - lw;
                 } else {
                     msgX = titleTextAreaX;
                 }
@@ -1439,7 +1442,15 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                     const s32 hw  = renderer->getNotificationTextDimensions(hand, false, slot.data.fontSize).first;
                     const s32 uw  = tsl::elm::calculateUltraTextWidth(renderer, slot.data.fontSize, true);
                     const s32 padAdjust = hasIconCol ? baseIconPad+2 : 0;
-                    const s32 cx = textAreaX + (textAreaW - bw - uw - hw - aw - padAdjust) / 2;
+                    const s32 totalW = bw + uw + hw + aw;
+                    s32 cx;
+                    if (slot.data.alignment == Alignment::Left) {
+                        cx = textAreaX + 2;
+                    } else if (slot.data.alignment == Alignment::Right) {
+                        cx = textAreaX + textAreaW - totalW - padAdjust - 2;
+                    } else {
+                        cx = textAreaX + (textAreaW - totalW - padAdjust) / 2;
+                    }
                     drawUltrahandLine(renderer, line, cx, lineY, slot.data.fontSize, fadeAlpha);
                 } else
                 #endif
@@ -1448,6 +1459,9 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                     s32 drawX;
                     if (slot.data.alignment == Alignment::Left) {
                         drawX = textAreaX + 2;
+                    } else if (slot.data.alignment == Alignment::Right) {
+                        const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
+                        drawX = textAreaX + textAreaW - lw - padAdjust - 2;
                     } else {
                         const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
                         drawX = textAreaX + (textAreaW - lw - padAdjust) / 2;
