@@ -472,7 +472,6 @@ namespace ult {
     std::string _CREATOR;
     std::string _ABOUT;
     std::string _CREDITS;
-    std::string USERGUIDE_OFFSET;
     std::string SETTINGS_MENU;
     std::string SCRIPT_OVERLAY;
     std::string STAR_FAVORITE;
@@ -678,7 +677,6 @@ namespace ult {
         {&_CREATOR,                   "_CREATOR",                   "Creator(s)"},
         {&_ABOUT,                     "_ABOUT",                     "About"},
         {&_CREDITS,                   "_CREDITS",                   "Credits"},
-        {&USERGUIDE_OFFSET,           "USERGUIDE_OFFSET",           "177"},
         {&SETTINGS_MENU,              "SETTINGS_MENU",              "Settings Menu"},
         {&SCRIPT_OVERLAY,             "SCRIPT_OVERLAY",             "Script Overlay"},
         {&STAR_FAVORITE,              "STAR_FAVORITE",              "Star/Favorite"},

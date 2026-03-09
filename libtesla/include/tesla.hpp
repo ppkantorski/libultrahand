@@ -6214,7 +6214,8 @@ namespace tsl {
                 }
                 
                 // ADDED: Clear flag when navigation completes without finding anything
-                isTableScrolling.store(false, std::memory_order_release);
+                if (m_focusedIndex >= m_items.size() || !m_items[m_focusedIndex]->isTable())
+                    isTableScrolling.store(false, std::memory_order_release);
                 return oldFocus;
             }
             
@@ -6272,8 +6273,9 @@ namespace tsl {
                     }
                 }
                 
-                // ADDED: Clear flag when navigation completes without finding anything
-                isTableScrolling.store(false, std::memory_order_release);
+                // Only clear table scrolling if we're not still focused on a table
+                if (m_focusedIndex >= m_items.size() || !m_items[m_focusedIndex]->isTable())
+                    isTableScrolling.store(false, std::memory_order_release);
                 return oldFocus;
             }
             
@@ -9574,7 +9576,7 @@ namespace tsl {
                 // Draw the parent trackbar
                 StepTrackBarV2::draw(renderer);
             }
-            
+
             
         protected:
             std::vector<std::string> m_stepDescriptions;
@@ -9587,26 +9589,26 @@ namespace tsl {
     static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
-    
+
     // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
     extern int maxNotifications;
-    
+
     class NotificationPrompt {
     public:
         NotificationPrompt()
             : enabled_(true),
               generation_(notificationGeneration.load(std::memory_order_acquire))
         {}
-        
+
         ~NotificationPrompt() { shutdown(); }
-        
+
         enum class PromptState : u8 {
             Inactive, FadingIn, Visible, FadingOut
         };
-        
+
         enum class Alignment : u8 { Center = 0, Left = 1, Right = 2 };
         enum class SplitType : u8 { Word   = 0, Char = 1 };
-        
+
         struct NotifEntry {
             std::string text;
             std::string title;
@@ -9625,28 +9627,28 @@ namespace tsl {
             Alignment alignment      = Alignment::Center;
             SplitType splitType      = SplitType::Word;
         };
-        
+
         struct NotifCompare {
             bool operator()(const NotifEntry& a, const NotifEntry& b) const {
                 if (a.priority == b.priority) return a.arrivalNs > b.arrivalNs;
                 return a.priority > b.priority;
             }
         };
-        
+
         struct Lines {
             static constexpr u8 MAX_LINES = 10;
             std::string buf[MAX_LINES];
             u8 count = 0;
             const std::string& operator[](s32 i) const { return buf[i]; }
         };
-        
+
         static constexpr size_t TITLE_FONT       = 18;
         static constexpr s32    NOTIF_ICON_DIM   = 50;
         static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
         static constexpr int    MAX_VISIBLE      = 8;
         static constexpr s32    NOTIF_WIDTH      = 448;
         static constexpr s32    NOTIF_HEIGHT     = 88;
-        
+
         // ── Public API ───────────────────────────────────────────────────────────
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
@@ -9655,10 +9657,10 @@ namespace tsl {
                   std::string_view alignment = {},
                   std::string_view splitType = {},
                   std::string_view timestamp = {}) {
-            
+
             if (msg.empty()) return;
             if (isStale()) return;
-            
+
             NotifEntry data;
             data.text         = msg;
             data.title        = title;
@@ -9682,10 +9684,10 @@ namespace tsl {
             } else {
                 ult::formatTimestamp(time(nullptr), data.timestamp, sizeof(data.timestamp));
             }
-            
+
             std::lock_guard<std::mutex> lg(state_mutex_);
             if (isStale()) return;
-            
+
             if (immediately) {
                 bool skipFadeIn = false;
                 Slot& s0 = slots_[0];
@@ -9720,7 +9722,7 @@ namespace tsl {
                     return;
                 }
             }
-            
+
             eventFire(&notificationEvent);
             #if IS_STATUS_MONITOR_DIRECTIVE
             if (isRendering) {
@@ -9730,7 +9732,7 @@ namespace tsl {
             }
             #endif
         }
-        
+
         void showNow(const std::string& msg, size_t fontSize = 26,
                      const std::string& title = "",
                      u32 durationMs = 2500,
@@ -9740,9 +9742,9 @@ namespace tsl {
                      std::string_view splitType = {}) {
             show(msg, fontSize, 0u, fileName, title, durationMs, true, false, showTime, alignment, splitType);
         }
-        
+
         [[nodiscard]] bool hasActiveFile(std::string_view fname) const;
-        
+
         void draw(gfx::Renderer* renderer, bool promptOnly = false);
         void update();
         [[nodiscard]] bool isActive() const;
@@ -9752,18 +9754,18 @@ namespace tsl {
         [[nodiscard]] bool hitTest(s32 tx, s32 ty) const;
         bool dismissAt(s32 tx, s32 ty);
         bool dismissFront();
-        
+
     private:
         static constexpr size_t MAX_NOTIFS        = 30;
         static constexpr u32    FADE_DURATION_MS  = 83;
         static constexpr u32    SLIDE_DURATION_MS = 150;
-        
+
         static constexpr u8 SLOT_ACTIVE        = 1 << 0;
         static constexpr u8 SLOT_SHOW_NOW      = 1 << 1;
         static constexpr u8 SLOT_SLIDING       = 1 << 2;
         static constexpr u8 SLOT_ICON_LOADED   = 1 << 3;
         static constexpr u8 SLOT_SOUND_PENDING = 1 << 4;
-        
+
         struct Slot {
             NotifEntry            data;
             float                 yCurrent     = 0.f;
@@ -9773,67 +9775,67 @@ namespace tsl {
             u8                    flags        = 0;
             std::unique_ptr<u8[]> iconBuf;
         };
-        
+
         Slot               slots_[MAX_VISIBLE];
         mutable std::mutex state_mutex_;
         std::priority_queue<NotifEntry, std::vector<NotifEntry>, NotifCompare> pending_queue_;
         std::atomic<bool>  enabled_{true};
         u32                generation_{0};
-        
+
         bool isStale() const {
             return !enabled_.load(std::memory_order_acquire)
                 || generation_ != notificationGeneration.load(std::memory_order_acquire);
         }
-        
+
         void evictSlot_NoLock(int i) {
             if (!slots_[i].data.fileName.empty())
                 remove((ult::NOTIFICATIONS_PATH + slots_[i].data.fileName).c_str());
             slots_[i] = Slot{};
         }
-        
+
         void clearAll_NoLock() {
             for (int i = 0; i < maxNotifications; ++i) slots_[i] = Slot{};
             while (!pending_queue_.empty()) pending_queue_.pop();
         }
-        
+
         [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const;
-        
+
         static constexpr float easeInOut(float t) {
             return (t < 0.5f) ? (2*t*t) : (-1 + (4 - 2*t)*t);
         }
-        
+
         static constexpr Color applyAlpha(Color c, float a) {
             c.a = static_cast<u8>(static_cast<float>(c.a) * a);
             return c;
         }
-        
+
         Lines getWrappedLines(const std::string& text, float pixelWidth,
                               size_t fontSize, u8 maxLines,
                               SplitType splitType = SplitType::Word) const;
-        
+
         s32 getEffectiveHeight(const Slot& slot) const;
-        
+
         void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow,
                                 bool skipFadeIn, bool suppressSound = false);
-        
+
         void repackSlots_NoLock(u64 now);
-        
+
         void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth,
                            size_t fontSize, gfx::Renderer* renderer) const;
-        
+
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
                       s32 baseY, float fadeAlpha, bool promptOnly);
-        
+
         #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
                                s32 x, s32 y, u32 fontSize, float fadeAlpha,
                                Color textColor = notificationTextColor);
         #endif
     };
-    
+
     static inline NotificationPrompt* notification = nullptr;
-    
-    
+
+
     // GUI
     
     /**

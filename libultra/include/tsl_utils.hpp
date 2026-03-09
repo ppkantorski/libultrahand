@@ -389,8 +389,7 @@ namespace ult {
     extern std::string _CREATOR;
     extern std::string _ABOUT;
     extern std::string _CREDITS;
-
-    extern std::string USERGUIDE_OFFSET;
+    
     extern std::string SETTINGS_MENU;
     extern std::string SCRIPT_OVERLAY;
     extern std::string STAR_FAVORITE;
