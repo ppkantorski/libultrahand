@@ -3142,7 +3142,7 @@ namespace tsl {
              * @param opacity Opacity
              */
             inline static void setOpacity(float opacity) {
-                opacity = std::clamp(opacity, 0.0F, 1.0F);
+                opacity = ult::clamp(opacity, 0.0F, 1.0F);
                 
                 Renderer::s_opacity = opacity;
             }
@@ -3650,7 +3650,7 @@ namespace tsl {
             void inline shakeHighlight(FocusDirection direction) {
                 this->m_highlightShaking = true;
                 this->m_highlightShakingDirection = direction;
-                this->m_highlightShakingStartTime = armTicksToNs(armGetSystemTick()); // Changed
+                this->m_highlightShakingStartTime = ult::nowNs(); // Changed
                 if (direction != FocusDirection::None && m_isItem) {
                     triggerWallFeedback();
                 }
@@ -3662,7 +3662,7 @@ namespace tsl {
              */
             void inline triggerClickAnimation() {
                 this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength;
-                this->m_animationStartTime = armTicksToNs(armGetSystemTick()); // Changed
+                this->m_animationStartTime = ult::nowNs(); // Changed
             }
 
 
@@ -3701,7 +3701,7 @@ namespace tsl {
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
                 static double cachedProgress = 0.0;
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 
                 // Only recalculate progress if enough time has passed (reduce computation frequency)
                 if (currentTime_ns - lastTimeUpdate > 16666666) { // ~60 FPS update rate
@@ -3768,7 +3768,7 @@ namespace tsl {
                     this->drawClickAnimation(renderer);
             
                     // Direct calculation without intermediate multiplication
-                    this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - ((armTicksToNs(armGetSystemTick()) - this->m_animationStartTime) * 0.000001) * 0.002f); // 0.002f = 1/500
+                    this->m_clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - ((ult::nowNs() - this->m_animationStartTime) * 0.000001) * 0.002f); // 0.002f = 1/500
             
                     // Clamp to 0 in one operation
                     if (this->m_clickAnimationProgress < 0) {
@@ -3790,7 +3790,7 @@ namespace tsl {
                 // Use cached time calculation from drawClickAnimation if possible
                 static u64 lastHighlightUpdate = 0;
                 static double cachedHighlightProgress = 0.0;
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 
                 // Update progress at 60 FPS rate with high-precision calculation
                 if (currentTime_ns - lastHighlightUpdate > 16666666) {
@@ -4094,7 +4094,7 @@ namespace tsl {
             s32 currentX = startX;
             
             if (ult::useDynamicLogo) {
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 const double currentTimeCount = static_cast<double>(currentTime_ns) / 1000000000.0;
                 const double timeBase = std::fmod(currentTimeCount, cycleDuration);
                 const double waveScale = 2.0 * ult::_M_PI / cycleDuration;
@@ -4304,7 +4304,7 @@ namespace tsl {
                         renderer->drawStringWithColoredSections(ult::versionLabel, false, tsl::s_dividerSpecialChars,
                                                                subtitleX, subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
                     } else if (subScroll.trunc) {
-                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = armTicksToNs(armGetSystemTick()); }
+                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = ult::nowNs(); }
                         renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
                         renderer->drawStringWithColoredSections(subScroll.scrollText, false, tsl::s_dividerSpecialChars,
                             subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
@@ -4330,7 +4330,7 @@ namespace tsl {
                 {
                     const int subtitleX = 20, subtitleY = y + 25;
                     if (subScroll.trunc) {
-                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = armTicksToNs(armGetSystemTick()); }
+                        if (!subScroll.active) { subScroll.active = true; subScroll.timeIn = ult::nowNs(); }
                         renderer->enableScissoring(subtitleX, subtitleY - 16, subScroll.maxW, 24);
                         renderer->drawString(subScroll.scrollText, false,
                             subtitleX - static_cast<s32>(subScroll.offset), subtitleY, 15, bannerVersionTextColor);
@@ -4451,7 +4451,7 @@ namespace tsl {
     
             #if USING_FPS_INDICATOR_DIRECTIVE
                 {
-                    const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                    const u64 currentTime_ns = ult::nowNs();
                     const float currentFps = updateFPS(currentTime_ns / 1e9);
                     static char fpsBuffer[32];
                     static float lastFps = -1.0f;
@@ -4602,7 +4602,7 @@ namespace tsl {
                 if (s.trunc) {
                     if (!s.active) {
                         s.active = true;
-                        s.timeIn = armTicksToNs(armGetSystemTick());
+                        s.timeIn = ult::nowNs();
                     }
                     
                     renderer->enableScissoring(xPos, yPos - scissorYOffset, s.maxW, scissorHeight);
@@ -4617,7 +4617,7 @@ namespace tsl {
             
             // Unified scroll update
             void updateScroll(ScrollState& s) {
-                const u64 now = armTicksToNs(armGetSystemTick());
+                const u64 now = ult::nowNs();
                 
                 // Only update at ~120Hz
                 if (now - s.lastUpd < 8333333ULL) return;
@@ -5329,7 +5329,7 @@ namespace tsl {
                 if (event != TouchEvent::Release && Element::getInputMode() == InputMode::TouchScroll) {
                     if (prevX && prevY) {
                         m_nextOffset += (prevY - currY);
-                        m_nextOffset = std::clamp(m_nextOffset, 0.0f, static_cast<float>(m_listHeight - getHeight()));
+                        m_nextOffset = ult::clamp(m_nextOffset, 0.0f, static_cast<float>(m_listHeight - getHeight()));
                         
                         // Track that we're touch scrolling
                         m_touchScrollActive = true;
@@ -5644,7 +5644,7 @@ namespace tsl {
                 if (currentlyAtWall && !m_scrollbarAtWall && s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     m_scrollbarAtWall = true;
                     m_scrollbarColorTransition = 1.0f;  // Instant jump to wall color
-                    m_lastWallReleaseTime = armTicksToNs(armGetSystemTick());  // Start transition immediately
+                    m_lastWallReleaseTime = ult::nowNs();  // Start transition immediately
                 }
                 
                 // Reset flag when we leave the wall (so we can trigger again next time)
@@ -5655,7 +5655,7 @@ namespace tsl {
                 
                 // Smooth transition back to scrollBarColor over 0.5s
                 if (m_scrollbarAtWall && m_scrollbarColorTransition > 0.0f) {
-                    const u64 currentTime = armTicksToNs(armGetSystemTick());
+                    const u64 currentTime = ult::nowNs();
                     const u64 elapsed = currentTime - m_lastWallReleaseTime;
                     
                     if (elapsed >= COLOR_TRANSITION_DURATION_NS) {
@@ -6084,7 +6084,7 @@ namespace tsl {
 
             
             inline void updateHoldState() {
-                const u64 currentTime = armTicksToNs(armGetSystemTick());
+                const u64 currentTime = ult::nowNs();
                 if ((m_lastNavigationTime != 0 && (currentTime - m_lastNavigationTime) < HOLD_THRESHOLD_NS)) {
                     m_isHolding = true;
                 } else {
@@ -6288,7 +6288,7 @@ namespace tsl {
 
 
             inline float getScrollDelta() {
-                const u64 currentTime = armTicksToNs(armGetSystemTick());
+                const u64 currentTime = ult::nowNs();
                 float deltaTime = (m_lastScrollTime != 0)
                     ? static_cast<float>(currentTime - m_lastScrollTime) / 1000000000.0f
                     : 1.0f / 60.0f;
@@ -6872,7 +6872,7 @@ namespace tsl {
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 if (event == TouchEvent::Touch) [[likely]] {
                     if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
-                        m_touchStartTime_ns = armTicksToNs(armGetSystemTick());
+                        m_touchStartTime_ns = ult::nowNs();
                         m_flags.m_isTouchHolding = false;  // Will be set to true when hold activates
                         m_flags.m_shortThresholdCrossed = false;
                         m_flags.m_longThresholdCrossed = false;
@@ -6881,7 +6881,7 @@ namespace tsl {
                 }
                 
                 if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
-                    const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
+                    const u64 touchDuration_ns = ult::nowNs() - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
                     // Activate touch hold immediately when Hold event fires
@@ -6923,7 +6923,7 @@ namespace tsl {
                 if (state != m_focused) [[likely]] {
                     m_flags.m_scroll = false;
                     m_scrollOffset = 0;
-                    timeIn_ns = armTicksToNs(armGetSystemTick());
+                    timeIn_ns = ult::nowNs();
                     Element::setFocused(state);
                 }
             }
@@ -7167,7 +7167,7 @@ namespace tsl {
                 static u64 lastUpdateTime = 0;
                 static float cachedScrollOffset = 0.0f;
                 
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 const u64 elapsed_ns = currentTime_ns - timeIn_ns;
                 
                 if (!sc.initialized || sc.minScrollDistance != static_cast<double>(m_textWidth)) {
@@ -7303,7 +7303,7 @@ namespace tsl {
             }
             
             s64 determineKeyOnTouchRelease() const {
-                const u64 touchDuration_ns = armTicksToNs(armGetSystemTick()) - m_touchStartTime_ns;
+                const u64 touchDuration_ns = ult::nowNs() - m_touchStartTime_ns;
                 const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                 
                 if (m_flags.m_useLongThreshold) {
@@ -7778,7 +7778,7 @@ namespace tsl {
             }
         
             void handleScrolling() {
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
         
                 if (!constantsInitialized || minScrollDistance != static_cast<double>(m_textWidth)) {
                     delayDuration = 3.0;
@@ -7897,7 +7897,7 @@ namespace tsl {
                 Element::triggerClickAnimation();
 
                 // Activate the click animation
-                this->m_clickAnimationStartTime = armTicksToNs(armGetSystemTick());
+                this->m_clickAnimationStartTime = ult::nowNs();
                 this->m_clickAnimationActive = true;
             }
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
@@ -7909,7 +7909,7 @@ namespace tsl {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
                 m_prevKeysHeld = keysHeld;
                 
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 static u64 lastUpdate_ns = currentTime_ns;
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
             
@@ -8235,7 +8235,7 @@ namespace tsl {
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
                 // Get current time using ARM system tick for animation timing
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 
                 // High precision time calculation - matches standard cosine wave timing
                 const double time_seconds = static_cast<double>(currentTime_ns) / 1000000000.0;
@@ -8430,7 +8430,7 @@ namespace tsl {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
                 m_prevKeysHeld = keysHeld;
                 
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 static u64 lastUpdate_ns = currentTime_ns;
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
             
@@ -8889,7 +8889,7 @@ namespace tsl {
                 if (m_value > maxValue) m_value = maxValue;
                 if (m_value < minValue) m_value = minValue;
             
-                lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                lastUpdate_ns = ult::nowNs();
             }
             
             virtual ~TrackBarV2() {}
@@ -8961,7 +8961,7 @@ namespace tsl {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
                 m_prevKeysHeld = keysHeld;
                 
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
             
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
@@ -9025,14 +9025,14 @@ namespace tsl {
                             m_wasLastHeld = false;
                             m_holding = false;
                             updateAndExecute();
-                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                            lastUpdate_ns = ult::nowNs();
                             return true;
                         }
                         // If it was a quick tap (no repeat happened), handle the single tick
                         else if (m_holding) {
                             m_holding = false;
                             updateAndExecute();
-                            lastUpdate_ns = armTicksToNs(armGetSystemTick());
+                            lastUpdate_ns = ult::nowNs();
                             return true;
                         }
                     }
@@ -9050,7 +9050,7 @@ namespace tsl {
                         // Start tracking the hold
                         m_holding = true;
                         m_wasLastHeld = false;
-                        m_holdStartTime_ns = armTicksToNs(armGetSystemTick());
+                        m_holdStartTime_ns = ult::nowNs();
                         lastUpdate_ns = currentTime_ns;
                         
                         // Perform the initial single tick
@@ -9333,7 +9333,7 @@ namespace tsl {
             }
             
             virtual void drawHighlight(gfx::Renderer *renderer) override {
-                const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+                const u64 currentTime_ns = ult::nowNs();
                 const double timeInSeconds = static_cast<double>(currentTime_ns) / 1000000000.0;
                 progress = ((ult::cos(2.0 * ult::_M_PI * std::fmod(timeInSeconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0);
                 
@@ -9759,6 +9759,7 @@ namespace tsl {
         
     }
     
+
     // Global state and event system
     static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
@@ -9766,13 +9767,6 @@ namespace tsl {
 
     // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
     extern int maxNotifications;
-
-    struct NotificationFile {
-        std::string filename;
-        std::string fullPath;
-        time_t creationTime;
-        int priority;
-    };
 
     class NotificationPrompt {
     public:
@@ -9787,14 +9781,15 @@ namespace tsl {
             Inactive, FadingIn, Visible, FadingOut
         };
 
+        enum class Alignment : u8 { Center = 0, Left = 1 };
+        enum class SplitType : u8 { Word   = 0, Char = 1 };
+
         struct NotifEntry {
             std::string text;
             std::string title;
-            char        timestamp[20] = {};
+            char        timestamp[10] = {};
             std::string fileName;
             u8  fontSize     = 28;
-            u16 promptWidth  = 448;
-            u16 promptHeight = 88;
             u16 durationMs   = 3000;
             u8  priority     = 20;
             u64 arrivalNs    = 0;
@@ -9804,6 +9799,8 @@ namespace tsl {
             bool showTime            = true;
             bool hasIcon             = false;
             bool iconPending         = false;
+            Alignment alignment      = Alignment::Center;
+            SplitType splitType      = SplitType::Word;
         };
 
         struct NotifCompare {
@@ -9814,24 +9811,42 @@ namespace tsl {
         };
 
         struct Lines {
-            static constexpr size_t MAX_LINES = 10; // must be > max getWrappedLines call (9) to hold overflow slot
-            std::string buf[MAX_LINES];
-            u8 count = 0;
-            const std::string& operator[](s32 i) const { return buf[i]; }
+            static constexpr size_t MAX_LINES = 10;
+        
+            std::vector<std::string> buf;
+        
+            Lines() {
+                buf.reserve(MAX_LINES);
+            }
+        
+            //u8 count() const {
+            //    return static_cast<u8>(buf.size());
+            //}
+        
+            const std::string& operator[](s32 i) const {
+                return buf[i];
+            }
+        
+            std::string& operator[](s32 i) {
+                return buf[i];
+            }
         };
 
         static constexpr size_t TITLE_FONT       = 18;
-        static constexpr size_t MESSAGE_FONT     = 22;
         static constexpr s32    NOTIF_ICON_DIM   = 50;
         static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
         static constexpr int    MAX_VISIBLE      = 8;
+        static constexpr s32    NOTIF_WIDTH      = 448;
+        static constexpr s32    NOTIF_HEIGHT     = 88;
 
         // ── Public API ───────────────────────────────────────────────────────────
-
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
-                  u32 durationMs = 3000, s32 promptWidth = 448, s32 promptHeight = 88,
-                  bool immediately = false, bool resume = false, bool showTime = true) {
+                  u32 durationMs = 3000,
+                  bool immediately = false, bool resume = false, bool showTime = true,
+                  const char* alignment = nullptr,
+                  const char* splitType = nullptr) {
+
             if (msg.empty()) return;
             if (isStale()) return;
 
@@ -9839,13 +9854,16 @@ namespace tsl {
             data.text         = msg;
             data.title        = title;
             data.fileName     = fileName;
-            data.fontSize     = static_cast<u8> (std::clamp(fontSize,    size_t(8),  size_t(48)));
-            data.promptWidth  = static_cast<u16>(std::clamp(promptWidth,  s32(100),   s32(1280)));
-            data.promptHeight = static_cast<u16>(std::clamp(promptHeight, s32(50),    s32(720)));
-            data.durationMs   = static_cast<u16>(std::clamp(durationMs,   500u,       30000u));
-            data.priority     = static_cast<u8> (immediately ? 0u : priority);
+            data.fontSize     = static_cast<u8>(ult::clamp(fontSize, size_t(8), size_t(48)));
+            data.durationMs = (durationMs == 0) ? 0
+                            : static_cast<u16>(ult::clamp(durationMs, 500u, 30000u));
+            data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
-            data.arrivalNs    = armTicksToNs(armGetSystemTick());
+            data.alignment    = (alignment && alignment[0])
+                                ? (alignment[0] == 'l' ? Alignment::Left : Alignment::Center)
+                                : (title.empty() ? Alignment::Center : Alignment::Left);
+            data.splitType    = (splitType && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
+            data.arrivalNs    = ult::nowNs();
             {
                 time_t now = time(nullptr);
                 struct tm t;
@@ -9880,7 +9898,7 @@ namespace tsl {
                     }
                 }
                 placeInSlot_NoLock(0, std::move(data), true, skipFadeIn);
-                repackSlots_NoLock(armTicksToNs(armGetSystemTick()));
+                repackSlots_NoLock(ult::nowNs());
             } else {
                 int freeSlot = -1;
                 for (int i = 0; i < maxNotifications; ++i)
@@ -9904,202 +9922,31 @@ namespace tsl {
             #endif
         }
 
-        void showNow(const std::string& msg, size_t fontSize = 26) {
-            show(msg, fontSize, 0u, "", "", 2500, 448, 88, true);
+        void showNow(const std::string& msg, size_t fontSize = 26,
+                     const std::string& title = "",
+                     bool showTime = true,
+                     const std::string& fileName = "",
+                     const char* alignment = nullptr,
+                     const char* splitType = nullptr) {
+            show(msg, fontSize, 0u, fileName, title, 2500, true, false, showTime, alignment, splitType);
         }
 
-        // Single implementation — const char* overload delegates instead of duplicating.
-        [[nodiscard]] bool hasActiveFile(const std::string& fname) const {
-            if (fname.empty()) return false;
-            if (isStale()) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < maxNotifications; ++i)
-                if ((slots_[i].flags & SLOT_ACTIVE) && slots_[i].data.fileName == fname) return true;
-            return false;
-        }
-
+        [[nodiscard]] bool hasActiveFile(const std::string& fname) const;
         [[nodiscard]] bool hasActiveFile(const char* fname) const {
-            return fname && fname[0] != '\0' && hasActiveFile(std::string(fname));
+            return fname && fname[0] && hasActiveFile(std::string(fname));
         }
 
-        void draw(gfx::Renderer* renderer, bool promptOnly = false) {
-            if (ult::launchingOverlay.load(std::memory_order_acquire) || isStale()) return;
-            if (!enabled_.load(std::memory_order_acquire)) return;
+        void draw(gfx::Renderer* renderer, bool promptOnly = false);
 
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            const u64 now = armTicksToNs(armGetSystemTick());
+        void update();
 
-            for (int i = 0; i < maxNotifications; ++i) {
-                const Slot& slot = slots_[i];
-                if (!(slot.flags & SLOT_ACTIVE) || slot.data.text.empty() ||
-                    slot.data.state == PromptState::Inactive) continue;
-
-                const u64 elapsedMs = (now - slot.data.stateStartNs) / 1'000'000ULL;
-                float t = std::min(1.0f, static_cast<float>(elapsedMs) / FADE_DURATION_MS);
-                float fadeAlpha;
-                switch (slot.data.state) {
-                    case PromptState::FadingIn:  fadeAlpha = easeInOut(t);        break;
-                    case PromptState::Visible:   fadeAlpha = 1.0f;                break;
-                    case PromptState::FadingOut: fadeAlpha = easeInOut(1.0f - t); break;
-                    default: continue;
-                }
-
-                if (static_cast<s32>(slot.yCurrent) + getEffectiveHeight(slot) <= static_cast<s32>(tsl::cfg::FramebufferHeight))
-                    drawSlot(renderer, slot, static_cast<s32>(slot.yCurrent), fadeAlpha, promptOnly);
-            }
-        }
-
-        void update() {
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            if (isStale()) { clearAll_NoLock(); return; }
-            if (ult::launchingOverlay.load(std::memory_order_acquire)) return;
-
-            const u64 now = armTicksToNs(armGetSystemTick());
-            bool anyCleared = false;
-
-            for (int i = 0; i < maxNotifications; ++i) {
-                Slot& slot = slots_[i];
-                if (!(slot.flags & SLOT_ACTIVE)) continue;
-
-                const bool outOfBounds = static_cast<s32>(slot.yTarget) + getEffectiveHeight(slot) > static_cast<s32>(tsl::cfg::FramebufferHeight);
-                if (outOfBounds) {
-                    slot.data.stateStartNs = now;
-                    slot.data.expireNs     = now + static_cast<u64>(slot.data.durationMs) * 1'000'000ULL
-                                           + FADE_DURATION_MS * 1'000'000ULL;
-                } else if (slot.flags & SLOT_SOUND_PENDING) {
-                    slot.flags &= ~SLOT_SOUND_PENDING;
-                    triggerNotificationSound.store(true, std::memory_order_release);
-                }
-
-                if (slot.data.iconPending) {
-                    slot.data.iconPending = false;
-                    if (!slot.data.fileName.empty()) {
-                        std::string base = slot.data.fileName;
-                        const size_t dot  = base.rfind('.');
-                        if (dot  != std::string::npos) base.erase(dot);
-                        const size_t dash = base.rfind('-');
-                        if (dash != std::string::npos) base.erase(dash);
-                        const std::string iconPath = ult::NOTIFICATIONS_ICONS_PATH + base + ".rgba";
-                        slot.iconBuf = std::make_unique<u8[]>(NOTIF_ICON_BYTES);
-                        if (ult::loadRGBA8888toRGBA4444(iconPath, slot.iconBuf.get(),
-                                                        NOTIF_ICON_DIM * NOTIF_ICON_DIM * 4)) {
-                            slot.flags        |= SLOT_ICON_LOADED;
-                            slot.data.hasIcon  = true;
-                        } else {
-                            slot.iconBuf.reset();
-                        }
-                    }
-                }
-
-                if (slot.flags & SLOT_SLIDING) {
-                    const float st = std::min(1.0f,
-                        static_cast<float>((now - slot.slideStartNs) / 1'000'000ULL) / SLIDE_DURATION_MS);
-                    slot.yCurrent = slot.ySlideFrom + (slot.yTarget - slot.ySlideFrom) * easeInOut(st);
-                    if (st >= 1.0f) { slot.yCurrent = slot.yTarget; slot.flags &= ~SLOT_SLIDING; }
-                }
-
-                const u64 elapsedMs = slot.data.stateStartNs == 0 ? 0
-                                    : (now - slot.data.stateStartNs) / 1'000'000ULL;
-                if (!outOfBounds) switch (slot.data.state) {
-                    case PromptState::FadingIn:
-                        if (elapsedMs >= FADE_DURATION_MS) {
-                            slot.data.state        = PromptState::Visible;
-                            slot.data.stateStartNs = now;
-                        }
-                        break;
-                    case PromptState::Visible:
-                        if (now >= slot.data.expireNs) {
-                            slot.data.state        = PromptState::FadingOut;
-                            slot.data.stateStartNs = now;
-                        }
-                        break;
-                    case PromptState::FadingOut:
-                        if (elapsedMs >= FADE_DURATION_MS) {
-                            evictSlot_NoLock(i);
-                            anyCleared = true;
-                        }
-                        break;
-                    default: break;
-                }
-            }
-
-            if (anyCleared) repackSlots_NoLock(now);
-
-            while (!pending_queue_.empty()) {
-                int freeSlot = -1;
-                for (int i = 0; i < maxNotifications; ++i)
-                    if (!(slots_[i].flags & SLOT_ACTIVE)) { freeSlot = i; break; }
-                if (freeSlot < 0) break;
-                NotifEntry next = pending_queue_.top();
-                pending_queue_.pop();
-                placeInSlot_NoLock(freeSlot, std::move(next), false, false);
-            }
-        }
-
-        [[nodiscard]] bool isActive() const {
-            if (isStale()) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].flags & SLOT_ACTIVE) return true;
-            return !pending_queue_.empty();
-        }
-
-        [[nodiscard]] int activeCount() const {
-            if (isStale()) return 0;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            int count = 0;
-            for (int i = 0; i < maxNotifications; ++i)
-                if (slots_[i].flags & SLOT_ACTIVE) ++count;
-            return count;
-        }
-
-        void shutdown() {
-            enabled_.store(false, std::memory_order_release);
-            notificationGeneration.fetch_add(1, std::memory_order_acq_rel);
-            generation_ = notificationGeneration.load(std::memory_order_acquire);
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            clearAll_NoLock();
-        }
-
-        void forceShutdown() {
-            enabled_.store(false, std::memory_order_release);
-        }
-
-        [[nodiscard]] bool hitTest(s32 tx, s32 ty) const {
-            if (isStale()) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            return findHitSlot_NoLock(tx, ty) >= 0;
-        }
-
-        bool dismissAt(s32 tx, s32 ty) {
-            if (isStale()) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            const int idx = findHitSlot_NoLock(tx, ty);
-            if (idx < 0) return false;
-            Slot& slot = slots_[idx];
-            if (slot.data.state != PromptState::FadingOut) {
-                slot.data.state        = PromptState::FadingOut;
-                slot.data.stateStartNs = armTicksToNs(armGetSystemTick());
-            }
-            return true;
-        }
-
-        bool dismissFront() {
-            if (isStale()) return false;
-            std::lock_guard<std::mutex> lg(state_mutex_);
-            // Find the topmost (lowest yCurrent) active slot not already fading out
-            int best = -1;
-            float bestY = 1.0e9f;
-            for (int i = 0; i < maxNotifications; ++i) {
-                const Slot& slot = slots_[i];
-                if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::FadingOut) continue;
-                if (slot.yCurrent < bestY) { bestY = slot.yCurrent; best = i; }
-            }
-            if (best < 0) return false;
-            slots_[best].data.state        = PromptState::FadingOut;
-            slots_[best].data.stateStartNs = armTicksToNs(armGetSystemTick());
-            return true;
-        }
+        [[nodiscard]] bool isActive() const;
+        [[nodiscard]] int activeCount() const;
+        void shutdown();
+        void forceShutdown() { enabled_.store(false, std::memory_order_release); }
+        [[nodiscard]] bool hitTest(s32 tx, s32 ty) const;
+        bool dismissAt(s32 tx, s32 ty);
+        bool dismissFront();
 
     private:
         static constexpr size_t MAX_NOTIFS        = 30;
@@ -10119,7 +9966,7 @@ namespace tsl {
             float                 yTarget      = 0.f;
             float                 ySlideFrom   = 0.f;
             u64                   slideStartNs = 0;
-            u8                    flags        = 0; // SLOT_ACTIVE | SLOT_SHOW_NOW | SLOT_SLIDING | SLOT_ICON_LOADED | SLOT_SOUND_PENDING
+            u8                    flags        = 0;
             std::unique_ptr<u8[]> iconBuf;
         };
 
@@ -10147,20 +9994,8 @@ namespace tsl {
             while (!pending_queue_.empty()) pending_queue_.pop();
         }
 
-        [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const {
-            for (int i = 0; i < maxNotifications; ++i) {
-                const Slot& slot = slots_[i];
-                if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::Inactive) continue;
-                const s32 sx = ult::useRightAlignment
-                    ? static_cast<s32>(tsl::cfg::FramebufferWidth) - slot.data.promptWidth : 0;
-                const s32 sy = static_cast<s32>(slot.yCurrent);
-                const s32 sh = getEffectiveHeight(slot);
-                if (tx >= sx && tx < sx + slot.data.promptWidth &&
-                    ty >= sy && ty < sy + sh)
-                    return i;
-            }
-            return -1;
-        }
+        // Defined in tesla.cpp — only called from out-of-line methods
+        [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const;
 
         static float easeInOut(float t) {
             return (t < 0.5f) ? (2*t*t) : (-1 + (4 - 2*t)*t);
@@ -10171,322 +10006,40 @@ namespace tsl {
             return c;
         }
 
-        static Lines splitLines(const std::string& text, u8 maxLines) {
-            Lines result;
-            size_t start = 0;
-            while (start < text.size() && result.count < maxLines) {
-                size_t       pos  = text.find('\n', start);
-                const size_t pos2 = text.find("\\n", start);
-                if (pos2 != std::string::npos && (pos == std::string::npos || pos2 < pos)) pos = pos2;
-                if (pos == std::string::npos) { result.buf[result.count++] = text.substr(start); break; }
-                result.buf[result.count++] = text.substr(start, pos - start);
-                start = pos + (text[pos] == '\n' ? 1 : 2);
-            }
-            return result;
-        }
-
-        Lines getWrappedLines(const std::string& text, float pixelWidth,
-                              size_t fontSize, u8 maxLines) const {
-            Lines split = splitLines(text, maxLines);
-            Lines result;
-            for (u8 si = 0; si < split.count && result.count < maxLines; ++si) {
-                const auto wrapped = wrapText(split.buf[si], pixelWidth,
-                                              "word", /*useIndent=*/false, "", 0.f, fontSize);
-                for (const auto& wl : wrapped) {
-                    if (result.count >= maxLines) break;
-                    result.buf[result.count++] = wl;
-                }
-            }
-            if (result.count == 0 && split.count > 0)
-                result.buf[result.count++] = "";
-            return result;
-        }
-
         void clearSlot_NoLock(int i) { slots_[i] = Slot{}; }
 
-        s32 getEffectiveHeight(const Slot& slot) const {
-            s32 h = slot.data.promptHeight;
-            if (!slot.data.text.empty() && !slot.data.title.empty()) {
-                const s32   baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
-                const bool  hasIconCol  = (slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED)) || slot.data.iconPending;
-                const s32   colWidth    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
-                const s32   textAreaW   = hasIconCol ? (slot.data.promptWidth - colWidth)
-                                                     : (slot.data.promptWidth - 2 * (baseIconPad + 2));
-                const float innerW      = hasIconCol ? static_cast<float>(textAreaW - baseIconPad - 2)
-                                                     : static_cast<float>(textAreaW);
-
-                const Lines lines = getWrappedLines(slot.data.text, innerW, slot.data.fontSize, 4);
-                if (lines.count > 1) {
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-                    h += static_cast<s32>(lines.count - 1) * fm.lineHeight;
-                }
-            }
-            return h;
-        }
-
-        float computeTargetY_NoLock(int idx) const {
-            float y = 0.f;
-            for (int i = 0; i < idx; ++i)
-                if (slots_[i].flags & SLOT_ACTIVE) y += static_cast<float>(getEffectiveHeight(slots_[i]));
-            return y;
-        }
-
-        void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow, bool skipFadeIn, bool suppressSound = false) {
-            const u64   now = armTicksToNs(armGetSystemTick());
-            const float ty  = computeTargetY_NoLock(idx);
-            Slot& slot      = slots_[idx];
-            slot.data              = std::move(e);
-            slot.data.state        = skipFadeIn ? PromptState::Visible : PromptState::FadingIn;
+        void beginFadeOut_NoLock(Slot& slot, u64 now) {
+            slot.data.state        = PromptState::FadingOut;
             slot.data.stateStartNs = now;
-            slot.data.expireNs     = now
-                                     + (skipFadeIn ? 0ULL : FADE_DURATION_MS * 1'000'000ULL)
-                                     + slot.data.durationMs * 1'000'000ULL;
-            slot.data.hasIcon      = false;
-            slot.data.iconPending  = !slot.data.fileName.empty();
-            slot.yTarget           = ty;
-            slot.yCurrent          = ty;
-            slot.iconBuf.reset();
-            slot.flags             = SLOT_ACTIVE
-                                   | (isShowNow     ? SLOT_SHOW_NOW      : 0)
-                                   | (suppressSound ? 0                  : SLOT_SOUND_PENDING);
         }
 
-        void repackSlots_NoLock(u64 now) {
-            // Step 1: build ordered index list (one isShowNow first, then regular)
-            int order[MAX_VISIBLE];
-            int count = 0;
+        // Defined in tesla.cpp — only called from out-of-line methods
+        float computeTargetY_NoLock(int idx) const;
 
-            for (int i = 0; i < maxNotifications; ++i)
-                if ((slots_[i].flags & SLOT_ACTIVE) && (slots_[i].flags & SLOT_SHOW_NOW)) { order[count++] = i; break; }
-            for (int i = 0; i < maxNotifications && count < maxNotifications; ++i)
-                if ((slots_[i].flags & SLOT_ACTIVE) && !(slots_[i].flags & SLOT_SHOW_NOW)) order[count++] = i;
+        // Defined in tesla.cpp
+        static Lines splitLines(const std::string& text, u8 maxLines);
 
-            // Step 2: assign y-positions before touching slot storage
-            float y = 0.f;
-            for (int i = 0; i < count; ++i) {
-                Slot& s = slots_[order[i]];
-                if (s.yTarget != y || s.yCurrent != y) {
-                    s.ySlideFrom   = s.yCurrent;
-                    s.yTarget      = y;
-                    s.slideStartNs = now;
-                    s.flags       |= SLOT_SLIDING;
-                }
-                y += static_cast<float>(getEffectiveHeight(s));
-            }
+        Lines getWrappedLines(const std::string& text, float pixelWidth,
+                              size_t fontSize, u8 maxLines,
+                              SplitType splitType = SplitType::Word) const;
 
-            // Step 3: compact into slots_[0..count-1]
-            Slot packed[MAX_VISIBLE];
-            for (int i = 0; i < count; ++i)
-                packed[i] = std::move(slots_[order[i]]);
-            for (int i = 0; i < maxNotifications; ++i)
-                slots_[i] = (i < count) ? std::move(packed[i]) : Slot{};
-        }
+        s32  getEffectiveHeight(const Slot& slot) const;
 
-        void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth, size_t fontSize, gfx::Renderer* renderer) const {
-            if (lines.count <= maxLines) return;
-            const std::string overflow = lines.buf[maxLines];
-            lines.count = maxLines;
-            std::string& last = lines.buf[maxLines - 1];
-            last += " " + overflow;
-            while (!last.empty()) {
-                const std::string candidate = last + "...";
-                const auto w = renderer->getNotificationTextDimensions(candidate, false, fontSize).first;
-                if (static_cast<float>(w) <= pixelWidth) { last = candidate; return; }
-                last.pop_back();
-            }
-            last = "...";
-        }
+        void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow,
+                                bool skipFadeIn, bool suppressSound = false);
+
+        void repackSlots_NoLock(u64 now);
+
+        void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth,
+                           size_t fontSize, gfx::Renderer* renderer) const;
 
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
-                      s32 baseY, float fadeAlpha, bool promptOnly) {
-            auto fc = [&](Color c) { return renderer->a2(applyAlpha(c, fadeAlpha)); };
-
-            const s32 x = ult::useRightAlignment
-                ? (tsl::cfg::FramebufferWidth - slot.data.promptWidth) : 0;
-
-            const s32  baseIconPad = (slot.data.promptHeight - NOTIF_ICON_DIM) / 2;
-            const s32  iconColW    = baseIconPad + NOTIF_ICON_DIM + baseIconPad;
-            const bool hasIconCol  = (slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED)) || slot.data.iconPending;
-            s32 textAreaX = x;
-            s32 textAreaW = slot.data.promptWidth;
-            if (hasIconCol) {
-                textAreaX = x + iconColW;
-                textAreaW = slot.data.promptWidth - iconColW;
-            }
-            const float innerWf        = static_cast<float>(textAreaW - baseIconPad - 2);
-            const s32   titleTextAreaX = hasIconCol ? textAreaX : x + (baseIconPad + 2);
-            const s32   titleTextAreaW = hasIconCol ? textAreaW : slot.data.promptWidth - 2 * (baseIconPad + 2);
-            const float titleInnerWf   = hasIconCol ? innerWf   : static_cast<float>(titleTextAreaW);
-
-            const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty();
-
-            Lines titleIconLines;
-            s32 effectiveHeight = slot.data.promptHeight;
-            if (hasTitleIconLayout) {
-                titleIconLines = getWrappedLines(slot.data.text, titleInnerWf, slot.data.fontSize, 5);
-                applyEllipsis(titleIconLines, 4, titleInnerWf, slot.data.fontSize, renderer);
-                if (titleIconLines.count > 1) {
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-                    effectiveHeight = slot.data.promptHeight
-                                    + static_cast<s32>(titleIconLines.count - 1) * fm.lineHeight;
-                }
-            }
-            Lines regularLines;
-            s32 regularExtraSpacing = 0;
-            if (!hasTitleIconLayout && !slot.data.text.empty() && textAreaW > 0) {
-                regularLines = getWrappedLines(slot.data.text, static_cast<float>(textAreaW-4), slot.data.fontSize, 9);
-                applyEllipsis(regularLines, 8, static_cast<float>(textAreaW-4), slot.data.fontSize, renderer);
-                if (regularLines.count > 1) {
-                    regularExtraSpacing = static_cast<s32>(regularLines.count - 1) * 3;
-                    effectiveHeight += regularExtraSpacing;
-                }
-            }
-
-            renderer->enableScissoring(static_cast<u32>(std::max(0, x)),
-                                       static_cast<u32>(std::max(0, baseY)),
-                                       static_cast<u32>(slot.data.promptWidth),
-                                       static_cast<u32>(effectiveHeight));
-
-            #if IS_STATUS_MONITOR_DIRECTIVE
-                renderer->drawRect(x, baseY, slot.data.promptWidth, effectiveHeight,
-                                   fc(defaultBackgroundColor));
-            #else
-                if (!promptOnly && ult::expandedMemory)
-                    renderer->drawRectMultiThreaded(x, baseY, slot.data.promptWidth,
-                                                    effectiveHeight, fc(defaultBackgroundColor));
-                else
-                    renderer->drawRect(x, baseY, slot.data.promptWidth, effectiveHeight,
-                                       fc(defaultBackgroundColor));
-            #endif
-
-            const s32 iconVertPad = (effectiveHeight - NOTIF_ICON_DIM) / 2;
-            if (hasIconCol && slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED) && slot.iconBuf) {
-                const s32 dstX = x + baseIconPad;
-                s32 drawH = NOTIF_ICON_DIM;
-                if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
-                    drawH = 0;
-                if (iconVertPad + baseY + drawH > static_cast<s32>(tsl::cfg::FramebufferHeight))
-                    drawH = static_cast<s32>(tsl::cfg::FramebufferHeight) - iconVertPad - baseY;
-                if (drawH > 0)
-                    renderer->drawBitmapRGBA4444(
-                        static_cast<u32>(dstX), static_cast<u32>(iconVertPad + baseY),
-                        static_cast<u32>(NOTIF_ICON_DIM), static_cast<u32>(drawH),
-                        slot.iconBuf.get(), fadeAlpha);
-            }
-
-            if (!slot.data.text.empty() && textAreaW > 0) {
-                if (hasTitleIconLayout) {
-                    const Lines& lines   = titleIconLines;
-                    const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
-                    const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-                    const s32  innerW    = static_cast<s32>(titleInnerWf);
-                    static constexpr s32 LINE_GAP = 4;
-                    const s32 blockH   = titleFm.lineHeight + LINE_GAP + static_cast<s32>(lines.count) * messageFm.lineHeight;
-                    const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
-                    const s32 titleY   = originY + titleFm.ascent - 3;
-                    const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1;
-
-                    #if IS_LAUNCHER_DIRECTIVE
-                    if (slot.data.title.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos)
-                        drawUltrahandLine(renderer, slot.data.title, titleTextAreaX, titleY, TITLE_FONT, fadeAlpha, notificationTitleColor);
-                    else {
-                    #endif
-                        renderer->drawNotificationString(slot.data.title, false,
-                            titleTextAreaX, titleY, TITLE_FONT, fc(notificationTitleColor));
-                    #if IS_LAUNCHER_DIRECTIVE
-                    }
-                    #endif
-
-                    if (slot.data.showTime && slot.data.timestamp[0] != '\0') {
-                        const auto tsW = renderer->getNotificationTextDimensions(
-                                                    slot.data.timestamp, false, TITLE_FONT).first;
-                        const s32 tsX = textAreaX + innerW - tsW;
-                        if (tsX > textAreaX)
-                            renderer->drawNotificationString(slot.data.timestamp, false,
-                                tsX, titleY, TITLE_FONT, fc(notificationClockColor));
-                    }
-
-                    for (s32 li = 0; li < static_cast<s32>(lines.count); ++li)
-                        renderer->drawNotificationString(lines[li], false, titleTextAreaX,
-                            messageY + li * messageFm.lineHeight + li * 3,
-                            slot.data.fontSize, fc(notificationTextColor));
-
-                } else {
-                    const Lines& lines = regularLines;
-                    const auto fm     = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-
-                    const s32 totalTextHeight = static_cast<s32>(lines.count) * fm.lineHeight + (lines.count > 1 ? regularExtraSpacing : 0);
-                    const s32 startY = (effectiveHeight - totalTextHeight) / 2 + fm.ascent + baseY;
-
-                    for (s32 li = 0; li < static_cast<s32>(lines.count); ++li) {
-                        const std::string& line = lines[li];
-                        const s32 lineY = startY + li * fm.lineHeight + (lines.count > 1 ? li * 3 : 0);
-                        #if IS_LAUNCHER_DIRECTIVE
-                        if (line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos) {
-                            const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
-                            const std::string before = line.substr(0, up);
-                            const std::string after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
-                            s32 bw = 0, aw = 0;
-                            if (!before.empty()) bw = renderer->getNotificationTextDimensions(before, false, slot.data.fontSize).first;
-                            if (!after.empty())  aw = renderer->getNotificationTextDimensions(after,  false, slot.data.fontSize).first;
-                            const std::string hand = ult::SPLIT_PROJECT_NAME_2;
-                            const s32 hw  = renderer->getNotificationTextDimensions(hand, false, slot.data.fontSize).first;
-                            const s32 uw  = tsl::elm::calculateUltraTextWidth(renderer, slot.data.fontSize, true);
-                            const s32 padAdjust = hasIconCol ? baseIconPad+2 : 0;
-                            const s32 cx = textAreaX + (textAreaW - bw - uw - hw - aw - padAdjust) / 2;
-                            drawUltrahandLine(renderer, line, cx, lineY, slot.data.fontSize, fadeAlpha);
-                        } else
-                        #endif
-                        {
-                            const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
-                            const s32 padAdjust = hasIconCol ? baseIconPad+2 : 0;
-                            renderer->drawNotificationString(line, false,
-                                textAreaX + (textAreaW - lw - padAdjust) / 2, lineY,
-                                slot.data.fontSize, fc(notificationTextColor));
-                        }
-                    }
-                }
-            }
-
-            if (!ult::useRightAlignment) {
-                renderer->drawRect(x + slot.data.promptWidth - 1, baseY,
-                                   1, effectiveHeight, fc(edgeSeparatorColor));
-            } else {
-                renderer->drawRect(x, baseY, 1, effectiveHeight, fc(edgeSeparatorColor));
-            }
-            renderer->drawRect(x, baseY + effectiveHeight - 1,
-                               slot.data.promptWidth, 1, fc(edgeSeparatorColor));
-            renderer->disableScissoring();
-        }
+                      s32 baseY, float fadeAlpha, bool promptOnly);
 
         #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
                                s32 x, s32 y, u32 fontSize, float fadeAlpha,
-                               Color textColor = notificationTextColor) {
-
-            auto fc = [&](Color c) { return applyAlpha(c, fadeAlpha); };
-            const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
-            if (up == std::string::npos) {
-                renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));
-                return;
-            }
-            const std::string before = line.substr(0, up);
-            const std::string hand   = ult::SPLIT_PROJECT_NAME_2;
-            const std::string after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
-            s32 bw = 0, hw = 0;
-            if (!before.empty()) bw = renderer->getNotificationTextDimensions(before, false, fontSize).first;
-            hw = renderer->getNotificationTextDimensions(hand, false, fontSize).first;
-            s32 curX = x;
-            if (!before.empty()) {
-                renderer->drawNotificationString(before, false, curX, y, fontSize, fc(textColor));
-                curX += bw;
-            }
-            curX = tsl::elm::drawDynamicUltraText(renderer, curX, y, fontSize, fc(logoColor1), true);
-            renderer->drawNotificationString(hand, false, curX, y, fontSize, fc(logoColor2));
-            curX += hw;
-            if (!after.empty())
-                renderer->drawNotificationString(after, false, curX, y, fontSize, fc(textColor));
-        }
+                               Color textColor = notificationTextColor);
         #endif
     };
 
@@ -11093,7 +10646,7 @@ namespace tsl {
                     usingFocusColor = true;
                     focusLostTime_ns = 0;
                 } else {
-                    const u64 now = armTicksToNs(armGetSystemTick());
+                    const u64 now = ult::nowNs();
                     if (focusLostTime_ns == 0) focusLostTime_ns = now;
                     if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) usingFocusColor = false;
                 }
@@ -11174,7 +10727,7 @@ namespace tsl {
             }
             
             auto topElement = currentGui->getTopElement();
-            const u64 currentTime_ns = armTicksToNs(armGetSystemTick());
+            const u64 currentTime_ns = ult::nowNs();
 
             if (!currentFocus && !ult::simulatedBack.load(std::memory_order_acquire) &&
                 !ult::stillTouching.load(std::memory_order_acquire) && !oldTouchDetected && !interpreterIsRunning) {
@@ -12070,7 +11623,10 @@ namespace tsl {
                                             std::string fname, text, title;
                                             struct timespec mtime;
                                             int priority, fontSize;
+                                            int duration = 0;
                                             bool showTime;
+                                            bool alignLeft  = false;
+                                            bool splitChar  = false;
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
                                         static int topCount = 0;
@@ -12152,13 +11708,25 @@ namespace tsl {
 
                                             const cJSON* titleObj    = cJSON_GetObjectItemCaseSensitive(cr, "title");
                                             const cJSON* fontSizeObj = cJSON_GetObjectItemCaseSensitive(cr, "font_size");
+                                            const cJSON* durationObj = cJSON_GetObjectItemCaseSensitive(cr, "duration");
                                             const cJSON* showTimeObj = cJSON_GetObjectItemCaseSensitive(cr, "show_time");
+                                            const cJSON* alignmentObj = cJSON_GetObjectItemCaseSensitive(cr, "alignment");
+                                            const cJSON* splitTypeObj = cJSON_GetObjectItemCaseSensitive(cr, "split_type");
 
                                             nd.showTime = !(cJSON_IsString(showTimeObj) && showTimeObj->valuestring && strcmp(showTimeObj->valuestring, ult::FALSE_STR.c_str()) == 0);
                                             nd.fname    = fname;
                                             nd.text     = textObj->valuestring;
                                             nd.title    = (cJSON_IsString(titleObj) && titleObj->valuestring) ? titleObj->valuestring : "";
-                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
+                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? ult::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
+                                            nd.duration = cJSON_IsNumber(durationObj)
+                                                ? ((int)durationObj->valuedouble == 0 ? -1 : ult::clamp((int)durationObj->valuedouble, 500, 30000))
+                                                : 0;
+
+                                            const bool alignmentExplicit = cJSON_IsString(alignmentObj) && alignmentObj->valuestring && alignmentObj->valuestring[0];
+                                            nd.alignLeft = alignmentExplicit ? (strcmp(alignmentObj->valuestring, ult::LEFT_STR.c_str()) == 0)
+                                                                             : !nd.title.empty();
+                                            nd.splitChar = cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring
+                                                           && strcmp(splitTypeObj->valuestring, ult::CHAR_STR.c_str()) == 0;
 
                                             int pos = topCount;
                                             while (pos > 0 && isBetter(nd, topSlots[pos - 1])) --pos;
@@ -12179,12 +11747,16 @@ namespace tsl {
                                                 const NotifData& nd = topSlots[i];
                                                 // Resume: stagger expiry so earlier slots fade first.
                                                 // Slot 0 of N loses (N-1) seconds, slot 1 loses (N-2), …, last loses 0.
-                                                const u32 duration = (firstPoll && topCount > 1)
-                                                    ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 200))
-                                                    : 4000u;
+                                                const u32 duration = nd.duration == -1 ? 0u
+                                                    : nd.duration > 0 ? static_cast<u32>(nd.duration)
+                                                    : (firstPoll && topCount > 1)
+                                                        ? static_cast<u32>(std::max(500, 4000 - (topCount - 1 - i) * 200))
+                                                        : 4000u;
                                                 notification->show(nd.text, nd.fontSize, nd.priority,
                                                                    nd.fname, nd.title, duration,
-                                                                   448, 88, false, firstPoll /*resume*/, nd.showTime);
+                                                                   false, firstPoll, nd.showTime,
+                                                                   nd.alignLeft ? ult::LEFT_STR.c_str() : ult::CENTER_STR.c_str(),
+                                                                   nd.splitChar ? ult::CHAR_STR.c_str() : ult::WORD_STR.c_str());
                                             }
                                         }
 
@@ -12644,7 +12216,7 @@ namespace tsl {
                 if (ult::launchingOverlay.load(std::memory_order_acquire))
                     break;
         
-                const u64 nowNs = armTicksToNs(armGetSystemTick());
+                const u64 nowNs = ult::nowNs();
         
                 // --- Haptics ---
                 if (ult::useHapticFeedback && !disableHaptics.load(std::memory_order_acquire)

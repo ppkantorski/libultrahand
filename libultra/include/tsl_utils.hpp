@@ -58,6 +58,16 @@ struct SwapDepth {
 };
 
 namespace ult {
+
+    static inline u64 nowNs() {
+        return armTicksToNs(armGetSystemTick());
+    }
+
+    template <typename T>
+    constexpr inline T clamp(T v, T lo, T hi) {
+        return (v < lo) ? lo : ((v > hi) ? hi : v);
+    }
+
     // math funcs
     double cos(double x);
     

@@ -131,6 +131,9 @@ namespace ult {
     extern const std::string LEFT_STR;
     extern const std::string RIGHT_STR;
     extern const std::string CENTER_STR;
+    extern const std::string CHAR_STR;
+    extern const std::string WORD_STR;
+    extern const std::string NONE_STR;
     extern const std::string HIDE_STR;
     extern const std::string STAR_STR;
     extern const std::string PRIORITY_STR;

@@ -137,6 +137,9 @@ namespace ult {
     CONSTEXPR_STRING std::string LEFT_STR             = "left";
     CONSTEXPR_STRING std::string RIGHT_STR            = "right";
     CONSTEXPR_STRING std::string CENTER_STR           = "center";
+    CONSTEXPR_STRING std::string CHAR_STR             = "char";
+    CONSTEXPR_STRING std::string WORD_STR             = "word";
+    CONSTEXPR_STRING std::string NONE_STR             = "none";
     CONSTEXPR_STRING std::string HIDE_STR             = "hide";
     CONSTEXPR_STRING std::string STAR_STR             = "star";
     CONSTEXPR_STRING std::string PRIORITY_STR         = "priority";
