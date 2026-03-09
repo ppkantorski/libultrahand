@@ -173,7 +173,7 @@ namespace ult {
     extern const std::string NOTIFY_HEADER;
 
     extern const std::vector<std::string> THROBBER_SYMBOLS;
-
+    
     extern std::atomic<int> downloadPercentage;
     extern std::atomic<int> unzipPercentage;
     extern std::atomic<int> copyPercentage;

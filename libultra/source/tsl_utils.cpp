@@ -29,6 +29,15 @@ extern "C" { // assertion override
 
 namespace ult {
 
+    void formatTimestamp(time_t t, char* buf, size_t bufSize) {
+        struct tm tm;
+        localtime_r(&t, &tm);
+        int hour12 = tm.tm_hour % 12;
+        if (hour12 == 0) hour12 = 12;
+        std::snprintf(buf, bufSize, "%d:%02d %s",
+                      hour12, tm.tm_min, (tm.tm_hour >= 12) ? "PM" : "AM");
+    }
+
     double cos(double x) {
         //static constexpr double PI = 3.14159265358979323846;
         static constexpr double TWO_PI = 6.28318530717958647692;

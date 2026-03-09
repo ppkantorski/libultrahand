@@ -6308,383 +6308,204 @@ namespace tsl {
                 m_nextOffset = std::max(m_nextOffset - getScrollDelta(), 0.0f);
             }
 
-            // Jump to Bottom (original behavior + fixed trigger condition)
-            Element* handleJumpToBottom(Element* oldFocus) {
+            // Unified jump-to-edge: toBottom=true → jump to bottom, false → jump to top
+            Element* handleJumpToEdge(Element* oldFocus, bool toBottom) {
                 if (m_items.empty()) return oldFocus;
-                
+
                 invalidate();
                 resetNavigationState();
-                jumpToBottom.store(false, std::memory_order_release);
-                
-                const float targetOffset = (m_listHeight > getHeight()) ?
-                                           static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+                if (toBottom) jumpToBottom.store(false, std::memory_order_release);
+                else          jumpToTop.store(false, std::memory_order_release);
+
                 static constexpr float tolerance = 5.0f;
-            
-                // Find last focusable item (search backward)
-                size_t lastFocusableIndex = m_items.size();
-                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) {
-                        lastFocusableIndex = static_cast<size_t>(i);
-                        break;
-                    }
-                }
-            
-                if (lastFocusableIndex == m_items.size())
-                    return oldFocus; // no focusable items
-            
-                const bool alreadyAtBottom = (m_focusedIndex == lastFocusableIndex) &&
-                                       (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                if (alreadyAtBottom)
-                    return oldFocus;
-            
-                const float oldOffset = m_nextOffset;
-                
-                // Set focused index and scroll to bottom
-                m_focusedIndex = lastFocusableIndex;
-                m_nextOffset = targetOffset;
-                
-                // Check if there are tables after the last focusable item
-                bool hasTables = false;
-                for (size_t i = lastFocusableIndex + 1; i < m_items.size(); ++i) {
-                    if (m_items[i]->isTable()) {
-                        m_focusedIndex = i;  // Point at the last table
-                        hasTables = true;
-                    }
-                }
-                
-                // Decide if table scrolling should be active based on item position
-                if (hasTables && m_listHeight > getHeight()) {
-                    // Calculate where the focused item (last focusable) actually is
-                    float itemPos = 0.0f;
-                    for (size_t i = 0; i < lastFocusableIndex; ++i) {
-                        itemPos += m_items[i]->getHeight();
-                    }
-                    const float itemHeight = m_items[lastFocusableIndex]->getHeight();
-                    const float itemCenter = itemPos + (itemHeight / 2.0f);
-                    
-                    // Calculate viewport center in absolute coordinates
-                    const float viewHeight = static_cast<float>(getHeight());
-                    const float viewportCenter = m_nextOffset + (viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f);
-                    
-                    // If item center is ABOVE viewport center, content below is pushing it up
-                    // This means table scrolling should be active
-                    if (itemCenter < viewportCenter - 1.0f) {
-                        isTableScrolling.store(true, std::memory_order_release);
-                    } else {
-                        isTableScrolling.store(false, std::memory_order_release);
+                const float targetOffset = toBottom
+                    ? ((m_listHeight > getHeight()) ? static_cast<float>(m_listHeight - getHeight()) : 0.0f)
+                    : 0.0f;
+
+                // Find the edge focusable item
+                size_t edgeFocusableIndex = m_items.size();
+                if (toBottom) {
+                    for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                        if (m_items[i]->requestFocus(nullptr, FocusDirection::None)) {
+                            edgeFocusableIndex = static_cast<size_t>(i);
+                            break;
+                        }
                     }
                 } else {
-                    isTableScrolling.store(false, std::memory_order_release);
-                }
-                
-                Element* newFocus = m_items[lastFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-                
-                if ((newFocus && newFocus != oldFocus) ||
-                    (std::abs(m_nextOffset - oldOffset) > tolerance)) {
-                    triggerNavigationFeedback();
-                }
-            
-                return newFocus ? newFocus : oldFocus;
-            }
-            
-            
-            // Jump to Top (original behavior + fixed trigger condition)
-            Element* handleJumpToTop(Element* oldFocus) {
-                if (m_items.empty()) return oldFocus;
-            
-                invalidate();
-                resetNavigationState();
-                jumpToTop.store(false, std::memory_order_release);
-            
-                static constexpr float targetOffset = 0.0f;
-                static constexpr float tolerance = 5.0f;
-            
-                // Find first focusable item (search forward)
-                size_t firstFocusableIndex = m_items.size();
-                for (size_t i = 0; i < m_items.size(); ++i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) {
-                        firstFocusableIndex = i;
-                        break;
-                    }
-                }
-            
-                if (firstFocusableIndex == m_items.size())
-                    return oldFocus; // no focusable items
-            
-                const bool alreadyAtTop = (m_focusedIndex == firstFocusableIndex) &&
-                                    (std::abs(m_nextOffset - targetOffset) <= tolerance);
-                if (alreadyAtTop)
-                    return oldFocus;
-            
-                const float oldOffset = m_nextOffset;
-                
-                // Set focused index and scroll to top
-                m_focusedIndex = firstFocusableIndex;
-                m_nextOffset = targetOffset;
-                
-                // Check if there are tables before the first focusable item
-                bool hasTables = false;
-                if (firstFocusableIndex > 0) {
-                    for (ssize_t i = static_cast<ssize_t>(firstFocusableIndex) - 1; i >= 0; --i) {
-                        if (m_items[i]->isTable()) {
-                            m_focusedIndex = static_cast<size_t>(i);  // Point at the first table
-                            hasTables = true;
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i]->requestFocus(nullptr, FocusDirection::None)) {
+                            edgeFocusableIndex = i;
+                            break;
                         }
                     }
                 }
-                
-                // Decide if table scrolling should be active based on item position
+
+                if (edgeFocusableIndex == m_items.size()) return oldFocus;
+
+                const bool alreadyAtEdge = (m_focusedIndex == edgeFocusableIndex) &&
+                                           (std::abs(m_nextOffset - targetOffset) <= tolerance);
+                if (alreadyAtEdge) return oldFocus;
+
+                const float oldOffset = m_nextOffset;
+                m_focusedIndex = edgeFocusableIndex;
+                m_nextOffset   = targetOffset;
+
+                // Check for adjacent tables and update table scrolling state
+                bool hasTables = false;
+                if (toBottom) {
+                    for (size_t i = edgeFocusableIndex + 1; i < m_items.size(); ++i) {
+                        if (m_items[i]->isTable()) { m_focusedIndex = i; hasTables = true; }
+                    }
+                } else if (edgeFocusableIndex > 0) {
+                    for (ssize_t i = static_cast<ssize_t>(edgeFocusableIndex) - 1; i >= 0; --i) {
+                        if (m_items[i]->isTable()) { m_focusedIndex = static_cast<size_t>(i); hasTables = true; }
+                    }
+                }
+
                 if (hasTables && m_listHeight > getHeight()) {
-                    // Calculate where the focused item (first focusable) actually is
                     float itemPos = 0.0f;
-                    for (size_t i = 0; i < firstFocusableIndex; ++i) {
-                        itemPos += m_items[i]->getHeight();
-                    }
-                    const float itemHeight = m_items[firstFocusableIndex]->getHeight();
-                    const float itemCenter = itemPos + (itemHeight / 2.0f);
-                    
-                    // Calculate viewport center in absolute coordinates
-                    const float viewHeight = static_cast<float>(getHeight());
-                    const float viewportCenter = m_nextOffset + (viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f);
-                    
-                    // If item center is BELOW viewport center, content above is pushing it down
-                    // This means table scrolling should be active
-                    if (itemCenter > viewportCenter + 1.0f) {
-                        isTableScrolling.store(true, std::memory_order_release);
-                    } else {
-                        isTableScrolling.store(false, std::memory_order_release);
-                    }
+                    for (size_t i = 0; i < edgeFocusableIndex; ++i) itemPos += m_items[i]->getHeight();
+                    const float itemCenter    = itemPos + m_items[edgeFocusableIndex]->getHeight() * 0.5f;
+                    const float viewHeight    = static_cast<float>(getHeight());
+                    const float viewportCenter = m_nextOffset + (viewHeight * 0.5f + VIEW_CENTER_OFFSET + 0.5f);
+                    isTableScrolling.store(
+                        toBottom ? (itemCenter < viewportCenter - 1.0f)
+                                 : (itemCenter > viewportCenter + 1.0f),
+                        std::memory_order_release);
                 } else {
                     isTableScrolling.store(false, std::memory_order_release);
                 }
-            
-                Element* newFocus = m_items[firstFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
-            
-                if ((newFocus && newFocus != oldFocus) ||
-                    (std::abs(m_nextOffset - oldOffset) > tolerance)) {
+
+                Element* newFocus = m_items[edgeFocusableIndex]->requestFocus(oldFocus, FocusDirection::None);
+                if ((newFocus && newFocus != oldFocus) || (std::abs(m_nextOffset - oldOffset) > tolerance))
                     triggerNavigationFeedback();
-                }
-            
+
                 return newFocus ? newFocus : oldFocus;
             }
+
+            Element* handleJumpToBottom(Element* oldFocus) { return handleJumpToEdge(oldFocus, true);  }
+            Element* handleJumpToTop   (Element* oldFocus) { return handleJumpToEdge(oldFocus, false); }
             
 
-            Element* handleSkipDown(Element* oldFocus) {
+            // Unified page-skip: skipDown=true → skip down, false → skip up
+            Element* handleSkip(Element* oldFocus, bool skipDown) {
                 if (m_items.empty()) return oldFocus;
-            
+
                 invalidate();
                 resetNavigationState();
-            
-                const float targetOffset = (m_listHeight > getHeight()) ?
-                                           static_cast<float>(m_listHeight - getHeight()) : 0.0f;
+
+                const float viewHeight  = static_cast<float>(getHeight());
+                const float maxOffset   = (m_listHeight > viewHeight) ? static_cast<float>(m_listHeight - viewHeight) : 0.0f;
                 static constexpr float tolerance = 0.0f;
-            
-                // Find last focusable item
-                size_t lastFocusableIndex = m_items.size();
-                for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) {
-                        lastFocusableIndex = static_cast<size_t>(i);
-                        break;
+
+                // Find the edge focusable item for the "already there" check
+                size_t edgeFocusableIndex = m_items.size();
+                if (skipDown) {
+                    for (ssize_t i = static_cast<ssize_t>(m_items.size()) - 1; i >= 0; --i) {
+                        if (m_items[i]->requestFocus(nullptr, FocusDirection::None)) {
+                            edgeFocusableIndex = static_cast<size_t>(i); break;
+                        }
                     }
+                    const bool alreadyAtEdge = (edgeFocusableIndex < m_items.size()) &&
+                                               (m_focusedIndex == edgeFocusableIndex) &&
+                                               (std::abs(m_nextOffset - maxOffset) <= tolerance);
+                    if (alreadyAtEdge) return oldFocus;
+                } else {
+                    for (size_t i = 0; i < m_items.size(); ++i) {
+                        if (m_items[i]->requestFocus(nullptr, FocusDirection::None)) {
+                            edgeFocusableIndex = i; break;
+                        }
+                    }
+                    const bool alreadyAtEdge = (edgeFocusableIndex < m_items.size()) &&
+                                               (m_focusedIndex == edgeFocusableIndex) &&
+                                               (std::abs(m_nextOffset - 0.0f) <= tolerance);
+                    if (alreadyAtEdge) return oldFocus;
                 }
-            
-                const bool alreadyAtBottom = (lastFocusableIndex < m_items.size()) &&
-                                       (m_focusedIndex == lastFocusableIndex) &&
-                                       (std::abs(m_nextOffset - targetOffset) <= tolerance);
-            
-                if (alreadyAtBottom) return oldFocus;
-            
-                const float viewHeight = static_cast<float>(getHeight());
-                const float maxOffset = (m_listHeight > viewHeight) ? static_cast<float>(m_listHeight - viewHeight) : 0.0f;
-                const float targetViewportTop = std::min(m_offset + viewHeight, maxOffset);
-            
-                const float actualTravelDistance = targetViewportTop - m_offset;
+
+                // Calculate target viewport
+                const float targetViewportTop = skipDown
+                    ? std::min(m_offset + viewHeight, maxOffset)
+                    : std::max(0.0f, m_offset - viewHeight);
+
+                const float actualTravelDistance = skipDown
+                    ? (targetViewportTop - m_offset)
+                    : (m_offset - targetViewportTop);
                 const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
-                const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
-            
+                const float targetViewportCenter = targetViewportTop + (viewHeight * 0.5f + VIEW_CENTER_OFFSET);
+
+                // Find the focusable item closest to the target viewport center
                 float itemTop = 0.0f;
                 size_t targetIndex = 0;
                 bool foundFocusable = false;
                 float bestDistance = std::numeric_limits<float>::max();
-            
+
                 for (size_t i = 0; i < m_items.size(); ++i) {
                     const float itemHeight = m_items[i]->getHeight();
-                    const float itemCenter = itemTop + (itemHeight / 2.0f);
-                    const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
-            
+                    const float itemCenter = itemTop + itemHeight * 0.5f;
+                    const float dist = std::abs(itemCenter - targetViewportCenter);
                     Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test && test->m_isItem && distanceFromCenter < bestDistance) {
-                        targetIndex = i;
-                        bestDistance = distanceFromCenter;
-                        foundFocusable = true;
+                    if (test && test->m_isItem && dist < bestDistance) {
+                        targetIndex = i; bestDistance = dist; foundFocusable = true;
                     }
-            
                     itemTop += itemHeight;
                 }
-            
+
                 const float oldOffset = m_nextOffset;
-            
+
                 if (foundFocusable) {
-                    bool nearBottom = true;
-                    if (targetIndex > m_focusedIndex && traveledFullViewport) {
+                    bool nearEdge = true;
+                    const bool movedPastFocus = skipDown ? (targetIndex > m_focusedIndex)
+                                                         : (targetIndex < m_focusedIndex);
+                    if (movedPastFocus && traveledFullViewport) {
                         m_focusedIndex = targetIndex;
-                        nearBottom = false;
+                        nearEdge = false;
                     }
                     isTableScrolling.store(false, std::memory_order_release);
                     updateScrollOffset();
-            
+
                     Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-            
-                    if (newFocus && newFocus != oldFocus && !nearBottom && traveledFullViewport) {
+                    if (newFocus && newFocus != oldFocus && !nearEdge && traveledFullViewport) {
                         triggerNavigationFeedback();
                         return newFocus;
                     } else {
-                        return handleJumpToBottom(oldFocus);
+                        return handleJumpToEdge(oldFocus, skipDown);
                     }
                 } else {
-                    // Scroll viewport even if no focusable items
+                    // No focusable items — scroll viewport and update focus to nearest visible item
                     isTableScrolling.store(true, std::memory_order_release);
                     m_nextOffset = targetViewportTop;
-            
-                    if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
+
+                    if (std::abs(m_nextOffset - oldOffset) > 0.0f)
                         triggerNavigationFeedback();
-                    }
-            
-                    // Focus last visible focusable item
+
                     float searchItemTop = 0.0f;
-                    size_t lastVisibleFocusable = m_focusedIndex;
-            
+                    size_t bestVisible = m_focusedIndex;
+
                     for (size_t i = 0; i < m_items.size(); ++i) {
-                        const float itemHeight = m_items[i]->getHeight();
-                        const float itemBottom = searchItemTop + itemHeight;
-            
-                        if (searchItemTop >= targetViewportTop + viewHeight) break;
-            
-                        if (itemBottom > targetViewportTop) {
-                            Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                            if (test && test->m_isItem) lastVisibleFocusable = i;
-                        }
-            
-                        searchItemTop += itemHeight;
-                    }
-            
-                    if (lastVisibleFocusable != m_focusedIndex) {
-                        m_focusedIndex = lastVisibleFocusable;
-                        Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
-                        if (newFocus && newFocus != oldFocus) {
-                            triggerNavigationFeedback();
-                            return newFocus;
-                        }
-                    }
-                }
-            
-                return oldFocus;
-            }
-            
-            Element* handleSkipUp(Element* oldFocus) {
-                if (m_items.empty()) return oldFocus;
-            
-                invalidate();
-                resetNavigationState();
-            
-                static constexpr float targetOffset = 0.0f;
-                static constexpr float tolerance = 0.0f;
-            
-                // Find first focusable item
-                size_t firstFocusableIndex = m_items.size();
-                for (size_t i = 0; i < m_items.size(); ++i) {
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test) {
-                        firstFocusableIndex = i;
-                        break;
-                    }
-                }
-            
-                const bool alreadyAtTop = (firstFocusableIndex < m_items.size()) &&
-                                    (m_focusedIndex == firstFocusableIndex) &&
-                                    (std::abs(m_nextOffset - targetOffset) <= tolerance);
-            
-                if (alreadyAtTop) return oldFocus;
-            
-                const float viewHeight = static_cast<float>(getHeight());
-                const float targetViewportTop = std::max(0.0f, m_offset - viewHeight);
-            
-                const float actualTravelDistance = m_offset - targetViewportTop;
-                const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
-                const float targetViewportCenter = targetViewportTop + (viewHeight / 2.0f + VIEW_CENTER_OFFSET);
-            
-                float itemTop = 0.0f;
-                size_t targetIndex = 0;
-                bool foundFocusable = false;
-                float bestDistance = std::numeric_limits<float>::max();
-            
-                for (size_t i = 0; i < m_items.size(); ++i) {
-                    const float itemHeight = m_items[i]->getHeight();
-                    const float itemCenter = itemTop + (itemHeight / 2.0f);
-                    const float distanceFromCenter = std::abs(itemCenter - targetViewportCenter);
-            
-                    Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                    if (test && test->m_isItem && distanceFromCenter < bestDistance) {
-                        targetIndex = i;
-                        bestDistance = distanceFromCenter;
-                        foundFocusable = true;
-                    }
-            
-                    itemTop += itemHeight;
-                }
-            
-                const float oldOffset = m_nextOffset;
-            
-                if (foundFocusable) {
-                    bool nearTop = true;
-                    if (targetIndex < m_focusedIndex && traveledFullViewport) {
-                        m_focusedIndex = targetIndex;
-                        nearTop = false;
-                    }
-                    isTableScrolling.store(false, std::memory_order_release);
-                    updateScrollOffset();
-            
-                    Element* newFocus = m_items[targetIndex]->requestFocus(oldFocus, FocusDirection::None);
-            
-                    if (newFocus && newFocus != oldFocus && !nearTop && traveledFullViewport) {
-                        triggerNavigationFeedback();
-                        return newFocus;
-                    } else {
-                        return handleJumpToTop(oldFocus);
-                    }
-                } else {
-                    // Scroll viewport even if no focusable items
-                    isTableScrolling.store(true, std::memory_order_release);
-                    m_nextOffset = targetViewportTop;
-            
-                    if (std::abs(m_nextOffset - oldOffset) > 0.0f) {
-                        triggerNavigationFeedback();
-                    }
-            
-                    // Focus first visible focusable item
-                    float searchItemTop = 0.0f;
-                    size_t firstVisibleFocusable = m_focusedIndex;
-            
-                    for (size_t i = 0; i < m_items.size(); ++i) {
-                        const float itemHeight = m_items[i]->getHeight();
-                        const float itemBottom = searchItemTop + itemHeight;
-            
-                        if (itemBottom > targetViewportTop && searchItemTop < targetViewportTop + viewHeight) {
-                            Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
-                            if (test && test->m_isItem) {
-                                firstVisibleFocusable = i;
-                                break;
+                        const float itemHeight  = m_items[i]->getHeight();
+                        const float itemBottom  = searchItemTop + itemHeight;
+                        const bool inViewport   = itemBottom > targetViewportTop &&
+                                                  searchItemTop < targetViewportTop + viewHeight;
+
+                        if (skipDown) {
+                            // Wants the LAST visible focusable
+                            if (searchItemTop >= targetViewportTop + viewHeight) break;
+                            if (inViewport) {
+                                Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                                if (test && test->m_isItem) bestVisible = i;
+                            }
+                        } else {
+                            // Wants the FIRST visible focusable
+                            if (inViewport) {
+                                Element* test = m_items[i]->requestFocus(nullptr, FocusDirection::None);
+                                if (test && test->m_isItem) { bestVisible = i; break; }
                             }
                         }
-            
                         searchItemTop += itemHeight;
                     }
-            
-                    if (firstVisibleFocusable != m_focusedIndex) {
-                        m_focusedIndex = firstVisibleFocusable;
+
+                    if (bestVisible != m_focusedIndex) {
+                        m_focusedIndex = bestVisible;
                         Element* newFocus = m_items[m_focusedIndex]->requestFocus(oldFocus, FocusDirection::None);
                         if (newFocus && newFocus != oldFocus) {
                             triggerNavigationFeedback();
@@ -6692,9 +6513,12 @@ namespace tsl {
                         }
                     }
                 }
-            
+
                 return oldFocus;
             }
+
+            Element* handleSkipDown(Element* oldFocus) { return handleSkip(oldFocus, true);  }
+            Element* handleSkipUp  (Element* oldFocus) { return handleSkip(oldFocus, false); }
             
                         
             inline void initializePrefixSums() {
@@ -9750,7 +9574,7 @@ namespace tsl {
                 // Draw the parent trackbar
                 StepTrackBarV2::draw(renderer);
             }
-
+            
             
         protected:
             std::vector<std::string> m_stepDescriptions;
@@ -9759,31 +9583,30 @@ namespace tsl {
         
     }
     
-
     // Global state and event system
     static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
     static inline std::atomic<uint32_t> notificationGeneration{0};
-
+    
     // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
     extern int maxNotifications;
-
+    
     class NotificationPrompt {
     public:
         NotificationPrompt()
             : enabled_(true),
               generation_(notificationGeneration.load(std::memory_order_acquire))
         {}
-
+        
         ~NotificationPrompt() { shutdown(); }
-
+        
         enum class PromptState : u8 {
             Inactive, FadingIn, Visible, FadingOut
         };
-
+        
         enum class Alignment : u8 { Center = 0, Left = 1, Right = 2 };
         enum class SplitType : u8 { Word   = 0, Char = 1 };
-
+        
         struct NotifEntry {
             std::string text;
             std::string title;
@@ -9802,83 +9625,67 @@ namespace tsl {
             Alignment alignment      = Alignment::Center;
             SplitType splitType      = SplitType::Word;
         };
-
+        
         struct NotifCompare {
             bool operator()(const NotifEntry& a, const NotifEntry& b) const {
                 if (a.priority == b.priority) return a.arrivalNs > b.arrivalNs;
                 return a.priority > b.priority;
             }
         };
-
+        
         struct Lines {
-            static constexpr size_t MAX_LINES = 10;
-        
-            std::vector<std::string> buf;
-        
-            Lines() {
-                buf.reserve(MAX_LINES);
-            }
-        
-            //u8 count() const {
-            //    return static_cast<u8>(buf.size());
-            //}
-        
-            const std::string& operator[](s32 i) const {
-                return buf[i];
-            }
-        
-            std::string& operator[](s32 i) {
-                return buf[i];
-            }
+            static constexpr u8 MAX_LINES = 10;
+            std::string buf[MAX_LINES];
+            u8 count = 0;
+            const std::string& operator[](s32 i) const { return buf[i]; }
         };
-
+        
         static constexpr size_t TITLE_FONT       = 18;
         static constexpr s32    NOTIF_ICON_DIM   = 50;
         static constexpr size_t NOTIF_ICON_BYTES = NOTIF_ICON_DIM * NOTIF_ICON_DIM * 2;
         static constexpr int    MAX_VISIBLE      = 8;
         static constexpr s32    NOTIF_WIDTH      = 448;
         static constexpr s32    NOTIF_HEIGHT     = 88;
-
+        
         // ── Public API ───────────────────────────────────────────────────────────
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
                   const std::string& fileName = "", const std::string& title = "",
                   u32 durationMs = 3000,
                   bool immediately = false, bool resume = false, bool showTime = true,
                   std::string_view alignment = {},
-                  std::string_view splitType = {}) {
-
+                  std::string_view splitType = {},
+                  std::string_view timestamp = {}) {
+            
             if (msg.empty()) return;
             if (isStale()) return;
-
+            
             NotifEntry data;
             data.text         = msg;
             data.title        = title;
             data.fileName     = fileName;
             data.fontSize     = static_cast<u8>(ult::clamp(fontSize, size_t(8), size_t(48)));
-            data.durationMs = (durationMs == 0) ? 0
-                            : static_cast<u16>(ult::clamp(durationMs, 500u, 30000u));
+            data.durationMs   = (durationMs == 0) ? 0
+                              : static_cast<u16>(ult::clamp(durationMs, 500u, 30000u));
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
-            data.alignment = !alignment.empty()
+            data.alignment    = !alignment.empty()
                 ? (alignment[0] == 'l' ? Alignment::Left
                  : alignment[0] == 'r' ? Alignment::Right
                  :                       Alignment::Center)
                 : (title.empty() ? Alignment::Center : Alignment::Left);
-            data.splitType = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
+            data.splitType    = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
             data.arrivalNs    = ult::nowNs();
-            {
-                time_t now = time(nullptr);
-                struct tm t;
-                localtime_r(&now, &t);
-                int hour12 = t.tm_hour % 12;
-                if (hour12 == 0) hour12 = 12;
-                std::snprintf(data.timestamp, sizeof(data.timestamp), "%d:%02d %s",
-                              hour12, t.tm_min, (t.tm_hour >= 12) ? "PM" : "AM");
+            if (!timestamp.empty()) {
+                const size_t n = std::min(timestamp.size(), sizeof(data.timestamp) - 1);
+                std::memcpy(data.timestamp, timestamp.data(), n);
+                data.timestamp[n] = '\0';
+            } else {
+                ult::formatTimestamp(time(nullptr), data.timestamp, sizeof(data.timestamp));
             }
-
+            
             std::lock_guard<std::mutex> lg(state_mutex_);
             if (isStale()) return;
-
+            
             if (immediately) {
                 bool skipFadeIn = false;
                 Slot& s0 = slots_[0];
@@ -9891,7 +9698,7 @@ namespace tsl {
                         for (int j = 1; j < maxNotifications; ++j) {
                             if (!(slots_[j].flags & SLOT_ACTIVE)) {
                                 slots_[j] = std::move(s0);
-                                clearSlot_NoLock(0);
+                                slots_[0] = Slot{};
                                 moved = true;
                                 break;
                             }
@@ -9913,7 +9720,7 @@ namespace tsl {
                     return;
                 }
             }
-
+            
             eventFire(&notificationEvent);
             #if IS_STATUS_MONITOR_DIRECTIVE
             if (isRendering) {
@@ -9923,7 +9730,7 @@ namespace tsl {
             }
             #endif
         }
-
+        
         void showNow(const std::string& msg, size_t fontSize = 26,
                      const std::string& title = "",
                      u32 durationMs = 2500,
@@ -9933,16 +9740,11 @@ namespace tsl {
                      std::string_view splitType = {}) {
             show(msg, fontSize, 0u, fileName, title, durationMs, true, false, showTime, alignment, splitType);
         }
-
-        [[nodiscard]] bool hasActiveFile(const std::string& fname) const;
-        [[nodiscard]] bool hasActiveFile(const char* fname) const {
-            return fname && fname[0] && hasActiveFile(std::string(fname));
-        }
-
+        
+        [[nodiscard]] bool hasActiveFile(std::string_view fname) const;
+        
         void draw(gfx::Renderer* renderer, bool promptOnly = false);
-
         void update();
-
         [[nodiscard]] bool isActive() const;
         [[nodiscard]] int activeCount() const;
         void shutdown();
@@ -9950,19 +9752,18 @@ namespace tsl {
         [[nodiscard]] bool hitTest(s32 tx, s32 ty) const;
         bool dismissAt(s32 tx, s32 ty);
         bool dismissFront();
-
+        
     private:
         static constexpr size_t MAX_NOTIFS        = 30;
         static constexpr u32    FADE_DURATION_MS  = 83;
         static constexpr u32    SLIDE_DURATION_MS = 150;
-
-        // Slot flag bits
+        
         static constexpr u8 SLOT_ACTIVE        = 1 << 0;
         static constexpr u8 SLOT_SHOW_NOW      = 1 << 1;
         static constexpr u8 SLOT_SLIDING       = 1 << 2;
         static constexpr u8 SLOT_ICON_LOADED   = 1 << 3;
         static constexpr u8 SLOT_SOUND_PENDING = 1 << 4;
-
+        
         struct Slot {
             NotifEntry            data;
             float                 yCurrent     = 0.f;
@@ -9972,83 +9773,67 @@ namespace tsl {
             u8                    flags        = 0;
             std::unique_ptr<u8[]> iconBuf;
         };
-
+        
         Slot               slots_[MAX_VISIBLE];
         mutable std::mutex state_mutex_;
         std::priority_queue<NotifEntry, std::vector<NotifEntry>, NotifCompare> pending_queue_;
         std::atomic<bool>  enabled_{true};
         u32                generation_{0};
-
-        // ── Private helpers ──────────────────────────────────────────────────────
-
+        
         bool isStale() const {
             return !enabled_.load(std::memory_order_acquire)
                 || generation_ != notificationGeneration.load(std::memory_order_acquire);
         }
-
+        
         void evictSlot_NoLock(int i) {
             if (!slots_[i].data.fileName.empty())
                 remove((ult::NOTIFICATIONS_PATH + slots_[i].data.fileName).c_str());
-            clearSlot_NoLock(i);
+            slots_[i] = Slot{};
         }
-
+        
         void clearAll_NoLock() {
             for (int i = 0; i < maxNotifications; ++i) slots_[i] = Slot{};
             while (!pending_queue_.empty()) pending_queue_.pop();
         }
-
-        // Defined in tesla.cpp — only called from out-of-line methods
+        
         [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const;
-
-        static float easeInOut(float t) {
+        
+        static constexpr float easeInOut(float t) {
             return (t < 0.5f) ? (2*t*t) : (-1 + (4 - 2*t)*t);
         }
-
-        static Color applyAlpha(Color c, float a) {
+        
+        static constexpr Color applyAlpha(Color c, float a) {
             c.a = static_cast<u8>(static_cast<float>(c.a) * a);
             return c;
         }
-
-        void clearSlot_NoLock(int i) { slots_[i] = Slot{}; }
-
-        void beginFadeOut_NoLock(Slot& slot, u64 now) {
-            slot.data.state        = PromptState::FadingOut;
-            slot.data.stateStartNs = now;
-        }
-
-        // Defined in tesla.cpp — only called from out-of-line methods
-        float computeTargetY_NoLock(int idx) const;
-
-        // Defined in tesla.cpp
-        static Lines splitLines(const std::string& text, u8 maxLines);
-
+        
         Lines getWrappedLines(const std::string& text, float pixelWidth,
                               size_t fontSize, u8 maxLines,
                               SplitType splitType = SplitType::Word) const;
-
-        s32  getEffectiveHeight(const Slot& slot) const;
-
+        
+        s32 getEffectiveHeight(const Slot& slot) const;
+        
         void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow,
                                 bool skipFadeIn, bool suppressSound = false);
-
+        
         void repackSlots_NoLock(u64 now);
-
+        
         void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth,
                            size_t fontSize, gfx::Renderer* renderer) const;
-
+        
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
                       s32 baseY, float fadeAlpha, bool promptOnly);
-
+        
         #if IS_LAUNCHER_DIRECTIVE
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
                                s32 x, s32 y, u32 fontSize, float fadeAlpha,
                                Color textColor = notificationTextColor);
         #endif
     };
-
+    
     static inline NotificationPrompt* notification = nullptr;
-
-
+    
+    
     // GUI
     
     /**
@@ -11630,6 +11415,7 @@ namespace tsl {
                                             bool showTime;
                                             std::string alignment;
                                             bool splitChar  = false;
+                                            char timestamp[10] = {}; 
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
                                         static int topCount = 0;
@@ -11682,11 +11468,14 @@ namespace tsl {
                                             
                                             fullPath  = notifPath;
                                             fullPath += fname;
-
+                                            
                                             struct stat fileStat;
                                             struct timespec mtime = {0, 0};
-                                            if (stat(fullPath.c_str(), &fileStat) == 0)
+                                            char timestampBuf[10] = {};
+                                            if (stat(fullPath.c_str(), &fileStat) == 0) {
                                                 mtime = fileStat.st_mtim;
+                                                ult::formatTimestamp(mtime.tv_sec, timestampBuf, sizeof(timestampBuf));
+                                            }
 
                                             std::unique_ptr<ult::json_t, ult::JsonDeleter> r(
                                                 ult::readJsonFromFile(fullPath), ult::JsonDeleter());
@@ -11759,7 +11548,8 @@ namespace tsl {
                                                                    nd.fname, nd.title, duration,
                                                                    false, firstPoll, nd.showTime,
                                                                    nd.alignment,
-                                                                   nd.splitChar ? ult::CHAR_STR.c_str() : ult::WORD_STR.c_str());
+                                                                   nd.splitChar ? ult::CHAR_STR : ult::WORD_STR,
+                                                                   nd.timestamp);
                                             }
                                         }
 

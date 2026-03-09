@@ -205,14 +205,14 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"bad_ram_text_color",              "FF0000"},
     {"banner_version_text_color",       "AAAAAA"},
     {"battery_charging_color",          "00FF00"},
-    {"battery_color",                   "ffff45"},
+    {"battery_color",                   "FFFF45"},
     {"battery_low_color",               "FF0000"},
     {"bg_alpha",                        "13"},
     {"bg_color",                        "000000"},
     {"bottom_button_color",             "FFFFFF"},
     {"bottom_separator_color",          "FFFFFF"},
-    {"unfocused_color",                 "666666"},
     {"bottom_text_color",               "FFFFFF"},
+    {"unfocused_color",                 "666666"},
     {"click_alpha",                     "7"},
     {"click_color",                     "3E25F7"},
     {"click_text_color",                "FFFFFF"},
@@ -251,14 +251,14 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"selection_bg_alpha",              "11"},
     {"selection_bg_color",              "000000"},
     {"selection_star_color",            "FFFFFF"},
-    {"selection_text_color",            "9ed0ff"},
+    {"selection_text_color",            "9ED0FF"},
     {"selection_value_text_color",      "FF7777"},
     {"separator_alpha",                 "15"},
     {"separator_color",                 "404040"},
     {"star_color",                      "FFFFFF"},
     {"table_bg_alpha",                  "14"},
     {"table_bg_color",                  "2C2C2C"},
-    {"table_info_text_color",           "9ed0ff"},
+    {"table_info_text_color",           "9ED0FF"},
     {"table_section_text_color",        "FFFFFF"},
     {"temperature_color",               "FFFFFF"},
     {"text_color",                      "FFFFFF"},
@@ -269,9 +269,9 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"trackbar_slider_border_color",    "505050"},
     {"trackbar_slider_color",           "606060"},
     {"trackbar_slider_malleable_color", "A0A0A0"},
-    {"ult_overlay_text_color",          "9ed0ff"},
+    {"ult_overlay_text_color",          "9ED0FF"},
     {"ult_overlay_version_text_color",  "00FFDD"},
-    {"ult_package_text_color",          "9ed0ff"},
+    {"ult_package_text_color",          "9ED0FF"},
     {"ult_package_version_text_color",  "00FFDD"},
     {"warning_text_color",              "FF7777"},
     {"widget_backdrop_alpha",           "15"},
@@ -961,10 +961,9 @@ std::vector<std::string> wrapText(
 
 // ── NotificationPrompt out-of-line definitions ───────────────────────────────
 
-// File-scope empty string — avoids per-call thread-safe static guard in getWrappedLines
 static const std::string s_emptyStr;
 
-bool NotificationPrompt::hasActiveFile(const std::string& fname) const {
+bool NotificationPrompt::hasActiveFile(std::string_view fname) const {
     if (fname.empty()) return false;
     if (isStale()) return false;
     std::lock_guard<std::mutex> lg(state_mutex_);
@@ -974,11 +973,11 @@ bool NotificationPrompt::hasActiveFile(const std::string& fname) const {
 }
 
 int NotificationPrompt::findHitSlot_NoLock(s32 tx, s32 ty) const {
+    const s32 sx = ult::useRightAlignment
+        ? static_cast<s32>(tsl::cfg::FramebufferWidth) - NOTIF_WIDTH : 0;
     for (int i = 0; i < maxNotifications; ++i) {
         const Slot& slot = slots_[i];
         if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::Inactive) continue;
-        const s32 sx = ult::useRightAlignment
-            ? static_cast<s32>(tsl::cfg::FramebufferWidth) - NOTIF_WIDTH : 0;
         const s32 sy = static_cast<s32>(slot.yCurrent);
         const s32 sh = getEffectiveHeight(slot);
         if (tx >= sx && tx < sx + NOTIF_WIDTH &&
@@ -986,13 +985,6 @@ int NotificationPrompt::findHitSlot_NoLock(s32 tx, s32 ty) const {
             return i;
     }
     return -1;
-}
-
-float NotificationPrompt::computeTargetY_NoLock(int idx) const {
-    float y = 0.f;
-    for (int i = 0; i < idx; ++i)
-        if (slots_[i].flags & SLOT_ACTIVE) y += static_cast<float>(getEffectiveHeight(slots_[i]));
-    return y;
 }
 
 void NotificationPrompt::draw(gfx::Renderer* renderer, bool promptOnly) {
@@ -1007,7 +999,6 @@ void NotificationPrompt::draw(gfx::Renderer* renderer, bool promptOnly) {
         if (!(slot.flags & SLOT_ACTIVE) || slot.data.text.empty() ||
             slot.data.state == PromptState::Inactive) continue;
 
-        // Skip the divide/clamp entirely for the common Visible case
         float fadeAlpha = 1.0f;
         if (slot.data.state != PromptState::Visible) {
             const float t = std::min(1.0f,
@@ -1043,8 +1034,9 @@ void NotificationPrompt::update() {
 
         if (slot.data.iconPending) {
             slot.data.iconPending = false;
-            if (!slot.data.fileName.empty()) {
-                std::string base = slot.data.fileName;
+            const std::string& fname = slot.data.fileName;
+            if (!fname.empty()) {
+                std::string base = fname;
                 const size_t dot  = base.rfind('.');
                 if (dot  != std::string::npos) base.erase(dot);
                 const size_t dash = base.rfind('-');
@@ -1078,8 +1070,10 @@ void NotificationPrompt::update() {
                 }
                 break;
             case PromptState::Visible:
-                if (now >= slot.data.expireNs)
-                    beginFadeOut_NoLock(slot, now);
+                if (now >= slot.data.expireNs) {
+                    slot.data.state        = PromptState::FadingOut;
+                    slot.data.stateStartNs = now;
+                }
                 break;
             case PromptState::FadingOut:
                 if (elapsedMs >= FADE_DURATION_MS) {
@@ -1098,7 +1092,6 @@ void NotificationPrompt::update() {
         for (int i = 0; i < maxNotifications; ++i)
             if (!(slots_[i].flags & SLOT_ACTIVE)) { freeSlot = i; break; }
         if (freeSlot < 0) break;
-        // Move instead of copy — avoids deep-copying all std::string members
         NotifEntry next = std::move(const_cast<NotifEntry&>(pending_queue_.top()));
         pending_queue_.pop();
         placeInSlot_NoLock(freeSlot, std::move(next), false, false);
@@ -1142,8 +1135,10 @@ bool NotificationPrompt::dismissAt(s32 tx, s32 ty) {
     const int idx = findHitSlot_NoLock(tx, ty);
     if (idx < 0) return false;
     Slot& slot = slots_[idx];
-    if (slot.data.state != PromptState::FadingOut)
-        beginFadeOut_NoLock(slot, ult::nowNs());
+    if (slot.data.state != PromptState::FadingOut) {
+        slot.data.state        = PromptState::FadingOut;
+        slot.data.stateStartNs = ult::nowNs();
+    }
     return true;
 }
 
@@ -1158,44 +1153,41 @@ bool NotificationPrompt::dismissFront() {
         if (slot.yCurrent < bestY) { bestY = slot.yCurrent; best = i; }
     }
     if (best < 0) return false;
-    beginFadeOut_NoLock(slots_[best], ult::nowNs());
+    slots_[best].data.state        = PromptState::FadingOut;
+    slots_[best].data.stateStartNs = ult::nowNs();
     return true;
-}
-
-
-NotificationPrompt::Lines
-NotificationPrompt::splitLines(const std::string& text, u8 maxLines) {
-    Lines result;
-    size_t start = 0;
-    while (start < text.size() && result.buf.size() < maxLines) {
-        size_t       pos  = text.find('\n', start);
-        const size_t pos2 = text.find("\\n", start);
-        if (pos2 != std::string::npos && (pos == std::string::npos || pos2 < pos)) pos = pos2;
-        if (pos == std::string::npos) { result.buf.push_back(text.substr(start)); break; }
-        result.buf.push_back(text.substr(start, pos - start));
-        start = pos + (text[pos] == '\n' ? 1 : 2);
-    }
-    return result;
 }
 
 NotificationPrompt::Lines
 NotificationPrompt::getWrappedLines(const std::string& text, float pixelWidth,
                                     size_t fontSize, u8 maxLines,
                                     SplitType splitType) const {
-    // Use file-scope s_emptyStr — avoids the per-call thread-safe guard of a function-local static
     const std::string& stStr = (splitType == SplitType::Char) ? ult::CHAR_STR : ult::WORD_STR;
-    Lines split = splitLines(text, maxLines);
+
+    Lines split;
+    {
+        size_t start = 0;
+        while (start < text.size() && split.count < maxLines) {
+            size_t       pos  = text.find('\n', start);
+            const size_t pos2 = text.find("\\n", start);
+            if (pos2 != std::string::npos && (pos == std::string::npos || pos2 < pos)) pos = pos2;
+            if (pos == std::string::npos) { split.buf[split.count++] = text.substr(start); break; }
+            split.buf[split.count++] = text.substr(start, pos - start);
+            start = pos + (text[pos] == '\n' ? 1 : 2);
+        }
+    }
+
     Lines result;
-    for (size_t si = 0; si < split.buf.size() && result.buf.size() < maxLines; ++si) {
+    for (u8 si = 0; si < split.count && result.count < maxLines; ++si) {
         const auto wrapped = wrapText(split.buf[si], pixelWidth,
                                       stStr, /*useIndent=*/false, s_emptyStr, 0.f, fontSize);
         for (const auto& wl : wrapped) {
-            if (result.buf.size() >= maxLines) break;
-            result.buf.push_back(wl);
+            if (result.count >= maxLines) break;
+            result.buf[result.count++] = wl;
         }
     }
-    if (result.buf.empty() && !split.buf.empty())
-        result.buf.push_back("");
+    if (result.count == 0 && split.count > 0)
+        result.buf[result.count++] = "";
     return result;
 }
 
@@ -1210,9 +1202,9 @@ s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
         const float innerW      = hasIconCol ? static_cast<float>(textAreaW - baseIconPad - 2)
                                              : static_cast<float>(textAreaW);
         const Lines lines = getWrappedLines(slot.data.text, innerW, slot.data.fontSize, 4, slot.data.splitType);
-        if (lines.buf.size() > 1) {
+        if (lines.count > 1) {
             const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-            h += static_cast<s32>(lines.buf.size() - 1) * fm.lineHeight;
+            h += static_cast<s32>(lines.count - 1) * fm.lineHeight;
         }
     }
     return h;
@@ -1221,16 +1213,20 @@ s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
 void NotificationPrompt::placeInSlot_NoLock(int idx, NotifEntry&& e,
                                              bool isShowNow, bool skipFadeIn,
                                              bool suppressSound) {
-    const u64   now = ult::nowNs();
-    const float ty  = computeTargetY_NoLock(idx);
-    Slot& slot      = slots_[idx];
+    const u64 now = ult::nowNs();
+
+    float ty = 0.f;
+    for (int i = 0; i < idx; ++i)
+        if (slots_[i].flags & SLOT_ACTIVE) ty += static_cast<float>(getEffectiveHeight(slots_[i]));
+
+    Slot& slot             = slots_[idx];
     slot.data              = std::move(e);
     slot.data.state        = skipFadeIn ? PromptState::Visible : PromptState::FadingIn;
     slot.data.stateStartNs = now;
-    slot.data.expireNs = (slot.data.durationMs == 0) ? UINT64_MAX
-                       : now
-                         + (skipFadeIn ? 0ULL : FADE_DURATION_MS * 1'000'000ULL)
-                         + slot.data.durationMs * 1'000'000ULL;
+    slot.data.expireNs     = (slot.data.durationMs == 0) ? UINT64_MAX
+                           : now
+                             + (skipFadeIn ? 0ULL : FADE_DURATION_MS * 1'000'000ULL)
+                             + slot.data.durationMs * 1'000'000ULL;
     slot.data.hasIcon      = false;
     slot.data.iconPending  = !slot.data.fileName.empty();
     slot.yTarget           = ty;
@@ -1272,20 +1268,19 @@ void NotificationPrompt::repackSlots_NoLock(u64 now) {
 void NotificationPrompt::applyEllipsis(Lines& lines, u8 maxLines,
                                         float pixelWidth, size_t fontSize,
                                         gfx::Renderer* renderer) const {
-    if (lines.buf.size() <= maxLines) return;
-    
+    if (lines.count <= maxLines) return;
+
     std::string overflow = lines.buf[maxLines];
-    lines.buf.resize(maxLines);
-    
+    lines.count = maxLines;
+
     std::string& last = lines.buf[maxLines - 1];
     last += ' ';
     last += overflow;
-    // Append "..." and measure in one step; on overage, remove "..." + one char together
     while (!last.empty()) {
         last += "...";
         if (static_cast<float>(renderer->getNotificationTextDimensions(last, false, fontSize).first) <= pixelWidth)
-            return;  // last already ends with "..."
-        last.resize(last.size() - 4); // drop "..." (3) + 1 trailing char in one resize
+            return;
+        last.resize(last.size() - 4);
     }
     last = "...";
 }
@@ -1295,6 +1290,15 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     auto fc = [renderer, fadeAlpha](Color c) {
         return renderer->a2(NotificationPrompt::applyAlpha(c, fadeAlpha));
     };
+
+    // Pre-compute every faded color used in this draw call once.
+    // fc() calls applyAlpha() + renderer->a2() (which branches + bit-masks);
+    // calling it inside loops or repeated draw calls wastes those cycles.
+    const Color fadedBgColor    = fc(defaultBackgroundColor);
+    const Color fadedTextColor  = fc(notificationTextColor);
+    const Color fadedTitleColor = fc(notificationTitleColor);
+    const Color fadedClockColor = fc(notificationClockColor);
+    const Color fadedEdgeColor  = fc(edgeSeparatorColor);
 
     const s32 x = ult::useRightAlignment
         ? (tsl::cfg::FramebufferWidth - NOTIF_WIDTH) : 0;
@@ -1308,31 +1312,38 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
         textAreaX = x + iconColW;
         textAreaW = NOTIF_WIDTH - iconColW;
     }
-    const float innerWf        = static_cast<float>(textAreaW - baseIconPad - 2);
-    const s32   titleTextAreaX = hasIconCol ? textAreaX : x + (baseIconPad + 2);
-    const s32   titleTextAreaW = hasIconCol ? textAreaW : NOTIF_WIDTH - 2 * (baseIconPad + 2);
-    const float titleInnerWf   = hasIconCol ? innerWf   : static_cast<float>(titleTextAreaW);
+    const float     innerWf        = static_cast<float>(textAreaW - baseIconPad - 2);
+    const s32       titleTextAreaX = hasIconCol ? textAreaX : x + (baseIconPad + 2);
+    const s32       titleTextAreaW = hasIconCol ? textAreaW : NOTIF_WIDTH - 2 * (baseIconPad + 2);
+    const float     titleInnerWf   = hasIconCol ? innerWf   : static_cast<float>(titleTextAreaW);
+    const u8        fontSize       = slot.data.fontSize;
+    const Alignment alignment      = slot.data.alignment;
 
     const bool hasTitleIconLayout = !slot.data.text.empty() && !slot.data.title.empty();
 
     Lines titleIconLines;
+    // Declared here so both the height-calculation block and the draw block
+    // share one getFontMetricsForCharacter lookup instead of two.
+    // Default-constructed (all zeros) when hasTitleIconLayout is false;
+    // the draw block never reaches it in that case.
+    tsl::gfx::FontManager::FontMetrics titleMessageFm;
     s32 effectiveHeight = NOTIF_HEIGHT;
     if (hasTitleIconLayout) {
-        titleIconLines = getWrappedLines(slot.data.text, titleInnerWf, slot.data.fontSize, 5, slot.data.splitType);
-        applyEllipsis(titleIconLines, 4, titleInnerWf, slot.data.fontSize, renderer);
-        if (titleIconLines.buf.size() > 1) {
-            const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
+        titleIconLines = getWrappedLines(slot.data.text, titleInnerWf, fontSize, 5, slot.data.splitType);
+        applyEllipsis(titleIconLines, 4, titleInnerWf, fontSize, renderer);
+        titleMessageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
+        if (titleIconLines.count > 1) {
             effectiveHeight = NOTIF_HEIGHT
-                            + static_cast<s32>(titleIconLines.buf.size() - 1) * fm.lineHeight;
+                            + static_cast<s32>(titleIconLines.count - 1) * titleMessageFm.lineHeight;
         }
     }
     Lines regularLines;
     s32 regularExtraSpacing = 0;
     if (!hasTitleIconLayout && !slot.data.text.empty() && textAreaW > 0) {
-        regularLines = getWrappedLines(slot.data.text, static_cast<float>(textAreaW-4), slot.data.fontSize, 9, slot.data.splitType);
-        applyEllipsis(regularLines, 8, static_cast<float>(textAreaW-4), slot.data.fontSize, renderer);
-        if (regularLines.buf.size() > 1) {
-            regularExtraSpacing = static_cast<s32>(regularLines.buf.size() - 1) * 3;
+        regularLines = getWrappedLines(slot.data.text, static_cast<float>(textAreaW-4), fontSize, 9, slot.data.splitType);
+        applyEllipsis(regularLines, 8, static_cast<float>(textAreaW-4), fontSize, renderer);
+        if (regularLines.count > 1) {
+            regularExtraSpacing = static_cast<s32>(regularLines.count - 1) * 3;
             effectiveHeight += regularExtraSpacing;
         }
     }
@@ -1346,14 +1357,14 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
 
     #if IS_STATUS_MONITOR_DIRECTIVE
         renderer->drawRect(x, baseY, NOTIF_WIDTH, effectiveHeight,
-                           fc(defaultBackgroundColor));
+                           fadedBgColor);
     #else
         if (!promptOnly && ult::expandedMemory)
             renderer->drawRectMultiThreaded(x, baseY, NOTIF_WIDTH,
-                                            effectiveHeight, fc(defaultBackgroundColor));
+                                            effectiveHeight, fadedBgColor);
         else
             renderer->drawRect(x, baseY, NOTIF_WIDTH, effectiveHeight,
-                               fc(defaultBackgroundColor));
+                               fadedBgColor);
     #endif
 
     const s32 iconVertPad = (effectiveHeight - NOTIF_ICON_DIM) / 2;
@@ -1373,12 +1384,14 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
 
     if (!slot.data.text.empty() && textAreaW > 0) {
         if (hasTitleIconLayout) {
-            const Lines& lines   = titleIconLines;
-            const auto titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
-            const auto messageFm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
-            const s32  innerW    = static_cast<s32>(titleInnerWf);
+            const Lines& lines     = titleIconLines;
+            const auto   titleFm   = tsl::gfx::FontManager::getFontMetricsForCharacter('A', TITLE_FONT);
+            const auto&  messageFm = titleMessageFm;  // computed once above, reused here
+            const s32    innerW    = static_cast<s32>(titleInnerWf);
+            const s32    lineCount = static_cast<s32>(lines.count);
+            const s32    lineStep  = messageFm.lineHeight + 3;
             static constexpr s32 LINE_GAP = 4;
-            const s32 blockH   = titleFm.lineHeight + LINE_GAP + static_cast<s32>(lines.buf.size()) * messageFm.lineHeight;
+            const s32 blockH   = titleFm.lineHeight + LINE_GAP + lineCount * messageFm.lineHeight;
             const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
             const s32 titleY   = originY + titleFm.ascent - 3;
             const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1;
@@ -1389,7 +1402,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
             else {
             #endif
                 renderer->drawNotificationString(slot.data.title, false,
-                    titleTextAreaX, titleY, TITLE_FONT, fc(notificationTitleColor));
+                    titleTextAreaX, titleY, TITLE_FONT, fadedTitleColor);
             #if IS_LAUNCHER_DIRECTIVE
             }
             #endif
@@ -1400,88 +1413,77 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                 const s32 tsX = textAreaX + innerW - tsW;
                 if (tsX > textAreaX)
                     renderer->drawNotificationString(slot.data.timestamp, false,
-                        tsX, titleY, TITLE_FONT, fc(notificationClockColor));
+                        tsX, titleY, TITLE_FONT, fadedClockColor);
             }
 
-            for (s32 li = 0; li < static_cast<s32>(lines.buf.size()); ++li) {
+            for (s32 li = 0; li < lineCount; ++li) {
                 s32 msgX;
-                if (slot.data.alignment == Alignment::Center) {
-                    const auto lw = renderer->getNotificationTextDimensions(lines[li], false, slot.data.fontSize).first;
-                    msgX = titleTextAreaX + (static_cast<s32>(titleInnerWf) - lw) / 2;
-                } else if (slot.data.alignment == Alignment::Right) {
-                    const auto lw = renderer->getNotificationTextDimensions(lines[li], false, slot.data.fontSize).first;
-                    msgX = titleTextAreaX + static_cast<s32>(titleInnerWf) - lw;
-                } else {
+                if (alignment == Alignment::Left) {
                     msgX = titleTextAreaX;
+                } else {
+                    const auto lw = renderer->getNotificationTextDimensions(lines[li], false, fontSize).first;
+                    msgX = (alignment == Alignment::Right)
+                        ? titleTextAreaX + innerW - lw
+                        : titleTextAreaX + (innerW - lw) / 2;
                 }
                 renderer->drawNotificationString(lines[li], false, msgX,
-                    messageY + li * messageFm.lineHeight + li * 3,
-                    slot.data.fontSize, fc(notificationTextColor));
+                    messageY + li * lineStep,
+                    fontSize, fadedTextColor);
             }
 
         } else {
-            const Lines& lines = regularLines;
-            const auto fm     = tsl::gfx::FontManager::getFontMetricsForCharacter('A', slot.data.fontSize);
+            const Lines& lines        = regularLines;
+            const auto   fm           = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
+            const s32    lineCount    = static_cast<s32>(lines.count);
+            const s32    totalTextHeight = lineCount * fm.lineHeight + (lineCount > 1 ? regularExtraSpacing : 0);
+            const s32    startY       = (effectiveHeight - totalTextHeight) / 2 + fm.ascent + baseY;
+            const s32    padAdjust    = hasIconCol ? baseIconPad+2 : 0;
+            const s32    extraPerLine = lineCount > 1 ? 3 : 0;
 
-            const s32 totalTextHeight = static_cast<s32>(lines.buf.size()) * fm.lineHeight + (lines.buf.size() > 1 ? regularExtraSpacing : 0);
-            const s32 startY = (effectiveHeight - totalTextHeight) / 2 + fm.ascent + baseY;
+            auto alignedX = [&](s32 contentW) -> s32 {
+                if (alignment == Alignment::Left)  return textAreaX + 2;
+                if (alignment == Alignment::Right) return textAreaX + textAreaW - contentW - padAdjust - 2;
+                return textAreaX + (textAreaW - contentW - padAdjust) / 2;
+            };
 
-            for (s32 li = 0; li < static_cast<s32>(lines.buf.size()); ++li) {
-                const std::string& line = lines[li];
-                const s32 lineY = startY + li * fm.lineHeight + (lines.buf.size() > 1 ? li * 3 : 0);
+            // For Left alignment alignedX() ignores contentW, so skip the
+            // width measurement entirely — it's a no-draw drawString pass
+            // (same cost as measuring) wasted on every line.
+            const bool needsLineWidth = (alignment != Alignment::Left);
+
+            for (s32 li = 0; li < lineCount; ++li) {
+                const std::string& line  = lines[li];
+                const s32          lineY = startY + li * (fm.lineHeight + extraPerLine);
+
                 #if IS_LAUNCHER_DIRECTIVE
-                // Single find — result reused for both the branch and substr below
                 const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
                 if (up != std::string::npos) {
-                    const std::string before = line.substr(0, up);
-                    const std::string after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
+                    const std::string  before = line.substr(0, up);
+                    const std::string  after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
+                    const std::string& hand   = ult::SPLIT_PROJECT_NAME_2;
                     s32 bw = 0, aw = 0;
-                    if (!before.empty()) bw = renderer->getNotificationTextDimensions(before, false, slot.data.fontSize).first;
-                    if (!after.empty())  aw = renderer->getNotificationTextDimensions(after,  false, slot.data.fontSize).first;
-                    const std::string hand = ult::SPLIT_PROJECT_NAME_2;
-                    const s32 hw  = renderer->getNotificationTextDimensions(hand, false, slot.data.fontSize).first;
-                    const s32 uw  = tsl::elm::calculateUltraTextWidth(renderer, slot.data.fontSize, true);
-                    const s32 padAdjust = hasIconCol ? baseIconPad+2 : 0;
-                    const s32 totalW = bw + uw + hw + aw;
-                    s32 cx;
-                    if (slot.data.alignment == Alignment::Left) {
-                        cx = textAreaX + 2;
-                    } else if (slot.data.alignment == Alignment::Right) {
-                        cx = textAreaX + textAreaW - totalW - padAdjust - 2;
-                    } else {
-                        cx = textAreaX + (textAreaW - totalW - padAdjust) / 2;
-                    }
-                    drawUltrahandLine(renderer, line, cx, lineY, slot.data.fontSize, fadeAlpha);
+                    if (!before.empty()) bw = renderer->getNotificationTextDimensions(before, false, fontSize).first;
+                    if (!after.empty())  aw = renderer->getNotificationTextDimensions(after,  false, fontSize).first;
+                    const s32 hw = renderer->getNotificationTextDimensions(hand, false, fontSize).first;
+                    const s32 uw = tsl::elm::calculateUltraTextWidth(renderer, fontSize, true);
+                    drawUltrahandLine(renderer, line, alignedX(bw + uw + hw + aw), lineY, fontSize, fadeAlpha);
                 } else
                 #endif
                 {
-                    const s32 padAdjust = hasIconCol ? baseIconPad+2 : 0;
-                    s32 drawX;
-                    if (slot.data.alignment == Alignment::Left) {
-                        drawX = textAreaX + 2;
-                    } else if (slot.data.alignment == Alignment::Right) {
-                        const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
-                        drawX = textAreaX + textAreaW - lw - padAdjust - 2;
-                    } else {
-                        const auto lw = renderer->getNotificationTextDimensions(line, false, slot.data.fontSize).first;
-                        drawX = textAreaX + (textAreaW - lw - padAdjust) / 2;
-                    }
+                    const s32 lw = needsLineWidth
+                        ? renderer->getNotificationTextDimensions(line, false, fontSize).first
+                        : 0;
                     renderer->drawNotificationString(line, false,
-                        drawX, lineY,
-                        slot.data.fontSize, fc(notificationTextColor));
+                        alignedX(lw), lineY,
+                        fontSize, fadedTextColor);
                 }
             }
         }
     }
 
-    if (!ult::useRightAlignment) {
-        renderer->drawRect(x + NOTIF_WIDTH - 1, baseY,
-                           1, effectiveHeight, fc(edgeSeparatorColor));
-    } else {
-        renderer->drawRect(x, baseY, 1, effectiveHeight, fc(edgeSeparatorColor));
-    }
-    renderer->drawRect(x, baseY + effectiveHeight - 1,
-                       NOTIF_WIDTH, 1, fc(edgeSeparatorColor));
+    const s32 edgeX = ult::useRightAlignment ? x : x + NOTIF_WIDTH - 1;
+    renderer->drawRect(edgeX, baseY, 1, effectiveHeight, fadedEdgeColor);
+    renderer->drawRect(x, baseY + effectiveHeight - 1, NOTIF_WIDTH, 1, fadedEdgeColor);
     renderer->disableScissoring();
 }
 
@@ -1495,9 +1497,9 @@ void NotificationPrompt::drawUltrahandLine(gfx::Renderer* renderer, const std::s
         renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));
         return;
     }
-    const std::string before = line.substr(0, up);
-    const std::string hand   = ult::SPLIT_PROJECT_NAME_2;
-    const std::string after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
+    const std::string  before = line.substr(0, up);
+    const std::string& hand   = ult::SPLIT_PROJECT_NAME_2;
+    const std::string  after  = line.substr(up + ult::CAPITAL_ULTRAHAND_PROJECT_NAME.length());
     s32 bw = 0, hw = 0;
     if (!before.empty()) bw = renderer->getNotificationTextDimensions(before, false, fontSize).first;
     hw = renderer->getNotificationTextDimensions(hand, false, fontSize).first;

@@ -68,6 +68,8 @@ namespace ult {
         return (v < lo) ? lo : ((v > hi) ? hi : v);
     }
 
+    void formatTimestamp(time_t t, char* buf, size_t bufSize);
+
     // math funcs
     double cos(double x);
     
