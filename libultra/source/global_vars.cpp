@@ -177,6 +177,7 @@ namespace ult {
     CONSTEXPR_STRING std::string STAR_SYMBOL         = "\u2605";
     CONSTEXPR_STRING std::string DIVIDER_SYMBOL      = "";
     CONSTEXPR_STRING std::string NOTIFY_HEADER       = "  ";
+    CONSTEXPR_STRING std::string HOLD_A_SYMBOL       = "";
 
     const std::vector<std::string> THROBBER_SYMBOLS = {"", "", "", "", "", "", "", ""};
 

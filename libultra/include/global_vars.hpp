@@ -171,9 +171,10 @@ namespace ult {
     extern const std::string STAR_SYMBOL;
     extern const std::string DIVIDER_SYMBOL;
     extern const std::string NOTIFY_HEADER;
+    extern const std::string HOLD_A_SYMBOL;
 
     extern const std::vector<std::string> THROBBER_SYMBOLS;
-    
+
     extern std::atomic<int> downloadPercentage;
     extern std::atomic<int> unzipPercentage;
     extern std::atomic<int> copyPercentage;

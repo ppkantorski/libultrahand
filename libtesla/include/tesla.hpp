@@ -199,25 +199,15 @@ inline std::atomic<bool> triggerRumbleClick{false};
 inline std::atomic<bool> triggerRumbleDoubleClick{false};
 
 
-__attribute__((noinline)) inline void triggerNavigationFeedback() {
-    triggerRumbleClick.store(true, std::memory_order_release);
-    triggerNavigationSound.store(true, std::memory_order_release);
+__attribute__((noinline)) static void triggerFeedbackImpl(
+        std::atomic<bool>& rumble, std::atomic<bool>& sound) {
+    rumble.store(true, std::memory_order_release);
+    sound.store(true, std::memory_order_release);
 }
-
-__attribute__((noinline)) inline void triggerWallFeedback() {
-    triggerRumbleClick.store(true, std::memory_order_release);
-    triggerWallSound.store(true, std::memory_order_release);
-}
-
-__attribute__((noinline)) inline void triggerEnterFeedback() {
-    triggerRumbleClick.store(true, std::memory_order_release);
-    triggerEnterSound.store(true, std::memory_order_release);
-}
-
-__attribute__((noinline)) inline void triggerExitFeedback() {
-    triggerRumbleDoubleClick.store(true, std::memory_order_release);
-    triggerExitSound.store(true, std::memory_order_release);
-}
+inline void triggerNavigationFeedback() { triggerFeedbackImpl(triggerRumbleClick, triggerNavigationSound); }
+inline void triggerWallFeedback()       { triggerFeedbackImpl(triggerRumbleClick, triggerWallSound); }
+inline void triggerEnterFeedback()      { triggerFeedbackImpl(triggerRumbleClick, triggerEnterSound); }
+inline void triggerExitFeedback()       { triggerFeedbackImpl(triggerRumbleDoubleClick, triggerExitSound); }
 
 
 /**
@@ -4514,26 +4504,14 @@ namespace tsl {
              *
              * @param title Title to change to
              */
-            inline void setTitle(const std::string &title) {
-                if (m_title != title) {
-                    m_title = title;
-                    titleScroll.maxW = 0; // Reset to recalculate
-                    titleScroll.active = titleScroll.trunc = false;
-                }
-            }
+            inline void setTitle(const std::string& t)    { resetScroll(titleScroll, m_title,    t); }
             
             /**
              * @brief Changes the subtitle of the menu
              *
              * @param title Subtitle to change to
              */
-            inline void setSubtitle(const std::string &subtitle) {
-                if (m_subtitle != subtitle) {
-                    m_subtitle = subtitle;
-                    subScroll.maxW = 0; // Reset to recalculate
-                    subScroll.active = subScroll.trunc = false;
-                }
-            }
+            inline void setSubtitle(const std::string& s) { resetScroll(subScroll,   m_subtitle, s); }
             
         protected:
             Element *m_contentElement = nullptr;
@@ -4567,6 +4545,13 @@ namespace tsl {
                 } else {
                     s.textW = w;
                 }
+            }
+
+            static void resetScroll(ScrollState& s, std::string& dest, const std::string& src) {
+                if (dest == src) return;
+                dest = src;
+                s.maxW = 0;
+                s.active = s.trunc = false;
             }
             
         #if IS_LAUNCHER_DIRECTIVE
@@ -9585,6 +9570,7 @@ namespace tsl {
         
     }
     
+
     // Global state and event system
     static inline Event notificationEvent;
     static inline std::mutex notificationJsonMutex;
@@ -9670,11 +9656,7 @@ namespace tsl {
                               : static_cast<u16>(std::clamp(durationMs, 500u, 30000u));
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
-            data.alignment    = !alignment.empty()
-                ? (alignment[0] == 'l' ? Alignment::Left
-                 : alignment[0] == 'r' ? Alignment::Right
-                 :                       Alignment::Center)
-                : (title.empty() ? Alignment::Center : Alignment::Left);
+            data.alignment    = parseAlignment(alignment, !title.empty());
             data.splitType    = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
             data.arrivalNs    = ult::nowNs();
             if (!timestamp.empty()) {
@@ -9780,11 +9762,28 @@ namespace tsl {
         mutable std::mutex state_mutex_;
         std::priority_queue<NotifEntry, std::vector<NotifEntry>, NotifCompare> pending_queue_;
         std::atomic<bool>  enabled_{true};
-        u32                generation_{0};
+        std::atomic<u32>   generation_{0};
 
         bool isStale() const {
             return !enabled_.load(std::memory_order_acquire)
-                || generation_ != notificationGeneration.load(std::memory_order_acquire);
+                || generation_.load(std::memory_order_acquire)
+                        != notificationGeneration.load(std::memory_order_acquire);
+        }
+
+        // Transition a slot's data into FadingOut state. Caller holds state_mutex_.
+        static void startFadeOut(NotifEntry& e, u64 now) {
+            e.state        = PromptState::FadingOut;
+            e.stateStartNs = now;
+        }
+
+        // Parse alignment string to enum, with a sensible title-aware default.
+        static Alignment parseAlignment(std::string_view sv, bool hasTitle) {
+            if (!sv.empty()) {
+                if (sv[0] == 'l') return Alignment::Left;
+                if (sv[0] == 'r') return Alignment::Right;
+                return Alignment::Center;
+            }
+            return hasTitle ? Alignment::Left : Alignment::Center;
         }
 
         void evictSlot_NoLock(int i) {
@@ -9800,6 +9799,33 @@ namespace tsl {
 
         [[nodiscard]] int findHitSlot_NoLock(s32 tx, s32 ty) const;
 
+        // Icon/text-area geometry, computed once and shared between
+        // getEffectiveHeight and drawSlot.
+        struct IconGeom {
+            s32  baseIconPad;
+            s32  iconColW;
+            bool hasIconCol;
+            s32  textAreaX;
+            s32  textAreaW;
+        };
+
+        static IconGeom computeIconGeom(const Slot& slot, s32 x = 0) {
+            IconGeom g;
+            g.baseIconPad = (NOTIF_HEIGHT - NOTIF_ICON_DIM) / 2;
+            g.iconColW    = g.baseIconPad + NOTIF_ICON_DIM + g.baseIconPad;
+            g.hasIconCol  = (slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED))
+                          || slot.data.iconPending;
+            g.textAreaW   = g.hasIconCol ? NOTIF_WIDTH - g.iconColW : NOTIF_WIDTH;
+            g.textAreaX   = g.hasIconCol ? x + g.iconColW : x;
+            return g;
+        }
+
+        // Height contributed by n additional wrapped lines beyond the first:
+        // n * (lineHeight + 3)
+        static s32 extraLinesHeight(s32 n, s32 lineHeight) {
+            return n * (lineHeight + 3);
+        }
+
         static constexpr float easeInOut(float t) {
             return (t < 0.5f) ? (2*t*t) : (-1 + (4 - 2*t)*t);
         }
@@ -9809,24 +9835,31 @@ namespace tsl {
             return c;
         }
 
+        [[gnu::noinline]]
         Lines getWrappedLines(const std::string& text, float pixelWidth,
                               size_t fontSize, u8 maxLines,
                               SplitType splitType = SplitType::Word) const;
 
+        [[gnu::noinline]]
         s32 getEffectiveHeight(const Slot& slot) const;
 
+        [[gnu::noinline]]
         void placeInSlot_NoLock(int idx, NotifEntry&& e, bool isShowNow,
                                 bool skipFadeIn, bool suppressSound = false);
 
+        [[gnu::noinline]]
         void repackSlots_NoLock(u64 now);
 
+        [[gnu::noinline]]
         void applyEllipsis(Lines& lines, u8 maxLines, float pixelWidth,
                            size_t fontSize, gfx::Renderer* renderer) const;
 
+        [[gnu::noinline]]
         void drawSlot(gfx::Renderer* renderer, const Slot& slot,
                       s32 baseY, float fadeAlpha, bool promptOnly);
 
         #if IS_LAUNCHER_DIRECTIVE
+        [[gnu::noinline]]
         void drawUltrahandLine(gfx::Renderer* renderer, const std::string& line,
                                s32 x, s32 y, u32 fontSize, float fadeAlpha,
                                Color textColor = notificationTextColor);
@@ -12406,6 +12439,12 @@ namespace tsl {
         // Parse Tesla settings
         impl::parseOverlaySettings();
 
+        // Initialize overlay services & screen
+        tsl::hlp::doWithSmSession([&overlay]{
+            overlay->initServices();
+        });
+        overlay->initScreen();
+
         eventCreate(&shData.comboEvent, false);
 
         Thread backgroundFeedbackThread;
@@ -12480,15 +12519,8 @@ namespace tsl {
             shouldFireEvent = true;
         }
     #endif
-        
-    
-        tsl::hlp::doWithSmSession([&overlay]{
-            overlay->initServices();
-        });
 
-        overlay->initScreen();
         overlay->changeTo(overlay->loadInitialGui());
-
         overlay->disableNextAnimation();
         
         {
