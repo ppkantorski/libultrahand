@@ -4030,7 +4030,6 @@ namespace tsl {
         private:
             std::function<void(gfx::Renderer*, s32 x, s32 y, s32 w, s32 h)> m_renderFunc;
         };
-    //#endif
 
         /**
          * @brief A Element that exposes the renderer directly to draw custom views easily
@@ -4100,19 +4099,14 @@ namespace tsl {
                     const double ultraSmoothProgress = smoothedProgress * smoothedProgress * (3.0 - 2.0 * smoothedProgress);
                     
                     const double blend = std::max(0.0, std::min(1.0, ultraSmoothProgress));
-                    
-                    const tsl::Color highlightColor = {
-                        static_cast<u8>(dynamicLogoRGB1.r + (dynamicLogoRGB2.r - dynamicLogoRGB1.r) * blend + 0.5),
-                        static_cast<u8>(dynamicLogoRGB1.g + (dynamicLogoRGB2.g - dynamicLogoRGB1.g) * blend + 0.5),
-                        static_cast<u8>(dynamicLogoRGB1.b + (dynamicLogoRGB2.b - dynamicLogoRGB1.b) * blend + 0.5),
-                        15
-                    };
+
+                    const tsl::Color _highlightColor = lerpColor(dynamicLogoRGB2, dynamicLogoRGB1, blend);
                     
                     const std::string letterStr(1, letter);
                     if (useNotificationMethod) {
-                        currentX += renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, highlightColor).first;
+                        currentX += renderer->drawNotificationString(letterStr, false, currentX, y, fontSize, _highlightColor).first;
                     } else {
-                        currentX += renderer->drawString(letterStr, false, currentX, y, fontSize, highlightColor).first;
+                        currentX += renderer->drawString(letterStr, false, currentX, y, fontSize, _highlightColor).first;
                     }
                     countOffset -= static_cast<float>(cycleDuration / 8.0);
                 }
@@ -6620,7 +6614,7 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
                 static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
             #else
-                static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
+                static const std::vector<std::string> specialChars = s_dividerSpecialChars;
             #endif
                 // Fast path for non-truncated text
                 if (!m_flags.m_truncated) [[likely]] {
@@ -7054,8 +7048,7 @@ namespace tsl {
                 const auto textColor = determineValueTextColor(useClickTextColor, lastRunningInterpreter);
         
                 if (m_value != ult::INPROGRESS_SYMBOL) [[likely]] {
-                    static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
-                    renderer->drawStringWithColoredSections(m_value, false, specialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
+                    renderer->drawStringWithColoredSections(m_value, false, s_dividerSpecialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
                 } else {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
@@ -7063,8 +7056,7 @@ namespace tsl {
             #else
                 const auto textColor = determineValueTextColor(useClickTextColor);
                 if (m_value != ult::INPROGRESS_SYMBOL) [[likely]] {
-                    static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
-                    renderer->drawStringWithColoredSections(m_value, false, specialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
+                    renderer->drawStringWithColoredSections(m_value, false, s_dividerSpecialChars, xPosition, yPosition, fontSize, textColor, textSeparatorColor);
                 } else {
                     drawThrobber(renderer, xPosition, yPosition, fontSize, textColor);
                 }
@@ -7441,6 +7433,8 @@ namespace tsl {
         public:
             CategoryHeader(const std::string &title, bool hasSeparator = true)
                 : m_text(title),
+                  m_value(""),
+                  m_valueColor(tsl::headerTextColor),
                   m_hasSeparator(hasSeparator),
                   m_scroll(false),
                   m_truncated(false),
@@ -7453,56 +7447,76 @@ namespace tsl {
             }
         
             virtual ~CategoryHeader() {}
+
+            // --- new setters ---
+            void setValue(const std::string &value, const tsl::Color &color = tsl::headerTextColor) {
+                m_value = value;
+                m_valueColor = color;
+            }
         
-            virtual void draw(gfx::Renderer *renderer) override {
-                static const std::vector<std::string> specialChars = {ult::DIVIDER_SYMBOL};
-        
-                if (!m_maxWidth) {
-                    calculateWidths(renderer);
-                }
-        
+            void clearValue() {
+                m_value.clear();
+            }
+                
+            virtual void draw(gfx::Renderer* renderer) override {
+                if (!m_maxWidth) calculateWidths(renderer);
+            
+                const int fontHeight = 16;
+            
+                // Keep a fixed header area for separator and text (matches old 33px height)
+                const int headerTop = this->getBottomBound() - 33;
+                const int textY = this->getBottomBound() - 16;
+                const int textX = m_hasSeparator ? (this->getX() + 16) : this->getX();
+            
+                // Draw the separator rectangle on the left (fixed 22px height, 4px wide)
                 if (m_hasSeparator) {
                     renderer->drawRect(
                         this->getX() + 2,
-                        this->getBottomBound() - 33,
+                        headerTop,
                         4,
                         22,
                         aWithOpacity(headerSeparatorColor));
                 }
-        
-                const int textX = m_hasSeparator ? (this->getX() + 16) : this->getX();
-                const int textY = this->getBottomBound() - 16;
-        
+            
+                // Draw header text
                 if (m_truncated) {
-                    if (!m_scroll) {
-                        m_scroll = true;
-                    }
-        
+                    if (!m_scroll) m_scroll = true;
                     handleScrolling();
-        
-                    renderer->enableScissoring(textX, textY - 16, m_maxWidth, 24);
-        
+            
+                    renderer->enableScissoring(textX, textY - fontHeight, m_maxWidth, fontHeight + 8);
                     renderer->drawStringWithColoredSections(
-                        m_scrollText,
-                        false,
-                        specialChars,
+                        m_scrollText, false, s_dividerSpecialChars,
                         textX - static_cast<s32>(m_scrollOffset),
                         textY,
-                        16,
+                        fontHeight,
                         headerTextColor,
-                        textSeparatorColor);
-        
+                        textSeparatorColor
+                    );
                     renderer->disableScissoring();
                 } else {
                     renderer->drawStringWithColoredSections(
-                        m_text,
-                        false,
-                        specialChars,
-                        textX,
-                        textY,
-                        16,
+                        m_text, false, s_dividerSpecialChars,
+                        textX, textY,
+                        fontHeight,
                         headerTextColor,
-                        textSeparatorColor);
+                        textSeparatorColor
+                    );
+                }
+            
+                // Draw optional value, right-aligned
+                if (!m_value.empty()) {
+                    const int valueWidth = renderer->getTextDimensions(m_value, false, fontHeight).first;
+                    const int valueX = this->getX() + 2 + this->getWidth() - valueWidth;
+            
+                    renderer->drawString(
+                        m_value,
+                        false,
+                        valueX,
+                        textY,
+                        fontHeight,
+                        m_valueColor,
+                        0, true, nullptr, nullptr, 0, 0, false
+                    );
                 }
             }
         
@@ -7537,6 +7551,8 @@ namespace tsl {
         
         private:
             std::string m_text;
+            std::string m_value;
+            tsl::Color m_valueColor;
             bool m_hasSeparator;
         
             bool m_scroll;
@@ -11129,102 +11145,7 @@ namespace tsl {
          * @brief Extract values from Tesla settings file
          *
          */
-        static void parseOverlaySettings() {
-            const auto section = ult::getKeyValuePairsFromSection(
-                ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
-        
-            auto getBool = [&](const char* key, bool def = false) -> bool {
-                auto it = section.find(key);
-                if (it == section.end() || it->second.empty()) return def;
-                return it->second != ult::FALSE_STR;
-            };
-            auto getStr = [&](const char* key, const char* def = "") -> std::string {
-                auto it = section.find(key);
-                return (it != section.end() && !it->second.empty()) ? it->second : def;
-            };
-        
-            // Key combo — ultrahand first, tesla as fallback
-            u64 decodedKeys = hlp::comboStringToKeys(getStr(ult::KEY_COMBO_STR.c_str()));
-            if (!decodedKeys)
-                decodedKeys = hlp::comboStringToKeys(
-                    ult::parseValueFromIniSection(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR));
-            if (decodedKeys) tsl::cfg::launchCombo = decodedKeys;
-        
-            // Datetime format
-            ult::datetimeFormat = getStr("datetime_format", ult::DEFAULT_DT_FORMAT.c_str());
-            ult::removeQuotes(ult::datetimeFormat);
-            if (ult::datetimeFormat.empty()) ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
-        
-            // Language
-            std::string lang = getStr(ult::DEFAULT_LANG_STR.c_str(), "en");
-            if (lang.empty()) lang = "en";
-        
-            #ifdef UI_OVERRIDE_PATH
-            {
-                std::string UI_PATH = UI_OVERRIDE_PATH;
-                ult::preprocessPath(UI_PATH);
-                ult::createDirectory(UI_PATH);
-                const std::string langOverride = UI_PATH + "lang/" + lang + ".json";
-                if (ult::isFile(UI_PATH + "theme.ini"))      ult::THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
-                if (ult::isFile(UI_PATH + "wallpaper.rgba")) ult::WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
-                if (ult::isFile(langOverride))               ult::loadTranslationsFromJSON(langOverride);
-            }
-            #endif
-        
-            // Behavior flags — shared across all overlays
-            ult::useLaunchCombos        = getBool("launch_combos",        true);
-            ult::useNotifications       = getBool("notifications",        true);
-            ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
-            ult::silenceNotifications   = getBool("silence_notifications");
-            ult::useSoundEffects        = getBool("sound_effects",        true);
-            ult::useHapticFeedback      = getBool("haptic_feedback");
-            ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
-            ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
-        
-            // max_notifications — default to 3 so it's always clamped correctly
-            {
-                const std::string maxStr = getStr("max_notifications", "3");
-                const int cap = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
-                tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
-            }
-        
-            // Widget / display flags — shared
-            ult::hideClock              = getBool("hide_clock");
-            ult::hideBattery            = getBool("hide_battery",            true);
-            ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
-            ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
-            ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
-            ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
-            ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
-            ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
-            ult::useDynamicLogo         = getBool("dynamic_logo",            true);
-            ult::useSelectionBG         = getBool("selection_bg",            true);
-            ult::useSelectionText       = getBool("selection_text");
-            ult::useSelectionValue      = getBool("selection_value");
-        
-            #if IS_LAUNCHER_DIRECTIVE
-            // Launcher-only vars that live in ult:: or global scope — readable here
-            hideHidden               = getBool("hide_hidden");
-            ult::usePageSwap         = getBool("page_swap");
-            ult::useRightAlignment   = getBool("right_alignment");
-            #endif
-        
-            // Notifications flag file
-            if (ult::useNotifications) {
-                if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH))
-                    if (FILE* f = fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w")) fclose(f);
-            } else {
-                ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
-            }
-        
-            // Theme and language
-            const std::string langFile = ult::LANG_PATH + lang + ".json";
-            if (ult::isFile(langFile)) ult::parseLanguage(langFile);
-            else ult::reinitializeLangVars();
-        
-            tsl::initializeTheme();
-            tsl::initializeThemeVars();
-        }
+        void parseOverlaySettings();
 
         /**
          * @brief Update and save launch combo keys

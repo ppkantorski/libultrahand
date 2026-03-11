@@ -461,9 +461,15 @@ namespace ult {
     std::string NOTIFICATION_SETTINGS;
     std::string SILENCE_NOTIFICATIONS;
     std::string STARTUP_NOTIFICATION;
+    std::string MAX_SLOTS;
     std::string API_NOTIFICATIONS;
     std::string API_TOGGLE_HOTKEY;
-    std::string MAX_SLOTS;
+    std::string DISMISS_NOTIFICATION;
+    std::string API_TOGGLE;
+    std::string CLICK;
+    std::string TAP;
+    std::string HOLD_FOR_4S;
+
     std::string HAPTIC_FEEDBACK;
     std::string OPAQUE_SCREENSHOTS;
     std::string PACKAGE_INFO;
@@ -669,6 +675,11 @@ namespace ult {
         {&MAX_SLOTS,                  "MAX_SLOTS",                  "Max Slots"},
         {&API_NOTIFICATIONS,          "API_NOTIFICATIONS",          "API Notifications"},
         {&API_TOGGLE_HOTKEY,          "API_TOGGLE_HOTKEY",          "API Toggle Hotkey"},
+        {&DISMISS_NOTIFICATION,       "DISMISS_NOTIFICATION",       "Dismiss Notification"},
+        {&API_TOGGLE,                 "API_TOGGLE",                 "API Toggle"},
+        {&CLICK,                      "CLICK",                      "click"},
+        {&TAP,                        "TAP",                        "tap"},
+        {&HOLD_FOR_4S,                "HOLD_FOR_4S",                "hold for 4s"},
         {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
         {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
         {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},

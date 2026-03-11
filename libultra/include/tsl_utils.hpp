@@ -376,9 +376,14 @@ namespace ult {
     extern std::string NOTIFICATION_SETTINGS;
     extern std::string SILENCE_NOTIFICATIONS;
     extern std::string STARTUP_NOTIFICATION;
+    extern std::string MAX_SLOTS;
     extern std::string API_NOTIFICATIONS;
     extern std::string API_TOGGLE_HOTKEY;
-    extern std::string MAX_SLOTS;
+    extern std::string DISMISS_NOTIFICATION;
+    extern std::string API_TOGGLE;
+    extern std::string CLICK;
+    extern std::string TAP;
+    extern std::string HOLD_FOR_4S;
 
     extern std::string HAPTIC_FEEDBACK;
     extern std::string OPAQUE_SCREENSHOTS;
@@ -389,7 +394,7 @@ namespace ult {
     extern std::string _CREATOR;
     extern std::string _ABOUT;
     extern std::string _CREDITS;
-    
+
     extern std::string SETTINGS_MENU;
     extern std::string SCRIPT_OVERLAY;
     extern std::string STAR_FAVORITE;

@@ -554,109 +554,6 @@ namespace hlp {
         }
     }
 
-    namespace impl {
-        /**
-         * @brief Extract values from Tesla settings file
-         *
-         */
-         void parseOverlaySettings() {
-            const auto section = ult::getKeyValuePairsFromSection(
-                ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
-        
-            auto getBool = [&](const char* key, bool def = false) -> bool {
-                auto it = section.find(key);
-                if (it == section.end() || it->second.empty()) return def;
-                return it->second != ult::FALSE_STR;
-            };
-            auto getStr = [&](const char* key, const char* def = "") -> std::string {
-                auto it = section.find(key);
-                return (it != section.end() && !it->second.empty()) ? it->second : def;
-            };
-        
-            // Key combo — ultrahand first, tesla as fallback
-            u64 decodedKeys = hlp::comboStringToKeys(getStr(ult::KEY_COMBO_STR.c_str()));
-            if (!decodedKeys)
-                decodedKeys = hlp::comboStringToKeys(
-                    ult::parseValueFromIniSection(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR));
-            if (decodedKeys) tsl::cfg::launchCombo = decodedKeys;
-        
-            // Datetime format
-            ult::datetimeFormat = getStr("datetime_format", ult::DEFAULT_DT_FORMAT.c_str());
-            ult::removeQuotes(ult::datetimeFormat);
-            if (ult::datetimeFormat.empty()) ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
-        
-            // Language
-            std::string lang = getStr(ult::DEFAULT_LANG_STR.c_str(), "en");
-            if (lang.empty()) lang = "en";
-        
-            #ifdef UI_OVERRIDE_PATH
-            {
-                std::string UI_PATH = UI_OVERRIDE_PATH;
-                ult::preprocessPath(UI_PATH);
-                ult::createDirectory(UI_PATH);
-                const std::string langOverride = UI_PATH + "lang/" + lang + ".json";
-                if (ult::isFile(UI_PATH + "theme.ini"))      ult::THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
-                if (ult::isFile(UI_PATH + "wallpaper.rgba")) ult::WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
-                if (ult::isFile(langOverride))               ult::loadTranslationsFromJSON(langOverride);
-            }
-            #endif
-        
-            // Behavior flags — shared across all overlays
-            ult::useLaunchCombos        = getBool("launch_combos",        true);
-            ult::useNotifications       = getBool("notifications",        true);
-            ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
-            ult::silenceNotifications   = getBool("silence_notifications");
-            ult::useSoundEffects        = getBool("sound_effects",        true);
-            ult::useHapticFeedback      = getBool("haptic_feedback");
-            ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
-            ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
-        
-            // max_notifications — default to 3 so it's always clamped correctly
-            {
-                const std::string maxStr = getStr("max_notifications", "3");
-                const int cap = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
-                tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
-            }
-        
-            // Widget / display flags — shared
-            ult::hideClock              = getBool("hide_clock");
-            ult::hideBattery            = getBool("hide_battery",            true);
-            ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
-            ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
-            ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
-            ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
-            ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
-            ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
-            ult::useDynamicLogo         = getBool("dynamic_logo",            true);
-            ult::useSelectionBG         = getBool("selection_bg",            true);
-            ult::useSelectionText       = getBool("selection_text");
-            ult::useSelectionValue      = getBool("selection_value");
-        
-            #if IS_LAUNCHER_DIRECTIVE
-            // Launcher-only vars that live in ult:: or global scope — readable here
-            hideHidden               = getBool("hide_hidden");
-            ult::usePageSwap         = getBool("page_swap");
-            ult::useRightAlignment   = getBool("right_alignment");
-            #endif
-        
-            // Notifications flag file
-            if (ult::useNotifications) {
-                if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH))
-                    if (FILE* f = fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w")) fclose(f);
-            } else {
-                ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
-            }
-        
-            // Theme and language
-            const std::string langFile = ult::LANG_PATH + lang + ".json";
-            if (ult::isFile(langFile)) ult::parseLanguage(langFile);
-            else ult::reinitializeLangVars();
-        
-            tsl::initializeTheme();
-            tsl::initializeThemeVars();
-        }
-    }
-
     /**
      * @brief Encodes key codes into a combo string
      *
@@ -736,6 +633,108 @@ namespace hlp {
     }
 }
 
+namespace impl {
+    /**
+     * @brief Extract values from Tesla settings file
+     *
+     */
+    void parseOverlaySettings() {
+        const auto section = ult::getKeyValuePairsFromSection(
+            ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME);
+    
+        auto getBool = [&](const char* key, bool def = false) -> bool {
+            auto it = section.find(key);
+            if (it == section.end() || it->second.empty()) return def;
+            return it->second != ult::FALSE_STR;
+        };
+        auto getStr = [&](const char* key, const char* def = "") -> std::string {
+            auto it = section.find(key);
+            return (it != section.end() && !it->second.empty()) ? it->second : def;
+        };
+    
+        // Key combo — ultrahand first, tesla as fallback
+        u64 decodedKeys = hlp::comboStringToKeys(getStr(ult::KEY_COMBO_STR.c_str()));
+        if (!decodedKeys)
+            decodedKeys = hlp::comboStringToKeys(
+                ult::parseValueFromIniSection(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR));
+        if (decodedKeys) tsl::cfg::launchCombo = decodedKeys;
+    
+        // Datetime format
+        ult::datetimeFormat = getStr("datetime_format", ult::DEFAULT_DT_FORMAT.c_str());
+        ult::removeQuotes(ult::datetimeFormat);
+        if (ult::datetimeFormat.empty()) ult::datetimeFormat = ult::DEFAULT_DT_FORMAT;
+    
+        // Language
+        std::string lang = getStr(ult::DEFAULT_LANG_STR.c_str(), "en");
+        if (lang.empty()) lang = "en";
+    
+        #ifdef UI_OVERRIDE_PATH
+        {
+            std::string UI_PATH = UI_OVERRIDE_PATH;
+            ult::preprocessPath(UI_PATH);
+            ult::createDirectory(UI_PATH);
+            const std::string langOverride = UI_PATH + "lang/" + lang + ".json";
+            if (ult::isFile(UI_PATH + "theme.ini"))      ult::THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
+            if (ult::isFile(UI_PATH + "wallpaper.rgba")) ult::WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
+            if (ult::isFile(langOverride))               ult::loadTranslationsFromJSON(langOverride);
+        }
+        #endif
+    
+        // Behavior flags — shared across all overlays
+        ult::useLaunchCombos        = getBool("launch_combos",        true);
+        ult::useNotifications       = getBool("notifications",        true);
+        ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
+        ult::silenceNotifications   = getBool("silence_notifications");
+        ult::useSoundEffects        = getBool("sound_effects",        true);
+        ult::useHapticFeedback      = getBool("haptic_feedback");
+        ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
+        ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
+    
+        // max_notifications — default to 3 so it's always clamped correctly
+        {
+            const std::string maxStr = getStr("max_notifications", "3");
+            const int cap = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
+            tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
+        }
+    
+        // Widget / display flags — shared
+        ult::hideClock              = getBool("hide_clock");
+        ult::hideBattery            = getBool("hide_battery",            true);
+        ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
+        ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
+        ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
+        ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
+        ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
+        ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
+        ult::useDynamicLogo         = getBool("dynamic_logo",            true);
+        ult::useSelectionBG         = getBool("selection_bg",            true);
+        ult::useSelectionText       = getBool("selection_text");
+        ult::useSelectionValue      = getBool("selection_value");
+    
+        #if IS_LAUNCHER_DIRECTIVE
+        // Launcher-only vars that live in ult:: or global scope — readable here
+        hideHidden               = getBool("hide_hidden");
+        ult::usePageSwap         = getBool("page_swap");
+        ult::useRightAlignment   = getBool("right_alignment");
+        #endif
+    
+        // Notifications flag file
+        if (ult::useNotifications) {
+            if (!ult::isFile(ult::NOTIFICATIONS_FLAG_FILEPATH))
+                if (FILE* f = fopen(ult::NOTIFICATIONS_FLAG_FILEPATH.c_str(), "w")) fclose(f);
+        } else {
+            ult::deleteFileOrDirectory(ult::NOTIFICATIONS_FLAG_FILEPATH);
+        }
+    
+        // Theme and language
+        const std::string langFile = ult::LANG_PATH + lang + ".json";
+        if (ult::isFile(langFile)) ult::parseLanguage(langFile);
+        else ult::reinitializeLangVars();
+    
+        tsl::initializeTheme();
+        tsl::initializeThemeVars();
+    }
+}
 
 // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
 int maxNotifications = 3;
