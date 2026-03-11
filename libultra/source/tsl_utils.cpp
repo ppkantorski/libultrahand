@@ -513,7 +513,6 @@ namespace ult {
     std::string INCOMPATIBLE_WARNING;
     std::string SYSTEM_RAM;
     std::string FREE;
-    std::string DEFAULT_CHAR_WIDTH;
     std::string UNAVAILABLE_SELECTION;
     std::string ON;
     std::string OFF;
@@ -723,7 +722,6 @@ namespace ult {
         {&INCOMPATIBLE_WARNING,       "INCOMPATIBLE_WARNING",       "Incompatible on AMS v1.10+"},
         {&SYSTEM_RAM,                 "SYSTEM_RAM",                 "System RAM"},
         {&FREE,                       "FREE",                       "free"},
-        {&DEFAULT_CHAR_WIDTH,         "DEFAULT_CHAR_WIDTH",         "0.33"},
         {&UNAVAILABLE_SELECTION,      "UNAVAILABLE_SELECTION",      "Not available"},
         {&ON,                         "ON",                         "On"},
         {&OFF,                        "OFF",                        "Off"},

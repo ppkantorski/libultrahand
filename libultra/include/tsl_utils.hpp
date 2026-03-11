@@ -435,8 +435,7 @@ namespace ult {
     extern std::string INCOMPATIBLE_WARNING;
     extern std::string SYSTEM_RAM;
     extern std::string FREE;
-
-    extern std::string DEFAULT_CHAR_WIDTH;
+    
     extern std::string UNAVAILABLE_SELECTION;
 
     extern std::string ON;
