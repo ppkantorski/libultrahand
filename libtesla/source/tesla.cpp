@@ -1356,11 +1356,12 @@ void NotificationPrompt::repackSlots_NoLock(u64 now) {
         y += static_cast<float>(getEffectiveHeight(s));
     }
 
-    Slot packed[MAX_VISIBLE];
-    for (int i = 0; i < count; ++i)
-        packed[i] = std::move(slots_[order[i]]);
-    for (int i = 0; i < maxNotifications; ++i)
-        slots_[i] = (i < count) ? std::move(packed[i]) : Slot{};
+    for (int i = 0; i < count; ++i) {
+        if (order[i] == i) continue;
+        slots_[i] = std::move(slots_[order[i]]);
+    }
+    for (int i = count; i < maxNotifications; ++i)
+        slots_[i] = Slot{};
 }
 
 void NotificationPrompt::applyEllipsis(Lines& lines, u8 maxLines,
