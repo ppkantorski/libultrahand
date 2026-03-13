@@ -106,7 +106,7 @@ Color defaultBackgroundColor;
 Color defaultTextColor;
 Color notificationTextColor;
 Color notificationTitleColor;
-Color notificationClockColor;
+Color notificationTimeColor;
 Color headerTextColor;
 Color headerSeparatorColor;
 Color starColor;
@@ -237,7 +237,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"neutral_ram_text_color",          "FFAA00"},
     {"notification_text_color",         "FFFFFF"},
     {"notification_title_color",        "FFFFFF"},
-    {"notification_clock_color",        "AAAAAA"},
+    {"notification_time_color",        "AAAAAA"},
     {"off_text_color",                  "AAAAAA"},
     {"on_text_color",                   "00FFDD"},
     {"overlay_text_color",              "FFFFFF"},
@@ -337,7 +337,7 @@ void initializeThemeVars() {
     defaultTextColor             = getColor("text_color");
     notificationTextColor        = getColor("notification_text_color");
     notificationTitleColor       = getColor("notification_title_color");
-    notificationClockColor       = getColor("notification_clock_color");
+    notificationTimeColor       = getColor("notification_time_color");
     headerTextColor              = getColor("header_text_color");
     headerSeparatorColor         = getColor("header_separator_color");
     starColor                    = getColor("star_color");
@@ -1311,7 +1311,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     const Color fadedBgColor    = fc(defaultBackgroundColor);
     const Color fadedTextColor  = fc(notificationTextColor);
     const Color fadedTitleColor = fc(notificationTitleColor);
-    const Color fadedClockColor = fc(notificationClockColor);
+    const Color fadeTimeColor   = fc(notificationTimeColor);
     const Color fadedEdgeColor  = fc(edgeSeparatorColor);
 
     // ── Layout geometry ──────────────────────────────────────────────────────
@@ -1419,7 +1419,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                 const s32 tsX = g.textAreaX + innerW - tsW;
                 if (tsX > g.textAreaX)
                     renderer->drawNotificationString(slot.data.timestamp, false,
-                        tsX, titleY, TITLE_FONT, fadedClockColor);
+                        tsX, titleY, TITLE_FONT, fadeTimeColor);
             }
 
             for (s32 li = 0; li < lineCount; ++li) {

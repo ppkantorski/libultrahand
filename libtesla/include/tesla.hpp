@@ -359,7 +359,7 @@ namespace tsl {
     extern Color defaultTextColor;
     extern Color notificationTextColor;
     extern Color notificationTitleColor;
-    extern Color notificationClockColor;
+    extern Color notificationTimeColor;
     extern Color headerTextColor;
     extern Color headerSeparatorColor;
     extern Color starColor;
@@ -460,7 +460,7 @@ namespace tsl {
     void initializeThemeVars();
 
     void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
-    
+
 
     extern std::vector<std::string> wrapText(
         const std::string& text,
@@ -11461,7 +11461,8 @@ namespace tsl {
                                             nd.fname    = fname;
                                             nd.text     = textObj->valuestring;
                                             nd.title    = (cJSON_IsString(titleObj) && titleObj->valuestring) ? titleObj->valuestring : "";
-                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 1, 34) : 24;
+                                            nd.fontSize = cJSON_IsNumber(fontSizeObj) ? std::clamp((int)fontSizeObj->valuedouble, 8, 48)
+                                                                                      : (nd.title.empty() ? 26 : 24);
                                             nd.duration = cJSON_IsNumber(durationObj)
                                                 ? ((int)durationObj->valuedouble == 0 ? -1 : std::clamp((int)durationObj->valuedouble, 500, 30000))
                                                 : 0;
