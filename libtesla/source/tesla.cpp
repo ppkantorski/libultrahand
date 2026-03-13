@@ -1314,6 +1314,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     const Color fadedTitleColor = fc(notificationTitleColor);
     const Color fadeTimeColor   = fc(notificationTimeColor);
     const Color fadedEdgeColor  = fc(edgeSeparatorColor);
+    const Color fadedSeparatorColor = fc(separatorColor); 
 
     // ── Layout geometry ──────────────────────────────────────────────────────
     const s32 x = ult::useRightAlignment
@@ -1409,7 +1410,8 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
             else {
             #endif
                 renderer->drawNotificationString(slot.data.title, false,
-                    titleTextAreaX, titleY, TITLE_FONT, fadedTitleColor);
+                    titleTextAreaX, titleY, TITLE_FONT, fadedTitleColor,
+                    0, true, &fadedSeparatorColor, &s_dividerSpecialChars);
             #if IS_LAUNCHER_DIRECTIVE
             }
             #endif
@@ -1435,7 +1437,8 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                         : titleTextAreaX + (innerW - lw) / 2;
                 }
                 renderer->drawNotificationString(lines[li], false, msgX,
-                    messageY + li * lineStep, fontSize, fadedTextColor);
+                    messageY + li * lineStep, fontSize, fadedTextColor,
+                    0, true, &fadedSeparatorColor, &s_dividerSpecialChars);
             }
 
         } else {
@@ -1478,7 +1481,8 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                         ? renderer->getNotificationTextDimensions(line, false, fontSize).first
                         : 0;
                     renderer->drawNotificationString(line, false,
-                        alignedX(lw), lineY, fontSize, fadedTextColor);
+                        alignedX(lw), lineY, fontSize, fadedTextColor,
+                        0, true, &fadedSeparatorColor, &s_dividerSpecialChars);
                 }
             }
         }
@@ -1498,7 +1502,9 @@ void NotificationPrompt::drawUltrahandLine(gfx::Renderer* renderer, const std::s
     auto fc = [&](Color c) { return applyAlpha(c, fadeAlpha); };
     const size_t up = line.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME);
     if (up == std::string::npos) {
-        renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor));
+        const Color fadedSep = applyAlpha(separatorColor, fadeAlpha);
+        renderer->drawNotificationString(line, false, x, y, fontSize, fc(textColor),
+            0, true, &fadedSep, &s_dividerSpecialChars);
         return;
     }
     const std::string  before = line.substr(0, up);
