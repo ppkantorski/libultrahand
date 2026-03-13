@@ -983,8 +983,9 @@ bool NotificationPrompt::hasActiveFile(std::string_view fname) const {
 }
 
 int NotificationPrompt::findHitSlot_NoLock(s32 tx, s32 ty) const {
-    const s32 sx = ult::useRightAlignment
-        ? static_cast<s32>(tsl::cfg::FramebufferWidth) - NOTIF_WIDTH : 0;
+    const s32 sx = (ult::useRightAlignment
+        ? static_cast<s32>(tsl::cfg::FramebufferWidth) - NOTIF_WIDTH
+        : 0) + static_cast<s32>(ult::layerEdge);
     for (int i = 0; i < maxNotifications; ++i) {
         const Slot& slot = slots_[i];
         if (!(slot.flags & SLOT_ACTIVE) || slot.data.state == PromptState::Inactive) continue;
