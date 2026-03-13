@@ -9690,16 +9690,16 @@ namespace tsl {
                         evictSlot_NoLock(0);
                         skipFadeIn = true;
                     } else {
-                        bool moved = false;
-                        for (int j = 1; j < maxNotifications; ++j) {
-                            if (!(slots_[j].flags & SLOT_ACTIVE)) {
-                                slots_[j] = std::move(s0);
-                                slots_[0] = Slot{};
-                                moved = true;
-                                break;
-                            }
+                        // Delay bottom-most only if all slots are full
+                        if (slots_[maxNotifications - 1].flags & SLOT_ACTIVE) {
+                            if (pending_queue_.size() < MAX_NOTIFS)
+                                pending_queue_.push(std::move(slots_[maxNotifications - 1].data));
+                            slots_[maxNotifications - 1] = Slot{};
                         }
-                        if (!moved) evictSlot_NoLock(0);
+                        // Shift all slots down by one to make room at slot 0
+                        for (int j = maxNotifications - 1; j >= 1; --j)
+                            slots_[j] = std::move(slots_[j - 1]);
+                        slots_[0] = Slot{};
                     }
                 }
                 placeInSlot_NoLock(0, std::move(data), true, skipFadeIn);

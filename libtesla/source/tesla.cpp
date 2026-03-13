@@ -1036,7 +1036,8 @@ void NotificationPrompt::update() {
                                > static_cast<s32>(tsl::cfg::FramebufferHeight);
         if (outOfBounds) {
             slot.data.stateStartNs = now;
-            slot.data.expireNs     = now + static_cast<u64>(slot.data.durationMs) * 1'000'000ULL
+            if (slot.data.durationMs != 0)
+                slot.data.expireNs = now + static_cast<u64>(slot.data.durationMs) * 1'000'000ULL
                                    + FADE_DURATION_MS * 1'000'000ULL;
         } else if (slot.flags & SLOT_SOUND_PENDING) {
             slot.flags &= ~SLOT_SOUND_PENDING;
@@ -1399,8 +1400,8 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                                     + (lineCount - 1) * 3
                                   : 0);
             const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
-            const s32 titleY   = originY + titleFm.ascent - 3;
-            const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1;
+            const s32 titleY   = originY + titleFm.ascent - 3 + 1;
+            const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1+2;
 
             #if IS_LAUNCHER_DIRECTIVE
             if (slot.data.title.find(ult::CAPITAL_ULTRAHAND_PROJECT_NAME) != std::string::npos)
