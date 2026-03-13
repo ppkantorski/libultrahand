@@ -460,11 +460,7 @@ namespace tsl {
     void initializeThemeVars();
 
     void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
-
-    //#if !IS_LAUNCHER_DIRECTIVE
-    //// Defined in tesla.cpp — reads Ultrahand settings INI (non-launcher overlays only)
-    //void initializeUltrahandSettings();
-    //#endif
+    
 
     extern std::vector<std::string> wrapText(
         const std::string& text,

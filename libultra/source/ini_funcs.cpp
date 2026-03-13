@@ -1347,8 +1347,16 @@ namespace ult {
                 argEnd = pos;
             }
             
-            if (argEnd >= argStart) {
-                commandParts.emplace_back(argStart, argEnd - argStart);
+            //if (argEnd >= argStart) {
+            //    commandParts.emplace_back(argStart, argEnd - argStart);
+            //}
+
+            if (argEnd > argStart) {
+                // Skip standalone "=" — it's the INI assignment separator (key = value),
+                // never a meaningful command argument.
+                if (!(argEnd - argStart == 1 && *argStart == '=')) {
+                    commandParts.emplace_back(argStart, argEnd - argStart);
+                }
             }
         }
         
@@ -1372,13 +1380,13 @@ namespace ult {
         if (!packageFile) return {};
         
         std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options;
-        options.reserve(32); // Reserve reasonable capacity
+        //options.reserve(32); // Reserve reasonable capacity
         
         auto bufferPtr = std::make_unique<char[]>(1024);
         char* buffer = bufferPtr.get();
         std::string currentSection;
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(16);
+        //sectionCommands.reserve(16);
     
         while (fgets(buffer, 1024, packageFile)) {
             size_t len = strlen(buffer);
@@ -1395,7 +1403,7 @@ namespace ult {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
                     sectionCommands = std::vector<std::vector<std::string>>();
-                    sectionCommands.reserve(16);
+                    //sectionCommands.reserve(16);
                 }
                 currentSection.assign(buffer + 1, len - 2);
             } else if (!currentSection.empty()) {
@@ -1430,7 +1438,7 @@ namespace ult {
         if (!packageFile) return {};
         
         std::vector<std::vector<std::string>> sectionCommands;
-        sectionCommands.reserve(16);
+        //sectionCommands.reserve(16);
         
         auto bufferPtr = std::make_unique<char[]>(1024);
         char* buffer = bufferPtr.get();
