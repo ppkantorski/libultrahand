@@ -1417,8 +1417,9 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
             if (slot.data.showTime && slot.data.timestamp[0] != '\0') {
                 const s32 tsW = renderer->getNotificationTextDimensions(
                                     slot.data.timestamp, false, TITLE_FONT).first;
-                const s32 tsX = g.textAreaX + innerW - tsW;
-                if (tsX > g.textAreaX)
+                const s32 tsRightEdge = x + NOTIF_WIDTH - g.baseIconPad - 2;
+                const s32 tsX = tsRightEdge - tsW;
+                if (tsX > titleTextAreaX)
                     renderer->drawNotificationString(slot.data.timestamp, false,
                         tsX, titleY, TITLE_FONT, fadeTimeColor);
             }
