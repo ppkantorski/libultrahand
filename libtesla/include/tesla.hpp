@@ -6734,10 +6734,10 @@ namespace tsl {
             }
         
             inline void setText(const std::string& text) {
-                if (m_text != text) [[likely]] {
+                if (m_text_clean != text) [[likely]] {
                     m_text = text;
                     m_text_clean = m_text;
-                    ult::removeTag(m_text_clean);
+                    if (!m_flags.m_keepTag) ult::removeTag(m_text_clean);
                     resetTextProperties();
                     applyInitialTranslations();
                 }
@@ -6810,6 +6810,10 @@ namespace tsl {
                 m_flags.m_isTouchHolding = false;
             }
 
+            inline void setKeepTag(bool keep) {
+                m_flags.m_keepTag = keep;
+                setText(m_text);
+            }
             
             inline const std::string& getText() const noexcept {
                 return m_text;
@@ -6850,6 +6854,7 @@ namespace tsl {
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
             struct {
+                bool m_keepTag : 1;
                 bool m_scroll : 1;
                 bool m_truncated : 1;
                 bool m_faint : 1;
