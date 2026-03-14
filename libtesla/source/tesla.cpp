@@ -325,9 +325,11 @@ void initializeThemeVars() {
         return ult::stoi(getValue(key));
     };
 
-    #if IS_LAUNCHER_DIRECTIVE
+
     logoColor1      = getColor("logo_color_1");
     logoColor2      = getColor("logo_color_2");
+    
+    #if IS_LAUNCHER_DIRECTIVE
     dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
     dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
     #endif
