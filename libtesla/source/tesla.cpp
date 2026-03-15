@@ -328,7 +328,7 @@ void initializeThemeVars() {
 
     logoColor1      = getColor("logo_color_1");
     logoColor2      = getColor("logo_color_2");
-    
+
     #if IS_LAUNCHER_DIRECTIVE
     dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
     dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
@@ -1001,7 +1001,7 @@ int NotificationPrompt::findHitSlot_NoLock(s32 tx, s32 ty) const {
 }
 
 void NotificationPrompt::draw(gfx::Renderer* renderer, bool promptOnly) {
-    if (ult::launchingOverlay.load(std::memory_order_acquire) || isStale()) return;
+    if (isStale()) return;
     if (!enabled_.load(std::memory_order_acquire)) return;
 
     std::lock_guard<std::mutex> lg(state_mutex_);
