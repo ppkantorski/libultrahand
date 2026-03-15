@@ -170,7 +170,8 @@ inline std::atomic<bool> screenshotsAreDisabled{false};
 inline std::atomic<bool> screenshotsAreForceDisabled{false};
 
 inline bool hideHidden = false;
-inline bool usingFocusColor = true;
+inline bool usingUnfocusedColor = true;
+inline bool bypassUnfocused = false;
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
@@ -4423,7 +4424,7 @@ namespace tsl {
     
                 renderer->drawStringWithColoredSections(currentBottomLine, false, tsl::s_footerSpecialChars,
                                                         buttonStartX, 693, 23, bottomTextColor, buttonColor);
-                if (_hasOkBtn && !usingFocusColor) {
+                if (_hasOkBtn && !usingUnfocusedColor) {
                     static const std::string okOverdraw = "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                     renderer->drawStringWithColoredSections(okOverdraw, false, tsl::s_footerSpecialChars,
                                                             buttonStartX + _backWidth, 693, 23, unfocusedColor, unfocusedColor);
@@ -4755,7 +4756,7 @@ namespace tsl {
                 if (!deactivateOriginalFooter) {
                     renderer->drawStringWithColoredSections(menuBottomLine, false, tsl::s_footerSpecialChars,
                                                             buttonStartX, 693, 23, bottomTextColor, buttonColor);
-                    if (!m_noClickableItems && !usingFocusColor) {
+                    if (!m_noClickableItems && !usingUnfocusedColor) {
                         renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
                                                                 tsl::s_footerSpecialChars,
                                                                 buttonStartX + ult::backWidth.load(std::memory_order_acquire),
@@ -4918,7 +4919,7 @@ namespace tsl {
                                                         {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
                                                         buttonStartX, 693, 23,
                                                         bottomTextColor, buttonColor);
-                if (!usingFocusColor) {
+                if (!usingUnfocusedColor) {
                     renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
                                                             {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
                                                             buttonStartX + _backWidth, 693, 23,
@@ -10483,12 +10484,16 @@ namespace tsl {
                 static u64 focusLostTime_ns = 0;
                 static constexpr u64 UNFOCUS_DELAY_NS = 10'000'000ULL;
                 if (currentFocus) {
-                    usingFocusColor = true;
+                    usingUnfocusedColor = true;
                     focusLostTime_ns = 0;
                 } else {
-                    const u64 now = ult::nowNs();
-                    if (focusLostTime_ns == 0) focusLostTime_ns = now;
-                    if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) usingFocusColor = false;
+                    if (!bypassUnfocused) {
+                        const u64 now = ult::nowNs();
+                        if (focusLostTime_ns == 0) focusLostTime_ns = now;
+                        if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) usingUnfocusedColor = false;
+                    } else {
+                        usingUnfocusedColor = true;
+                    }
                 }
             }
 
@@ -10821,7 +10826,7 @@ namespace tsl {
                     shouldTriggerRumble = true;
             };
             checkTouched(backTouched,     ult::touchingBack);
-            if (usingFocusColor) checkTouched(selectTouched, ult::touchingSelect);
+            if (usingUnfocusedColor) checkTouched(selectTouched, ult::touchingSelect);
             checkTouched(nextPageTouched, ult::touchingNextPage);
             if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
                 if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) ||
@@ -10834,7 +10839,7 @@ namespace tsl {
 
             if (touchDetected) {
                 lastSimulatedTouch = {backTouched, selectTouched, nextPageTouched, menuTouched};
-                ult::interruptedTouch.store((keysHeld & ALL_KEYS_MASK) != 0, std::memory_order_release);
+                ult::interruptedTouch.store(!(touchPos.y > static_cast<u32>(cfg::FramebufferHeight - 73U + 1)) && (keysHeld & ALL_KEYS_MASK) != 0, std::memory_order_release);
 
                 const u32 xd = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));
                 const u32 yd = std::abs(static_cast<s32>(initialTouchPos.y) - static_cast<s32>(touchPos.y));

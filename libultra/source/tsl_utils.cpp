@@ -977,7 +977,7 @@ namespace ult {
         }
         
         // Get the current time in nanoseconds
-        const uint64_t now_ns = armTicksToNs(armGetSystemTick());
+        const uint64_t now_ns = nowNs();
         
         // 3 seconds in nanoseconds
         static constexpr uint64_t min_delay_ns = 3000000000ULL;
