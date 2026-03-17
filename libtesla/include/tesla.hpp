@@ -9884,7 +9884,7 @@ namespace tsl {
         #endif
     };
 
-    static inline NotificationPrompt* notification = nullptr;
+    inline NotificationPrompt* notification = nullptr;
 
 
     // GUI
