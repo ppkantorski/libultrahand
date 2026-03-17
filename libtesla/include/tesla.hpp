@@ -286,20 +286,20 @@ namespace tsl {
     
     // Ultra-fast version - zero variables, optimized calculations
     inline constexpr Color GradientColor(float temperature) {
-        if (temperature <= 35.0f) return Color(7, 7, 15, 0xFF);
-        if (temperature >= 65.0f) return Color(15, 0, 0, 0xFF);
+        if (temperature <= 35.0f) return Color(7, 7, 15, 0xF);
+        if (temperature >= 65.0f) return Color(15, 0, 0, 0xF);
         
         if (temperature < 45.0f) {
             // Single calculation, avoid repetition
             const float factor = (temperature - 35.0f) * 0.1f;
-            return Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xFF);
+            return Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xF);
         }
         
         if (temperature < 55.0f) {
-            return Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xFF);
+            return Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xF);
         }
         
-        return Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xFF);
+        return Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xF);
     }
 
 
@@ -6557,6 +6557,7 @@ namespace tsl {
             u32 width, height;
             u64 m_touchStartTime_ns;
             bool isLocked = false;
+            bool m_touched = false;
 
             u64 m_shortHoldKey = KEY_Y;
             u64 m_longHoldKey = KEY_X;
@@ -6575,7 +6576,7 @@ namespace tsl {
             virtual ~ListItem() = default;
         
             virtual void draw(gfx::Renderer *renderer) override {
-                const bool useClickTextColor = m_flags.m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
+                const bool useClickTextColor = m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
                 if (useClickTextColor && !m_flags.m_isTouchHolding) [[unlikely]]
                     renderer->drawRectAdaptive(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
@@ -6673,7 +6674,7 @@ namespace tsl {
         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 if (event == TouchEvent::Touch) [[likely]] {
-                    if ((m_flags.m_touched = inBounds(currX, currY))) [[likely]] {
+                    if ((m_touched = inBounds(currX, currY))) [[likely]] {
                         m_touchStartTime_ns = ult::nowNs();
                         m_flags.m_isTouchHolding = false;  // Will be set to true when hold activates
                         m_flags.m_shortThresholdCrossed = false;
@@ -6682,7 +6683,7 @@ namespace tsl {
                     }
                 }
                 
-                if (event == TouchEvent::Hold && m_flags.m_touched) [[likely]] {
+                if (event == TouchEvent::Hold && m_touched) [[likely]] {
                     const u64 touchDuration_ns = ult::nowNs() - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
@@ -6705,8 +6706,8 @@ namespace tsl {
                     return true;  // Keep handling hold
                 }
             
-                if (event == TouchEvent::Release && m_flags.m_touched) [[likely]] {
-                    m_flags.m_touched = false;
+                if (event == TouchEvent::Release && m_touched) [[likely]] {
+                    m_touched = false;
                     const bool wasHolding = m_flags.m_isTouchHolding;
                     m_flags.m_isTouchHolding = false;  // Stop tracking hold on release
                     
@@ -6859,7 +6860,6 @@ namespace tsl {
                 bool m_scroll : 1;
                 bool m_truncated : 1;
                 bool m_faint : 1;
-                bool m_touched : 1;
                 bool m_hasCustomTextColor : 1;
                 bool m_hasCustomValueColor : 1;
                 bool m_useClickAnimation : 1;
@@ -7485,7 +7485,7 @@ namespace tsl {
                     if (!m_scroll) m_scroll = true;
                     handleScrolling();
             
-                    renderer->enableScissoring(textX, textY - fontHeight, m_maxWidth, fontHeight + 8);
+                    renderer->enableScissoring(textX, ult::activeHeaderHeight-8, m_maxWidth, cfg::FramebufferHeight - 73 - (ult::activeHeaderHeight-8));
                     renderer->drawStringWithColoredSections(
                         m_scrollText, false, s_dividerSpecialChars,
                         textX - static_cast<s32>(m_scrollOffset),
@@ -10839,6 +10839,7 @@ namespace tsl {
 
             if (touchDetected) {
                 lastSimulatedTouch = {backTouched, selectTouched, nextPageTouched, menuTouched};
+                //const bool touchInFooter = (touchPos.y > static_cast<u32>(cfg::FramebufferHeight - 73U + 1));
                 ult::interruptedTouch.store(!(touchPos.y > static_cast<u32>(cfg::FramebufferHeight - 73U + 1)) && (keysHeld & ALL_KEYS_MASK) != 0, std::memory_order_release);
 
                 const u32 xd = std::abs(static_cast<s32>(initialTouchPos.x) - static_cast<s32>(touchPos.x));

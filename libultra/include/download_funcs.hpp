@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <switch.h>
 
+#include <sys/select.h>
 #define CURL_DISABLE_DEFLATE
 #include <curl/curl.h>
 #include <zlib.h>
