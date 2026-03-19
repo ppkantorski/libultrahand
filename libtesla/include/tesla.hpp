@@ -2187,7 +2187,7 @@ namespace tsl {
             
             inline void processBMPChunk(const u32 x, const u32 y, const s32 imageW, const u8 *preprocessedData, 
                                          const s32 startRow, const s32 endRow, const u8 globalAlphaLimit,
-                                         const bool useBarrier = true) {
+                                         const bool useBarrier = true, const bool preserveAlpha = false) {
                 const s32 bytesPerRow = imageW * 2;
                 const s32 endX16 = imageW & ~15;
                 const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
@@ -2200,7 +2200,7 @@ namespace tsl {
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
                     const u32 baseY = y + y1;
             
-                    if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max))
+                    if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max)) [[unlikely]]
                         continue;
             
                     const u32 yPart = ((((baseY & 127) >> 4) + ((baseY >> 7) * offsetWidthVar)) << 9)
@@ -2228,9 +2228,9 @@ namespace tsl {
             
                         for (int i = 0; i < 16; ++i) {
                             const u8 a = alpha_vals[i];
-                            if (a == 0) continue;
+                            if (a == 0) [[unlikely]] continue;
                             const u32 px = baseX + i;
-                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) [[unlikely]] continue;
                             const u32 offset = yPart + ((px >> 5) << 12)
                                              + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
                             const Color src = framebuffer[offset];
@@ -2238,7 +2238,7 @@ namespace tsl {
                                 blendColor(src.r, red_vals[i], a),
                                 blendColor(src.g, green_vals[i], a),
                                 blendColor(src.b, blue_vals[i], a),
-                                src.a
+                                static_cast<u8>(preserveAlpha ? src.a : (a + ((src.a * (0xF - a)) >> 4)))
                             };
                         }
                     }
@@ -2247,9 +2247,9 @@ namespace tsl {
                         const u8 p1 = rowPtr[x1 << 1];
                         const u8 p2 = rowPtr[(x1 << 1) + 1];
                         const u8 alpha = std::min(static_cast<u8>(p2 & 0x0F), globalAlphaLimit);
-                        if (alpha == 0) continue;
+                        if (alpha == 0) [[unlikely]] continue;
                         const u32 px = x + x1;
-                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) [[unlikely]] continue;
                         const u32 offset = yPart + ((px >> 5) << 12)
                                          + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
                         const Color bg = framebuffer[offset];
@@ -2257,7 +2257,7 @@ namespace tsl {
                             blendColor(bg.r, static_cast<u8>(p1 >> 4), alpha),
                             blendColor(bg.g, static_cast<u8>(p1 & 0x0F), alpha),
                             blendColor(bg.b, static_cast<u8>(p2 >> 4), alpha),
-                            bg.a
+                            static_cast<u8>(preserveAlpha ? bg.a : (alpha + ((bg.a * (0xF - alpha)) >> 4)))
                         };
                     }
                 }
@@ -2267,20 +2267,19 @@ namespace tsl {
             }
             
             inline void drawBitmapRGBA4444(const u32 x, const u32 y, const u32 imageW, const u32 imageH, 
-                                            const u8 *preprocessedData, float opacity = 1.0f) {
+                                            const u8 *preprocessedData, float opacity = 1.0f, bool preserveAlpha = false) {
                 const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
                 
                 if (imageW < 448) {
-                    processBMPChunk(x, y, imageW, preprocessedData, 0, imageH, globalAlphaLimit, false);
+                    processBMPChunk(x, y, imageW, preprocessedData, 0, imageH, globalAlphaLimit, false, preserveAlpha);
                     return;
                 }
-                
                 
                 for (unsigned i = 0; i < ult::numThreads; ++i) {
                     const u32 startRow = i * ult::bmpChunkSize;
                     const u32 endRow = std::min(startRow + ult::bmpChunkSize, imageH);
-                    ult::renderThreads[i] = std::thread([this, x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit](){
-                        processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true);
+                    ult::renderThreads[i] = std::thread([this, x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, preserveAlpha](){
+                        processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true, preserveAlpha);
                     });
                 }
                 for (auto& t : ult::renderThreads) t.join();
@@ -2297,7 +2296,7 @@ namespace tsl {
                     !ult::refreshWallpaper.load(std::memory_order_acquire) && 
                     ult::correctFrameSize) {
                     drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, 
-                                      ult::wallpaperData.data(), Renderer::s_opacity);
+                                      ult::wallpaperData.data(), Renderer::s_opacity, true);
                 }
                 
                 ult::inPlot.store(false, std::memory_order_release);
@@ -3219,7 +3218,7 @@ namespace tsl {
 
             inline u32 __attribute__((always_inline)) getPixelOffset(const u32 x, const u32 y) {
                 // Check for scissoring boundaries
-                if (!this->m_scissoringStack.empty()) {
+                if (!this->m_scissoringStack.empty()) [[unlikely]] {
                     const auto& currScissorConfig = this->m_scissoringStack.top();
                     if (x < currScissorConfig.x || y < currScissorConfig.y || 
                         x >= currScissorConfig.x_max || 
@@ -7714,9 +7713,10 @@ namespace tsl {
              * @param units Units text for V2 style
              */
             TrackBar(const char icon[3], bool usingStepTrackbar=false, bool usingNamedStepTrackbar = false, 
-                    bool useV2Style = false, const std::string& label = "", const std::string& units = "") 
+                    bool useV2Style = false, const std::string& label = "", const std::string& units = "",
+                    bool unlockedTrackbar = true) 
                 : m_icon(icon), m_usingStepTrackbar(usingStepTrackbar), m_usingNamedStepTrackbar(usingNamedStepTrackbar),
-                  m_useV2Style(useV2Style), m_label(label), m_units(units) {
+                  m_unlockedTrackbar(unlockedTrackbar), m_useV2Style(useV2Style), m_label(label), m_units(units) {
                 m_isItem = true;
             }
 
@@ -7732,7 +7732,6 @@ namespace tsl {
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
-
             
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
@@ -7742,9 +7741,44 @@ namespace tsl {
                 static u64 lastUpdate_ns = currentTime_ns;
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
             
-                if (keysDown & KEY_A) {
-                    this->triggerClickAnimation();
-                    triggerEnterFeedback();
+                // KEY_R + directional: shake highlight (same as V2)
+                if (keysHeld & KEY_R) {
+                    if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Up);
+                    else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Down);
+                    else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Left);
+                    else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Right);
+                    return true;
+                }
+            
+                // KEY_A: lock/unlock toggle (when locked), or click animation (when unlocked)
+                if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
+                    if (!m_unlockedTrackbar) {
+                        ult::atomicToggle(ult::allowSlide);
+                        m_holding = false;
+                        if (ult::allowSlide.load(std::memory_order_acquire)) {
+                            // Unlocking: rumble + on sound only, no click animation, no enter feedback
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        } else {
+                            // Locking: rumble + off sound only, no click animation
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOffSound.store(true, std::memory_order_release);
+                        }
+                    } else {
+                        // Always-unlocked trackbar: full click animation + enter feedback
+                        this->triggerClickAnimation();
+                        triggerEnterFeedback();
+                    }
+                    return true;
+                }
+            
+                // Guard all movement behind lock state
+                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                    return false;
                 }
             
                 static s16 lastHapticSegment = -1;
@@ -7776,7 +7810,6 @@ namespace tsl {
                     m_holdStartTime_ns = currentTime_ns;
                     lastUpdate_ns = currentTime_ns;
                     
-                    // Perform initial single tick
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
@@ -7803,12 +7836,10 @@ namespace tsl {
                 if (m_holding && ((keysHeld & KEY_LEFT) || (keysHeld & KEY_RIGHT))) {
                     const u64 holdDuration_ns = currentTime_ns - m_holdStartTime_ns;
             
-                    // Initial delay before repeating starts
-                    static constexpr u64 initialDelay_ns = 300000000ULL;  // 300ms
-                    // Calculate interval with acceleration
-                    static constexpr u64 initialInterval_ns = 67000000ULL;  // ~67ms
-                    static constexpr u64 shortInterval_ns = 10000000ULL;    // ~10ms
-                    static constexpr u64 transitionPoint_ns = 1000000000ULL; // 1 second
+                    static constexpr u64 initialDelay_ns = 300000000ULL;
+                    static constexpr u64 initialInterval_ns = 67000000ULL;
+                    static constexpr u64 shortInterval_ns = 10000000ULL;
+                    static constexpr u64 transitionPoint_ns = 1000000000ULL;
             
                     if (holdDuration_ns < initialDelay_ns) {
                         return true;
@@ -7857,78 +7888,79 @@ namespace tsl {
             }
                         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                const u16 trackBarWidth = this->getWidth() - 95;
-                const u16 handlePos = (trackBarWidth * (this->m_value - 0)) / (100 - 0);
-                const s32 circleCenterX = this->getX() + 59 + handlePos;
-                const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
+                s32 trackBarLeft = this->getX() + 59;
+                s32 width        = this->getWidth() - 95;
+            
+                if (m_icon[0] != '\0') {
+                    const s32 iconOffset = 14 + 23;
+                    trackBarLeft += iconOffset;
+                    width        -= iconOffset;
+                }
+            
+                const s32 trackBarRight = trackBarLeft + width;
+                const u16 handlePos     = (width * this->m_value) / 100;
+                const s32 circleCenterX = trackBarLeft + handlePos;
+                const s32 circleCenterY = this->getY() + 40 + 16 - 3 - ((!m_usingNamedStepTrackbar && !m_useV2Style) ? 11 : 0);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 static s16 lastHapticSegment = -1;
-                
+            
                 const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
-                
-                // Check horizontal bounds only (allow vertical drift)
-                const s32 trackBarLeft = this->getX() + 59;
-                const s32 trackBarRight = trackBarLeft + trackBarWidth;
                 const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
-                
+            
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
                     lastHapticSegment = -1;
-                    
+            
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
                     }
-                    
+            
                     touchInSliderBounds = false;
                     return false;
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
-                    // If we were touching but now went out of horizontal bounds, clamp to edge value then stop
                     if (touchInSliderBounds && !currentlyInHorizontalBounds) {
-                        // Clamp to max if past right edge, min if past left edge
                         if (currX > trackBarRight) {
                             this->m_value = 100;
                         } else if (currX < trackBarLeft) {
                             this->m_value = 0;
                         }
                         this->m_valueChangedListener(this->getProgress());
-                        
+            
                         touchInSliderBounds = false;
                         return false;
                     }
-                    
-                    // Only update if we're still in horizontal bounds
+            
                     if (currentlyInHorizontalBounds) {
-                        if (triggerOnce){
+                        if (triggerOnce) {
                             triggerOnce = false;
                             triggerRumbleClick.store(true, std::memory_order_release);
                             triggerOnSound.store(true, std::memory_order_release);
                         }
                         touchInSliderBounds = true;
-                        
-                        s16 newValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * 100;
-                        
+            
+                        s16 newValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(width)) * 100;
+            
                         if (newValue < 0) {
                             newValue = 0;
                         } else if (newValue > 100) {
                             newValue = 100;
                         }
-                
+            
                         if (newValue != this->m_value) {
                             this->m_value = newValue;
                             this->m_valueChangedListener(this->getProgress());
-                            
+            
                             const s16 currentSegment = (this->m_value * 10) / 100;
-                            
                             if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                                 lastHapticSegment = currentSegment;
                                 triggerNavigationFeedback();
                             }
                         }
-                
+            
                         return true;
                     }
                 }
@@ -7955,30 +7987,29 @@ namespace tsl {
                 } else {
                     m_drawFrameless = false;
                 }
-
-
+            
                 s32 xPos = this->getX() + 59;
-                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 yPos = this->getY() + 40 + 16 - 3;
                 s32 width = this->getWidth() - 95;
                 const int maxValue = (m_usingStepTrackbar || m_usingNamedStepTrackbar) 
                                      ? ((100 / (this->m_numSteps - 1)) * (this->m_numSteps - 1))
                                      : 100;
                 u16 handlePos = width * (this->m_value) / maxValue;
-
-                if (!m_usingNamedStepTrackbar) {
+            
+                if (!m_usingNamedStepTrackbar && !m_useV2Style) {
                     yPos -= 11;
                 }
-
+            
                 s32 iconOffset = 0;
-
-                if (!m_useV2Style && m_icon[0] != '\0') {
+            
+                if (m_icon[0] != '\0') {
                     s32 iconWidth = 23;
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
                     width -= iconOffset;
                     handlePos = (width) * (this->m_value) / (100);
                 }
-
+            
                 // Draw step tick marks if this is a step trackbar
                 if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
                     const u8 numSteps = m_numSteps;
@@ -8002,26 +8033,27 @@ namespace tsl {
                         renderer->drawRect(stepX, baseY, 1, 8, stepColor);
                     }
                 }
-
+            
                 // Draw track bar background
                 drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
-
+            
+                const bool isEffectivelyUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
+            
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
-                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((isEffectivelyUnlocked || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
-
-                // Draw icon (original style) or label + value (V2 style)
+            
+                // Draw icon (always if provided), then label + value (V2 style)
                 if (m_useV2Style) {
-                    // V2 Style: Draw label and value
                     std::string labelPart = this->m_label;
                     ult::removeTag(labelPart);
                 
@@ -8035,18 +8067,21 @@ namespace tsl {
                     }
                 
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
-                
-                    renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
+                    const s32 labelX = xPos;
+                    const s32 valueX = xPos + width - valueWidth;
+            
+                    renderer->drawString(labelPart, false, labelX, this->getY() + 14 + 16, 16, 
                                        ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
-
-                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
-                } else {
-                    // Original Style: Draw icon
+                    renderer->drawString(valuePart, false, valueX, this->getY() + 14 + 16, 16, 
+                                       (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
+            
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
+                } else {
+                    if (m_icon[0] != '\0')
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
                 }
-
-
+            
                 if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
@@ -8063,18 +8098,11 @@ namespace tsl {
 
             virtual void drawHighlight(gfx::Renderer *renderer) override {
                 
-                // Get current time using ARM system tick for animation timing
                 const u64 currentTime_ns = ult::nowNs();
-                
-                // High precision time calculation - matches standard cosine wave timing
                 const double time_seconds = static_cast<double>(currentTime_ns) / 1000000000.0;
-                
-                // Standard cosine wave calculation with high precision
                 progress = (ult::cos(2.0 * ult::_M_PI * std::fmod(time_seconds, 1.0) - ult::_M_PI / 2) + 1.0) / 2.0;
             
-                // Determine which colors to interpolate based on animation state
                 if (m_clickAnimationActive) {
-                    // Handle click animation color transition
                     Color clickColor1 = highlightColor1;
                     Color clickColor2 = clickColor;
                     
@@ -8089,11 +8117,14 @@ namespace tsl {
                         m_clickAnimationActive = false;
                     }
                 } else {
-                    // Normal highlight animation
-                    s_highlightColor = lerpColor(highlightColor1, highlightColor2, progress);
+                    // Use dim colors when locked, bright colors when unlocked
+                    if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                        s_highlightColor = lerpColor(highlightColor3, highlightColor4, progress);
+                    } else {
+                        s_highlightColor = lerpColor(highlightColor1, highlightColor2, progress);
+                    }
                 }
                 
-                // Initialize position offsets
                 x = 0;
                 y = 0;
                 
@@ -8106,14 +8137,9 @@ namespace tsl {
                     if (t_ms >= SHAKE_DURATION_MS)
                         this->m_highlightShaking = false;
                     else {
-                        // Generate random amplitude only once per shake using the start time as seed
                         const double amplitude = 6.0 + ((this->m_highlightShakingStartTime / 1000000) % 5);
-                        const double progress = t_ms / SHAKE_DURATION_MS; // 0 to 1
-                        
-                        // Lighter damping so both bounces are visible
+                        const double progress = t_ms / SHAKE_DURATION_MS;
                         const double damping = 1.0 / (1.0 + 2.5 * progress * (1.0 + 1.3 * progress));
-                        
-                        // 2 full oscillations = 2 clear bounces
                         const double oscillation = ult::cos(ult::_M_PI * 4.0 * progress);
                         const double displacement = amplitude * oscillation * damping;
                         const int offset = static_cast<int>(displacement);
@@ -8132,7 +8158,6 @@ namespace tsl {
                     if (ult::useSelectionBG) {
                         renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
                     }
-                    
                     renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
                 } else {
                     if (ult::useSelectionBG) {
@@ -8140,10 +8165,8 @@ namespace tsl {
                     }
                 }
             
-            
                 ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
                 
-                // Click animation rendering - checking if animation is active
                 if (this->m_clickAnimationActive) {
                     const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
             
@@ -8250,8 +8273,9 @@ namespace tsl {
              * @param units Units text for V2 style
              */
             StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false,
-                        bool useV2Style = false, const std::string& label = "", const std::string& units = "")
-                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units), m_numSteps(numSteps) { }
+                        bool useV2Style = false, const std::string& label = "", const std::string& units = "",
+                        bool unlockedTrackbar = true)
+                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units, unlockedTrackbar), m_numSteps(numSteps) {}
 
             virtual ~StepTrackBar() {}
 
@@ -8263,14 +8287,49 @@ namespace tsl {
                 static u64 lastUpdate_ns = currentTime_ns;
                 const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
             
-                if (keysDown & KEY_A) {
-                    this->triggerClickAnimation();
-                    triggerEnterFeedback();
+                // KEY_R + directional: shake highlight
+                if (keysHeld & KEY_R) {
+                    if (keysDown & KEY_UP && !(keysHeld & ~KEY_UP & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Up);
+                    else if (keysDown & KEY_DOWN && !(keysHeld & ~KEY_DOWN & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Down);
+                    else if (keysDown & KEY_LEFT && !(keysHeld & ~KEY_LEFT & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Left);
+                    else if (keysDown & KEY_RIGHT && !(keysHeld & ~KEY_RIGHT & ~KEY_R & ALL_KEYS_MASK))
+                        this->shakeHighlight(FocusDirection::Right);
+                    return true;
+                }
+                
+                // KEY_A: lock/unlock toggle (when locked), or click animation (when unlocked)
+                if ((keysDown & KEY_A) && !(keysHeld & ~KEY_A & ALL_KEYS_MASK)) {
+                    if (!m_unlockedTrackbar) {
+                        ult::atomicToggle(ult::allowSlide);
+                        m_holding = false;
+                        if (ult::allowSlide.load(std::memory_order_acquire)) {
+                            // Unlocking: rumble + on sound only, no click animation, no enter feedback
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOnSound.store(true, std::memory_order_release);
+                        } else {
+                            // Locking: rumble + off sound only, no click animation
+                            triggerRumbleClick.store(true, std::memory_order_release);
+                            triggerOffSound.store(true, std::memory_order_release);
+                        }
+                    } else {
+                        // Always-unlocked trackbar: full click animation + enter feedback
+                        this->triggerClickAnimation();
+                        triggerEnterFeedback();
+                    }
+                    return true;
+                }
+            
+                // Guard all movement behind lock state
+                if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
+                    return false;
                 }
             
                 // Calculate actual max value based on steps
                 const int stepSize = 100 / (this->m_numSteps - 1);
-                const int maxValue = stepSize * (this->m_numSteps - 1);  // For 25 steps: 4 * 24 = 96
+                const int maxValue = stepSize * (this->m_numSteps - 1);
             
                 // Handle key release
                 if ((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) {
@@ -8297,14 +8356,13 @@ namespace tsl {
                     m_holdStartTime_ns = currentTime_ns;
                     lastUpdate_ns = currentTime_ns;
                     
-                    // Perform initial single tick
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
                         triggerNavigationFeedback();
                         this->m_value = std::max(this->m_value - stepSize, 0);
                         this->m_valueChangedListener(this->getProgress());
-                    } else if (keysDown & KEY_RIGHT && this->m_value < maxValue) {  // CHANGED: was < 100
+                    } else if (keysDown & KEY_RIGHT && this->m_value < maxValue) {
                         triggerNavigationFeedback();
-                        this->m_value = std::min(this->m_value + stepSize, maxValue);  // CHANGED: was 100
+                        this->m_value = std::min(this->m_value + stepSize, maxValue);
                         this->m_valueChangedListener(this->getProgress());
                     }
                     return true;
@@ -8337,9 +8395,9 @@ namespace tsl {
                             return true;
                         }
                         
-                        if (keysHeld & KEY_RIGHT && this->m_value < maxValue) {  // CHANGED: was < 100
+                        if (keysHeld & KEY_RIGHT && this->m_value < maxValue) {
                             triggerNavigationFeedback();
-                            this->m_value = std::min(this->m_value + stepSize, maxValue);  // CHANGED: was 100
+                            this->m_value = std::min(this->m_value + stepSize, maxValue);
                             this->m_valueChangedListener(this->getProgress());
                             lastUpdate_ns = currentTime_ns;
                             m_wasLastHeld = true;
@@ -8355,81 +8413,79 @@ namespace tsl {
 
 
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                // Calculate actual max value based on steps FIRST
                 const int stepSize = 100 / (this->m_numSteps - 1);
-                const int maxValue = stepSize * (this->m_numSteps - 1);  // For 25 steps: 96
-                
-                const u16 trackBarWidth = this->getWidth() - 95;
-                const u16 handlePos = (trackBarWidth * this->m_value) / maxValue;  // CHANGED: was /100
-                const s32 circleCenterX = this->getX() + 59 + handlePos;
-                const s32 circleCenterY = this->getY() + 40 + 16 - 1 - (m_usingNamedStepTrackbar ? 0 : 11);
+                const int maxValue = stepSize * (this->m_numSteps - 1);
+            
+                s32 trackBarLeft = this->getX() + 59;
+                s32 width        = this->getWidth() - 95;
+            
+                if (m_icon[0] != '\0') {
+                    const s32 iconOffset = 14 + 23;
+                    trackBarLeft += iconOffset;
+                    width        -= iconOffset;
+                }
+            
+                const s32 trackBarRight = trackBarLeft + width;
+                const u16 handlePos     = (width * this->m_value) / maxValue;
+                const s32 circleCenterX = trackBarLeft + handlePos;
+                const s32 circleCenterY = this->getY() + 40 + 16 - 3 - ((!m_usingNamedStepTrackbar && !m_useV2Style) ? 11 : 0);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
-                
+            
                 const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
-                
-                // Check horizontal bounds only (allow vertical drift)
-                const s32 trackBarLeft = this->getX() + 59;
-                const s32 trackBarRight = trackBarLeft + trackBarWidth;
                 const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
-                
+            
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
-                    
+            
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
                     }
-                    
+            
                     touchInSliderBounds = false;
                     return false;
                 }
             
                 if (touchInCircle || touchInSliderBounds) {
-                    // If we were touching but now went out of horizontal bounds, clamp to edge value then stop
                     if (touchInSliderBounds && !currentlyInHorizontalBounds) {
-                        // Clamp to max if past right edge, min if past left edge
                         if (currX > trackBarRight) {
                             this->m_value = maxValue;
                         } else if (currX < trackBarLeft) {
                             this->m_value = 0;
                         }
                         this->m_valueChangedListener(this->getProgress());
-                        
+            
                         touchInSliderBounds = false;
                         return false;
                     }
-                    
-                    // Only update if we're still in horizontal bounds
+            
                     if (currentlyInHorizontalBounds) {
-                        if (triggerOnce){
+                        if (triggerOnce) {
                             triggerOnce = false;
                             triggerRumbleClick.store(true, std::memory_order_release);
                             triggerOnSound.store(true, std::memory_order_release);
                         }
-                
                         touchInSliderBounds = true;
-                        
-                        // CHANGED: Scale rawValue to maxValue instead of 100
-                        float rawValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(trackBarWidth)) * maxValue;
+            
+                        float rawValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(width)) * maxValue;
                         s16 newValue;
-                
+            
                         if (rawValue < 0) {
                             newValue = 0;
                         } else if (rawValue > maxValue) {
                             newValue = maxValue;
                         } else {
-                            // Round to nearest step
                             newValue = std::round(rawValue / stepSize) * stepSize;
                             newValue = std::min(std::max(newValue, s16(0)), s16(maxValue));
                         }
-                
+            
                         if (newValue != this->m_value) {
                             triggerNavigationFeedback();
                             this->m_value = newValue;
                             this->m_valueChangedListener(this->getProgress());
                         }
-                
+            
                         return true;
                     }
                 }
@@ -8468,13 +8524,11 @@ namespace tsl {
         class NamedStepTrackBar : public StepTrackBar {
         public:
             NamedStepTrackBar(const char icon[3], std::initializer_list<std::string> stepDescriptions,
-                             bool useV2Style = false, const std::string& label = "")
-                : StepTrackBar(icon, stepDescriptions.size(), true, useV2Style, label, ""), 
+                             bool useV2Style = false, const std::string& label = "", bool unlockedTrackbar = true)
+                : StepTrackBar(icon, stepDescriptions.size(), true, useV2Style, label, "", unlockedTrackbar), 
                   m_stepDescriptions(stepDescriptions.begin(), stepDescriptions.end()) {
                 this->m_usingNamedStepTrackbar = true;
                 m_numSteps = m_stepDescriptions.size();
-                
-                // Initialize m_selection with first step
                 if (!m_stepDescriptions.empty()) {
                     this->m_selection = m_stepDescriptions[0];
                 }
@@ -8534,14 +8588,14 @@ namespace tsl {
                 }
             
                 s32 xPos = this->getX() + 59;
-                s32 yPos = this->getY() + 40 + 16 - 1;
+                s32 yPos = this->getY() + 40 + 16 - 3;
                 s32 width = this->getWidth() - 95;
-                const int maxValue = (100 / (this->m_numSteps - 1)) * (this->m_numSteps - 1);  // For 25 steps: 96
-                u16 handlePos = width * (this->m_value) / maxValue;  // Changed from /100
+                const int maxValue = (100 / (this->m_numSteps - 1)) * (this->m_numSteps - 1);
+                u16 handlePos = width * (this->m_value) / maxValue;
                 
                 s32 iconOffset = 0;
             
-                if (!m_useV2Style && m_icon[0] != '\0') {
+                if (m_icon[0] != '\0') {
                     s32 iconWidth = 23;
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
@@ -8570,59 +8624,52 @@ namespace tsl {
                     }
                     renderer->drawRect(stepX, baseY, 1, 8, stepColor);
                 }
-        
+            
                 // Draw track bar background
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, false); // Not rounded for named step
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, false);
+            
+                const bool isEffectivelyUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
             
                 if (!this->m_focused) {
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
-                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((m_unlockedTrackbar || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((isEffectivelyUnlocked || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
                     renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a((ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
             
-                // CRITICAL FIX: Draw the selection text based on which style is being used
                 if (m_useV2Style) {
-                    // V2 Style: Draw label on left, value on right
                     std::string labelPart = this->m_label;
                     ult::removeTag(labelPart);
                 
                     std::string valuePart = this->m_selection;
                     const auto valueWidth = renderer->getTextDimensions(valuePart, false, 16).first;
-                
-                    renderer->drawString(labelPart, false, this->getX() + 59, this->getY() + 14 + 16, 16, 
-                                       ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
+                    const s32 labelX = xPos;
+                    const s32 valueX = xPos + width - valueWidth;
             
-                    renderer->drawString(valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, 
+                    renderer->drawString(labelPart, false, labelX, this->getY() + 14 + 16, 16, 
+                                       ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
+                    renderer->drawString(valuePart, false, valueX, this->getY() + 14 + 16, 16, 
                                        (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
+            
+                    if (m_icon[0] != '\0')
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
                 } else {
-                    // OLD API Style: Draw selection text CENTERED ABOVE the bar
-                    // This is the original libtesla behavior!
-                    
-                    // Calculate text width to center it (same font size and Y position as V2)
                     const auto textDimensions = renderer->getTextDimensions(this->m_selection, false, 16);
                     const s32 textWidth = textDimensions.first;
+                    const s32 textX = xPos + (width / 2) - (textWidth / 2);
+                    const s32 textY = this->getY() + 14 + 16;
                     
-                    // Center the text horizontally - account for the left margin (59) and right space
-                    // The actual content area starts at getX() + 59 and the trackbar area is getWidth() - 95
-                    const s32 contentStart = 59;
-                    const s32 trackbarWidth = this->getWidth() - 95;
-                    const s32 textX = this->getX() + contentStart + (trackbarWidth / 2) - (textWidth / 2);
-                    const s32 textY = this->getY() + 14 + 16; // Same Y position as V2 style
-                    
-                    // Draw the centered selection text
                     renderer->drawString(this->m_selection.c_str(), false, textX, textY, 16, 
                                        a(this->m_focused ? tsl::style::color::ColorHighlight : tsl::style::color::ColorText));
-                    
-                    // Also draw icon if provided (though usually empty for named step trackbars)
+            
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2, 23, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
                 }
             
                 // Draw separators
@@ -9102,7 +9149,7 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 const u16 handlePos = (this->getWidth() - 95) * (this->m_value - m_minValue) / (m_maxValue - m_minValue);
                 const s32 xPos = this->getX() + 59;
-                const s32 yPos = this->getY() + 40 + 16 - 1;
+                const s32 yPos = this->getY() + 40 + 16 - 3;
                 const s32 width = this->getWidth() - 95;
         
                 const bool shouldAppearLocked = m_unlockedTrackbar && m_keyRHeld;
@@ -10716,6 +10763,7 @@ namespace tsl {
                 auto handleJumpButton = [&](JumpButtonState& s, bool keyPressed, bool notKeyPressed, std::atomic<bool>& jumpSignal) {
                     if (keyPressed) {
                         if (!s.keyWasPressed) { s.pressStart_ns = currentTime_ns; s.wasIsolated = !notKeyPressed; }
+                        if (notKeyPressed) s.wasIsolated = false;  // another key pressed during hold — cancel
                         s.keyWasPressed = true;
                     } else {
                         if (s.keyWasPressed && s.wasIsolated && !notKeyPressed &&
@@ -10751,6 +10799,7 @@ namespace tsl {
                             s.buttonPressStart_ns = s.lastHoldTrigger_ns = currentTime_ns;
                             s.holdTriggered = false;
                         }
+                        if (notKeyPressed) s.wasIsolated = false;  // another key pressed during hold — cancel
                         if (s.inRapidClickMode && s.wasIsolated) {
                             const u64 holdDuration = currentTime_ns - s.buttonPressStart_ns;
                             if (holdDuration >= HOLD_THRESHOLD_NS) {
