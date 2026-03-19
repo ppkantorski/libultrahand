@@ -462,7 +462,6 @@ namespace tsl {
 
     void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
 
-
     extern std::vector<std::string> wrapText(
         const std::string& text,
         float maxWidth,
@@ -499,6 +498,8 @@ namespace tsl {
     
     class Overlay;
     namespace elm { class Element; }
+    
+    void shiftItemFocus(elm::Element* element); // forward declare
     
     namespace impl {
         
@@ -5038,7 +5039,6 @@ namespace tsl {
             Color m_color;
         };
 
-
         class ListItem; // forward declaration
 
         static std::atomic<float> s_currentScrollVelocity{0};
@@ -7915,6 +7915,7 @@ namespace tsl {
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
+                        tsl::shiftItemFocus(this);
                     }
             
                     touchInSliderBounds = false;
@@ -8441,6 +8442,7 @@ namespace tsl {
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
+                        tsl::shiftItemFocus(this);
                     }
             
                     touchInSliderBounds = false;
@@ -9072,6 +9074,7 @@ namespace tsl {
                         touchInSliderBounds = false;
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
+                        tsl::shiftItemFocus(this);
                     }
                     return false;
                 }
