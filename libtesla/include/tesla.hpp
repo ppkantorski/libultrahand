@@ -246,6 +246,11 @@ namespace tsl {
     inline const std::vector<std::string> s_dividerSpecialChars = {ult::DIVIDER_SYMBOL};
     inline const std::vector<std::string> s_footerSpecialChars  = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
 
+    // Windowed-mode notification Y offset in touch space.
+    // Set to (g_win_pos_y * 2/3) by windowed overlay; 0 in normal mode.
+    // X is handled by ult::layerEdge which already exists for this purpose.
+    inline s32 layerEdgeY = 0;
+
     // Booleans
     inline std::atomic<bool> clearGlyphCacheNow(false);
 
@@ -395,10 +400,10 @@ namespace tsl {
     extern Color onTextColor;
     extern Color offTextColor;
 
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
     extern Color dynamicLogoRGB1;
     extern Color dynamicLogoRGB2;
-    #endif
+    //#endif
 
     extern bool invertBGClickColor;
 
@@ -500,7 +505,7 @@ namespace tsl {
     namespace elm { class Element; }
     
     void shiftItemFocus(elm::Element* element); // forward declare
-    
+
     namespace impl {
         
         /**
@@ -4072,7 +4077,7 @@ namespace tsl {
         };
 
 
-        #if IS_LAUNCHER_DIRECTIVE
+        //#if IS_LAUNCHER_DIRECTIVE
         // Simple utility function to draw the dynamic "Ultra" part of the logo
         static s32 drawDynamicUltraText(gfx::Renderer* renderer, s32 startX, s32 y, u32 fontSize, 
                                        const tsl::Color& staticColor, bool useNotificationMethod = false) {
@@ -4148,7 +4153,7 @@ namespace tsl {
             return totalWidth;
         }
 
-        #endif
+        //#endif
         
         /**
          * @brief The base frame which can contain another view
@@ -11923,7 +11928,7 @@ namespace tsl {
                     }
         #else
                     if (idx == WaiterObject_HomeButton || idx == WaiterObject_PowerButton) { // Changed condition to exclude capture button
-                        if (shData->overlayOpen) {
+                        if (shData->overlayOpen && !disableHiding) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
                         }
@@ -12431,7 +12436,7 @@ namespace tsl {
         Thread backgroundFeedbackThread;
         threadCreate(&backgroundFeedbackThread, impl::backgroundFeedbackPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
         threadStart(&backgroundFeedbackThread);
-
+        
         Thread backgroundEventThread;
         threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
         threadStart(&backgroundEventThread);

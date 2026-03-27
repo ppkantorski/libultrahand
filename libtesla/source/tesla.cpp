@@ -141,10 +141,10 @@ Color ultPackageVersionTextColor;
 Color onTextColor;
 Color offTextColor;
 
-#if IS_LAUNCHER_DIRECTIVE
+//#if IS_LAUNCHER_DIRECTIVE
 Color dynamicLogoRGB1;
 Color dynamicLogoRGB2;
-#endif
+//#endif
 
 bool   invertBGClickColor = false;
 
@@ -329,10 +329,10 @@ void initializeThemeVars() {
     logoColor1      = getColor("logo_color_1");
     logoColor2      = getColor("logo_color_2");
 
-    #if IS_LAUNCHER_DIRECTIVE
+    //#if IS_LAUNCHER_DIRECTIVE
     dynamicLogoRGB1 = getColor("dynamic_logo_color_1");
     dynamicLogoRGB2 = getColor("dynamic_logo_color_2");
-    #endif
+    //#endif
 
     defaultBackgroundAlpha       = getAlpha("bg_alpha");
     defaultBackgroundColor       = getColor("bg_color", defaultBackgroundAlpha);
@@ -985,6 +985,9 @@ bool NotificationPrompt::hasActiveFile(std::string_view fname) const {
 }
 
 int NotificationPrompt::findHitSlot_NoLock(s32 tx, s32 ty) const {
+    // In windowed mode the layer is offset in touch space; layerEdge already
+    // accounts for X.  Subtract layerEdgeY to bring ty into framebuffer-local space.
+    ty -= layerEdgeY;
     const s32 sx = (ult::useRightAlignment
         ? static_cast<s32>(tsl::cfg::FramebufferWidth) - NOTIF_WIDTH
         : 0) + static_cast<s32>(ult::layerEdge);
