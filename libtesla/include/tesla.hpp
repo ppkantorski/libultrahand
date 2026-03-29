@@ -2832,6 +2832,13 @@ namespace tsl {
                     cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
                 } else if (ult::correctFrameSize) {
                     cfg::LayerWidth += horizontalUnderscanPixels;
+                } else if (horizontalUnderscanPixels > 0) {
+                    // General case: any non-standard FB size (e.g. windowed GB).
+                    // Scale the correction proportionally to the fraction of the
+                    // full 1280-logical-space width this layer occupies.
+                    cfg::LayerWidth += static_cast<int>(
+                        horizontalUnderscanPixels *
+                        (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
                 }
                 
                 // Update position if using right alignment
@@ -3270,6 +3277,10 @@ namespace tsl {
                     cfg::LayerHeight += cfg::ScreenHeight/720. *verticalUnderscanPixels;
                 else if (ult::correctFrameSize)
                     cfg::LayerWidth += horizontalUnderscanPixels;
+                else if (horizontalUnderscanPixels > 0)
+                    cfg::LayerWidth += static_cast<int>(
+                        horizontalUnderscanPixels *
+                        (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
                 
                 if (this->m_initialized)
                     return;
@@ -12354,6 +12365,19 @@ namespace tsl {
             }
         }
     
+        // Detect -returning: overlay was launched as a return from a sub-mode
+        // (e.g. windowed → normal).  Uses exit feedback instead of enter feedback.
+        // Only needed in the non-STATUS_MONITOR, non-LAUNCHER path below.
+        #if !IS_STATUS_MONITOR_DIRECTIVE && !IS_LAUNCHER_DIRECTIVE
+        bool isReturningLaunch = false;
+        for (u8 arg = 1; arg < argc; arg++) {
+            if (strcmp(argv[arg], "-returning") == 0) {
+                isReturningLaunch = true;
+                break;
+            }
+        }
+        #endif
+
         bool skipCombo = false;
     #if IS_LAUNCHER_DIRECTIVE
         bool comboReturn = false;
@@ -12675,7 +12699,11 @@ namespace tsl {
                                 triggerEnterFeedback();
                             }
                             #else
-                            triggerEnterFeedback();
+                            if (isReturningLaunch) {
+                                triggerExitFeedback();
+                            } else {
+                                triggerEnterFeedback();
+                            }
                             #endif
                         }
                         #endif
