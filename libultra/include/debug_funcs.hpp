@@ -23,7 +23,7 @@
 #include <ctime>
 
 namespace ult {
-    #if USING_LOGGING_DIRECTIVE
+    //#if USING_LOGGING_DIRECTIVE
 
     // Specify the log file path
     extern const std::string defaultLogFilePath;
@@ -41,5 +41,5 @@ namespace ult {
      */
     void logMessage(const char* message);
     void logMessage(const std::string& message);
-    #endif
+    //#endif
 }

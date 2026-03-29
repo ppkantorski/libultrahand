@@ -18,7 +18,7 @@
 #include "debug_funcs.hpp"
 
 namespace ult {
-    #if USING_LOGGING_DIRECTIVE
+    //#if USING_LOGGING_DIRECTIVE
     // Define static variables
     const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
     std::string logFilePath = defaultLogFilePath; 
@@ -48,5 +48,5 @@ namespace ult {
     void logMessage(const std::string& message) {
         logMessage(message.c_str());
     }
-    #endif
+    //#endif
 }
