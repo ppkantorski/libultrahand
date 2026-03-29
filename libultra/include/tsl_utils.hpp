@@ -211,7 +211,7 @@ namespace ult {
 
     
     // Define a mask with all possible key flags
-    #define ALL_KEYS_MASK (KEY_A | KEY_B | KEY_X | KEY_Y | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_L | KEY_R | KEY_ZL | KEY_ZR | KEY_SL | KEY_SR | KEY_LSTICK | KEY_RSTICK | KEY_PLUS | KEY_MINUS)
+    #define ALL_KEYS_MASK (KEY_A | KEY_B | KEY_X | KEY_Y | KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT | KEY_L | KEY_R | KEY_ZL | KEY_ZR | KEY_SL | KEY_SR | KEY_LSTICK | KEY_RSTICK | KEY_PLUS | KEY_MINUS)
     
     
     extern bool updateMenuCombos;
