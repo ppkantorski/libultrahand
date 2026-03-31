@@ -181,6 +181,14 @@ namespace ult {
         }
     }
 
+    void rumbleClickStandalone() {
+        // Match regular rumbleClick() behavior, but blocking
+        sendVibration(&vibrationStop);
+        sendVibration2x(&hapticsPreset);
+        svcSleepThread(RUMBLE_DURATION_NS);
+        sendVibration(&vibrationStop);
+    }
+
 
     void rumbleDoubleClickStandalone() {
         // Standalone uses sleeps, but still use cached style for decision

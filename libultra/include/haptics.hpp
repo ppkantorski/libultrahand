@@ -36,5 +36,6 @@ namespace ult {
     void rumbleDoubleClick();
     void processRumbleStop(u64 nowNs);
     void processRumbleDoubleClick(u64 nowNs);
+    void rumbleClickStandalone();
     void rumbleDoubleClickStandalone();
 }

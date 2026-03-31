@@ -159,6 +159,9 @@ inline u32 offsetWidthVar = 112;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 
+inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
+inline bool skipRumbleDoubleClick{false};
+
 inline std::mutex jumpItemMutex;
 inline std::string jumpItemName;
 inline std::string jumpItemValue;
@@ -1884,38 +1887,33 @@ namespace tsl {
                 }
             }
             
-            static void processRoundedRectChunk(Renderer* self, const s32 x, const s32 y, const s32 w, const s32 h,
-                                                const s32 radius, const Color& color,
-                                                const s32 startRow, const s32 endRow) {
+            // --- Optimized rounded rectangle chunk processor ---
+            static void processRoundedRectChunk(Renderer* self,
+                                                const s32 x, const s32 y,
+                                                const s32 w, const s32 h,
+                                                const s32 radius,
+                                                const Color& color,
+                                                const s32 startRow, const s32 endRow)
+            {
                 if (radius <= 0) return;
-            
+        
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
-            
+        
                 const s32 clip_x     = std::max(0, x);
                 const s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
-            
+        
                 const s32 left_arc_end    = x + radius - 1;
                 const s32 right_arc_start = x_end - radius;
                 const s32 top_arc_end     = y + radius - 1;
                 const s32 bottom_arc_start = y_end - radius;
-            
-                const int cx2_left  = 2 * (x + radius);
-                const int cx2_right = 2 * (x_end - radius);
-                const int cy2_top    = 2 * (y + radius);
-                const int cy2_bottom = 2 * (y_end - radius);
-            
+        
                 const long long r2_scaled = 4LL * radius * radius;
                 const long long reject_threshold = (2LL*radius + 2)*(2LL*radius + 2);
-            
+        
                 const u8 base_a = color.a;
-            
-                // Pre-compute sample offsets (constant per corner)
-                const int sx_left   = ((x + radius)     & 1) ? -1 : 1;
-                const int sx_right  = ((x_end - radius) & 1) ? -1 : 1;
-                const int sy_top    = ((y + radius)     & 1) ? -1 : 1;
-                const int sy_bottom = ((y_end - radius) & 1) ? -1 : 1;
-            
+        
+                // Precompute batch arrays
                 alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
                 const uint8x16_t rv = vdupq_n_u8(color.r);
                 const uint8x16_t gv = vdupq_n_u8(color.g);
@@ -1927,14 +1925,15 @@ namespace tsl {
                     vst1q_u8(blueArray + i, bv);
                     vst1q_u8(alphaArray + i, av);
                 }
-            
+        
                 for (s32 yc = startRow; yc < endRow; ++yc) {
                     if (yc < y || yc >= y_end) continue;
-            
+        
                     const bool is_top = (yc <= top_arc_end);
                     const bool in_arc_rows = is_top || (yc >= bottom_arc_start);
-                    
+        
                     if (!in_arc_rows) {
+                        // Full-width batch for middle flat area
                         s32 xs = std::max(clip_x, x);
                         s32 xe = std::min(clip_x_end, x_end);
                         for (s32 xp = xs; xp < xe; xp += 512)
@@ -1942,38 +1941,37 @@ namespace tsl {
                                                         std::min(512, xe - xp));
                         continue;
                     }
-            
-                    const int cy2 = is_top ? cy2_top : cy2_bottom;
-                    const int py2 = 2 * yc + 1;
-                    const int sy = is_top ? sy_top : sy_bottom;
-            
-                    // Quick row reject
+        
+                    const int cy2 = is_top ? 2*(y + radius) : 2*(y_end - radius);
+                    const int py2 = 2*yc + 1;
                     const long long dy = py2 - cy2;
-                    if (dy * dy > reject_threshold) continue;
-            
-                    const s32 xe = std::min(clip_x_end, x_end);
+                    if (dy*dy > reject_threshold) continue;
+        
                     s32 xp = std::max(clip_x, x);
-            
-                    // Left arc
+                    const s32 xe = std::min(clip_x_end, x_end);
+        
+                    // Left corner arc
                     for (; xp <= left_arc_end && xp < xe; ++xp) {
-                        sampleAndBlendArcPixel(self, xp, yc, 2*xp + 1, cx2_left, sx_left, 
-                                               py2, cy2, sy, r2_scaled, color, base_a);
+                        sampleAndBlendArcPixel(self, xp, yc,
+                                               2*xp + 1, 2*(x + radius), 1,
+                                               py2, cy2, 1,
+                                               r2_scaled, color, base_a);
                     }
-            
-                    // Middle flat
+        
+                    // Middle flat area
                     s32 mid_start = std::max(xp, left_arc_end + 1);
                     s32 mid_end   = std::min(xe, right_arc_start);
-                    if (mid_start < mid_end) {
-                        for (s32 bx = mid_start; bx < mid_end; bx += 512)
-                            self->setPixelBlendDstBatch(bx, yc, redArray, greenArray, blueArray, alphaArray,
-                                                        std::min(512, mid_end - bx));
-                    }
-            
-                    // Right arc
+                    for (s32 bx = mid_start; bx < mid_end; bx += 512)
+                        self->setPixelBlendDstBatch(bx, yc, redArray, greenArray, blueArray, alphaArray,
+                                                    std::min(512, mid_end - bx));
+        
+                    // Right corner arc
                     xp = std::max(xp, right_arc_start);
                     for (; xp < xe; ++xp) {
-                        sampleAndBlendArcPixel(self, xp, yc, 2*xp + 1, cx2_right, sx_right,
-                                               py2, cy2, sy, r2_scaled, color, base_a);
+                        sampleAndBlendArcPixel(self, xp, yc,
+                                               2*xp + 1, 2*(x_end - radius), 1,
+                                               py2, cy2, 1,
+                                               r2_scaled, color, base_a);
                     }
                 }
             }
@@ -2191,120 +2189,136 @@ namespace tsl {
             // RGBA4444 processing - no expansion needed
             const uint8x16_t mask_low = vdupq_n_u8(0x0F);
             
-            inline void processBMPChunk(const u32 x, const u32 y, const s32 imageW, const u8 *preprocessedData, 
-                                         const s32 startRow, const s32 endRow, const u8 globalAlphaLimit,
-                                         const bool useBarrier = true, const bool preserveAlpha = false) {
+            inline void processBMPChunk(const u32 x, const u32 y, const s32 imageW, const u8* preprocessedData,
+                                        const s32 startRow, const s32 endRow, const u8 globalAlphaLimit,
+                                        const bool useBarrier = true, const bool preserveAlpha = false)
+            {
                 const s32 bytesPerRow = imageW * 2;
-                const s32 endX16 = imageW & ~15;
+                const s32 endX16 = imageW & ~15; // multiple of 16
+                const uint8x16_t mask_low = vdupq_n_u8(0x0F);
                 const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
             
-                Color* const framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                Color* const framebuffer = static_cast<Color*>(Renderer::getCurrentFramebuffer());
             
-                const bool hasScissor = !this->m_scissoringStack.empty();
-                const auto scissor = hasScissor ? this->m_scissoringStack.top() : ScissoringConfig{};
+                const bool hasScissor = !Renderer::m_scissoringStack.empty();
+                const auto scissor = hasScissor ? Renderer::m_scissoringStack.top() : ScissoringConfig{};
+            
+                // Precompute Y offsets
+                std::vector<u32> yParts(endRow - startRow);
+                for (s32 y1 = startRow; y1 < endRow; ++y1) {
+                    const u32 baseY = y + y1;
+                    yParts[y1 - startRow] = ((((baseY & 127) >> 4) + ((baseY >> 7) * offsetWidthVar)) << 9)
+                                          + ((baseY & 8) << 5) + ((baseY & 6) << 4) + ((baseY & 1) << 3);
+                }
             
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
                     const u32 baseY = y + y1;
+                    if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max)) [[unlikely]] continue;
             
-                    if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max)) [[unlikely]]
-                        continue;
-            
-                    const u32 yPart = ((((baseY & 127) >> 4) + ((baseY >> 7) * offsetWidthVar)) << 9)
-                                    + ((baseY & 8) << 5) + ((baseY & 6) << 4) + ((baseY & 1) << 3);
-            
-                    const u8 *rowPtr = preprocessedData + (y1 * bytesPerRow);
+                    const u32 yPart = yParts[y1 - startRow];
+                    const u8* rowPtr = preprocessedData + (y1 * bytesPerRow);
                     s32 x1 = 0;
             
+                    // --- Vectorized 16-pixel loop ---
                     for (; x1 < endX16; x1 += 16) {
                         const u8* ptr = rowPtr + (x1 << 1);
-            
                         uint8x16x2_t packed = vld2q_u8(ptr);
-                        uint8x16_t high1 = vshrq_n_u8(packed.val[0], 4);
-                        uint8x16_t low1  = vandq_u8(packed.val[0], mask_low);
-                        uint8x16_t high2 = vshrq_n_u8(packed.val[1], 4);
-                        uint8x16_t low2  = vminq_u8(vandq_u8(packed.val[1], mask_low), alpha_limit_vec);
             
-                        alignas(16) u8 red_vals[16], green_vals[16], blue_vals[16], alpha_vals[16];
-                        vst1q_u8(red_vals,   high1);
-                        vst1q_u8(green_vals, low1);
-                        vst1q_u8(blue_vals,  high2);
-                        vst1q_u8(alpha_vals, low2);
+                        uint8x16_t red   = vshrq_n_u8(packed.val[0], 4);
+                        uint8x16_t green = vandq_u8(packed.val[0], mask_low);
+                        uint8x16_t blue  = vshrq_n_u8(packed.val[1], 4);
+                        uint8x16_t alpha = vminq_u8(vandq_u8(packed.val[1], mask_low), alpha_limit_vec);
+            
+                        alignas(16) u8 r[16], g[16], b[16], a[16];
+                        vst1q_u8(r, red);
+                        vst1q_u8(g, green);
+                        vst1q_u8(b, blue);
+                        vst1q_u8(a, alpha);
             
                         const u32 baseX = x + x1;
-            
                         for (int i = 0; i < 16; ++i) {
-                            const u8 a = alpha_vals[i];
-                            if (a == 0) [[unlikely]] continue;
+                            if (a[i] == 0) continue;
+            
                             const u32 px = baseX + i;
-                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) [[unlikely]] continue;
-                            const u32 offset = yPart + ((px >> 5) << 12)
-                                             + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
-                            const Color src = framebuffer[offset];
-                            framebuffer[offset] = {
-                                blendColor(src.r, red_vals[i], a),
-                                blendColor(src.g, green_vals[i], a),
-                                blendColor(src.b, blue_vals[i], a),
-                                static_cast<u8>(preserveAlpha ? src.a : (a + ((src.a * (0xF - a)) >> 4)))
-                            };
+                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+            
+                            const u32 offset = yPart + ((px >> 5) << 12) + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
+                            Color& dst = framebuffer[offset];
+            
+                            dst.r = blendColor(dst.r, r[i], a[i]);
+                            dst.g = blendColor(dst.g, g[i], a[i]);
+                            dst.b = blendColor(dst.b, b[i], a[i]);
+                            if (!preserveAlpha)
+                                dst.a = static_cast<u8>(a[i] + ((dst.a * (0xF - a[i])) >> 4));
                         }
                     }
             
+                    // --- Scalar leftover pixels ---
                     for (; x1 < imageW; ++x1) {
                         const u8 p1 = rowPtr[x1 << 1];
                         const u8 p2 = rowPtr[(x1 << 1) + 1];
-                        const u8 alpha = std::min(static_cast<u8>(p2 & 0x0F), globalAlphaLimit);
-                        if (alpha == 0) [[unlikely]] continue;
+                        const u8 alphaVal = std::min<u8>(p2 & 0x0F, globalAlphaLimit);
+                        if (alphaVal == 0) continue;
+            
                         const u32 px = x + x1;
-                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) [[unlikely]] continue;
-                        const u32 offset = yPart + ((px >> 5) << 12)
-                                         + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
-                        const Color bg = framebuffer[offset];
-                        framebuffer[offset] = {
-                            blendColor(bg.r, static_cast<u8>(p1 >> 4), alpha),
-                            blendColor(bg.g, static_cast<u8>(p1 & 0x0F), alpha),
-                            blendColor(bg.b, static_cast<u8>(p2 >> 4), alpha),
-                            static_cast<u8>(preserveAlpha ? bg.a : (alpha + ((bg.a * (0xF - alpha)) >> 4)))
-                        };
+                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
+            
+                        const u32 offset = yPart + ((px >> 5) << 12) + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
+                        Color& dst = framebuffer[offset];
+            
+                        dst.r = dst.r + (((p1 >> 4) - dst.r) * alphaVal >> 4);
+                        dst.g = dst.g + (((p1 & 0x0F) - dst.g) * alphaVal >> 4);
+                        dst.b = dst.b + (((p2 >> 4) - dst.b) * alphaVal >> 4);
+                        if (!preserveAlpha)
+                            dst.a = static_cast<u8>(alphaVal + ((dst.a * (0xF - alphaVal)) >> 4));
                     }
                 }
             
-                if (useBarrier)
-                    ult::inPlotBarrier.arrive_and_wait();
+                if (useBarrier) ult::inPlotBarrier.arrive_and_wait();
             }
             
-            inline void drawBitmapRGBA4444(const u32 x, const u32 y, const u32 imageW, const u32 imageH, 
-                                            const u8 *preprocessedData, float opacity = 1.0f, bool preserveAlpha = false) {
+            // --- Draw bitmap RGBA4444 ---
+            inline void drawBitmapRGBA4444(const u32 x, const u32 y, const u32 imageW, const u32 imageH,
+                                           const u8* preprocessedData, float opacity = 1.0f, bool preserveAlpha = false) 
+            {
                 const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
-                
+            
+                // Small width -> single-threaded
                 if (imageW < 448) {
                     processBMPChunk(x, y, imageW, preprocessedData, 0, imageH, globalAlphaLimit, false, preserveAlpha);
                     return;
                 }
-                
-                for (unsigned i = 0; i < ult::numThreads; ++i) {
-                    const u32 startRow = i * ult::bmpChunkSize;
-                    const u32 endRow = std::min(startRow + ult::bmpChunkSize, imageH);
-                    ult::renderThreads[i] = std::thread([this, x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, preserveAlpha](){
+            
+                // Multi-threaded rendering
+                const u32 numThreads = ult::numThreads;
+                const u32 chunkSize = (imageH + numThreads - 1) / numThreads;
+            
+                for (u32 t = 0; t < numThreads; ++t) {
+                    const u32 startRow = t * chunkSize;
+                    const u32 endRow   = std::min(startRow + chunkSize, imageH);
+            
+                    ult::renderThreads[t] = std::thread([=, this]() {
                         processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true, preserveAlpha);
                     });
                 }
-                for (auto& t : ult::renderThreads) t.join();
+            
+                for (auto& th : ult::renderThreads) th.join();
             }
             
+            // --- Draw wallpaper ---
             inline void drawWallpaper() {
-                if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) {
-                    return;
-                }
-                
+                if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) return;
+            
                 ult::inPlot.store(true, std::memory_order_release);
-                
-                if (!ult::wallpaperData.empty() && 
-                    !ult::refreshWallpaper.load(std::memory_order_acquire) && 
-                    ult::correctFrameSize) {
-                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight, 
-                                      ult::wallpaperData.data(), Renderer::s_opacity, true);
+            
+                if (!ult::wallpaperData.empty() &&
+                    !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                    ult::correctFrameSize) 
+                {
+                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight,
+                                       ult::wallpaperData.data(), Renderer::s_opacity, true);
                 }
-                
+            
                 ult::inPlot.store(false, std::memory_order_release);
             }
 
@@ -3076,30 +3090,35 @@ namespace tsl {
             // Optimized glyph rendering
             inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color, bool skipAlphaLimit = false) {
                 if (!glyph->glyphBmp || color.a == 0) [[unlikely]] return;
-                
+            
                 const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
                 const s32 yPos = static_cast<s32>(y + glyph->bounds[1]);
-                
+            
+                const s32 glyphWidth  = glyph->width;
+                const s32 glyphHeight = glyph->height;
+            
+                // Clipping
                 if (xPos >= cfg::FramebufferWidth || yPos >= cfg::FramebufferHeight ||
-                    xPos + glyph->width <= 0 || yPos + glyph->height <= 0) [[unlikely]] return;
-                
+                    xPos + glyphWidth <= 0 || yPos + glyphHeight <= 0) [[unlikely]] return;
+            
                 const s32 startX = std::max(0, -xPos);
                 const s32 startY = std::max(0, -yPos);
-                const s32 endX = std::min(glyph->width, static_cast<s32>(cfg::FramebufferWidth) - xPos);
-                const s32 endY = std::min(glyph->height, static_cast<s32>(cfg::FramebufferHeight) - yPos);
+                const s32 endX   = std::min(glyphWidth, static_cast<s32>(cfg::FramebufferWidth) - xPos);
+                const s32 endY   = std::min(glyphHeight, static_cast<s32>(cfg::FramebufferHeight) - yPos);
+            
                 const u8 alphaLimit = skipAlphaLimit ? color.a : static_cast<u8>(0xF * Renderer::s_opacity);
-                const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyph->width;
-                
-                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpPtr += glyph->width) {
+                const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyphWidth;
+            
+                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpPtr += glyphWidth) {
                     const s32 pixelY = yPos + bmpY;
-                    
+            
                     for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
                         u8 alpha = bmpPtr[bmpX] >> 4;
                         if (alpha == 0) [[unlikely]] continue;
-                        
+            
                         alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
                         const s32 pixelX = xPos + bmpX;
-                        
+            
                         if (alpha == 0xF) [[likely]] {
                             this->setPixel(pixelX, pixelY, color);
                         } else {
@@ -3132,6 +3151,16 @@ namespace tsl {
                     screenshotsAreForceDisabled.store(true, std::memory_order_release);
             }
 
+            /**
+             * @brief Get the current framebuffer address
+             *
+             * @return Framebuffer address
+             */
+            inline void* getCurrentFramebuffer() {
+                return this->m_currentFramebuffer;
+            }
+            
+
         private:
             Renderer() {}
             
@@ -3158,15 +3187,6 @@ namespace tsl {
             std::stack<ScissoringConfig> m_scissoringStack;
             
             
-            
-            /**
-             * @brief Get the current framebuffer address
-             *
-             * @return Framebuffer address
-             */
-            inline void* getCurrentFramebuffer() {
-                return this->m_currentFramebuffer;
-            }
             
             /**
              * @brief Get the next framebuffer address
@@ -6730,6 +6750,7 @@ namespace tsl {
                         m_clickAnimationProgress = 0;
                         // Only trigger normal click if we weren't in a hold
                         if (!wasHolding) {
+                            tsl::shiftItemFocus(this);
                             return onClick(determineKeyOnTouchRelease());
                         }
                     }
@@ -8093,10 +8114,10 @@ namespace tsl {
                                        (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 } else {
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 }
             
                 if (m_lastBottomBound != this->getTopBound())
@@ -11690,7 +11711,7 @@ namespace tsl {
                             ult::FALSE_STR
                         );
                         tsl::setNextOverlay(
-                            ult::OVERLAY_PATH + "ovlmenu.ovl"
+                            returnOverlayPath
                         );
                         tsl::Overlay::get()->close();
                         break;
@@ -11881,7 +11902,7 @@ namespace tsl {
                                         ult::TRUE_STR
                                     );
 
-                                    tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl", "--direct --comboReturn");
+                                    tsl::setNextOverlay(returnOverlayPath, "--direct --comboReturn");
                                     fireLaunch();
                                     return;
                                 }
@@ -12627,7 +12648,7 @@ namespace tsl {
                             launchComboHasTriggered.store(true, std::memory_order_release); // for isolating sound effect
     
                             if (usingPackageLauncher || directMode) {
-                                tsl::setNextOverlay(ult::OVERLAY_PATH + "ovlmenu.ovl");
+                                tsl::setNextOverlay(returnOverlayPath);
                             }
                             
                             hlp::requestForeground(false);
@@ -12778,7 +12799,7 @@ namespace tsl {
             if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
                 if (!disableSound.load(std::memory_order_acquire) && ult::useSoundEffects)
                     ult::Audio::playExitSound();
-                if (ult::useHapticFeedback) {
+                if (ult::useHapticFeedback && !skipRumbleDoubleClick) {
                     ult::rumbleDoubleClickStandalone();
                 }
             }
