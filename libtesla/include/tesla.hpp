@@ -2631,7 +2631,17 @@ namespace tsl {
              * @param color Color
              */
             inline void fillScreen(const Color& color) {
-                std::fill_n(static_cast<Color*>(this->getCurrentFramebuffer()), this->getFramebufferSize() / sizeof(Color), color);
+                // std::fill_n at -Os compiles to a scalar loop (auto-vectorisation is
+                // disabled at -Os).  An explicit NEON loop processes 8 u16 pixels per
+                // iteration — same loop-body instruction count, 8× fewer iterations.
+                // For the normal 448×720 framebuffer (322,560 pixels ÷ 8 = 40,320 groups)
+                // the epilogue is dead code; kept for safety on other frame sizes.
+                u16* const fb  = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                const size_t n = this->m_framebuffer.fb_size >> 1u; // byte count → u16 count
+                const uint16x8_t vc = vdupq_n_u16(color.rgba);
+                size_t i = 0;
+                for (; i + 8u <= n; i += 8u) vst1q_u16(fb + i, vc);
+                for (; i < n; ++i)            fb[i] = color.rgba;
             }
             
             /**
