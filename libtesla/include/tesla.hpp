@@ -159,7 +159,7 @@ inline u32 offsetWidthVar = 112;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 
-inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
+static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipRumbleDoubleClick{false};
 
 inline std::mutex jumpItemMutex;
