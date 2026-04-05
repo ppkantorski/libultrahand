@@ -795,7 +795,7 @@ namespace tsl {
         
 
         struct ScissoringConfig {
-            u32 x, y, w, h, x_max, y_max;
+            u32 x, y, x_max, y_max;  // w and h never read back — only precomputed x_max/y_max are used
         };
         
 
@@ -1185,14 +1185,11 @@ namespace tsl {
              * @param h Height
              */
             inline void enableScissoring(const u32 x, const u32 y, const u32 w, const u32 h) {
-                this->m_scissoringStack.emplace(x, y, w, h, x+w, y+h);
+                this->m_scissorStack[this->m_scissorDepth++] = {x, y, x + w, y + h};
             }
             
-            /**
-             * @brief Disables scissoring
-             */
             inline void disableScissoring() {
-                this->m_scissoringStack.pop();
+                --this->m_scissorDepth;
             }
             
             
@@ -1228,10 +1225,10 @@ namespace tsl {
              * @param alpha Opacity
              * @return Blended color
              */
-            static constexpr u8 inv_alpha_table[16] = {15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0};
-            
+            // inv_alpha_table removed — (15 - alpha) is a single SUB instruction,
+            // faster than a load and lets the compiler dead-strip the 16-byte table.
             inline u8 __attribute__((always_inline)) blendColor(const u8 src, const u8 dst, const u8 alpha) {
-                return ((src * inv_alpha_table[alpha]) + (dst * alpha)) >> 4;
+                return ((src * (15u - alpha)) + (dst * alpha)) >> 4;
             }
             
             /**
@@ -1277,20 +1274,8 @@ namespace tsl {
                 );
             }
 
-            // Batch version for setPixelBlendDst
-
-            /**
-             * @brief Draws a rectangle of given sizes
-             *
-             * @param x X pos
-             * @param y Y pos
-             * @param w Width
-             * @param h Height
-             * @param color Color
-             */
             inline void drawRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
-                // Early exit for invalid dimensions
-                //if (w <= 0 || h <= 0) return;
+                if (w <= 0 || h <= 0) [[unlikely]] return;
                 
                 // Calculate clipped bounds
                 const s32 x_start = x < 0 ? 0 : x;
@@ -1316,8 +1301,8 @@ namespace tsl {
             inline void processRectChunk(const s32 x_start, const s32 x_end, const s32 y_start, const s32 y_end, const Color& color) {
                 // Clamp to active scissor rectangle (mirrors getPixelOffset scissor check)
                 s32 xs = x_start, xe = x_end, ys = y_start, ye = y_end;
-                if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& sc = this->m_scissoringStack.top();
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
                     xs = std::max(xs, static_cast<s32>(sc.x));
                     xe = std::min(xe, static_cast<s32>(sc.x_max));
                     ys = std::max(ys, static_cast<s32>(sc.y));
@@ -1357,9 +1342,12 @@ namespace tsl {
                 // Calculate visible dimensions
                 const s32 visibleHeight = y_end - y_start;
                 
-                const s32 chunkSize = std::max(1, visibleHeight / static_cast<s32>(ult::numThreads));
+                // Ceiling division: floor(h/n) silently drops up to (n-1) rows at the
+                // bottom of any rect whose height is not a multiple of numThreads.
+                const s32 n = static_cast<s32>(ult::numThreads);
+                const s32 chunkSize = std::max(1, (visibleHeight + n - 1) / n);
                 unsigned launched = 0u;
-                for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
+                for (unsigned i = 0; i < static_cast<unsigned>(n); ++i) {
                     const s32 startRow = y_start + static_cast<s32>(i) * chunkSize;
                     if (startRow >= y_end) break;
                     const s32 endRow = std::min(startRow + chunkSize, y_end);
@@ -1462,48 +1450,8 @@ namespace tsl {
                     }
                     return;
                 }
-
-                // ── Horizontal fast path ──────────────────────────────────────────────
-                // Replace N×setPixelBlendDst (N scissor checks + blockLinear each) with
-                // one fillRowSpanNEON call.  Common case: separator lines.
-                if (y0 == y1) {
-                    if (y0 < 0 || y0 >= static_cast<s32>(cfg::FramebufferHeight)) return;
-                    s32 xs = std::max(0, std::min(x0, x1));
-                    s32 xe = std::min(static_cast<s32>(cfg::FramebufferWidth), std::max(x0, x1) + 1);
-                    if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                        const auto& sc = this->m_scissoringStack.top();
-                        if (static_cast<u32>(y0) < sc.y || static_cast<u32>(y0) >= sc.y_max) return;
-                        xs = std::max(xs, static_cast<s32>(sc.x));
-                        xe = std::min(xe, static_cast<s32>(sc.x_max));
-                    }
-                    if (xs >= xe) return;
-                    u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
-                    fillRowSpanNEON(fb16, blockLinearYPart(static_cast<u32>(y0), offsetWidthVar), xs, xe, color);
-                    return;
-                }
-
-                // ── Vertical fast path ────────────────────────────────────────────────
-                // Precompute xPart once; iterate y using blendPixelDirect.
-                if (x0 == x1) {
-                    if (x0 < 0 || x0 >= static_cast<s32>(cfg::FramebufferWidth)) return;
-                    s32 ys = std::max(0, std::min(y0, y1));
-                    s32 ye = std::min(static_cast<s32>(cfg::FramebufferHeight), std::max(y0, y1) + 1);
-                    if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                        const auto& sc = this->m_scissoringStack.top();
-                        if (static_cast<u32>(x0) < sc.x || static_cast<u32>(x0) >= sc.x_max) return;
-                        ys = std::max(ys, static_cast<s32>(sc.y));
-                        ye = std::min(ye, static_cast<s32>(sc.y_max));
-                    }
-                    if (ys >= ye) return;
-                    const u32 px    = static_cast<u32>(x0);
-                    const u32 xPart = ((px >> 5u) << 12u) | ((px & 16u) << 3u)
-                                    | ((px & 8u)  <<  1u) |  (px & 7u);
-                    u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
-                    const u8  a = color.a;
-                    for (s32 yi = ys; yi < ye; ++yi)
-                        blendPixelDirect(fb16, blockLinearYPart(static_cast<u32>(yi), offsetWidthVar) + xPart, color, a);
-                    return;
-                }
+                
+                // Calculate deltas
                 const s32 dx = x1 - x0;
                 const s32 dy = y1 - y0;
                 
@@ -1658,8 +1606,8 @@ namespace tsl {
                 s32 clip_right  = std::min(static_cast<s32>(cfg::FramebufferWidth),  centerX + bound);
                 s32 clip_top    = std::max(0, centerY - bound);
                 s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
-                if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& sc = this->m_scissoringStack.top();
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
                     clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
                     clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
                     clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
@@ -1767,6 +1715,39 @@ namespace tsl {
                 const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
                 const Color aaColor2 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 2)};  // 25%
                 
+                // ── Arc spans: hoist blockLinearYPart out of pixel loops ──────────────
+                // The original code called setPixelBlendDst per pixel, which recomputed
+                // the blockLinear y-contribution and checked scissor on every iteration.
+                // hspan computes rowBase once per y-value and uses blendPixelDirect
+                // (tiny: ~4 instructions for opaque colours).  No fillRowSpanNEON here —
+                // arc spans are ≤radius pixels wide, so the NEON loop would never fire
+                // and the function setup would inflate code size without benefit.
+                // Without always_inline, -Os outlines hspan to one copy, called 8× per step.
+                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                const u32  owv  = offsetWidthVar;
+                const u8   ha   = highlightColor.a;
+
+                // Scissor clip bounds — default to full framebuffer when no scissor.
+                const s32 fbW = static_cast<s32>(cfg::FramebufferWidth);
+                const s32 fbH = static_cast<s32>(cfg::FramebufferHeight);
+                s32 sc_x = 0, sc_xe = fbW, sc_y = 0, sc_ye = fbH;
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                    sc_x  = static_cast<s32>(sc.x);
+                    sc_xe = static_cast<s32>(sc.x_max);
+                    sc_y  = static_cast<s32>(sc.y);
+                    sc_ye = static_cast<s32>(sc.y_max);
+                }
+
+                // Draw span [xs, xe) at row yr. xe is exclusive.
+                auto hspan = [&](s32 yr, s32 xs, s32 xe) {
+                    if (yr < sc_y || yr >= sc_ye) return;
+                    const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
+                    const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
+                    for (s32 i = x0c; i < x1c; ++i)
+                        blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                };
+
                 // Circle drawing with AA - optimized Bresenham
                 s32 cx = radius;
                 s32 cy = 0;
@@ -1778,79 +1759,55 @@ namespace tsl {
                 
                 while (cx >= cy) {
                     // Pre-calculate Y coordinates (hoist invariants)
-                    const s32 topY1 = topCornerY - cy;
-                    const s32 topY2 = topCornerY - cx;
+                    const s32 topY1    = topCornerY    - cy;
+                    const s32 topY2    = topCornerY    - cx;
                     const s32 bottomY1 = bottomCornerY + cy;
                     const s32 bottomY2 = bottomCornerY + cx;
                     
-                    // Pre-calculate X bounds
-                    const s32 leftX1Start = leftCornerX - cx;
-                    const s32 leftX2Start = leftCornerX - cy;
+                    // X span bounds. Left spans: [start, leftCornerX); right: [start, end+1).
+                    const s32 leftX1Start  = leftCornerX  - cx;
+                    const s32 leftX2Start  = leftCornerX  - cy;
                     const s32 rightX1Start = rightCornerX + 1;
-                    const s32 rightX1End = rightCornerX + cx;
-                    const s32 rightX2End = rightCornerX + cy;
+                    const s32 rightX1End   = rightCornerX + cx;
+                    const s32 rightX2End   = rightCornerX + cy;
+
+                    // Eight spans across four rows.  hspan computes rowBase once per call.
+                    hspan(topY1,    leftX1Start,  leftCornerX);
+                    hspan(topY1,    rightX1Start, rightX1End + 1);
+                    hspan(topY2,    leftX2Start,  leftCornerX);
+                    hspan(topY2,    rightX1Start, rightX2End + 1);
+                    hspan(bottomY1, leftX1Start,  leftCornerX);
+                    hspan(bottomY1, rightX1Start, rightX1End + 1);
+                    hspan(bottomY2, leftX2Start,  leftCornerX);
+                    hspan(bottomY2, rightX1Start, rightX2End + 1);
                     
-                    // Draw filled spans - NOW PERFECTLY MIRRORED
-                    // Upper-left corner (exclusive)
-                    for (s32 i = leftX1Start; i < leftCornerX; i++) {
-                        this->setPixelBlendDst(i, topY1, highlightColor);
-                    }
-                    for (s32 i = leftX2Start; i < leftCornerX; i++) {
-                        this->setPixelBlendDst(i, topY2, highlightColor);
-                    }
-                    
-                    // Lower-left corner (NOW exclusive like top)
-                    for (s32 i = leftX1Start; i < leftCornerX; i++) {
-                        this->setPixelBlendDst(i, bottomY1, highlightColor);
-                    }
-                    for (s32 i = leftX2Start; i < leftCornerX; i++) {
-                        this->setPixelBlendDst(i, bottomY2, highlightColor);
-                    }
-                    
-                    // Upper-right corner (starts at +1)
-                    for (s32 i = rightX1Start; i <= rightX1End; i++) {
-                        this->setPixelBlendDst(i, topY1, highlightColor);
-                    }
-                    for (s32 i = rightX1Start; i <= rightX2End; i++) {
-                        this->setPixelBlendDst(i, topY2, highlightColor);
-                    }
-                    
-                    // Lower-right corner (NOW starts at +1 like top)
-                    for (s32 i = rightX1Start; i <= rightX1End; i++) {
-                        this->setPixelBlendDst(i, bottomY1, highlightColor);
-                    }
-                    for (s32 i = rightX1Start; i <= rightX2End; i++) {
-                        this->setPixelBlendDst(i, bottomY2, highlightColor);
-                    }
-                    
-                    // Add AA at step transitions
+                    // AA pixels at step transitions — rare single-pixel writes.
                     if (__builtin_expect(cx != lastCx && cy > 0, 0)) {
-                        // Pre-calculate AA pixel positions
                         const s32 cxAA = cx + 1;
                         
                         // Upper-left AA
-                        this->setPixelBlendDst(leftCornerX - cxAA, topY1, aaColor1);
+                        this->setPixelBlendDst(leftCornerX - cxAA, topY1,     aaColor1);
                         this->setPixelBlendDst(leftCornerX - cxAA, topY1 + 1, aaColor2);
-                        this->setPixelBlendDst(leftX2Start, topY2 - 1, aaColor1);
-                        this->setPixelBlendDst(leftX2Start + 1, topY2 - 1, aaColor2);
+                        this->setPixelBlendDst(leftX2Start,         topY2 - 1, aaColor1);
+                        this->setPixelBlendDst(leftX2Start + 1,     topY2 - 1, aaColor2);
                         
                         // Upper-right AA
-                        this->setPixelBlendDst(rightCornerX + cxAA, topY1, aaColor1);
-                        this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1, aaColor2);
-                        this->setPixelBlendDst(rightX2End, topY2 - 1, aaColor1);
-                        this->setPixelBlendDst(rightX2End - 1, topY2 - 1, aaColor2);
+                        this->setPixelBlendDst(rightCornerX + cxAA, topY1,         aaColor1);
+                        this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1,     aaColor2);
+                        this->setPixelBlendDst(rightX2End,           topY2 - 1,     aaColor1);
+                        this->setPixelBlendDst(rightX2End - 1,       topY2 - 1,     aaColor2);
                         
                         // Lower-left AA
-                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1, aaColor1);
+                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1,     aaColor1);
                         this->setPixelBlendDst(leftCornerX - cxAA, bottomY1 - 1, aaColor2);
-                        this->setPixelBlendDst(leftX2Start, bottomY2 + 1, aaColor1);
-                        this->setPixelBlendDst(leftX2Start + 1, bottomY2 + 1, aaColor2);
+                        this->setPixelBlendDst(leftX2Start,         bottomY2 + 1, aaColor1);
+                        this->setPixelBlendDst(leftX2Start + 1,     bottomY2 + 1, aaColor2);
                         
                         // Lower-right AA
-                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1, aaColor1);
+                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1,     aaColor1);
                         this->setPixelBlendDst(rightCornerX + cxAA, bottomY1 - 1, aaColor2);
-                        this->setPixelBlendDst(rightX2End, bottomY2 + 1, aaColor1);
-                        this->setPixelBlendDst(rightX2End - 1, bottomY2 + 1, aaColor2);
+                        this->setPixelBlendDst(rightX2End,           bottomY2 + 1, aaColor1);
+                        this->setPixelBlendDst(rightX2End - 1,       bottomY2 + 1, aaColor2);
                     }
                     
                     lastCx = cx;
@@ -1983,8 +1940,8 @@ namespace tsl {
                 s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
                 s32 clip_y     = std::max(0, y);
                 s32 clip_y_end = std::min<s32>(cfg::FramebufferHeight, y_end);
-                if (!self->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& sc = self->m_scissoringStack.top();
+                if (self->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = self->m_scissorStack[self->m_scissorDepth - 1];
                     clip_x     = std::max(clip_x,     static_cast<s32>(sc.x));
                     clip_x_end = std::min(clip_x_end, static_cast<s32>(sc.x_max));
                     clip_y     = std::max(clip_y,     static_cast<s32>(sc.y));
@@ -2140,8 +2097,8 @@ namespace tsl {
                 s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), y + h);
 
                 // Also clamp to active scissor rectangle
-                if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& sc = this->m_scissoringStack.top();
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
                     clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
                     clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
                     clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
@@ -2251,17 +2208,13 @@ namespace tsl {
                                         const bool useBarrier = true, const bool preserveAlpha = false)
             {
                 const s32 bytesPerRow = imageW * 2;
-                const uint8x8_t alpha_limit_vec = vdup_n_u8(globalAlphaLimit);
-                const uint8x8_t mask_low8 = vdup_n_u8(0x0Fu);
-                const uint8x8_t vZero8    = vdup_n_u8(0u);
-                const uint16x8_t vMask4   = vdupq_n_u16(0x0Fu);
-                const uint16x8_t v15_16   = vdupq_n_u16(15u);
 
-                u16* const fb16      = reinterpret_cast<u16*>(Renderer::getCurrentFramebuffer());
-                Color* const framebuffer = static_cast<Color*>(Renderer::getCurrentFramebuffer());
+                void* const rawFB        = this->m_currentFramebuffer;
+                u16* const fb16          = reinterpret_cast<u16*>(rawFB);
+                Color* const framebuffer = static_cast<Color*>(rawFB);
 
-                const bool hasScissor = !Renderer::m_scissoringStack.empty();
-                const auto scissor    = hasScissor ? Renderer::m_scissoringStack.top() : ScissoringConfig{};
+                const bool hasScissor = Renderer::get().m_scissorDepth != 0;
+                const auto scissor    = hasScissor ? Renderer::get().m_scissorStack[Renderer::get().m_scissorDepth - 1] : ScissoringConfig{};
                 const u32 owv = offsetWidthVar;
 
                 // Prologue length: pixels from x until first 8-aligned destination column.
@@ -2286,9 +2239,16 @@ namespace tsl {
 
                     if (__builtin_expect(!hasScissor, 1)) {
                         // ── Fast path: no scissor ─────────────────────────────────────────
-                        // writePixelBMP: shared scalar pixel writer used by prologue and
-                        // epilogue. Defined without always_inline so -Os can outline it to
-                        // a single copy in the binary, called from two sites below.
+                        // NEON constants live here, not at function entry: the scissor path
+                        // is scalar-only and never uses them.  Hoisting them unconditionally
+                        // wasted 5 vdup instructions on every scissored row.
+                        const uint8x8_t alpha_limit_vec = vdup_n_u8(globalAlphaLimit);
+                        const uint8x8_t mask_low8 = vdup_n_u8(0x0Fu);
+                        const uint8x8_t vZero8    = vdup_n_u8(0u);
+                        const uint16x8_t vMask4   = vdupq_n_u16(0x0Fu);
+                        const uint16x8_t v15_16   = vdupq_n_u16(15u);
+
+                        // Scalar pixel writer for prologue and epilogue.
                         auto writePixelBMP = [&](s32 x1) {
                             const u8 p1 = rowPtr[x1 << 1], p2 = rowPtr[(x1 << 1) + 1];
                             const u8 av = std::min<u8>(p2 & 0x0Fu, globalAlphaLimit);
@@ -3320,8 +3280,8 @@ namespace tsl {
                 s32 endX   = std::min(glyphWidth,  static_cast<s32>(cfg::FramebufferWidth)  - xPos);
                 s32 endY   = std::min(glyphHeight, static_cast<s32>(cfg::FramebufferHeight) - yPos);
 
-                if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& sc = this->m_scissoringStack.top();
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
                     startX = std::max(startX, static_cast<s32>(sc.x)     - xPos);
                     startY = std::max(startY, static_cast<s32>(sc.y)     - yPos);
                     endX   = std::min(endX,   static_cast<s32>(sc.x_max) - xPos);
@@ -3534,7 +3494,11 @@ namespace tsl {
             Framebuffer m_framebuffer;
             void *m_currentFramebuffer = nullptr;
             
-            std::stack<ScissoringConfig> m_scissoringStack;
+            // Inline scissor stack — replaces std::stack<std::deque> to eliminate heap
+            // allocation and pointer indirection on every drawing operation.
+            // Depth never exceeds a handful of levels in practice; 8 is a safe ceiling.
+            ScissoringConfig m_scissorStack[8];
+            s32              m_scissorDepth = 0;
             
             
             
@@ -3601,8 +3565,8 @@ namespace tsl {
 
             inline u32 __attribute__((always_inline)) getPixelOffset(const u32 x, const u32 y) {
                 // Check for scissoring boundaries
-                if (!this->m_scissoringStack.empty()) [[unlikely]] {
-                    const auto& currScissorConfig = this->m_scissoringStack.top();
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& currScissorConfig = this->m_scissorStack[this->m_scissorDepth - 1];
                     if (x < currScissorConfig.x || y < currScissorConfig.y || 
                         x >= currScissorConfig.x_max || 
                         y >= currScissorConfig.y_max) {
