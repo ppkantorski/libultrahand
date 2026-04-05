@@ -380,7 +380,7 @@ namespace ult {
         auto bufferPtr = std::make_unique<char[]>(1024);
         char* buffer = bufferPtr.get();
         std::string line;
-        line.reserve(256);
+        //line.reserve(256);
         
         std::string key, value;
         key.reserve(64);

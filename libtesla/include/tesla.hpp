@@ -1278,36 +1278,6 @@ namespace tsl {
             }
 
             // Batch version for setPixelBlendDst
-            inline void setPixelBlendDstBatch(const u32 baseX, const u32 baseY, 
-                                              const u8 red[16], const u8 green[16], 
-                                              const u8 blue[16], const u8 alpha[16], 
-                                              const s32 count) {
-                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
-                
-                for (s32 i = 0; i < count; ++i) {
-                    // Early exit for transparent pixels
-                    const u8 currentAlpha = alpha[i];
-                    if (currentAlpha == 0) [[unlikely]]
-                        continue;
-                    
-                    const u32 offset = this->getPixelOffset(baseX + i, baseY);
-                    if (offset == UINT32_MAX) [[unlikely]]
-                        continue;
-                    
-                    // Direct framebuffer read
-                    const Color src = framebuffer[offset];
-                    const u8 invAlpha = 0xF - currentAlpha;
-                    
-                    // Direct framebuffer write - skip setPixelAtOffset call
-                    framebuffer[offset] = Color(
-                        blendColor(src.r, red[i], currentAlpha),
-                        blendColor(src.g, green[i], currentAlpha),
-                        blendColor(src.b, blue[i], currentAlpha),
-                        currentAlpha + ((src.a * invAlpha) >> 4)
-                    );
-                }
-            }
-
 
             /**
              * @brief Draws a rectangle of given sizes
@@ -1344,10 +1314,20 @@ namespace tsl {
              * @param color Color to draw
              */
             inline void processRectChunk(const s32 x_start, const s32 x_end, const s32 y_start, const s32 y_end, const Color& color) {
-                for (s32 yi = y_start; yi < y_end; ++yi) {
-                    for (s32 xi = x_start; xi < x_end; ++xi) {
-                        this->setPixelBlendDst(xi, yi, color);
-                    }
+                // Clamp to active scissor rectangle (mirrors getPixelOffset scissor check)
+                s32 xs = x_start, xe = x_end, ys = y_start, ye = y_end;
+                if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                    const auto& sc = this->m_scissoringStack.top();
+                    xs = std::max(xs, static_cast<s32>(sc.x));
+                    xe = std::min(xe, static_cast<s32>(sc.x_max));
+                    ys = std::max(ys, static_cast<s32>(sc.y));
+                    ye = std::min(ye, static_cast<s32>(sc.y_max));
+                    if (xs >= xe || ys >= ye) return;
+                }
+                u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                for (s32 yi = ys; yi < ye; ++yi) {
+                    const u32 rowBase = blockLinearYPart(static_cast<u32>(yi), offsetWidthVar);
+                    fillRowSpanNEON(fb16, rowBase, xs, xe, color);
                 }
             }
         
@@ -1377,31 +1357,17 @@ namespace tsl {
                 // Calculate visible dimensions
                 const s32 visibleHeight = y_end - y_start;
                 
-                // Calculate chunk size - divide rows among threads
                 const s32 chunkSize = std::max(1, visibleHeight / static_cast<s32>(ult::numThreads));
-                
-                // Launch threads using ult::renderThreads array
+                unsigned launched = 0u;
                 for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
-                    const s32 startRow = y_start + (i * chunkSize);
-                    const s32 endRow = (i == static_cast<unsigned>(ult::numThreads) - 1) ? 
-                                      y_end : 
-                                      std::min(startRow + chunkSize, y_end);
-                    
-                    // Skip threads that have no work
-                    if (startRow >= endRow) {
-                        ult::renderThreads[i] = std::thread([](){}); // Empty thread (still needed for joining)
-                        continue;
-                    }
-                    
-                    // Use member function instead of lambda - much faster
-                    ult::renderThreads[i] = std::thread(&Renderer::processRectChunk, this, 
-                                                       x_start, x_end, startRow, endRow, color);
+                    const s32 startRow = y_start + static_cast<s32>(i) * chunkSize;
+                    if (startRow >= y_end) break;
+                    const s32 endRow = std::min(startRow + chunkSize, y_end);
+                    ult::renderThreads[launched++] = std::thread(&Renderer::processRectChunk, this,
+                                                                 x_start, x_end, startRow, endRow, color);
                 }
-                
-                // Join all ult::renderThreads
-                for (auto& t : ult::renderThreads) {
-                    t.join();
-                }
+                for (unsigned i = 0; i < launched; ++i)
+                    ult::renderThreads[i].join();
             }
 
             inline void drawRectAdaptive(s32 x, s32 y, s32 w, s32 h, const Color& color) {
@@ -1422,53 +1388,58 @@ namespace tsl {
              * @param color Color
              */
             inline void drawEmptyRect(s32 x, s32 y, s32 w, s32 h, Color color) {
-                // Only precompute values that are actually reused
                 const s32 x_end = x + w - 1;
                 const s32 y_end = y + h - 1;
-                
-                // Early exit for completely out-of-bounds rectangles
-                if (x_end < 0 || y_end < 0 || x >= cfg::FramebufferWidth || y >= cfg::FramebufferHeight) [[unlikely]] {
-                    return;
-                }
-                
-                // These are reused for both horizontal lines
+
+                if (x_end < 0 || y_end < 0 ||
+                    x >= cfg::FramebufferWidth ||
+                    y >= cfg::FramebufferHeight) [[unlikely]] return;
+
                 const s32 line_x_start = x < 0 ? 0 : x;
-                const s32 line_x_end = x_end >= cfg::FramebufferWidth ? cfg::FramebufferWidth - 1 : x_end;
-                
-                // Draw top horizontal line
-                if (y >= 0 && y < cfg::FramebufferHeight) {
-                    for (s32 xi = line_x_start; xi <= line_x_end; ++xi) {
-                        this->setPixelBlendDst(xi, y, color);
-                    }
-                }
-                
-                // Draw bottom horizontal line (only if different from top)
-                if (h > 1 && y_end >= 0 && y_end < cfg::FramebufferHeight) {
-                    for (s32 xi = line_x_start; xi <= line_x_end; ++xi) {
-                        this->setPixelBlendDst(xi, y_end, color);
-                    }
-                }
-                
-                // Draw vertical lines only if there's space between horizontal lines
+                const s32 line_x_end   = x_end >= cfg::FramebufferWidth
+                                         ? cfg::FramebufferWidth - 1 : x_end;
+
+                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                const u32  owv  = offsetWidthVar;
+                const u8   alpha = color.a;
+
+                // ── Horizontal lines — NEON row fill (xe is exclusive) ────────────
+                if (y >= 0 && y < cfg::FramebufferHeight)
+                    fillRowSpanNEON(fb16,
+                        blockLinearYPart(static_cast<u32>(y), owv),
+                        line_x_start, line_x_end + 1, color);
+
+                if (h > 1 && y_end >= 0 && y_end < cfg::FramebufferHeight)
+                    fillRowSpanNEON(fb16,
+                        blockLinearYPart(static_cast<u32>(y_end), owv),
+                        line_x_start, line_x_end + 1, color);
+
+                // ── Vertical lines — precompute x-column offset once per side ─────
+                // blockLinearOffset(px, yPart) = yPart + xPart(px).
+                // xPart depends only on px, so hoist it out of the row loop.
                 if (h > 2) {
-                    // These are reused for both vertical lines
                     const s32 line_y_start = (y + 1) < 0 ? 0 : (y + 1);
-                    const s32 line_y_end = (y_end - 1) >= cfg::FramebufferHeight ? cfg::FramebufferHeight - 1 : (y_end - 1);
-                    
-                    // Only proceed if there are actually vertical pixels to draw
+                    const s32 line_y_end   = (y_end - 1) >= cfg::FramebufferHeight
+                                             ? cfg::FramebufferHeight - 1 : (y_end - 1);
+
                     if (line_y_start <= line_y_end) {
-                        // Left vertical line
                         if (x >= 0 && x < cfg::FramebufferWidth) {
-                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
-                                this->setPixelBlendDst(x, yi, color);
-                            }
+                            const u32 px = static_cast<u32>(x);
+                            const u32 xPartL = ((px >> 5u) << 12u) | ((px & 16u) << 3u)
+                                             | ((px & 8u)  <<  1u) |  (px & 7u);
+                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi)
+                                blendPixelDirect(fb16,
+                                    blockLinearYPart(static_cast<u32>(yi), owv) + xPartL,
+                                    color, alpha);
                         }
-                        
-                        // Right vertical line (only if different from left)
                         if (w > 1 && x_end >= 0 && x_end < cfg::FramebufferWidth) {
-                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi) {
-                                this->setPixelBlendDst(x_end, yi, color);
-                            }
+                            const u32 px = static_cast<u32>(x_end);
+                            const u32 xPartR = ((px >> 5u) << 12u) | ((px & 16u) << 3u)
+                                             | ((px & 8u)  <<  1u) |  (px & 7u);
+                            for (s32 yi = line_y_start; yi <= line_y_end; ++yi)
+                                blendPixelDirect(fb16,
+                                    blockLinearYPart(static_cast<u32>(yi), owv) + xPartR,
+                                    color, alpha);
                         }
                     }
                 }
@@ -1491,8 +1462,48 @@ namespace tsl {
                     }
                     return;
                 }
-                
-                // Calculate deltas
+
+                // ── Horizontal fast path ──────────────────────────────────────────────
+                // Replace N×setPixelBlendDst (N scissor checks + blockLinear each) with
+                // one fillRowSpanNEON call.  Common case: separator lines.
+                if (y0 == y1) {
+                    if (y0 < 0 || y0 >= static_cast<s32>(cfg::FramebufferHeight)) return;
+                    s32 xs = std::max(0, std::min(x0, x1));
+                    s32 xe = std::min(static_cast<s32>(cfg::FramebufferWidth), std::max(x0, x1) + 1);
+                    if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                        const auto& sc = this->m_scissoringStack.top();
+                        if (static_cast<u32>(y0) < sc.y || static_cast<u32>(y0) >= sc.y_max) return;
+                        xs = std::max(xs, static_cast<s32>(sc.x));
+                        xe = std::min(xe, static_cast<s32>(sc.x_max));
+                    }
+                    if (xs >= xe) return;
+                    u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                    fillRowSpanNEON(fb16, blockLinearYPart(static_cast<u32>(y0), offsetWidthVar), xs, xe, color);
+                    return;
+                }
+
+                // ── Vertical fast path ────────────────────────────────────────────────
+                // Precompute xPart once; iterate y using blendPixelDirect.
+                if (x0 == x1) {
+                    if (x0 < 0 || x0 >= static_cast<s32>(cfg::FramebufferWidth)) return;
+                    s32 ys = std::max(0, std::min(y0, y1));
+                    s32 ye = std::min(static_cast<s32>(cfg::FramebufferHeight), std::max(y0, y1) + 1);
+                    if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                        const auto& sc = this->m_scissoringStack.top();
+                        if (static_cast<u32>(x0) < sc.x || static_cast<u32>(x0) >= sc.x_max) return;
+                        ys = std::max(ys, static_cast<s32>(sc.y));
+                        ye = std::min(ye, static_cast<s32>(sc.y_max));
+                    }
+                    if (ys >= ye) return;
+                    const u32 px    = static_cast<u32>(x0);
+                    const u32 xPart = ((px >> 5u) << 12u) | ((px & 16u) << 3u)
+                                    | ((px & 8u)  <<  1u) |  (px & 7u);
+                    u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                    const u8  a = color.a;
+                    for (s32 yi = ys; yi < ye; ++yi)
+                        blendPixelDirect(fb16, blockLinearYPart(static_cast<u32>(yi), offsetWidthVar) + xPart, color, a);
+                    return;
+                }
                 const s32 dx = x1 - x0;
                 const s32 dy = y1 - y0;
                 
@@ -1641,91 +1652,93 @@ namespace tsl {
                 const float r_f = static_cast<float>(radius);
                 const float r2 = r_f * r_f;
                 const u8 base_a = color.a;
-                const bool full_opacity = (base_a == 0xFF);
                 
                 const s32 bound = radius + 2;
-                const s32 clip_left = std::max(0, centerX - bound);
-                const s32 clip_right = std::min(static_cast<s32>(cfg::FramebufferWidth), centerX + bound);
-                const s32 clip_top = std::max(0, centerY - bound);
-                const s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
+                s32 clip_left   = std::max(0, centerX - bound);
+                s32 clip_right  = std::min(static_cast<s32>(cfg::FramebufferWidth),  centerX + bound);
+                s32 clip_top    = std::max(0, centerY - bound);
+                s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
+                if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                    const auto& sc = this->m_scissoringStack.top();
+                    clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
+                    clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
+                    clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
+                    clip_bottom = std::min(clip_bottom, static_cast<s32>(sc.y_max));
+                    if (clip_left >= clip_right || clip_top >= clip_bottom) return;
+                }
                 
-                const float offset = 0.353553f; // sqrt(2)/4
-                const float samples[8][2] = {
-                    {-offset, -offset}, {offset, -offset},
-                    {-offset, offset},  {offset, offset},
-                    {-0.5f, 0.0f},     {0.5f, 0.0f},
-                    {0.0f, -0.5f},     {0.0f, 0.5f}
+                static constexpr float kSamples[8][2] = {
+                    {-0.353553f, -0.353553f}, { 0.353553f, -0.353553f},
+                    {-0.353553f,  0.353553f}, { 0.353553f,  0.353553f},
+                    {-0.5f,  0.0f}, { 0.5f,  0.0f},
+                    { 0.0f, -0.5f}, { 0.0f,  0.5f}
                 };
-                
-                for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
-                    const float py = static_cast<float>(yc - centerY) + 0.5f;
-                    const float py_sq = py * py;
-                    
-                    for (s32 xc = clip_left; xc < clip_right; ++xc) {
-                        const float px = static_cast<float>(xc - centerX) + 0.5f;
-                        const float px_sq = px * px;
-                        const float center_d2 = px_sq + py_sq;
-                        
-                        if (filled) {
-                            if (center_d2 <= r2 - r_f) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    if (full_opacity) this->setPixelAtOffset(off, color);
-                                    else this->setPixelBlendDst(xc, yc, color);
+
+                u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+
+                // Loop-invariant thresholds — hoisted explicitly so -Os doesn't rematerialize.
+                const float inner_thresh = r2 - r_f;  // d² ≤ this → definitely inside
+                const float outer_thresh = r2 + r_f;  // d² > this → definitely outside
+
+                if (filled) {
+                    // Per-pixel x-scan: accumulate consecutive "definitely inside" pixels
+                    // into a span and flush via NEON; border pixels get 8-sample AA.
+                    // No sqrtf — the span boundary emerges naturally from the d²<r²-r test.
+                    for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                        const float py    = static_cast<float>(yc - centerY) + 0.5f;
+                        const float py_sq = py * py;
+                        if (py_sq > outer_thresh) continue;
+                        const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+
+                        s32 span_xl = -1;
+                        for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                            const float px = static_cast<float>(xc - centerX) + 0.5f;
+                            const float d2 = px*px + py_sq;
+                            if (d2 <= inner_thresh) {
+                                if (span_xl < 0) span_xl = xc;  // start span
+                            } else {
+                                if (span_xl >= 0) {
+                                    fillRowSpanNEON(fb16, rowBase, span_xl, xc, color);
+                                    span_xl = -1;
                                 }
-                                continue;
-                            } else if (center_d2 > r2 + r_f) {
-                                continue;
-                            }
-                            
-                            u32 inside_count = 0;
-                            for (u32 s = 0; s < 8; ++s) {
-                                const float sx = px + samples[s][0];
-                                const float sy = py + samples[s][1];
-                                if (sx*sx + sy*sy <= r2) {
-                                    inside_count++;
-                                }
-                            }
-                            
-                            if (inside_count > 0) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    Color c = color;
-                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8);
-                                    this->setPixelBlendDst(xc, yc, c);
-                                }
-                            }
-                        } else {
-                            const float inner_r2 = (r_f - 1.0f) * (r_f - 1.0f);
-                            
-                            if (center_d2 >= inner_r2 + r_f && center_d2 <= r2 - r_f) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    if (full_opacity) this->setPixelAtOffset(off, color);
-                                    else this->setPixelBlendDst(xc, yc, color);
-                                }
-                                continue;
-                            } else if (center_d2 < inner_r2 - r_f || center_d2 > r2 + r_f) {
-                                continue;
-                            }
-                            
-                            u32 inside_count = 0;
-                            for (u32 s = 0; s < 8; ++s) {
-                                const float sx = px + samples[s][0];
-                                const float sy = py + samples[s][1];
-                                const float sd2 = sx*sx + sy*sy;
-                                if (sd2 >= inner_r2 && sd2 <= r2) {
-                                    inside_count++;
+                                if (d2 <= outer_thresh) {
+                                    u32 cnt = 0;
+                                    for (u32 s = 0; s < 8; ++s) {
+                                        const float sx = px + kSamples[s][0], sy = py + kSamples[s][1];
+                                        if (sx*sx + sy*sy <= r2) ++cnt;
+                                    }
+                                    if (cnt) blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase),
+                                                              color, (u8)((base_a * cnt + 4) / 8));
                                 }
                             }
-                            
-                            if (inside_count > 0) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    Color c = color;
-                                    c.a = static_cast<u8>((base_a * inside_count + 4) / 8);
-                                    this->setPixelBlendDst(xc, yc, c);
+                        }
+                        if (span_xl >= 0)
+                            fillRowSpanNEON(fb16, rowBase, span_xl, clip_right, color);
+                    }
+                } else {
+                    // Unfilled (outline) — per-pixel, band between (r-1)² and r²
+                    const float inner_r2  = (r_f - 1.0f) * (r_f - 1.0f);
+                    const float ring_hi   = inner_r2 + r_f;  // solid ring inner boundary
+                    const float ring_lo   = inner_r2 - r_f;  // AA ring inner boundary
+                    for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                        const float py    = static_cast<float>(yc - centerY) + 0.5f;
+                        const float py_sq = py * py;
+                        if (py_sq > outer_thresh) continue;  // row entirely outside circle
+                        const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                        for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                            const float px = static_cast<float>(xc - centerX) + 0.5f;
+                            const float d2 = px*px + py_sq;
+                            if (d2 >= ring_hi && d2 <= inner_thresh) {
+                                blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase), color, base_a);
+                            } else if (d2 >= ring_lo && d2 <= outer_thresh) {
+                                u32 cnt = 0;
+                                for (u32 s = 0; s < 8; ++s) {
+                                    const float sx = px + kSamples[s][0], sy = py + kSamples[s][1];
+                                    const float sd2 = sx*sx + sy*sy;
+                                    if (sd2 >= inner_r2 && sd2 <= r2) ++cnt;
                                 }
+                                if (cnt) blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase),
+                                                          color, (u8)((base_a * cnt + 4) / 8));
                             }
                         }
                     }
@@ -1855,35 +1868,100 @@ namespace tsl {
                 }
             }
             
-            // Pre-compute all horizontal spans for the entire shape
-            struct HorizontalSpan {
-                s32 start_x, end_x;
-            };
-            
-            // Helper function - defined outside, compiler will inline
-            static inline void sampleAndBlendArcPixel(Renderer* self, s32 xp, s32 yc, 
-                                                      int px2, int cx2, int sx, int py2, int cy2, int sy,
-                                                      long long r2_scaled, const Color& color, u8 base_a) {
-                int hits = 0;
-                const long long dx1 = px2 + sx - cx2;
-                const long long dx2 = px2 - sx - cx2;
-                const long long dy1 = py2 + sy - cy2;
-                const long long dy2 = py2 - sy - cy2;
-                
-                if (dx1*dx1 + dy1*dy1 <= r2_scaled) ++hits;
-                if (dx1*dx1 + dy2*dy2 <= r2_scaled) ++hits;
-                if (dx2*dx2 + dy1*dy1 <= r2_scaled) ++hits;
-                if (dx2*dx2 + dy2*dy2 <= r2_scaled) ++hits;
-                
-                if (hits == 4) {
-                    self->setPixelBlendDst(xp, yc, color);
-                } else if (hits > 0) {
-                    u8 a = (base_a * hits + 2) >> 2;
-                    if (a) {
-                        Color c = color;
-                        c.a = a;
-                        self->setPixelBlendDst(xp, yc, c);
+            ALWAYS_INLINE static void blendPixelDirect(u16* fb16, u32 off, const Color& color, u8 a) noexcept {
+                if (a == 0xFu) {
+                    reinterpret_cast<Color*>(fb16)[off] = color;
+                } else {
+                    const u8 invA = static_cast<u8>(15u - a);
+                    const Color src = reinterpret_cast<const Color*>(fb16)[off];
+                    reinterpret_cast<Color*>(fb16)[off] = Color(
+                        static_cast<u8>(((src.r * invA) + (color.r * a)) >> 4u),
+                        static_cast<u8>(((src.g * invA) + (color.g * a)) >> 4u),
+                        static_cast<u8>(((src.b * invA) + (color.b * a)) >> 4u),
+                        a + static_cast<u8>((src.a * invA) >> 4u));
+                }
+            }
+
+            // dy1sq = (py2+1-cy2)^2 and dy2sq = (py2-1-cy2)^2 are constant across an
+            // entire row's arc loop (py2 and cy2 don't change per pixel).  The caller
+            // precomputes them once and passes them in, saving 2 multiplications per pixel.
+            static inline void sampleAndBlendArcPixel(u16* fb16, s32 xp, u32 rowBase,
+                                                      int px2, int cx2,
+                                                      long long dy1sq, long long dy2sq,
+                                                      long long r2_scaled,
+                                                      const Color& color, u8 base_a) noexcept {
+                const long long dx1 = px2 + 1 - cx2,  dx2 = px2 - 1 - cx2;
+                const long long dx1sq = dx1*dx1, dx2sq = dx2*dx2;
+                const int hits = (int)(dx1sq+dy1sq <= r2_scaled)
+                               + (int)(dx1sq+dy2sq <= r2_scaled)
+                               + (int)(dx2sq+dy1sq <= r2_scaled)
+                               + (int)(dx2sq+dy2sq <= r2_scaled);
+                if (hits == 0) return;
+                const u8 a = (hits == 4) ? color.a : static_cast<u8>((base_a * hits + 2) >> 2);
+                if (a == 0u) return;
+                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(xp), rowBase), color, a);
+            }
+
+            ALWAYS_INLINE static void fillRowSpanNEON(u16* fb16, const u32 rowBase,
+                                                      const s32 xs, const s32 xe,
+                                                      const Color& color) {
+                const s32 span = xe - xs;
+                if (span <= 0) return;
+                const u32 bpX     = static_cast<u32>(xs);
+                const s32 prologue = static_cast<s32>((8u - (bpX & 7u)) & 7u);
+                const s32 pe      = std::min(prologue, span);
+
+                if (color.a == 0xFu) {
+                    // ── Full-opacity: zero reads, pure stores ──────────────────────
+                    const uint16x8_t vColor = vdupq_n_u16(color.rgba);
+                    s32 i = 0;
+                    for (; i < pe; ++i)
+                        fb16[blockLinearOffset(bpX + static_cast<u32>(i), rowBase)] = color.rgba;
+                    for (; i + 8 <= span; i += 8)
+                        vst1q_u16(fb16 + blockLinearOffset(bpX + static_cast<u32>(i), rowBase), vColor);
+                    for (; i < span; ++i)
+                        fb16[blockLinearOffset(bpX + static_cast<u32>(i), rowBase)] = color.rgba;
+                } else {
+                    // ── Partial-opacity: NEON blend ────────────────────────────────
+                    const u8  alpha  = color.a;
+                    const u8  invA   = static_cast<u8>(15u - alpha);
+                    const uint16x8_t vAlpha = vdupq_n_u16(alpha);
+                    const uint16x8_t vInvA  = vdupq_n_u16(invA);
+                    const uint16x8_t vDstR  = vdupq_n_u16(color.r);
+                    const uint16x8_t vDstG  = vdupq_n_u16(color.g);
+                    const uint16x8_t vDstB  = vdupq_n_u16(color.b);
+                    const uint16x8_t vMask4 = vdupq_n_u16(0x000Fu);
+
+                    auto scalarBlend = [&](s32 i) {
+                        const u32 off = blockLinearOffset(bpX + static_cast<u32>(i), rowBase);
+                        const Color src = reinterpret_cast<const Color*>(fb16)[off];
+                        reinterpret_cast<Color*>(fb16)[off] = Color(
+                            static_cast<u8>(((src.r * invA) + (color.r * alpha)) >> 4u),
+                            static_cast<u8>(((src.g * invA) + (color.g * alpha)) >> 4u),
+                            static_cast<u8>(((src.b * invA) + (color.b * alpha)) >> 4u),
+                            alpha + static_cast<u8>((src.a * invA) >> 4u));
+                    };
+
+                    s32 i = 0;
+                    for (; i < pe; ++i) scalarBlend(i);
+                    for (; i + 8 <= span; i += 8) {
+                        const u32 off = blockLinearOffset(bpX + static_cast<u32>(i), rowBase);
+                        const uint16x8_t src16 = vld1q_u16(fb16 + off);
+                        const uint16x8_t src_r = vandq_u16(src16, vMask4);
+                        const uint16x8_t src_g = vandq_u16(vshrq_n_u16(src16,  4), vMask4);
+                        const uint16x8_t src_b = vandq_u16(vshrq_n_u16(src16,  8), vMask4);
+                        const uint16x8_t src_a =            vshrq_n_u16(src16, 12);
+                        const uint16x8_t r_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(src_r, vInvA), vDstR, vAlpha), 4);
+                        const uint16x8_t g_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(src_g, vInvA), vDstG, vAlpha), 4);
+                        const uint16x8_t b_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(src_b, vInvA), vDstB, vAlpha), 4);
+                        const uint16x8_t a_out = vaddq_u16(vAlpha, vshrq_n_u16(vmulq_u16(src_a, vInvA), 4));
+                        vst1q_u16(fb16 + off,
+                            vorrq_u16(r_out,
+                            vorrq_u16(vshlq_n_u16(g_out,  4),
+                            vorrq_u16(vshlq_n_u16(b_out,  8),
+                                      vshlq_n_u16(a_out, 12)))));
                     }
+                    for (; i < span; ++i) scalarBlend(i);
                 }
             }
             
@@ -1900,79 +1978,79 @@ namespace tsl {
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
         
-                const s32 clip_x     = std::max(0, x);
-                const s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
+                // Clamp x/y extents to both framebuffer AND active scissor rectangle
+                s32 clip_x     = std::max(0, x);
+                s32 clip_x_end = std::min<s32>(cfg::FramebufferWidth, x_end);
+                s32 clip_y     = std::max(0, y);
+                s32 clip_y_end = std::min<s32>(cfg::FramebufferHeight, y_end);
+                if (!self->m_scissoringStack.empty()) [[unlikely]] {
+                    const auto& sc = self->m_scissoringStack.top();
+                    clip_x     = std::max(clip_x,     static_cast<s32>(sc.x));
+                    clip_x_end = std::min(clip_x_end, static_cast<s32>(sc.x_max));
+                    clip_y     = std::max(clip_y,     static_cast<s32>(sc.y));
+                    clip_y_end = std::min(clip_y_end, static_cast<s32>(sc.y_max));
+                    if (clip_x >= clip_x_end || clip_y >= clip_y_end) return;
+                }
         
                 const s32 left_arc_end    = x + radius - 1;
                 const s32 right_arc_start = x_end - radius;
                 const s32 top_arc_end     = y + radius - 1;
                 const s32 bottom_arc_start = y_end - radius;
-        
+
                 const long long r2_scaled = 4LL * radius * radius;
-                const long long reject_threshold = (2LL*radius + 2)*(2LL*radius + 2);
-        
+                const long long reject_sq  = (2LL*radius + 2)*(2LL*radius + 2);
+
+                const s32 cx2_left  = 2 * (x + radius);
+                const s32 cx2_right = 2 * (x_end - radius);
+
                 const u8 base_a = color.a;
-        
-                // Precompute batch arrays
-                alignas(64) u8 redArray[512], greenArray[512], blueArray[512], alphaArray[512];
-                const uint8x16_t rv = vdupq_n_u8(color.r);
-                const uint8x16_t gv = vdupq_n_u8(color.g);
-                const uint8x16_t bv = vdupq_n_u8(color.b);
-                const uint8x16_t av = vdupq_n_u8(color.a);
-                for (int i = 0; i < 512; i += 16) {
-                    vst1q_u8(redArray + i, rv);
-                    vst1q_u8(greenArray + i, gv);
-                    vst1q_u8(blueArray + i, bv);
-                    vst1q_u8(alphaArray + i, av);
-                }
-        
+                u16* fb16 = reinterpret_cast<u16*>(self->m_currentFramebuffer);
+
+                const int cy2_top = 2 * (y + radius);
+                const int cy2_bot = 2 * (y_end - radius);
+
                 for (s32 yc = startRow; yc < endRow; ++yc) {
-                    if (yc < y || yc >= y_end) continue;
-        
+                    if (yc < clip_y || yc >= clip_y_end) continue;
+
+                    const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
                     const bool is_top = (yc <= top_arc_end);
                     const bool in_arc_rows = is_top || (yc >= bottom_arc_start);
-        
+
                     if (!in_arc_rows) {
-                        // Full-width batch for middle flat area
-                        s32 xs = std::max(clip_x, x);
-                        s32 xe = std::min(clip_x_end, x_end);
-                        for (s32 xp = xs; xp < xe; xp += 512)
-                            self->setPixelBlendDstBatch(xp, yc, redArray, greenArray, blueArray, alphaArray,
-                                                        std::min(512, xe - xp));
+                        fillRowSpanNEON(fb16, rowBase,
+                                        std::max(clip_x, x), std::min(clip_x_end, x_end), color);
                         continue;
                     }
-        
-                    const int cy2 = is_top ? 2*(y + radius) : 2*(y_end - radius);
+
+                    const int cy2 = is_top ? cy2_top : cy2_bot;
                     const int py2 = 2*yc + 1;
                     const long long dy = py2 - cy2;
-                    if (dy*dy > reject_threshold) continue;
-        
-                    s32 xp = std::max(clip_x, x);
+                    if (dy*dy > reject_sq) continue;
+
+                    // dy1 = dy+1, dy2 = dy-1 — both constant for this row.
+                    // Precompute their squares here so sampleAndBlendArcPixel
+                    // only needs to compute the per-pixel dx terms.
+                    const long long dy1sq = (dy + 1) * (dy + 1);
+                    const long long dy2sq = (dy - 1) * (dy - 1);
+
                     const s32 xe = std::min(clip_x_end, x_end);
-        
+
                     // Left corner arc
-                    for (; xp <= left_arc_end && xp < xe; ++xp) {
-                        sampleAndBlendArcPixel(self, xp, yc,
-                                               2*xp + 1, 2*(x + radius), 1,
-                                               py2, cy2, 1,
+                    for (s32 xp = std::max(clip_x, x); xp <= left_arc_end && xp < xe; ++xp)
+                        sampleAndBlendArcPixel(fb16, xp, rowBase,
+                                               2*xp + 1, cx2_left, dy1sq, dy2sq,
                                                r2_scaled, color, base_a);
-                    }
-        
-                    // Middle flat area
-                    s32 mid_start = std::max(xp, left_arc_end + 1);
-                    s32 mid_end   = std::min(xe, right_arc_start);
-                    for (s32 bx = mid_start; bx < mid_end; bx += 512)
-                        self->setPixelBlendDstBatch(bx, yc, redArray, greenArray, blueArray, alphaArray,
-                                                    std::min(512, mid_end - bx));
-        
+
+                    // Middle flat span — NEON fill
+                    fillRowSpanNEON(fb16, rowBase,
+                                    std::max(clip_x, left_arc_end + 1),
+                                    std::min(xe, right_arc_start), color);
+
                     // Right corner arc
-                    xp = std::max(xp, right_arc_start);
-                    for (; xp < xe; ++xp) {
-                        sampleAndBlendArcPixel(self, xp, yc,
-                                               2*xp + 1, 2*(x_end - radius), 1,
-                                               py2, cy2, 1,
+                    for (s32 xp = std::max(clip_x, right_arc_start); xp < xe; ++xp)
+                        sampleAndBlendArcPixel(fb16, xp, rowBase,
+                                               2*xp + 1, cx2_right, dy1sq, dy2sq,
                                                r2_scaled, color, base_a);
-                    }
                 }
             }
 
@@ -2018,11 +2096,8 @@ namespace tsl {
                 for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i) {
                     ult::renderThreads[i] = std::thread(threadTask);
                 }
-                
-                // Join all ult::renderThreads
-                for (auto& t : ult::renderThreads) {
-                    t.join();
-                }
+                for (unsigned i = 0; i < static_cast<unsigned>(ult::numThreads); ++i)
+                    ult::renderThreads[i].join();
             }
             
             /**
@@ -2058,270 +2133,469 @@ namespace tsl {
                                                 
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
                 const s32 radius = h >> 1;
-                const s32 clip_left = std::max(0, x);
-                const s32 clip_top = std::max(0, y);
-                const s32 clip_right = std::min(static_cast<s32>(cfg::FramebufferWidth), x + w);
-                const s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), y + h);
-                
+                // Clamp to framebuffer bounds
+                s32 clip_left   = std::max(0, x);
+                s32 clip_top    = std::max(0, y);
+                s32 clip_right  = std::min(static_cast<s32>(cfg::FramebufferWidth),  x + w);
+                s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), y + h);
+
+                // Also clamp to active scissor rectangle
+                if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                    const auto& sc = this->m_scissoringStack.top();
+                    clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
+                    clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
+                    clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
+                    clip_bottom = std::min(clip_bottom, static_cast<s32>(sc.y_max));
+                }
+
                 if (clip_left >= clip_right || clip_top >= clip_bottom) return;
-                
-                const s32 x_end = x + w;
-                const s32 y_end = y + h;
-                const s32 corner_x_left = x + radius;
+
+                const s32 x_end          = x + w;
+                const s32 corner_x_left  = x + radius;
                 const s32 corner_x_right = x_end - radius - 1;
-                const s32 corner_y_top = y + radius;
-                const s32 corner_y_bottom = y_end - radius - 1;
-                const float r_f = static_cast<float>(radius);
-                const float r2 = r_f * r_f;
-                const float aa_thresh = r2 + 2.0f * r_f + 1.0f;
-                const u8 base_a = color.a;
-                const bool full_opacity = (base_a == 0xF);
-                
+                const s32 corner_y_top   = y + radius;
+                const s32 corner_y_bot   = y + h - radius - 1;
+                const float r_f          = static_cast<float>(radius);
+                const float r2           = r_f * r_f;
+                const float aa_thresh    = r2 + 2.0f * r_f + 1.0f;
+                const u8  base_a         = color.a;
+
+                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+
                 for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
-                    if (yc < y || yc >= y_end) continue;
-                    
-                    const bool in_corners = yc < corner_y_top || yc > corner_y_bottom;
-                    
+                    const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                    const bool in_corners = (yc < corner_y_top) || (yc > corner_y_bot);
+
                     if (!in_corners) {
+                        // ── Full-width flat row — NEON fill, zero getPixelOffset calls ──
                         const s32 span_start = std::max(x, clip_left);
-                        const s32 span_end = std::min(x_end, clip_right);
-                        
-                        for (s32 xc = span_start; xc < span_end; ++xc) {
-                            const u32 off = this->getPixelOffset(xc, yc);
-                            if (off != UINT32_MAX) {
-                                if (full_opacity) {
-                                    this->setPixelAtOffset(off, color);
-                                } else {
-                                    this->setPixelBlendDst(xc, yc, color);
-                                }
-                            }
-                        }
-                    } else {
-                        const float dy = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc) : 
-                                                                 static_cast<float>(yc - corner_y_bottom);
-                        const float dy_sq = dy * dy;
-                        
-                        if (dy_sq > aa_thresh) continue;
-                        
-                        const float dy_half = dy - 0.5f;
-                        const float dy_half_sq = dy_half * dy_half;
-                        
-                        const s32 span_start = std::max(x, clip_left);
-                        const s32 span_end = std::min(x_end, clip_right);
-                        s32 xc = span_start;
-                        
-                        // Left corner/edge
-                        const s32 left_end = std::min(corner_x_left + 1, span_end);
-                        for (; xc < left_end; ++xc) {
-                            const float dx = static_cast<float>(corner_x_left - xc);
-                            const float dx_sq = dx * dx;
-                            const float d2 = dx_sq + dy_sq;
-                            
-                            if (d2 <= r2) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    if (full_opacity) this->setPixelAtOffset(off, color);
-                                    else this->setPixelBlendDst(xc, yc, color);
-                                }
-                            } else if (d2 <= aa_thresh) {
-                                const float dx_half = dx - 0.5f;
-                                float cov = 0.0f;
-                                if (dx_sq + dy_sq <= r2) cov += 0.25f;
-                                if (dx_half*dx_half + dy_sq <= r2) cov += 0.25f;
-                                if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
-                                if (dx_half*dx_half + dy_half_sq <= r2) cov += 0.25f;
-                                
-                                if (cov > 0.0f) {
-                                    const u32 off = this->getPixelOffset(xc, yc);
-                                    if (off != UINT32_MAX) {
-                                        Color c = color;
-                                        c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
-                                        this->setPixelBlendDst(xc, yc, c);
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Middle section
-                        const s32 mid_end = std::min(corner_x_right, span_end);
-                        for (; xc < mid_end; ++xc) {
-                            const u32 off = this->getPixelOffset(xc, yc);
-                            if (off != UINT32_MAX) {
-                                if (full_opacity) this->setPixelAtOffset(off, color);
-                                else this->setPixelBlendDst(xc, yc, color);
-                            }
-                        }
-                        
-                        // Right corner/edge
-                        for (; xc < span_end; ++xc) {
-                            const float dx = static_cast<float>(xc - corner_x_right);
-                            const float dx_sq = dx * dx;
-                            const float d2 = dx_sq + dy_sq;
-                            
-                            if (d2 <= r2) {
-                                const u32 off = this->getPixelOffset(xc, yc);
-                                if (off != UINT32_MAX) {
-                                    if (full_opacity) this->setPixelAtOffset(off, color);
-                                    else this->setPixelBlendDst(xc, yc, color);
-                                }
-                            } else if (d2 <= aa_thresh) {
-                                const float dx_half = dx - 0.5f;
-                                float cov = 0.0f;
-                                if (dx_sq + dy_sq <= r2) cov += 0.25f;
-                                if (dx_half*dx_half + dy_sq <= r2) cov += 0.25f;
-                                if (dx_sq + dy_half_sq <= r2) cov += 0.25f;
-                                if (dx_half*dx_half + dy_half_sq <= r2) cov += 0.25f;
-                                
-                                if (cov > 0.0f) {
-                                    const u32 off = this->getPixelOffset(xc, yc);
-                                    if (off != UINT32_MAX) {
-                                        Color c = color;
-                                        c.a = static_cast<u8>((base_a * static_cast<u8>(cov * 15.0f + 0.5f)) / 15);
-                                        this->setPixelBlendDst(xc, yc, c);
-                                    }
-                                }
-                            }
-                        }
+                        const s32 span_end   = std::min(x_end, clip_right);
+                        fillRowSpanNEON(fb16, rowBase, span_start, span_end, color);
+                        continue;
                     }
+
+                    // ── Corner rows ────────────────────────────────────────────────────
+                    const float dy      = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc)
+                                                               : static_cast<float>(yc - corner_y_bot);
+                    const float dy_sq   = dy * dy;
+                    if (dy_sq > aa_thresh) continue;
+
+                    const float dy_half    = dy - 0.5f;
+                    const float dy_half_sq = dy_half * dy_half;
+
+                    const s32 span_start = std::max(x,   clip_left);
+                    const s32 span_end   = std::min(x_end, clip_right);
+                    s32 xc = span_start;
+
+                    // Shared arc-pixel blender: blend one pixel at xc given its dx from arc centre.
+                    auto arcPixel = [&](s32 xc_, float dx) __attribute__((always_inline)) {
+                        const float dx_sq = dx * dx;
+                        const float d2    = dx_sq + dy_sq;
+                        const u32 off = blockLinearOffset(static_cast<u32>(xc_), rowBase);
+                        if (d2 <= r2) {
+                            blendPixelDirect(fb16, off, color, base_a);
+                        } else if (d2 <= aa_thresh) {
+                            const float dx_half    = dx - 0.5f;
+                            const float dx_half_sq = dx_half * dx_half;
+                            const u32 cov = (u32)(dx_sq      + dy_sq      <= r2)
+                                          + (u32)(dx_half_sq + dy_sq      <= r2)
+                                          + (u32)(dx_sq      + dy_half_sq <= r2)
+                                          + (u32)(dx_half_sq + dy_half_sq <= r2);
+                            if (cov)
+                                blendPixelDirect(fb16, off, color,
+                                    static_cast<u8>((base_a * cov + 2) >> 2));
+                        }
+                    };
+
+                    // Left corner arc
+                    const s32 left_end = std::min(corner_x_left + 1, span_end);
+                    for (; xc < left_end; ++xc)
+                        arcPixel(xc, static_cast<float>(corner_x_left - xc));
+
+                    // Middle section of corner row — NEON fill
+                    const s32 mid_end = std::min(corner_x_right, span_end);
+                    fillRowSpanNEON(fb16, rowBase, xc, mid_end, color);
+                    xc = mid_end;
+
+                    // Right corner arc
+                    for (; xc < span_end; ++xc)
+                        arcPixel(xc, static_cast<float>(xc - corner_x_right));
                 }
             }
 
-            // RGBA4444 processing - no expansion needed
-            const uint8x16_t mask_low = vdupq_n_u8(0x0F);
-            
+            ALWAYS_INLINE static u32 blockLinearYPart(u32 y, u32 owv) noexcept {
+                return ((((y & 127u) >> 4u) + ((y >> 7u) * owv)) << 9u)
+                     + ((y & 8u) << 5u) + ((y & 6u) << 4u) + ((y & 1u) << 3u);
+            }
+
+            ALWAYS_INLINE static u32 blockLinearOffset(u32 px, u32 yPart) noexcept {
+                return yPart + ((px >> 5u) << 12u) + ((px & 16u) << 3u) + ((px & 8u) << 1u) + (px & 7u);
+            }
+
+            template<typename Fn>
+            static void dispatchRowChunks(u32 totalRows, Fn fn) {
+                const u32 n     = ult::numThreads;
+                const u32 chunk = (totalRows + n - 1u) / n;
+                u32 launched = 0u;
+                for (u32 t = 0u; t < n; ++t) {
+                    const u32 s = t * chunk;
+                    if (s >= totalRows) break;
+                    const u32 e = std::min(s + chunk, totalRows);
+                    ult::renderThreads[launched++] = std::thread([&fn, s, e]() { fn(s, e); });
+                }
+                for (u32 t = 0u; t < launched; ++t) ult::renderThreads[t].join();
+            }
+
             inline void processBMPChunk(const u32 x, const u32 y, const s32 imageW, const u8* preprocessedData,
                                         const s32 startRow, const s32 endRow, const u8 globalAlphaLimit,
                                         const bool useBarrier = true, const bool preserveAlpha = false)
             {
                 const s32 bytesPerRow = imageW * 2;
-                const s32 endX16 = imageW & ~15; // multiple of 16
-                const uint8x16_t mask_low = vdupq_n_u8(0x0F);
-                const uint8x16_t alpha_limit_vec = vdupq_n_u8(globalAlphaLimit);
-            
+                const uint8x8_t alpha_limit_vec = vdup_n_u8(globalAlphaLimit);
+                const uint8x8_t mask_low8 = vdup_n_u8(0x0Fu);
+                const uint8x8_t vZero8    = vdup_n_u8(0u);
+                const uint16x8_t vMask4   = vdupq_n_u16(0x0Fu);
+                const uint16x8_t v15_16   = vdupq_n_u16(15u);
+
+                u16* const fb16      = reinterpret_cast<u16*>(Renderer::getCurrentFramebuffer());
                 Color* const framebuffer = static_cast<Color*>(Renderer::getCurrentFramebuffer());
-            
+
                 const bool hasScissor = !Renderer::m_scissoringStack.empty();
-                const auto scissor = hasScissor ? Renderer::m_scissoringStack.top() : ScissoringConfig{};
-            
-                // Precompute Y offsets
-                std::vector<u32> yParts(endRow - startRow);
+                const auto scissor    = hasScissor ? Renderer::m_scissoringStack.top() : ScissoringConfig{};
+                const u32 owv = offsetWidthVar;
+
+                // Prologue length: pixels from x until first 8-aligned destination column.
+                // For all NEON groups, dst x is 8-aligned so 8 pixels are contiguous in fb.
+                //
+                // neonEnd must be computed relative to prologueLen, NOT simply imageW & ~7.
+                // imageW & ~7 is wrong when prologueLen > 0: the NEON groups start at
+                // prologueLen, so their endpoints are prologueLen+8, prologueLen+16, etc.
+                // Using imageW & ~7 causes the last group to either read past the end of
+                // preprocessedData (OOB) or overlap with the epilogue (double-write).
+                const s32 prologueLen = static_cast<s32>((8u - (x & 7u)) & 7u);
+                const s32 neonEnd     = (imageW > prologueLen)
+                    ? prologueLen + static_cast<s32>((static_cast<u32>(imageW - prologueLen)) & ~7u)
+                    : prologueLen;
+
                 for (s32 y1 = startRow; y1 < endRow; ++y1) {
-                    const u32 baseY = y + y1;
-                    yParts[y1 - startRow] = ((((baseY & 127) >> 4) + ((baseY >> 7) * offsetWidthVar)) << 9)
-                                          + ((baseY & 8) << 5) + ((baseY & 6) << 4) + ((baseY & 1) << 3);
-                }
-            
-                for (s32 y1 = startRow; y1 < endRow; ++y1) {
-                    const u32 baseY = y + y1;
+                    const u32 baseY = y + static_cast<u32>(y1);
                     if (hasScissor && (baseY < scissor.y || baseY >= scissor.y_max)) [[unlikely]] continue;
-            
-                    const u32 yPart = yParts[y1 - startRow];
-                    const u8* rowPtr = preprocessedData + (y1 * bytesPerRow);
-                    s32 x1 = 0;
-            
-                    // --- Vectorized 16-pixel loop ---
-                    for (; x1 < endX16; x1 += 16) {
-                        const u8* ptr = rowPtr + (x1 << 1);
-                        uint8x16x2_t packed = vld2q_u8(ptr);
-            
-                        uint8x16_t red   = vshrq_n_u8(packed.val[0], 4);
-                        uint8x16_t green = vandq_u8(packed.val[0], mask_low);
-                        uint8x16_t blue  = vshrq_n_u8(packed.val[1], 4);
-                        uint8x16_t alpha = vminq_u8(vandq_u8(packed.val[1], mask_low), alpha_limit_vec);
-            
-                        alignas(16) u8 r[16], g[16], b[16], a[16];
-                        vst1q_u8(r, red);
-                        vst1q_u8(g, green);
-                        vst1q_u8(b, blue);
-                        vst1q_u8(a, alpha);
-            
-                        const u32 baseX = x + x1;
-                        for (int i = 0; i < 16; ++i) {
-                            if (a[i] == 0) continue;
-            
-                            const u32 px = baseX + i;
-                            if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
-            
-                            const u32 offset = yPart + ((px >> 5) << 12) + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
-                            Color& dst = framebuffer[offset];
-            
-                            dst.r = blendColor(dst.r, r[i], a[i]);
-                            dst.g = blendColor(dst.g, g[i], a[i]);
-                            dst.b = blendColor(dst.b, b[i], a[i]);
+
+                    const u32 yPart = blockLinearYPart(baseY, owv);
+                    const u8* const rowPtr = preprocessedData + (y1 * bytesPerRow);
+
+                    if (__builtin_expect(!hasScissor, 1)) {
+                        // ── Fast path: no scissor ─────────────────────────────────────────
+                        // writePixelBMP: shared scalar pixel writer used by prologue and
+                        // epilogue. Defined without always_inline so -Os can outline it to
+                        // a single copy in the binary, called from two sites below.
+                        auto writePixelBMP = [&](s32 x1) {
+                            const u8 p1 = rowPtr[x1 << 1], p2 = rowPtr[(x1 << 1) + 1];
+                            const u8 av = std::min<u8>(p2 & 0x0Fu, globalAlphaLimit);
+                            if (av == 0) return;
+                            const u32 off = blockLinearOffset(x + static_cast<u32>(x1), yPart);
+                            Color& dst = framebuffer[off];
+                            dst.r = blendColor(dst.r, p1 >> 4,    av);
+                            dst.g = blendColor(dst.g, p1 & 0x0Fu, av);
+                            dst.b = blendColor(dst.b, p2 >> 4,    av);
                             if (!preserveAlpha)
-                                dst.a = static_cast<u8>(a[i] + ((dst.a * (0xF - a[i])) >> 4));
+                                dst.a = static_cast<u8>(av + ((dst.a * (0xF - av)) >> 4));
+                        };
+
+                        // Scalar prologue — pixels until first 8-aligned dst column
+                        const s32 p_end = std::min(prologueLen, imageW);
+                        for (s32 x1 = 0; x1 < p_end; ++x1)
+                            writePixelBMP(x1);
+
+                        // ── NEON 8-pixel blend loop ───────────────────────────────────────
+                        // 8 consecutive pixels at an 8-aligned dst-x are contiguous in the
+                        // block-linear framebuffer, so vld1q_u16 / vst1q_u16 apply directly.
+                        for (s32 x1 = p_end; x1 < neonEnd; x1 += 8) {
+                            const uint8x8x2_t packed = vld2_u8(rowPtr + (x1 << 1));
+                            const uint8x8_t sa = vmin_u8(vand_u8(packed.val[1], mask_low8), alpha_limit_vec);
+
+                            // Skip group if all 8 pixels are transparent
+                            if (vget_lane_u64(vreinterpret_u64_u8(sa), 0) == 0u) continue;
+
+                            const u32 off = blockLinearOffset(x + static_cast<u32>(x1), yPart);
+                            const uint16x8_t dst16 = vld1q_u16(fb16 + off);
+
+                            const uint16x8_t va16  = vmovl_u8(sa);
+                            const uint16x8_t via16 = vsubq_u16(v15_16, va16);
+
+                            const uint16x8_t sr16 = vmovl_u8(vshr_n_u8(packed.val[0], 4));
+                            const uint16x8_t sg16 = vmovl_u8(vand_u8(packed.val[0], mask_low8));
+                            const uint16x8_t sb16 = vmovl_u8(vshr_n_u8(packed.val[1], 4));
+
+                            const uint16x8_t dr16 = vandq_u16(dst16, vMask4);
+                            const uint16x8_t dg16 = vandq_u16(vshrq_n_u16(dst16, 4), vMask4);
+                            const uint16x8_t db16 = vandq_u16(vshrq_n_u16(dst16, 8), vMask4);
+                            const uint16x8_t da16 = vshrq_n_u16(dst16, 12);
+
+                            const uint16x8_t r_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(dr16, via16), sr16, va16), 4);
+                            const uint16x8_t g_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(dg16, via16), sg16, va16), 4);
+                            const uint16x8_t b_out = vshrq_n_u16(vmlaq_u16(vmulq_u16(db16, via16), sb16, va16), 4);
+                            const uint16x8_t a_out = preserveAlpha
+                                ? da16
+                                : vaddq_u16(va16, vshrq_n_u16(vmulq_u16(da16, via16), 4));
+
+                            uint16x8_t result = vorrq_u16(r_out,
+                                vorrq_u16(vshlq_n_u16(g_out, 4),
+                                vorrq_u16(vshlq_n_u16(b_out, 8),
+                                          vshlq_n_u16(a_out, 12))));
+
+                            // Preserve original dst for fully-transparent pixels
+                            const uint16x8_t zeroMask = vreinterpretq_u16_s16(
+                                vmovl_s8(vreinterpret_s8_u8(vceq_u8(sa, vZero8))));
+                            result = vbslq_u16(zeroMask, dst16, result);
+
+                            vst1q_u16(fb16 + off, result);
+                        }
+
+                        // Scalar epilogue — remaining pixels after last full NEON group
+                        for (s32 x1 = neonEnd; x1 < imageW; ++x1)
+                            writePixelBMP(x1);
+                    } else {
+                        // ── Scissor path: scalar only ─────────────────────────────────────
+                        // Same pixel writer — the only addition is the x-range guard.
+                        auto writePixelBMP = [&](s32 x1) {
+                            const u8 p1 = rowPtr[x1 << 1], p2 = rowPtr[(x1 << 1) + 1];
+                            const u8 av = std::min<u8>(p2 & 0x0Fu, globalAlphaLimit);
+                            if (av == 0) return;
+                            const u32 off = blockLinearOffset(x + static_cast<u32>(x1), yPart);
+                            Color& dst = framebuffer[off];
+                            dst.r = blendColor(dst.r, p1 >> 4,    av);
+                            dst.g = blendColor(dst.g, p1 & 0x0Fu, av);
+                            dst.b = blendColor(dst.b, p2 >> 4,    av);
+                            if (!preserveAlpha)
+                                dst.a = static_cast<u8>(av + ((dst.a * (0xF - av)) >> 4));
+                        };
+                        for (s32 x1 = 0; x1 < imageW; ++x1) {
+                            const u32 px = x + static_cast<u32>(x1);
+                            if (px < scissor.x || px >= scissor.x_max) continue;
+                            writePixelBMP(x1);
                         }
                     }
-            
-                    // --- Scalar leftover pixels ---
-                    for (; x1 < imageW; ++x1) {
-                        const u8 p1 = rowPtr[x1 << 1];
-                        const u8 p2 = rowPtr[(x1 << 1) + 1];
-                        const u8 alphaVal = std::min<u8>(p2 & 0x0F, globalAlphaLimit);
-                        if (alphaVal == 0) continue;
-            
-                        const u32 px = x + x1;
-                        if (hasScissor && (px < scissor.x || px >= scissor.x_max)) continue;
-            
-                        const u32 offset = yPart + ((px >> 5) << 12) + ((px & 16) << 3) + ((px & 8) << 1) + (px & 7);
-                        Color& dst = framebuffer[offset];
-            
-                        dst.r = dst.r + (((p1 >> 4) - dst.r) * alphaVal >> 4);
-                        dst.g = dst.g + (((p1 & 0x0F) - dst.g) * alphaVal >> 4);
-                        dst.b = dst.b + (((p2 >> 4) - dst.b) * alphaVal >> 4);
-                        if (!preserveAlpha)
-                            dst.a = static_cast<u8>(alphaVal + ((dst.a * (0xF - alphaVal)) >> 4));
-                    }
                 }
-            
+
                 if (useBarrier) ult::inPlotBarrier.arrive_and_wait();
             }
             
             // --- Draw bitmap RGBA4444 ---
             inline void drawBitmapRGBA4444(const u32 x, const u32 y, const u32 imageW, const u32 imageH,
-                                           const u8* preprocessedData, float opacity = 1.0f, bool preserveAlpha = false) 
+                                           const u8* preprocessedData, float opacity = 1.0f, bool preserveAlpha = false)
             {
                 const u8 globalAlphaLimit = static_cast<u8>(0xF * opacity);
-            
-                // Small width -> single-threaded
-                if (imageW < 448) {
+
+                // Narrow images: single-threaded to avoid thread-spawn overhead.
+                if (imageW < 448u) {
                     processBMPChunk(x, y, imageW, preprocessedData, 0, imageH, globalAlphaLimit, false, preserveAlpha);
                     return;
                 }
-            
-                // Multi-threaded rendering
-                const u32 numThreads = ult::numThreads;
-                const u32 chunkSize = (imageH + numThreads - 1) / numThreads;
-            
-                for (u32 t = 0; t < numThreads; ++t) {
-                    const u32 startRow = t * chunkSize;
-                    const u32 endRow   = std::min(startRow + chunkSize, imageH);
-            
-                    ult::renderThreads[t] = std::thread([=, this]() {
-                        processBMPChunk(x, y, imageW, preprocessedData, startRow, endRow, globalAlphaLimit, true, preserveAlpha);
-                    });
-                }
-            
-                for (auto& th : ult::renderThreads) th.join();
+
+                dispatchRowChunks(imageH, [=, this](u32 s, u32 e) {
+                    processBMPChunk(x, y, imageW, preprocessedData, s, e, globalAlphaLimit, true, preserveAlpha);
+                });
             }
             
+
+            template<bool kDark>
+            ALWAYS_INLINE static void drawWallpaperRows(
+                const u32 rowStart,
+                const u32 rowEnd,
+                tsl::Color* const framebuffer,
+                const u8* const src_base,
+                const u32* const s_yParts,
+                const u32* const s_xGroupParts,
+                const u8 globalAlphaLimit,
+                const u8 bg_r,
+                const u8 bg_g,
+                const u8 bg_b,
+                const u8 bg_a)
+            {
+                static constexpr u32 kW  = 448u;
+                static constexpr u32 kGW = kW / 8u; // 56 groups
+            
+                // ── NEON constants — hoisted once per worker ─────────────────────────────
+                const uint8x8_t  v_mask4     = vdup_n_u8(0x0Fu);
+                const uint8x8_t  v_alpha_lim = vdup_n_u8(globalAlphaLimit);
+                const uint8x8_t  v_bg_a4     = vdup_n_u8(static_cast<u8>(bg_a << 4));
+            
+                // Only used in !kDark path; compiler should dead-strip in kDark=true instantiation.
+                const uint8x8_t  v15         = vdup_n_u8(15u);
+                const uint16x8_t v_bg_r16    = vdupq_n_u16(bg_r);
+                const uint16x8_t v_bg_g16    = vdupq_n_u16(bg_g);
+                const uint16x8_t v_bg_b16    = vdupq_n_u16(bg_b);
+            
+                const auto do_pair = [&](const u32 base, const u8* rs, const u32 g) {
+                    const uint8x16x2_t raw = vld2q_u8(rs + (g << 4u));
+            
+                    // Low half = group g
+                    const uint8x8_t sr0 = vshr_n_u8(vget_low_u8(raw.val[0]), 4);
+                    const uint8x8_t sg0 = vand_u8   (vget_low_u8(raw.val[0]), v_mask4);
+                    const uint8x8_t sb0 = vshr_n_u8(vget_low_u8(raw.val[1]), 4);
+                    const uint8x8_t sa0 = vmin_u8(vand_u8(vget_low_u8(raw.val[1]), v_mask4), v_alpha_lim);
+            
+                    // High half = group g+1
+                    const uint8x8_t sr1 = vshr_n_u8(vget_high_u8(raw.val[0]), 4);
+                    const uint8x8_t sg1 = vand_u8   (vget_high_u8(raw.val[0]), v_mask4);
+                    const uint8x8_t sb1 = vshr_n_u8(vget_high_u8(raw.val[1]), 4);
+                    const uint8x8_t sa1 = vmin_u8(vand_u8(vget_high_u8(raw.val[1]), v_mask4), v_alpha_lim);
+            
+                    uint8x8_t or0, og0, ob0, or1, og1, ob1;
+            
+                    if constexpr (kDark) {
+                        or0 = vshrn_n_u16(vmull_u8(sr0, sa0), 4);
+                        og0 = vshrn_n_u16(vmull_u8(sg0, sa0), 4);
+                        ob0 = vshrn_n_u16(vmull_u8(sb0, sa0), 4);
+            
+                        or1 = vshrn_n_u16(vmull_u8(sr1, sa1), 4);
+                        og1 = vshrn_n_u16(vmull_u8(sg1, sa1), 4);
+                        ob1 = vshrn_n_u16(vmull_u8(sb1, sa1), 4);
+                    } else {
+                        const uint16x8_t ia0 = vmovl_u8(vsub_u8(v15, sa0));
+                        or0 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia0, v_bg_r16), vmull_u8(sr0, sa0)), 4);
+                        og0 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia0, v_bg_g16), vmull_u8(sg0, sa0)), 4);
+                        ob0 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia0, v_bg_b16), vmull_u8(sb0, sa0)), 4);
+            
+                        const uint16x8_t ia1 = vmovl_u8(vsub_u8(v15, sa1));
+                        or1 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia1, v_bg_r16), vmull_u8(sr1, sa1)), 4);
+                        og1 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia1, v_bg_g16), vmull_u8(sg1, sa1)), 4);
+                        ob1 = vshrn_n_u16(vaddq_u16(vmulq_u16(ia1, v_bg_b16), vmull_u8(sb1, sa1)), 4);
+                    }
+            
+                    vst2_u8(reinterpret_cast<u8*>(framebuffer + base),
+                            uint8x8x2_t{{vorr_u8(vshl_n_u8(og0, 4), or0), vorr_u8(v_bg_a4, ob0)}});
+                    vst2_u8(reinterpret_cast<u8*>(framebuffer + base + 16),
+                            uint8x8x2_t{{vorr_u8(vshl_n_u8(og1, 4), or1), vorr_u8(v_bg_a4, ob1)}});
+                };
+            
+                for (u32 y = rowStart; y < rowEnd; ++y) {
+                    const u32       yPart = s_yParts[y];
+                    const u8* const rs    = src_base + y * (kW * 2u);
+            
+                    for (u32 g = 0u; g < kGW; g += 2u)
+                        do_pair(yPart + s_xGroupParts[g], rs, g);
+                }
+            }
+
             // --- Draw wallpaper ---
+            // =============================================================================
+            // draw_wallpaper_direct
+            //
+            // Full-frame specialised replacement for renderer->drawWallpaper().
+            //
+            // Fixed contract:
+            //   • always 448×720 full-screen (correctFrameSize guaranteed)
+            //   • always opacity 1.0 in normal operation
+            //   • always preserveAlpha == true
+            //   • always called immediately after fillScreen (no scissoring active)
+            //
+            // Improvements over the generic processBMPChunk path:
+            //
+            //  1. Static precomputed offset tables (yParts[720] + xGroupParts[56]).
+            //     Generic code recomputes / re-allocates setup data every call.
+            //     Here those values are computed once (≈ 3 KB static) and reused forever.
+            //
+            //  2. NEON 8-pixel contiguous stores.
+            //     The block-linear swizzle maps each run of 8 consecutive pixels to 8
+            //     consecutive framebuffer slots.  We exploit that directly with vld2_u8 /
+            //     vst2_u8 instead of generic scalar scatter logic.
+            //
+            //  3. Background color read once, not per pixel.
+            //     fillScreen writes one constant Color to every slot, so dst.a (preserved
+            //     by preserveAlpha==true) is the same everywhere.  Read framebuffer[0]
+            //     once and broadcast into NEON lanes.
+            //
+            //  4. No scissoring checks anywhere in the hot loop.
+            //
+            // Threading: identical to drawBitmapRGBA4444 — ult::numThreads threads,
+            // each processing a row chunk and then joining.
+            // =============================================================================
             inline void drawWallpaper() {
+                // ── Same entry guards as Renderer::drawWallpaper() ──────────────────────
                 if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) return;
             
                 ult::inPlot.store(true, std::memory_order_release);
             
                 if (!ult::wallpaperData.empty() &&
                     !ult::refreshWallpaper.load(std::memory_order_acquire) &&
-                    ult::correctFrameSize) 
+                    ult::correctFrameSize)
                 {
-                    drawBitmapRGBA4444(0, 0, cfg::FramebufferWidth, cfg::FramebufferHeight,
-                                       ult::wallpaperData.data(), Renderer::s_opacity, true);
+                    // ── Static precomputed offset tables ─────────────────────────────────
+                    // yParts[y]       : y-contribution to the block-linear framebuffer offset.
+                    // xGroupParts[g]  : x-contribution for the start of 8-pixel group g
+                    //                   (g = 0..55; 56 groups × 8 pixels = 448 px/row).
+                    //
+                    // Pure functions of the fixed 448×720 / offsetWidthVar=112 geometry.
+                    // Initialised on the first call; never reallocated.
+                    // Total static storage: 720×4 + 56×4 = 3,104 bytes.
+                    static constexpr u32 kW  = 448u;
+                    static constexpr u32 kH  = 720u;
+                    static constexpr u32 kGW = kW / 8u;  // 56 groups of 8 pixels per row
+            
+                    static u32  s_yParts[kH];
+                    static u32  s_xGroupParts[kGW];
+                    static bool s_tables_ready = false;
+            
+                    if (__builtin_expect(!s_tables_ready, 0)) {
+                        const u32 owv = offsetWidthVar;
+                        for (u32 yi = 0u; yi < kH; ++yi)
+                            s_yParts[yi] = blockLinearYPart(yi, owv);
+                        for (u32 g = 0u; g < kGW; ++g) {
+                            const u32 x = g * 8u;
+                            s_xGroupParts[g] = ((x >> 5u) << 12u) + ((x & 16u) << 3u) + ((x & 8u) << 1u);
+                        }
+                        s_tables_ready = true;
+                    }
+            
+                    // ── Background color — read once from framebuffer[0] ─────────────────
+                    // fillScreen wrote a(defaultBackgroundColor) uniformly to every pixel;
+                    // the first slot is representative.  r/g/b feed the blend formula;
+                    // a is written back unchanged (preserveAlpha == true).
+                    tsl::Color* const framebuffer =
+                        static_cast<tsl::Color*>(this->getCurrentFramebuffer());
+            
+                    const u8 bg_r = framebuffer[0].r;
+                    const u8 bg_g = framebuffer[0].g;
+                    const u8 bg_b = framebuffer[0].b;
+                    const u8 bg_a = framebuffer[0].a;
+            
+                    // globalAlphaLimit mirrors the drawBitmapRGBA4444 parameter.
+                    const u8 globalAlphaLimit =
+                        static_cast<u8>(0xF * tsl::gfx::Renderer::s_opacity);
+            
+                    const u8* const src_base = ult::wallpaperData.data();
+            
+                    if (bg_r == 0u && bg_g == 0u && bg_b == 0u) {
+                        dispatchRowChunks(kH, [=](u32 rowStart, u32 rowEnd) {
+                            drawWallpaperRows<true>(
+                                rowStart, rowEnd,
+                                framebuffer,
+                                src_base,
+                                s_yParts,
+                                s_xGroupParts,
+                                globalAlphaLimit,
+                                bg_r, bg_g, bg_b, bg_a
+                            );
+                        });
+                    } else {
+                        dispatchRowChunks(kH, [=](u32 rowStart, u32 rowEnd) {
+                            drawWallpaperRows<false>(
+                                rowStart, rowEnd,
+                                framebuffer,
+                                src_base,
+                                s_yParts,
+                                s_xGroupParts,
+                                globalAlphaLimit,
+                                bg_r, bg_g, bg_b, bg_a
+                            );
+                        });
+                    }
                 }
             
                 ult::inPlot.store(false, std::memory_order_release);
             }
-
 
             /**
              * @brief Draws a RGBA8888 bitmap from memory
@@ -2340,104 +2614,20 @@ namespace tsl {
                 // Pre-compute alpha limit once using global opacity
                 const u8 alphaLimit = static_cast<u8>(0xF * Renderer::s_opacity);
                 
-                // Completely unroll small bitmaps for maximum speed
+                // Small-bitmap fast path (icons ≤ 8×8).
+                // Simple loop compiles to a single copy of the pixel body at -Os,
+                // identical in speed for counts ≤ 8 and far smaller in the binary
+                // than the previous Duff's-device unroll (which generated 8 copies).
                 if (w <= 8 && h <= 8) [[likely]] {
-                    s32 px;
-                    // Specialized path for small bitmaps (icons, etc.)
                     for (s32 py = 0; py < h; ++py) {
                         const s32 rowY = y + py;
-                        px = x;
-                        
-                        // Unroll inner loop completely for small widths
-                        switch(w) {
-                            case 8: goto pixel8;
-                            case 7: goto pixel7;
-                            case 6: goto pixel6;
-                            case 5: goto pixel5;
-                            case 4: goto pixel4;
-                            case 3: goto pixel3;
-                            case 2: goto pixel2;
-                            case 1: goto pixel1;
-                            default: break;
-                        }
-                        
-                        pixel8: {
+                        for (s32 xi = 0; xi < w; ++xi) {
                             u8 alpha = src[3] >> 4;
                             if (alpha > 0) {
                                 alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
+                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4),
                                                static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel7: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel6: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel5: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel4: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel3: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel2: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
-                            }
-                            px++; src += 4;
-                        }
-                        pixel1: {
-                            u8 alpha = src[3] >> 4;
-                            if (alpha > 0) {
-                                alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                                const Color c = {static_cast<u8>(src[0] >> 4), static_cast<u8>(src[1] >> 4), 
-                                               static_cast<u8>(src[2] >> 4), alpha};
-                                setPixelBlendSrc(px, rowY, a(c));
+                                setPixelBlendSrc(x + xi, rowY, a(c));
                             }
                             src += 4;
                         }
@@ -2456,8 +2646,9 @@ namespace tsl {
                     
                     // Process all pixels in the row
                     while (src < rowEnd) {
-                        // Prefetch ahead every 16 pixels (64 bytes)
-                        if (((uintptr_t)src & 63) == 0) [[unlikely]] {
+                        // Prefetch next cache line when src crosses a 64-byte boundary.
+                        // Fires every 16 pixels — regular and predictable, so no [[unlikely]].
+                        if (((uintptr_t)src & 63) == 0) {
                             __builtin_prefetch(src + 64, 0, 3);
                         }
                         
@@ -2576,7 +2767,8 @@ namespace tsl {
                             continue;
                         }
                         
-                        // Get glyph
+                        // Get glyph — hold shared_ptr to keep the glyph alive,
+                        // but pass raw ptr to skip atomic ref-count overhead.
                         std::shared_ptr<FontManager::Glyph> glyph = useNotificationCache ?
                             FontManager::getOrCreateNotificationGlyph(currCharacter, monospace, fontSize) :
                             FontManager::getOrCreateGlyph(currCharacter, monospace, fontSize);
@@ -2587,7 +2779,7 @@ namespace tsl {
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
-                            renderGlyph(glyph, currX, currY, *currentColor, useNotificationCache);
+                            renderGlyph(glyph.get(), currX, currY, *currentColor, useNotificationCache);
                         }
                         
                         currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
@@ -2626,7 +2818,7 @@ namespace tsl {
                                                 maxY = std::max(maxY, currY + lineHeight);
                                                 
                                                 if (draw && glyph->glyphBmp && symChar > 32) {
-                                                    renderGlyph(glyph, currX, currY, *highlightColor, useNotificationCache);
+                                                    renderGlyph(glyph.get(), currX, currY, *highlightColor, useNotificationCache);
                                                 }
                                                 currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
                                             }
@@ -2686,7 +2878,7 @@ namespace tsl {
                         
                         // Render if needed
                         if (draw && glyph->glyphBmp && currCharacter > 32) {
-                            renderGlyph(glyph, currX, currY, *currentColor, useNotificationCache);
+                            renderGlyph(glyph.get(), currX, currY, *currentColor, useNotificationCache);
                         }
                         
                         currX += static_cast<s32>(glyph->xAdvance * glyph->currFontSize);
@@ -2828,7 +3020,12 @@ namespace tsl {
             }
 
             inline void setLayerPos(u32 x, u32 y) {
-                if (x > cfg::ScreenWidth - (int)(1.5 * cfg::FramebufferWidth) || y > cfg::ScreenHeight - (int)(1.5 * cfg::FramebufferHeight)) {
+                // Guard against placing the layer off-screen.
+                // Use cfg::LayerWidth/Height (the actual VI layer dimensions) rather than
+                // a hardcoded 1.5× factor so this works correctly in both 720p-scaled and
+                // 1080p pixel-perfect windowed modes.
+                if (x > cfg::ScreenWidth  - cfg::LayerWidth ||
+                    y > cfg::ScreenHeight - cfg::LayerHeight) {
                     return;
                 }
                 setLayerPosImpl(x, y);
@@ -2838,21 +3035,31 @@ namespace tsl {
                 const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
                 
                 // Recalculate layer dimensions with new underscan values
-                cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
-                cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
+                //cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
+                //cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
+
+                {
+                    const float divW = ult::windowedLayerPixelPerfect ? float(cfg::ScreenWidth)  : float(cfg::LayerMaxWidth);
+                    const float divH = ult::windowedLayerPixelPerfect ? float(cfg::ScreenHeight) : float(cfg::LayerMaxHeight);
+                    cfg::LayerWidth  = cfg::ScreenWidth  * (float(cfg::FramebufferWidth)  / divW);
+                    cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / divH);
+                }
                 
-                // Apply underscan adjustments
-                if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) {
-                    cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
-                } else if (ult::correctFrameSize) {
-                    cfg::LayerWidth += horizontalUnderscanPixels;
-                } else if (horizontalUnderscanPixels > 0) {
-                    // General case: any non-standard FB size (e.g. windowed GB).
-                    // Scale the correction proportionally to the fraction of the
-                    // full 1280-logical-space width this layer occupies.
-                    cfg::LayerWidth += static_cast<int>(
-                        horizontalUnderscanPixels *
-                        (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
+                // Apply underscan adjustments.
+                // Skipped in 1080p pixel-perfect mode to keep layer == framebuffer exactly.
+                if (!ult::windowedLayerPixelPerfect) {
+                    if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) {
+                        cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
+                    } else if (ult::correctFrameSize) {
+                        cfg::LayerWidth += horizontalUnderscanPixels;
+                    } else if (horizontalUnderscanPixels > 0) {
+                        // General case: any non-standard FB size (e.g. windowed GB).
+                        // Scale the correction proportionally to the fraction of the
+                        // full 1280-logical-space width this layer occupies.
+                        cfg::LayerWidth += static_cast<int>(
+                            horizontalUnderscanPixels *
+                            (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
+                    }
                 }
                 
                 // Update position if using right alignment
@@ -3088,44 +3295,185 @@ namespace tsl {
         #endif
             
             // Optimized glyph rendering
-            inline void renderGlyph(std::shared_ptr<FontManager::Glyph> glyph, float x, float y, const Color& color, bool skipAlphaLimit = false) {
+            // -----------------------------------------------------------------------
+            // NEON-vectorised glyph renderer. Scalar prologue/epilogue + 8-wide NEON
+            // blend loop with fast paths for all-transparent and all-opaque runs.
+            inline void renderGlyph(const FontManager::Glyph* glyph,
+                                    float x, float y,
+                                    const Color& color,
+                                    bool skipAlphaLimit = false) {
+
                 if (!glyph->glyphBmp || color.a == 0) [[unlikely]] return;
-            
-                const s32 xPos = static_cast<s32>(x + glyph->bounds[0]);
-                const s32 yPos = static_cast<s32>(y + glyph->bounds[1]);
-            
+
+                const s32 xPos = static_cast<s32>(x) + glyph->bounds[0];
+                const s32 yPos = static_cast<s32>(y) + glyph->bounds[1];
                 const s32 glyphWidth  = glyph->width;
                 const s32 glyphHeight = glyph->height;
-            
-                // Clipping
-                if (xPos >= cfg::FramebufferWidth || yPos >= cfg::FramebufferHeight ||
-                    xPos + glyphWidth <= 0 || yPos + glyphHeight <= 0) [[unlikely]] return;
-            
-                const s32 startX = std::max(0, -xPos);
-                const s32 startY = std::max(0, -yPos);
-                const s32 endX   = std::min(glyphWidth, static_cast<s32>(cfg::FramebufferWidth) - xPos);
-                const s32 endY   = std::min(glyphHeight, static_cast<s32>(cfg::FramebufferHeight) - yPos);
-            
-                const u8 alphaLimit = skipAlphaLimit ? color.a : static_cast<u8>(0xF * Renderer::s_opacity);
-                const uint8_t* bmpPtr = glyph->glyphBmp + startY * glyphWidth;
-            
-                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpPtr += glyphWidth) {
-                    const s32 pixelY = yPos + bmpY;
-            
-                    for (s32 bmpX = startX; bmpX < endX; ++bmpX) {
-                        u8 alpha = bmpPtr[bmpX] >> 4;
-                        if (alpha == 0) [[unlikely]] continue;
-            
-                        alpha = (alpha < alphaLimit) ? alpha : alphaLimit;
-                        const s32 pixelX = xPos + bmpX;
-            
-                        if (alpha == 0xF) [[likely]] {
-                            this->setPixel(pixelX, pixelY, color);
-                        } else {
-                            this->setPixelBlendDst(pixelX, pixelY, Color(color.r, color.g, color.b, alpha));
-                        }
-                    }
+
+                if (xPos >= static_cast<s32>(cfg::FramebufferWidth)  ||
+                    yPos >= static_cast<s32>(cfg::FramebufferHeight)  ||
+                    xPos + glyphWidth  <= 0 ||
+                    yPos + glyphHeight <= 0) [[unlikely]] return;
+
+                s32 startX = std::max(0, -xPos);
+                s32 startY = std::max(0, -yPos);
+                s32 endX   = std::min(glyphWidth,  static_cast<s32>(cfg::FramebufferWidth)  - xPos);
+                s32 endY   = std::min(glyphHeight, static_cast<s32>(cfg::FramebufferHeight) - yPos);
+
+                if (!this->m_scissoringStack.empty()) [[unlikely]] {
+                    const auto& sc = this->m_scissoringStack.top();
+                    startX = std::max(startX, static_cast<s32>(sc.x)     - xPos);
+                    startY = std::max(startY, static_cast<s32>(sc.y)     - yPos);
+                    endX   = std::min(endX,   static_cast<s32>(sc.x_max) - xPos);
+                    endY   = std::min(endY,   static_cast<s32>(sc.y_max) - yPos);
+                    if (endX <= startX || endY <= startY) return;
                 }
+
+                const s32 spanW      = endX - startX;
+                const u8  alphaLimit = skipAlphaLimit ? color.a
+                                                      : static_cast<u8>(0xF * Renderer::s_opacity);
+
+                u16* const fb16 = reinterpret_cast<u16*>(static_cast<Color*>(this->m_currentFramebuffer));
+
+                constexpr s32 kMaxSpan = 128;
+                u32 colOff[kMaxSpan];
+                const s32  safeSpan   = std::min(spanW, kMaxSpan);
+                const u32  basePixelX = static_cast<u32>(xPos + startX);
+                for (s32 i = 0; i < safeSpan; ++i) {
+                    const u32 px = basePixelX + static_cast<u32>(i);
+                    colOff[i] = ((px >> 5u) << 12u) | ((px & 16u) << 3u)
+                              | ((px & 8u)  <<  1u) |  (px & 7u);
+                }
+
+                const uint8x8_t  vLimitU8  = vdup_n_u8(alphaLimit);
+                const uint8x8_t  vZeroU8   = vdup_n_u8(0u);
+                const uint8x8_t  vFullU8   = vdup_n_u8(0xFu);
+                const uint16x8_t vColorFull = vdupq_n_u16(color.rgba);   // 8 × full colour
+                const uint16x8_t vMask4    = vdupq_n_u16(0x000Fu);       // low-nibble mask
+                const uint16x8_t v15       = vdupq_n_u16(15u);
+                const uint16x8_t vDstR     = vdupq_n_u16(color.r);       // constant glyph R
+                const uint16x8_t vDstG     = vdupq_n_u16(color.g);       // constant glyph G
+                const uint16x8_t vDstB     = vdupq_n_u16(color.b);       // constant glyph B
+
+                const s32 prologueLen = static_cast<s32>((8u - (basePixelX & 7u)) & 7u);
+
+                const uint8_t* bmpRow = glyph->glyphBmp + startY * glyphWidth + startX;
+
+                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpRow += glyphWidth) {
+
+                    // rowBase(y) — computed once per scanline, never per pixel.
+                    const u32 py = static_cast<u32>(yPos + bmpY);
+                    const u32 rowBase =
+                        ((((py & 127u) >> 4u) + ((py >> 7u) * offsetWidthVar)) << 9u)
+                        | ((py & 8u) << 5u) | ((py & 6u) << 4u) | ((py & 1u) << 3u);
+
+                    s32 i = 0;
+
+                    // ── Scalar pixel blender (prologue + epilogue share this) ───────
+                    auto blendScalar = [&](s32 lim) __attribute__((always_inline)) {
+                        for (; i < lim; ++i) {
+                            u8 alpha = bmpRow[i] >> 4u;
+                            if (alpha == 0u) [[unlikely]] continue;
+                            if (alpha > alphaLimit) alpha = alphaLimit;
+                            const u32 off = rowBase + colOff[i];
+                            if (alpha == 0xFu) [[likely]] {
+                                fb16[off] = color.rgba;
+                            } else {
+                                const Color src = reinterpret_cast<const Color*>(fb16)[off];
+                                reinterpret_cast<Color*>(fb16)[off] = Color(
+                                    blendColor(src.r, color.r, alpha),
+                                    blendColor(src.g, color.g, alpha),
+                                    blendColor(src.b, color.b, alpha),
+                                    alpha + static_cast<u8>((src.a * (0xFu - alpha)) >> 4u));
+                            }
+                        }
+                    };
+                    blendScalar(std::min(prologueLen, safeSpan));  // prologue
+
+                    // ── NEON main loop — 8 pixels per iteration ────────────────────
+                    while (i + 8 <= safeSpan) {
+
+                        // Load 8 bitmap bytes and extract 4-bit alphas (0..15).
+                        uint8x8_t bmp8   = vld1_u8(bmpRow + i);
+                        uint8x8_t alpha8 = vshr_n_u8(bmp8, 4);
+                        alpha8            = vmin_u8(alpha8, vLimitU8);  // clamp to alphaLimit
+
+                        // ── Fast path A: all 8 pixels transparent ──────────────────
+                        // Reinterpret the 8-byte alpha register as a u64 and compare
+                        // to zero — no horizontal-min instruction needed.
+                        if (vget_lane_u64(vreinterpret_u64_u8(alpha8), 0) == 0u) {
+                            i += 8; continue;
+                        }
+
+                        // ── Fast path B: all 8 pixels fully opaque ─────────────────
+                        // vceq_u8 produces 0xFF per lane where alpha==0xF.  If all 8
+                        // lanes are 0xFF the u64 view is all-ones.  No fb read needed.
+                        const uint8x8_t eqFull = vceq_u8(alpha8, vFullU8);
+                        if (vget_lane_u64(vreinterpret_u64_u8(eqFull), 0)
+                                == 0xFFFFFFFFFFFFFFFFull) {
+                            vst1q_u16(fb16 + rowBase + colOff[i], vColorFull);
+                            i += 8; continue;
+                        }
+
+                        // ── Mixed path: partial alpha, full NEON blend ─────────────
+                        //
+                        // Load 8 existing framebuffer colors (contiguous u16 block).
+                        uint16x8_t src16 = vld1q_u16(fb16 + rowBase + colOff[i]);
+
+                        // Expand alpha / inv-alpha to u16 for multiply.
+                        const uint16x8_t alpha16 = vmovl_u8(alpha8);
+                        const uint16x8_t inva16  = vsubq_u16(v15, alpha16); // 15 - alpha
+
+                        // Unpack src channels from packed RGBA4444.
+                        const uint16x8_t src_r = vandq_u16(src16, vMask4);
+                        const uint16x8_t src_g = vandq_u16(vshrq_n_u16(src16,  4), vMask4);
+                        const uint16x8_t src_b = vandq_u16(vshrq_n_u16(src16,  8), vMask4);
+                        const uint16x8_t src_a =           vshrq_n_u16(src16, 12);
+
+                        // out_ch = (src_ch*(15-α) + dst_ch*α) >> 4
+                        // vmlaq_u16: multiply-accumulate, one fewer vaddq per channel.
+                        const uint16x8_t r_out = vshrq_n_u16(
+                            vmlaq_u16(vmulq_u16(src_r, inva16), vDstR, alpha16), 4);
+                        const uint16x8_t g_out = vshrq_n_u16(
+                            vmlaq_u16(vmulq_u16(src_g, inva16), vDstG, alpha16), 4);
+                        const uint16x8_t b_out = vshrq_n_u16(
+                            vmlaq_u16(vmulq_u16(src_b, inva16), vDstB, alpha16), 4);
+                        // out_a = α + (src_a*(15-α)) >> 4
+                        const uint16x8_t a_out = vaddq_u16(alpha16,
+                            vshrq_n_u16(vmulq_u16(src_a, inva16), 4));
+
+                        // Repack to RGBA4444.
+                        uint16x8_t blended = vorrq_u16(r_out,
+                            vorrq_u16(vshlq_n_u16(g_out,  4),
+                            vorrq_u16(vshlq_n_u16(b_out,  8),
+                                      vshlq_n_u16(a_out, 12))));
+
+                        // Correction passes — sign-extend u8 mask (0xFF→0xFFFF, 0x00→0x0000)
+                        // so vbslq_u16 selects ALL 16 bits correctly, not just the low byte.
+                        //   α==0xF → must equal vColorFull exactly (not blend rounding)
+                        //   α==0   → must preserve src (not ~0.9375*src from blend)
+                        const uint16x8_t fullMask16 =
+                            vreinterpretq_u16_s16(vmovl_s8(vreinterpret_s8_u8(eqFull)));
+                        blended = vbslq_u16(fullMask16, vColorFull, blended);
+
+                        const uint16x8_t zeroMask16 =
+                            vreinterpretq_u16_s16(vmovl_s8(vreinterpret_s8_u8(vceq_u8(alpha8, vZeroU8))));
+                        blended = vbslq_u16(zeroMask16, src16, blended);
+
+                        vst1q_u16(fb16 + rowBase + colOff[i], blended);
+                        i += 8;
+                    }
+
+                    blendScalar(safeSpan);  // epilogue
+                }
+            }
+
+            // Legacy shared_ptr overload — call-sites that pass a shared_ptr directly
+            // still work; passing .get() to the raw-pointer overload is preferred.
+            inline void renderGlyph(const std::shared_ptr<FontManager::Glyph>& glyph,
+                                    float x, float y, const Color& color,
+                                    bool skipAlphaLimit = false) {
+                renderGlyph(glyph.get(), x, y, color, skipAlphaLimit);
             }
             
 
@@ -3135,6 +3483,7 @@ namespace tsl {
             inline void addScreenshotStacks(bool forceDisable = true) {
                 tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Screenshot);
                 tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_Recording);
+                tsl::hlp::viAddToLayerStack(&this->m_layer, ViLayerStack_LastFrame);
                 screenshotsAreDisabled.store(false, std::memory_order_release);
                 if (forceDisable)
                     screenshotsAreForceDisabled.store(false, std::memory_order_release);
@@ -3146,6 +3495,7 @@ namespace tsl {
             inline void removeScreenshotStacks(bool forceDisable = true) {
                 tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Screenshot);
                 tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_Recording);
+                tsl::hlp::viRemoveFromLayerStack(&this->m_layer, ViLayerStack_LastFrame);
                 screenshotsAreDisabled.store(true, std::memory_order_release);
                 if (forceDisable)
                     screenshotsAreForceDisabled.store(true, std::memory_order_release);
@@ -3289,18 +3639,30 @@ namespace tsl {
                     ult::layerEdge = (1280-448);
                 }
 
-                cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
-                cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
+                //cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
+                //cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
 
-                // Apply underscanning offset
-                if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) // for status monitor micro mode
-                    cfg::LayerHeight += cfg::ScreenHeight/720. *verticalUnderscanPixels;
-                else if (ult::correctFrameSize)
-                    cfg::LayerWidth += horizontalUnderscanPixels;
-                else if (horizontalUnderscanPixels > 0)
-                    cfg::LayerWidth += static_cast<int>(
-                        horizontalUnderscanPixels *
-                        (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
+                {
+                    const float divW = ult::windowedLayerPixelPerfect ? float(cfg::ScreenWidth)  : float(cfg::LayerMaxWidth);
+                    const float divH = ult::windowedLayerPixelPerfect ? float(cfg::ScreenHeight) : float(cfg::LayerMaxHeight);
+                    cfg::LayerWidth  = cfg::ScreenWidth  * (float(cfg::FramebufferWidth)  / divW);
+                    cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / divH);
+                }
+
+                // Apply underscanning offset.
+                // Skipped entirely in 1080p pixel-perfect mode: the layer equals the
+                // framebuffer exactly (1:1), so adding underscan pixels would break that
+                // mapping and make cfg::LayerWidth/Height incorrect for bounds calculation.
+                if (!ult::windowedLayerPixelPerfect) {
+                    if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) // for status monitor micro mode
+                        cfg::LayerHeight += cfg::ScreenHeight/720. *verticalUnderscanPixels;
+                    else if (ult::correctFrameSize)
+                        cfg::LayerWidth += horizontalUnderscanPixels;
+                    else if (horizontalUnderscanPixels > 0)
+                        cfg::LayerWidth += static_cast<int>(
+                            horizontalUnderscanPixels *
+                            (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
+                }
                 
                 if (this->m_initialized)
                     return;

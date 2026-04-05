@@ -73,6 +73,8 @@ namespace ult {
     extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
     extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
 
+    extern bool windowedLayerPixelPerfect;
+
     extern std::unordered_map<std::string, std::string> translationCache;
 
     extern std::unordered_map<u64, OverlayCombo> g_entryCombos;
