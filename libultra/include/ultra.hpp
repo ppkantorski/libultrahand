@@ -26,8 +26,29 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-// Include all functional headers used in the libUltra library
+//#pragma GCC push_options
+//#pragma GCC optimize("Os")
+//
 
+// ── Ultra targeted optimizations ─────────────────────────────
+#ifdef ULTRA_TARGETED_SPEED
+    #define ULTRA_OPT_SPEED_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"O3\")")
+    #define ULTRA_OPT_SPEED_POP  _Pragma("GCC pop_options")
+#else
+    #define ULTRA_OPT_SPEED_PUSH
+    #define ULTRA_OPT_SPEED_POP
+#endif
+
+#ifdef ULTRA_TARGETED_SIZE
+    #define ULTRA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")
+    #define ULTRA_OPT_SIZE_POP  _Pragma("GCC pop_options")
+#else
+    #define ULTRA_OPT_SIZE_PUSH
+    #define ULTRA_OPT_SIZE_POP
+#endif
+
+// Include all functional headers used in the libUltra library
+ULTRA_OPT_SIZE_PUSH
 #include "global_vars.hpp"
 #include "debug_funcs.hpp"
 #include "string_funcs.hpp"
@@ -39,6 +60,11 @@
 #include "hex_funcs.hpp"
 #include "download_funcs.hpp"
 #include "mod_funcs.hpp"
-#include "tsl_utils.hpp"
 #include "audio.hpp"
 #include "haptics.hpp"
+ULTRA_OPT_SIZE_POP
+
+#include "tsl_utils.hpp"
+
+//#pragma GCC pop_options
+//#pragma GCC diagnostic pop

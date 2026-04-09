@@ -40,6 +40,27 @@
 
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+
+// ── Tesla targeted optimizations ─────────────────────────────
+#ifdef TESLA_TARGETED_SPEED
+    #define TESLA_OPT_SPEED_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"O3\")")
+    #define TESLA_OPT_SPEED_POP  _Pragma("GCC pop_options")
+#else
+    #define TESLA_OPT_SPEED_PUSH
+    #define TESLA_OPT_SPEED_POP
+#endif
+
+#ifdef TESLA_TARGETED_SIZE
+    #define TESLA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")
+    #define TESLA_OPT_SIZE_POP  _Pragma("GCC pop_options")
+#else
+    #define TESLA_OPT_SIZE_PUSH
+    #define TESLA_OPT_SIZE_POP
+#endif
+
 
 #include <ultra.hpp>
 #include <switch.h>
@@ -66,18 +87,15 @@
 #include <map>
 
 
+
 // Define this makro before including tesla.hpp in your main file. If you intend
 // to use the tesla.hpp header in more than one source file, only define it once!
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 
 #ifdef TESLA_INIT_IMPL
     #define STB_TRUETYPE_IMPLEMENTATION
 #endif
 #include "stb_truetype.h"
 
-#pragma GCC diagnostic pop
 
 #define ELEMENT_BOUNDS(elem) elem->getX(), elem->getY(), elem->getWidth(), elem->getHeight()
 
@@ -357,6 +375,7 @@ namespace tsl {
 
     inline bool overrideBackButton = false; // for properly overriding the automatic "go back" functionality of KEY_B button presses
     inline bool disableHiding = false; // for manually disabling the hide overlay functionality
+    inline std::atomic<bool> homeButtonPressedInGame{false}; ///< Set by the background poller when home fires during a game session (disableHiding=true); consumed each frame by the player GUI to release foreground.
 
     // Theme color variable definitions — defined once in tesla.cpp
     extern Color logoColor1;
@@ -790,7 +809,8 @@ namespace tsl {
     // Renderer
     
     namespace gfx {
-        
+        TESLA_OPT_SPEED_PUSH
+
         extern "C" u64 __nx_vi_layer_id;
         
 
@@ -1205,13 +1225,13 @@ namespace tsl {
             inline void setPixel(const u32 x, const u32 y, const Color& color) {
                 const u32 offset = this->getPixelOffset(x, y);
                 if (offset != UINT32_MAX) [[likely]] {
-                    Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                    Color* framebuffer = static_cast<Color*>(this->m_currentFramebuffer);
                     framebuffer[offset] = color;
                 }
             }
 
             inline void setPixelAtOffset(const u32 offset, const Color& color) {
-                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                Color* framebuffer = static_cast<Color*>(this->m_currentFramebuffer);
                 framebuffer[offset] = color;
             }
 
@@ -1243,7 +1263,7 @@ namespace tsl {
                 if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                Color* framebuffer = static_cast<Color*>(this->m_currentFramebuffer);
                 const Color src = framebuffer[offset];
                 
                 // Direct write instead of calling setPixel
@@ -1262,7 +1282,7 @@ namespace tsl {
                 if (offset == UINT32_MAX) [[unlikely]]
                     return;
                 
-                Color* framebuffer = static_cast<Color*>(this->getCurrentFramebuffer());
+                Color* framebuffer = static_cast<Color*>(this->m_currentFramebuffer);
                 const Color src = framebuffer[offset];
                 
                 // Direct write instead of calling setPixel
@@ -2514,7 +2534,7 @@ namespace tsl {
                     // the first slot is representative.  r/g/b feed the blend formula;
                     // a is written back unchanged (preserveAlpha == true).
                     tsl::Color* const framebuffer =
-                        static_cast<tsl::Color*>(this->getCurrentFramebuffer());
+                        static_cast<tsl::Color*>(this->m_currentFramebuffer);
             
                     const u8 bg_r = framebuffer[0].r;
                     const u8 bg_g = framebuffer[0].g;
@@ -3518,7 +3538,7 @@ namespace tsl {
              * @return Next framebuffer address
              */
             inline void* getNextFramebuffer() {
-                return static_cast<u8*>(this->m_framebuffer.buf) + this->getNextFramebufferSlot() * this->getFramebufferSize();
+                return static_cast<u8*>(this->m_framebuffer.buf) + this->getNextFramebufferSlot() * this->m_framebuffer.fb_size;
             }
             
             /**
@@ -3554,7 +3574,7 @@ namespace tsl {
              * @return Next slot
              */
             inline u8 getNextFramebufferSlot() {
-                return (this->getCurrentFramebufferSlot() + 1) % this->getFramebufferCount();
+                return (this->m_window.cur_slot + 1) % this->m_framebuffer.num_fbs;
             }
             
             /**
@@ -3851,8 +3871,10 @@ namespace tsl {
             return {horizontalUnderscanPixels, verticalUnderscanPixels};
         }
 
+        TESLA_OPT_SPEED_POP
     }
-    
+
+
     
     // Elements
     
@@ -8111,8 +8133,8 @@ namespace tsl {
                 m_prevKeysHeld = keysHeld;
                 
                 const u64 currentTime_ns = ult::nowNs();
-                static u64 lastUpdate_ns = currentTime_ns;
-                const u64 elapsed_ns = currentTime_ns - lastUpdate_ns;
+                
+                const u64 elapsed_ns = currentTime_ns - m_lastUpdate_ns;
             
                 // KEY_R + directional: shake highlight (same as V2)
                 if (keysHeld & KEY_R) {
@@ -8163,11 +8185,11 @@ namespace tsl {
                     if (m_wasLastHeld) {
                         m_wasLastHeld = false;
                         m_holding = false;
-                        lastUpdate_ns = currentTime_ns;
+                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     } else if (m_holding) {
                         m_holding = false;
-                        lastUpdate_ns = currentTime_ns;
+                        m_lastUpdate_ns = currentTime_ns;
                         return true;
                     }
                 }
@@ -8177,26 +8199,29 @@ namespace tsl {
                     return true;
             
                 // Handle initial key press
+                const s16 sliderMax = m_maxValue - m_minValue;
+
                 if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+
                     m_holding = true;
                     m_wasLastHeld = false;
                     m_holdStartTime_ns = currentTime_ns;
-                    lastUpdate_ns = currentTime_ns;
-                    
+                    m_lastUpdate_ns = currentTime_ns;
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
                         this->m_value--;
                         this->m_valueChangedListener(this->m_value);
                         
-                        const s16 currentSegment = (this->m_value * 10) / 100;
+                        const s16 currentSegment = (this->m_value * 10) / sliderMax;
                         if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                             lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
                         }
-                    } else if (keysDown & KEY_RIGHT && this->m_value < 100) {
+                    } else if (keysDown & KEY_RIGHT && this->m_value < sliderMax) {
                         this->m_value++;
                         this->m_valueChangedListener(this->m_value);
                         
-                        const s16 currentSegment = (this->m_value * 10) / 100;
+                        const s16 currentSegment = (this->m_value * 10) / sliderMax;
                         if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                             lastHapticSegment = currentSegment;
                             triggerNavigationFeedback();
@@ -8227,28 +8252,28 @@ namespace tsl {
                             this->m_value--;
                             this->m_valueChangedListener(this->m_value);
                             
-                            const s16 currentSegment = (this->m_value * 10) / 100;
+                            const s16 currentSegment = (this->m_value * 10) / sliderMax;
                             if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                                 lastHapticSegment = currentSegment;
                                 triggerNavigationFeedback();
                             }
                             
-                            lastUpdate_ns = currentTime_ns;
+                            m_lastUpdate_ns = currentTime_ns;
                             m_wasLastHeld = true;
                             return true;
                         }
                         
-                        if (keysHeld & KEY_RIGHT && this->m_value < 100) {
+                        if (keysHeld & KEY_RIGHT && this->m_value < sliderMax) {
                             this->m_value++;
                             this->m_valueChangedListener(this->m_value);
                             
-                            const s16 currentSegment = (this->m_value * 10) / 100;
+                            const s16 currentSegment = (this->m_value * 10) / sliderMax;
                             if (this->m_value == 0 || currentSegment != lastHapticSegment) {
                                 lastHapticSegment = currentSegment;
                                 triggerNavigationFeedback();
                             }
                             
-                            lastUpdate_ns = currentTime_ns;
+                            m_lastUpdate_ns = currentTime_ns;
                             m_wasLastHeld = true;
                             return true;
                         }
@@ -8263,82 +8288,94 @@ namespace tsl {
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 s32 trackBarLeft = this->getX() + 59;
                 s32 width        = this->getWidth() - 95;
-            
+
                 if (m_icon[0] != '\0') {
                     const s32 iconOffset = 14 + 23;
                     trackBarLeft += iconOffset;
                     width        -= iconOffset;
                 }
-            
+
                 const s32 trackBarRight = trackBarLeft + width;
-                const u16 handlePos     = (width * this->m_value) / 100;
+                const s16 sliderSpan    = m_maxValue - m_minValue;  // total steps − 1
+                const u16 handlePos     = (width * this->m_value) / sliderSpan;
                 const s32 circleCenterX = trackBarLeft + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 3 - ((!m_usingNamedStepTrackbar && !m_useV2Style) ? 11 : 0);
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
                 static s16 lastHapticSegment = -1;
-            
-                const bool touchInCircle = (std::abs(currX - circleCenterX) <= circleRadius) && (std::abs(currY - circleCenterY) <= circleRadius);
+                static bool wasOriginallyLocked = false;
+
+                // Use initialX/Y (where the finger first landed) for the hit-test so
+                // that dragging immediately tracks position — same as TrackBarV2.
+                const bool touchInCircle = (std::abs(initialX - circleCenterX) <= circleRadius) &&
+                                           (std::abs(initialY - circleCenterY) <= circleRadius);
                 const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
-            
+
+                // Touch start: temporarily unlock a locked slider for the drag duration.
+                if (event == TouchEvent::Touch && touchInCircle) {
+                    wasOriginallyLocked = !m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire);
+                    if (wasOriginallyLocked)
+                        ult::allowSlide.store(true, std::memory_order_release);
+                }
+
                 if (event == TouchEvent::Release) {
                     triggerOnce = true;
                     lastHapticSegment = -1;
-            
+
+                    if (wasOriginallyLocked) {
+                        ult::allowSlide.store(false, std::memory_order_release);
+                        wasOriginallyLocked = false;
+                    }
+
                     if (touchInSliderBounds) {
                         triggerRumbleDoubleClick.store(true, std::memory_order_release);
                         triggerOffSound.store(true, std::memory_order_release);
                         tsl::shiftItemFocus(this);
                     }
-            
+
                     touchInSliderBounds = false;
                     return false;
                 }
-            
-                if (touchInCircle || touchInSliderBounds) {
+
+                const bool isUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
+
+                if ((touchInCircle || touchInSliderBounds) && isUnlocked) {
                     if (touchInSliderBounds && !currentlyInHorizontalBounds) {
-                        if (currX > trackBarRight) {
-                            this->m_value = 100;
-                        } else if (currX < trackBarLeft) {
-                            this->m_value = 0;
-                        }
+                        // Finger dragged past an edge — clamp to that extreme.
+                        this->m_value = (currX > trackBarRight) ? sliderSpan : s16(0);
                         this->m_valueChangedListener(this->getProgress());
-            
                         touchInSliderBounds = false;
                         return false;
                     }
-            
+
                     if (currentlyInHorizontalBounds) {
+                        touchInSliderBounds = true;
                         if (triggerOnce) {
                             triggerOnce = false;
                             triggerRumbleClick.store(true, std::memory_order_release);
                             triggerOnSound.store(true, std::memory_order_release);
                         }
-                        touchInSliderBounds = true;
-            
-                        s16 newValue = (static_cast<float>(currX - trackBarLeft) / static_cast<float>(width)) * 100;
-            
-                        if (newValue < 0) {
-                            newValue = 0;
-                        } else if (newValue > 100) {
-                            newValue = 100;
-                        }
-            
+
+                        // Round to nearest step (+0.5f) exactly as TrackBarV2 does — avoids
+                        // needing to drag past the midpoint before the value advances.
+                        const s16 newValue = std::max(s16(0), std::min(s16(sliderSpan),
+                            s16((currX - trackBarLeft) / static_cast<float>(width) * sliderSpan + 0.5f)));
+
                         if (newValue != this->m_value) {
                             this->m_value = newValue;
                             this->m_valueChangedListener(this->getProgress());
-            
-                            const s16 currentSegment = (this->m_value * 10) / 100;
-                            if (this->m_value == 0 || currentSegment != lastHapticSegment) {
+
+                            const s16 currentSegment = (newValue * 10) / sliderSpan;
+                            if (newValue == 0 || currentSegment != lastHapticSegment) {
                                 lastHapticSegment = currentSegment;
                                 triggerNavigationFeedback();
                             }
                         }
-            
+
                         return true;
                     }
                 }
-            
+
                 return false;
             }
 
@@ -8381,7 +8418,7 @@ namespace tsl {
                     iconOffset = 14 + iconWidth;
                     xPos += iconOffset;
                     width -= iconOffset;
-                    handlePos = (width) * (this->m_value) / (100);
+                    handlePos = (width) * (this->m_value) / (m_maxValue - m_minValue);
                 }
             
                 // Draw step tick marks if this is a step trackbar
@@ -8433,9 +8470,15 @@ namespace tsl {
                 
                     std::string valuePart;
                     if (!m_usingNamedStepTrackbar) {
+                        // m_value is the direct offset from m_minValue (derived from the range).
+                        // For default (0,100): dispVal == m_value — identical to original behaviour.
+                        const int dispVal = static_cast<int>(m_minValue) + static_cast<int>(m_value);
+                        const std::string dispStr =
+                            (m_minValue < 0 && dispVal > 0 ? std::string("+") : std::string(""))
+                            + ult::to_string(dispVal);
                         valuePart = (m_units.compare("%") == 0 || m_units.compare("°C") == 0 || m_units.compare("°F") == 0)
-                                    ? ult::to_string(m_value) + m_units
-                                    : ult::to_string(m_value) + (m_units.empty() ? "" : " ") + m_units;
+                                    ? dispStr + m_units
+                                    : dispStr + (m_units.empty() ? "" : " ") + m_units;
                     } else {
                         valuePart = this->m_selection;
                     }
@@ -8575,7 +8618,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual u8 getProgress() {
+            virtual u16 getProgress() {
                 return this->m_value;
             }
 
@@ -8584,7 +8627,7 @@ namespace tsl {
              *
              * @param state State
              */
-            virtual void setProgress(u8 value) {
+            virtual void setProgress(u16 value) {
                 this->m_value = value;
             }
 
@@ -8593,8 +8636,31 @@ namespace tsl {
              *
              * @param stateChangedListener Listener with the current state passed in as parameter
              */
-            void setValueChangedListener(std::function<void(u8)> valueChangedListener) {
+            void setValueChangedListener(std::function<void(u16)> valueChangedListener) {
                 this->m_valueChangedListener = valueChangedListener;
+            }
+
+            /**
+             * @brief Sets the display range and resolution of the slider.
+             *
+             * m_value internally stores the direct offset from minValue, so the
+             * slider spans (maxValue − minValue) + 1 discrete positions — one per
+             * unit of the range.  The displayed value is simply minValue + m_value.
+             *
+             * For the default range (0, 100) the behaviour is identical to the
+             * original: 101 positions, 0–100 displayed, listener receives 0–100.
+             *
+             * Example — audio balance (−150 % … 0 % … +150 %):
+             *   setRange(-150, 150);   // 301 positions, 1 % per step
+             *
+             * A "+" prefix is shown automatically when minValue < 0 && dispVal > 0.
+             *
+             * @param minValue  Displayed value at the far-left  position (m_value == 0)
+             * @param maxValue  Displayed value at the far-right position (m_value == maxValue − minValue)
+             */
+            void setRange(s16 minValue, s16 maxValue) {
+                m_minValue = minValue;
+                m_maxValue = maxValue;
             }
 
         protected:
@@ -8602,7 +8668,7 @@ namespace tsl {
             s16 m_value = 0;
             bool m_interactionLocked = false;
 
-            std::function<void(u8)> m_valueChangedListener = [](u8){};
+            std::function<void(u16)> m_valueChangedListener = [](u16){};
 
             bool m_usingStepTrackbar = false;
             bool m_usingNamedStepTrackbar = false;
@@ -8620,10 +8686,20 @@ namespace tsl {
             std::string m_selection; // Used for named step trackbars
             bool m_drawFrameless = false;
 
+            // Optional display-value range — does NOT affect slider position or geometry.
+            // Display-value range.  m_value holds the direct offset from m_minValue,
+            // so the slider spans (m_maxValue − m_minValue + 1) discrete positions.
+            // dispVal = m_minValue + m_value.  A "+" prefix is shown automatically
+            // when m_minValue < 0 && dispVal > 0.
+            // Defaults (0, 100) are exact no-ops — all existing subclasses unchanged.
+            s16 m_minValue = 0;
+            s16 m_maxValue = 100;
+
             float m_lastBottomBound;
 
             s16 m_index = 0;  // Add index tracking like V2
             u64 m_holdStartTime_ns = 0;
+            u64 m_lastUpdate_ns = 0;  // Per-instance hold-repeat timer (matches TrackBarV2)
             bool m_holding = false;
             bool m_wasLastHeld = false;
             u64 m_prevKeysHeld = 0;
@@ -8873,7 +8949,7 @@ namespace tsl {
              *
              * @return State
              */
-            virtual u8 getProgress() override {
+            virtual u16 getProgress() override {
                 return this->m_value / (100 / (this->m_numSteps - 1));
             }
 
@@ -8882,8 +8958,8 @@ namespace tsl {
              *
              * @param state State
              */
-            virtual void setProgress(u8 value) override {
-                value = std::min(value, u8(this->m_numSteps - 1));
+            virtual void setProgress(u16 value) override {
+                value = std::min(value, u16(this->m_numSteps - 1));
                 this->m_value = value * (100 / (this->m_numSteps - 1));
             }
 
@@ -8913,11 +8989,11 @@ namespace tsl {
         
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, 
                                     HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                const u8 prevProgress = this->getProgress();
+                const u16 prevProgress = this->getProgress();
                 const bool result = StepTrackBar::handleInput(keysDown, keysHeld, touchPos, leftJoyStick, rightJoyStick);
                 
                 if (this->getProgress() != prevProgress) {
-                    const u8 currentIndex = this->getProgress();
+                    const u16 currentIndex = this->getProgress();
                     if (currentIndex < m_stepDescriptions.size()) {
                         this->m_selection = m_stepDescriptions[currentIndex];
                     }
@@ -8928,11 +9004,11 @@ namespace tsl {
         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, 
                                 s32 initialX, s32 initialY) override {
-                const u8 prevProgress = this->getProgress();
+                const u16 prevProgress = this->getProgress();
                 const bool result = StepTrackBar::onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
                 
                 if (result && this->getProgress() != prevProgress) {
-                    const u8 currentIndex = this->getProgress();
+                    const u16 currentIndex = this->getProgress();
                     if (currentIndex < m_stepDescriptions.size()) {
                         this->m_selection = m_stepDescriptions[currentIndex];
                     }
@@ -8941,10 +9017,10 @@ namespace tsl {
                 return result;
             }
         
-            virtual void setProgress(u8 value) override {
+            virtual void setProgress(u16 value) override {
                 StepTrackBar::setProgress(value);
                 
-                const u8 currentIndex = this->getProgress();
+                const u16 currentIndex = this->getProgress();
                 if (currentIndex < m_stepDescriptions.size()) {
                     this->m_selection = m_stepDescriptions[currentIndex];
                 }
@@ -12299,6 +12375,11 @@ namespace tsl {
                         if (shData->overlayOpen && !disableHiding) {
                             tsl::Overlay::get()->hide();
                             shData->overlayOpen = false;
+                        } else if (idx == WaiterObject_HomeButton && disableHiding) {
+                            // Game session — normal hide is suppressed.  Signal the player
+                            // GUI to release foreground (if held) so HID returns to the
+                            // background title.  Consumed by process_home_foreground_release().
+                            homeButtonPressedInGame.store(true, std::memory_order_release);
                         }
                     }
         #endif
@@ -13247,4 +13328,5 @@ extern "C" {
 
 }
 
+//#pragma GCC diagnostic pop
 #endif

@@ -339,7 +339,7 @@ void initializeThemeVars() {
     defaultTextColor             = getColor("text_color");
     notificationTextColor        = getColor("notification_text_color");
     notificationTitleColor       = getColor("notification_title_color");
-    notificationTimeColor       = getColor("notification_time_color");
+    notificationTimeColor        = getColor("notification_time_color");
     headerTextColor              = getColor("header_text_color");
     headerSeparatorColor         = getColor("header_separator_color");
     starColor                    = getColor("star_color");
