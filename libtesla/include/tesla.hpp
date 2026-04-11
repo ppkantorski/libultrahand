@@ -7345,10 +7345,10 @@ namespace tsl {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
+                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
-                        !ult::useSelectionText ? defaultTextColor: (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
+                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
                 #endif
                     renderer->disableScissoring();
                     handleScrolling();
