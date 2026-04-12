@@ -479,9 +479,8 @@ namespace ult {
                 sections.push_back(std::move(sectionName)); // Move for efficiency
             }
 
-            // Clear strings to reuse capacity
+            // Clear string to reuse capacity
             line.clear();
-            sectionName.clear();
         }
     
         fclose(file);
@@ -695,8 +694,6 @@ namespace ult {
         auto fileMutex = getFileMutex(fileToEdit);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
 
-        std::ios::sync_with_stdio(false);  // Disable synchronization between C++ and C I/O.
-    
         if (!isFile(fileToEdit)) {
             createDirectory(getParentDirFromPath(fileToEdit));
         }
@@ -1402,7 +1399,7 @@ namespace ult {
             if (buffer[0] == '[' && buffer[len-1] == ']') {
                 if (!currentSection.empty()) {
                     options.emplace_back(std::move(currentSection), std::move(sectionCommands));
-                    sectionCommands = std::vector<std::vector<std::string>>();
+                    sectionCommands.clear();
                     sectionCommands.reserve(16);
                 }
                 currentSection.assign(buffer + 1, len - 2);

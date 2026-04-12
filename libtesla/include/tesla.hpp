@@ -258,6 +258,17 @@ inline void triggerRumbleDoubleClickFeedback() {
 
 
 /**
+ * @brief Shared MOD0/LNY2 detection helper — defined once in tesla.cpp.
+ *
+ * Given an already-opened front buffer and file handle, checks whether the
+ * overlay uses a libnx version that includes the LNY2 tag.  Called by both
+ * usingLNY2() and getOverlayInfo() to avoid duplicating this logic.
+ */
+bool detectLNY2FromBuffers(const uint8_t* frontBuf, size_t frontReadSize,
+                           uint32_t text_offset, uint32_t mod0_rel,
+                           size_t fileSz, FILE* file);
+
+/**
  * @brief Checks if an NRO file uses new libnx (has LNY2 tag).
  *
  * @param filePath The path to the NRO file.
@@ -12918,16 +12929,16 @@ namespace tsl {
     #else
 
         ult::currentHeapSize = ult::getCurrentHeapSize();
-        ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
-        ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+        ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_6MB;
+        ult::limitedMemory = false;//ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
 
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
-            ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB;
+            ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_6MB;
             
             if (!ult::furtherExpandedMemory) {
-                ult::loaderTitle += "+";
+                //ult::loaderTitle += "+";
                 ult::COPY_BUFFER_SIZE = 262144;
                 ult::HEX_BUFFER_SIZE = 8192;
                 ult::UNZIP_READ_BUFFER = 262144;
@@ -12935,18 +12946,28 @@ namespace tsl {
                 ult::DOWNLOAD_READ_BUFFER = 131072;
                 ult::DOWNLOAD_WRITE_BUFFER = 131072;
             } else {
-                ult::loaderTitle += "×";
-                ult::COPY_BUFFER_SIZE = 262144*2;
-                ult::HEX_BUFFER_SIZE = 8192;
-                ult::UNZIP_READ_BUFFER = 262144*2;
-                ult::UNZIP_WRITE_BUFFER = 131072*4;
-                ult::DOWNLOAD_READ_BUFFER = 131072*4;
-                ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
+                if (ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB) {
+                    ult::loaderTitle += "+";
+                    ult::COPY_BUFFER_SIZE = 262144;
+                    ult::HEX_BUFFER_SIZE = 8192;
+                    ult::UNZIP_READ_BUFFER = 262144;
+                    ult::UNZIP_WRITE_BUFFER = 131072;
+                    ult::DOWNLOAD_READ_BUFFER = 131072;
+                    ult::DOWNLOAD_WRITE_BUFFER = 131072;
+                } else {
+                    ult::loaderTitle += "×";
+                    ult::COPY_BUFFER_SIZE = 262144*2;
+                    ult::HEX_BUFFER_SIZE = 8192;
+                    ult::UNZIP_READ_BUFFER = 262144*2;
+                    ult::UNZIP_WRITE_BUFFER = 131072*4;
+                    ult::DOWNLOAD_READ_BUFFER = 131072*4;
+                    ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
+                }
             }
-        } else if (ult::limitedMemory) {
+        } else if (ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB) {
             ult::loaderTitle += "-";
-            ult::DOWNLOAD_READ_BUFFER = 16*1024;
-            ult::UNZIP_READ_BUFFER = 16*1024;
+            //ult::DOWNLOAD_READ_BUFFER = 16*1024;
+            //ult::UNZIP_READ_BUFFER = 16*1024;
         }
     #endif
     

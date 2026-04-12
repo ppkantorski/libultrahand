@@ -36,7 +36,7 @@ namespace ult {
      */
     void clearHexSumCache() {
         std::lock_guard<std::shared_mutex> writeLock(cacheMutex);
-        hexSumCache = {};
+        hexSumCache.clear();
     }
 
     size_t getHexSumCacheSize() {
@@ -86,13 +86,12 @@ namespace ult {
         std::string hex;
         int tempValue = decimalValue;
         int remainder;
-        char hexChar;
         while (tempValue > 0) {
             remainder = tempValue % 16;
-            hexChar = (remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10);
-            hex.insert(hex.begin(), hexChar);
+            hex.push_back((remainder < 10) ? ('0' + remainder) : ('A' + remainder - 10));
             tempValue /= 16;
         }
+        std::reverse(hex.begin(), hex.end());
     
         // Ensure hex length is even by adding leading zero if needed
         if (hex.length() % 2 != 0) {
@@ -166,12 +165,11 @@ namespace ult {
     
     
     std::string hexToReversedHex(const std::string& hexadecimal, int order) {
-        // Reverse the hexadecimal string in groups of order
         std::string reversedHex;
-        for (int i = hexadecimal.length() - order; i >= 0; i -= order) {
-            reversedHex += hexadecimal.substr(i, order);
+        reversedHex.reserve(hexadecimal.length());
+        for (int i = static_cast<int>(hexadecimal.length()) - order; i >= 0; i -= order) {
+            reversedHex.append(hexadecimal, i, order);
         }
-        
         return reversedHex;
     }
     
@@ -201,6 +199,18 @@ namespace ult {
      * @param hexData The hexadecimal data to search for.
      * @return A vector of strings containing the file offsets where the data is found.
      */
+    // Helper: convert a hex string to binary bytes (hexLen must be even, output must be hexLen/2 bytes)
+    static void hexStringToBinary(const unsigned char* hexPtr, size_t hexLen, unsigned char* out) {
+        size_t i = 0;
+        for (; i + 4 <= hexLen; i += 4) {
+            out[i/2]     = (hexTable[hexPtr[i]]     << 4) | hexTable[hexPtr[i + 1]];
+            out[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
+        }
+        for (; i < hexLen; i += 2) {
+            out[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
+        }
+    }
+
     std::vector<std::string> findHexDataOffsets(const std::string& filePath, const std::string& hexData) {
         std::vector<std::string> offsets;
 
@@ -223,18 +233,7 @@ namespace ult {
         
         // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
         std::unique_ptr<unsigned char[]> binaryData(new unsigned char[patternLen]);
-        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
-        
-        // Unrolled hex conversion loop
-        size_t i = 0;
-        for (; i + 4 <= hexLen; i += 4) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
-        }
-        // Handle remaining bytes
-        for (; i < hexLen; i += 2) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-        }
+        hexStringToBinary(reinterpret_cast<const unsigned char*>(hexData.c_str()), hexLen, binaryData.get());
     
         // Optimized search variables
         const unsigned char* patternPtr = binaryData.get();
@@ -244,6 +243,7 @@ namespace ult {
         std::unique_ptr<unsigned char[]> buffer(new unsigned char[HEX_BUFFER_SIZE]);
         size_t bytesRead = 0;
         size_t offset = 0;
+        size_t i = 0;
         
 
         while ((bytesRead = fread(buffer.get(), 1, HEX_BUFFER_SIZE, file)) > 0) {
@@ -354,18 +354,7 @@ namespace ult {
         // Convert the hex string to binary data using optimized lookup table
         const size_t dataLen = hexLen / 2;
         std::unique_ptr<unsigned char[]> binaryData(new unsigned char[dataLen]);
-        const unsigned char* hexPtr = reinterpret_cast<const unsigned char*>(hexData.c_str());
-        
-        // Unrolled hex conversion loop (same as findHexDataOffsets)
-        size_t i = 0;
-        for (; i + 4 <= hexLen; i += 4) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-            binaryData[i/2 + 1] = (hexTable[hexPtr[i + 2]] << 4) | hexTable[hexPtr[i + 3]];
-        }
-        // Handle remaining bytes
-        for (; i < hexLen; i += 2) {
-            binaryData[i/2] = (hexTable[hexPtr[i]] << 4) | hexTable[hexPtr[i + 1]];
-        }
+        hexStringToBinary(reinterpret_cast<const unsigned char*>(hexData.c_str()), hexLen, binaryData.get());
     
         // Move to the specified offset and write the binary data directly to the file
         fseek(file, offset, SEEK_SET);

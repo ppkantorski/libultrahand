@@ -366,8 +366,7 @@ namespace ult {
     
     // Function to slice a string from start to end index
     std::string sliceString(const std::string& str, size_t start, size_t end) {
-        if (start < 0) start = 0;
-        if (end > static_cast<size_t>(str.length())) end = str.length();
+        if (end > str.length()) end = str.length();
         if (start > end) start = end;
         return str.substr(start, end - start);
     }
