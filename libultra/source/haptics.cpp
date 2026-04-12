@@ -181,6 +181,33 @@ namespace ult {
         }
     }
 
+    // Returns nanoseconds until the next rumble state transition needs to happen.
+    // Used by the feedback poller to sleep exactly as long as needed instead of
+    // polling on a fixed interval. Returns UINT64_MAX when no rumble is active.
+    u64 nextRumbleWakeNs(u64 nowNs) {
+        u64 earliest = UINT64_MAX;
+
+        if (clickActive.load(std::memory_order_acquire)) {
+            const u64 stopAt = armTicksToNs(rumbleStartTick) + RUMBLE_DURATION_NS;
+            earliest = (nowNs < stopAt) ? (stopAt - nowNs) : 0;
+        }
+
+        if (doubleClickActive.load(std::memory_order_acquire)) {
+            const u64 base = armTicksToNs(doubleClickTick);
+            u64 nextAt;
+            switch (doubleClickPulse) {
+                case 1: nextAt = base + DOUBLE_CLICK_PULSE_DURATION_NS; break;
+                case 2: nextAt = base + DOUBLE_CLICK_PULSE_DURATION_NS + DOUBLE_CLICK_GAP_NS; break;
+                case 3: nextAt = base + (DOUBLE_CLICK_PULSE_DURATION_NS * 2) + DOUBLE_CLICK_GAP_NS; break;
+                default: nextAt = nowNs; break;
+            }
+            const u64 remaining = (nowNs < nextAt) ? (nextAt - nowNs) : 0;
+            earliest = std::min(earliest, remaining);
+        }
+
+        return earliest;
+    }
+
     void rumbleClickStandalone() {
         // Match regular rumbleClick() behavior, but blocking
         sendVibration(&vibrationStop);

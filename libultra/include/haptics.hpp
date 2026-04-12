@@ -22,6 +22,7 @@
 #include <switch.h>
 #include <atomic>
 #include <cstdint>
+#include <algorithm>
 
 namespace ult {
     
@@ -36,6 +37,7 @@ namespace ult {
     void rumbleDoubleClick();
     void processRumbleStop(u64 nowNs);
     void processRumbleDoubleClick(u64 nowNs);
+    u64  nextRumbleWakeNs(u64 nowNs);   // ns until next rumble state transition; UINT64_MAX if idle
     void rumbleClickStandalone();
     void rumbleDoubleClickStandalone();
 }

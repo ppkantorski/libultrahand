@@ -198,6 +198,7 @@ inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 inline std::atomic<bool> feedbackPollerStop{false};
 inline std::atomic<bool> hidReinitInProgress{false};
+inline LEvent feedbackEvent;        // signals the feedback poller when work arrives
 
 
 // Sound triggering variables
@@ -225,6 +226,7 @@ __attribute__((noinline)) static void triggerFeedbackImpl(
         std::atomic<bool>& rumble, std::atomic<bool>& sound) {
     rumble.store(true, std::memory_order_release);
     sound.store(true, std::memory_order_release);
+    leventSignal(&feedbackEvent);   // wake the poller immediately
 }
 inline void triggerNavigationFeedback() { triggerFeedbackImpl(triggerRumbleClick, triggerNavigationSound); }
 inline void triggerWallFeedback()       { triggerFeedbackImpl(triggerRumbleClick, triggerWallSound); }
@@ -3882,6 +3884,61 @@ namespace tsl {
     
     // Elements
     
+    // ── Shared frame-drawing helpers ──────────────────────────────────────────
+    // Extracted from virtual draw() overrides in OverlayFrame and
+    // HeaderOverlayFrame. Because these are virtual methods on distinct classes,
+    // LTO/ICF cannot merge their bodies even when the logic is identical — the
+    // compiler must emit one copy per class. Free functions with [[gnu::noinline]]
+    // ensure a single copy in the binary regardless of how many classes call them.
+
+    // Conditional atomic-float store: only writes if the value changed.
+    // Replaces the updateAtomic lambda (defined fresh per draw() call in
+    // IS_LAUNCHER frame) and the manual if-check pattern in the other frames.
+    [[gnu::noinline]] inline void updateAtomicFloat(std::atomic<float>& atom, float val) {
+        if (val != atom.load(std::memory_order_acquire))
+            atom.store(val, std::memory_order_release);
+    }
+
+    // Draws the 1-px vertical edge separator on whichever side useRightAlignment
+    // selects. Appeared verbatim in 3 different frame draw() overrides.
+    [[gnu::noinline]] inline void drawEdgeSeparator(gfx::Renderer* renderer) {
+        if (!ult::useRightAlignment)
+            renderer->drawRect(447, 0, 448, 720, renderer->a(edgeSeparatorColor));
+        else
+            renderer->drawRect(0, 0, 1, 720, renderer->a(edgeSeparatorColor));
+    }
+
+    // Measures the footer button widths, updates the three shared atomics, and
+    // draws the Back/Select touch-highlight rectangles. Used by OverlayFrame and
+    // both HeaderOverlayFrame variants; the IS_LAUNCHER variant passes its own
+    // label strings so interpreter-mode text is handled at the call site.
+    //
+    // After this call the caller can read ult::backWidth / ult::halfGap for
+    // subsequent text-positioning without holding local copies.
+    //
+    // noClickableItems suppresses the Select rect (OverlayFrame behaviour);
+    // pass false when the class has no such guard (HeaderOverlayFrame).
+    [[gnu::noinline]] inline void updateFooterButtonWidths(
+            gfx::Renderer*     renderer,
+            const std::string& backLabel,
+            const std::string& selectLabel,
+            bool               noClickableItems) {
+        static constexpr float kButtonStartX = 30.0f;
+        const float gapWidth  = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
+        const float halfGap   = gapWidth * 0.5f;
+        const float backW     = renderer->getTextDimensions(backLabel,   false, 23).first + gapWidth;
+        const float selW      = renderer->getTextDimensions(selectLabel, false, 23).first + gapWidth;
+        updateAtomicFloat(ult::halfGap,    halfGap);
+        updateAtomicFloat(ult::backWidth,  backW);
+        updateAtomicFloat(ult::selectWidth, selW);
+        const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
+        if (ult::touchingBack.load(std::memory_order_acquire))
+            renderer->drawRoundedRect(kButtonStartX + 2 - halfGap, buttonY, backW - 1, 73.0f, 12.0f, renderer->a(clickColor));
+        if (ult::touchingSelect.load(std::memory_order_acquire) && !noClickableItems)
+            renderer->drawRoundedRect(kButtonStartX + 2 - halfGap + backW + 1, buttonY, selW - 2, 73.0f, 12.0f, renderer->a(clickColor));
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     namespace elm {
         
         enum class TouchEvent {
@@ -4726,34 +4783,23 @@ namespace tsl {
             
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
             
-                // Atomic update helper
-                const auto updateAtomic = [](std::atomic<float>& atom, float val) {
-                    if (val != atom.load(std::memory_order_acquire))
-                        atom.store(val, std::memory_order_release);
-                };
-    
-                const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
             #if IS_LAUNCHER_DIRECTIVE
-                const float backTextWidth   = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK   : ult::HIDE),   false, 23).first;
-                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK     : ult::CANCEL), false, 23).first;
+                updateFooterButtonWidths(renderer,
+                    "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK   : ult::HIDE),
+                    "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK     : ult::CANCEL),
+                    m_noClickableItems);
             #else
-                const float backTextWidth   = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK,   false, 23).first;
+                updateFooterButtonWidths(renderer,
+                    "\uE0E1" + ult::GAP_2 + ult::BACK,
+                    "\uE0E0" + ult::GAP_2 + ult::OK,
+                    m_noClickableItems);
             #endif
-                const float _halfGap    = gapWidth * 0.5f;
-                const float _backWidth  = backTextWidth  + gapWidth;
-                const float _selectWidth = selectTextWidth + gapWidth;
-                updateAtomic(ult::halfGap,    _halfGap);
-                updateAtomic(ult::backWidth,  _backWidth);
-                updateAtomic(ult::selectWidth, _selectWidth);
-                
+                const float _halfGap   = ult::halfGap.load(std::memory_order_acquire);
+                const float _backWidth = ult::backWidth.load(std::memory_order_acquire);
+                const float _selectWidth = ult::selectWidth.load(std::memory_order_acquire);
+                const float gapWidth = _halfGap * 2.0f;
                 static constexpr float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
-                
-                if (ult::touchingBack)
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
-                if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems)
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY, _selectWidth-2, 73.0f, 12.0f, a(clickColor));
                 
             #if IS_LAUNCHER_DIRECTIVE
                 const bool hasNextPage = !interpreterIsRunningNow &&
@@ -4771,7 +4817,7 @@ namespace tsl {
                                                            (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
                              ult::GAP_2 + (ult::inOverlaysPage.load(std::memory_order_acquire) ? ult::PACKAGES : ult::OVERLAYS_ABBR)) : ""),
                         false, 23).first + gapWidth;
-                    updateAtomic(ult::nextPageWidth, _nextPageWidth);
+                    updateAtomicFloat(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
                         float nextX = buttonStartX+2 - _halfGap + _backWidth + 1;
                         if (!m_noClickableItems) nextX += _selectWidth;
@@ -4787,7 +4833,7 @@ namespace tsl {
                         !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName)
                                                 : ("\uE0EE" + ult::GAP_2 + m_pageRightName),
                         false, 23).first + gapWidth;
-                    updateAtomic(ult::nextPageWidth, _nextPageWidth);
+                    updateAtomicFloat(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
                         float nextX = buttonStartX+2 - _halfGap + _backWidth + 1;
                         if (!m_noClickableItems) nextX += _selectWidth;
@@ -4849,10 +4895,7 @@ namespace tsl {
                 if (m_contentElement != nullptr)
                     m_contentElement->frame(renderer);
             
-                if (!ult::useRightAlignment)
-                    renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
-                else
-                    renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
+                drawEdgeSeparator(renderer);
             }
         
             inline void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -5117,38 +5160,11 @@ namespace tsl {
                 // Set initial button position
                 static constexpr float buttonStartX = 30;
                 
-                if (FullMode && !deactivateOriginalFooter) {
-                    // Get the exact gap width from ult::GAP_1
-                    const auto gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                    const float _halfGap = gapWidth / 2.0f;
-                    if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
-                        ult::halfGap.store(_halfGap, std::memory_order_release);
-                
-                    // Calculate text dimensions for buttons without gaps
-                    const auto backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                    const auto selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-                
-                    // Update widths to include the half-gap padding on each side
-                    const float _backWidth = backTextWidth + gapWidth;
-                    if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
-                        ult::backWidth.store(_backWidth, std::memory_order_release);
-                    const float _selectWidth = selectTextWidth + gapWidth;
-                    if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
-                        ult::selectWidth.store(_selectWidth, std::memory_order_release);
-                
-                    const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
-                
-                    // Draw back button rectangle
-                    if (ult::touchingBack.load(std::memory_order_acquire)) {
-                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
-                    }
-                
-                    // Draw select button rectangle (starts right after back button)
-                    if (ult::touchingSelect.load(std::memory_order_acquire) && !m_noClickableItems) {
-                        renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                                  _selectWidth-2, 73.0f, 12.0f, a(clickColor));
-                    }
-                }
+                if (FullMode && !deactivateOriginalFooter)
+                    updateFooterButtonWidths(renderer,
+                        "\uE0E1" + ult::GAP_2 + ult::BACK,
+                        "\uE0E0" + ult::GAP_2 + ult::OK,
+                        m_noClickableItems);
                 
                 // Build current bottom line
                 const std::string currentBottomLine = 
@@ -5174,12 +5190,8 @@ namespace tsl {
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
 
-                if (FullMode) {
-                    if (!ult::useRightAlignment)
-                        renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
-                    else
-                        renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
-                }
+                if (FullMode)
+                    drawEdgeSeparator(renderer);
             }
             
 
@@ -5289,38 +5301,11 @@ namespace tsl {
                     renderer->drawWidget();
                 #endif
 
-                // Get the exact gap width from ult::GAP_1
-                const float gapWidth = renderer->getTextDimensions(ult::GAP_1, false, 23).first;
-                const float _halfGap = gapWidth / 2.0f;
-                if (_halfGap != ult::halfGap.load(std::memory_order_acquire))
-                    ult::halfGap.store(_halfGap, std::memory_order_release);
-            
-                // Calculate text dimensions for buttons without gaps
-                const float backTextWidth = renderer->getTextDimensions("\uE0E1" + ult::GAP_2 + ult::BACK, false, 23).first;
-                const float selectTextWidth = renderer->getTextDimensions("\uE0E0" + ult::GAP_2 + ult::OK, false, 23).first;
-            
-                // Store final widths with gap padding included
-                const float _backWidth = backTextWidth + gapWidth;
-                if (_backWidth != ult::backWidth.load(std::memory_order_acquire))
-                    ult::backWidth.store(_backWidth, std::memory_order_release);
-                const float _selectWidth = selectTextWidth + gapWidth;
-                if (_selectWidth != ult::selectWidth.load(std::memory_order_acquire))
-                    ult::selectWidth.store(_selectWidth, std::memory_order_release);
-            
-                // Set initial button position
+                updateFooterButtonWidths(renderer,
+                    "\uE0E1" + ult::GAP_2 + ult::BACK,
+                    "\uE0E0" + ult::GAP_2 + ult::OK,
+                    false);
                 static constexpr float buttonStartX = 30;
-                const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
-            
-                // Draw back button rectangle
-                if (ult::touchingBack.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap, buttonY, _backWidth-1, 73.0f, 12.0f, a(clickColor));
-                }
-            
-                // Draw select button rectangle
-                if (ult::touchingSelect.load(std::memory_order_acquire)) {
-                    renderer->drawRoundedRect(buttonStartX+2 - _halfGap + _backWidth+1, buttonY,
-                                              _selectWidth-2, 73.0f, 12.0f, a(clickColor));
-                }
             
                 // Draw bottom text
                 const std::string menuBottomLine = "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
@@ -5332,7 +5317,7 @@ namespace tsl {
                 if (!usingUnfocusedColor) {
                     renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
                                                             {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
-                                                            buttonStartX + _backWidth, 693, 23,
+                                                            buttonStartX + ult::backWidth.load(std::memory_order_acquire), 693, 23,
                                                             unfocusedColor, unfocusedColor);
                 }
             
@@ -5342,10 +5327,7 @@ namespace tsl {
                 if (this->m_contentElement != nullptr)
                     this->m_contentElement->frame(renderer);
 
-                if (!ult::useRightAlignment)
-                    renderer->drawRect(447, 0, 448, 720, a(edgeSeparatorColor));
-                else
-                    renderer->drawRect(0, 0, 1, 720, a(edgeSeparatorColor));
+                drawEdgeSeparator(renderer);
             }
             
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -12565,7 +12547,44 @@ namespace tsl {
                     }
                 }
                 
-                svcSleepThread((ult::useSoundEffects || ult::useHapticFeedback) ? 16'000'000ULL : 160'000'000ULL);
+                // Event-based wait with precise haptic timing.
+                // When a rumble sequence is active, sleep exactly until the next
+                // state transition instead of polling every 4ms — eliminates wasted
+                // wakeups and gives sub-millisecond timing accuracy on each phase.
+                // A leventSignal from any trigger still wakes us early if needed.
+                //
+                // Timeout selection:
+                //   nextRumbleWakeNs — haptic pulse active: wake precisely at next transition
+                //  16 ms            — sound/haptics enabled but idle: responsive UI
+                //  ∞                — both features disabled: sleep until a trigger wakes us
+                const bool hapticsRunning =
+                    ult::clickActive.load(std::memory_order_acquire) ||
+                    ult::doubleClickActive.load(std::memory_order_acquire);
+                const u64 waitTimeoutNs =
+                    hapticsRunning
+                    ? ult::nextRumbleWakeNs(nowNs)
+                    : (ult::useSoundEffects || ult::useHapticFeedback)
+                    ? 16'000'000ULL
+                    : UINT64_MAX;
+                leventWait(&feedbackEvent, waitTimeoutNs);
+                leventClear(&feedbackEvent);
+            }
+
+            // Drain phase: let any active rumble sequence finish before the thread exits.
+            // Uses the same precise-sleep helper so we wake exactly at each transition
+            // rather than polling — at most 3 iterations for a full double-click
+            // (pulse1-end → pulse2-start → pulse2-end). Cap at 8 as a hard safety bound.
+            if (ult::useHapticFeedback && !disableHaptics.load(std::memory_order_acquire)
+                && !hidReinitInProgress.load(std::memory_order_acquire)) {
+                for (int drainIter = 0; drainIter < 8; ++drainIter) {
+                    if (!ult::clickActive.load(std::memory_order_acquire) &&
+                        !ult::doubleClickActive.load(std::memory_order_acquire)) break;
+                    const u64 nowNs = ult::nowNs();
+                    ult::processRumbleStop(nowNs);
+                    ult::processRumbleDoubleClick(nowNs);
+                    const u64 sleepNs = ult::nextRumbleWakeNs(nowNs);
+                    if (sleepNs > 0) svcSleepThread(sleepNs);
+                }
             }
         }
     }
@@ -13211,13 +13230,8 @@ namespace tsl {
 
             // Ensure background thread is fully stopped before overlay cleanup
             shData.running.store(false, std::memory_order_release);
-            feedbackPollerStop.store(true, std::memory_order_release);
-
             threadWaitForExit(&backgroundEventThread);
             threadClose(&backgroundEventThread);
-
-            threadWaitForExit(&backgroundFeedbackThread);
-            threadClose(&backgroundFeedbackThread);
             
             // Cleanup overlay resources
             hlp::requestForeground(false);
@@ -13225,17 +13239,22 @@ namespace tsl {
             overlay->exitServices();
             delete overlay;
             
+            // Stop feedback thread after overlay is closed / deleted
+            feedbackPollerStop.store(true, std::memory_order_release);
+            leventSignal(&feedbackEvent);   // wake the poller so it sees the stop flag
+            threadWaitForExit(&backgroundFeedbackThread);
+            threadClose(&backgroundFeedbackThread);
             
             eventClose(&shData.comboEvent);
 
 
-            if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
-                if (!disableSound.load(std::memory_order_acquire) && ult::useSoundEffects)
-                    ult::Audio::playExitSound();
-                if (ult::useHapticFeedback && !skipRumbleDoubleClick) {
-                    ult::rumbleDoubleClickStandalone();
-                }
-            }
+            //if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
+            //    if (!disableSound.load(std::memory_order_acquire) && ult::useSoundEffects)
+            //        ult::Audio::playExitSound();
+            //    if (ult::useHapticFeedback && !skipRumbleDoubleClick) {
+            //        ult::rumbleDoubleClickStandalone();
+            //    }
+            //}
     
             return 0;
         }
