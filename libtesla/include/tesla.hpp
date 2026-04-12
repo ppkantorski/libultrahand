@@ -2529,49 +2529,53 @@ namespace tsl {
                         s_tables_ready = true;
                     }
             
-                    // ── Background color — read once from framebuffer[0] ─────────────────
-                    // fillScreen wrote a(defaultBackgroundColor) uniformly to every pixel;
-                    // the first slot is representative.  r/g/b feed the blend formula;
-                    // a is written back unchanged (preserveAlpha == true).
                     tsl::Color* const framebuffer =
                         static_cast<tsl::Color*>(this->m_currentFramebuffer);
-            
-                    const u8 bg_r = framebuffer[0].r;
-                    const u8 bg_g = framebuffer[0].g;
-                    const u8 bg_b = framebuffer[0].b;
-                    const u8 bg_a = framebuffer[0].a;
-            
-                    // globalAlphaLimit mirrors the drawBitmapRGBA4444 parameter.
+
+                    // ── Background color — always black RGB, alpha from theme ────────────
+                    // The wallpaper is always composited over a black background.
+                    // bg RGB is hardcoded 0 so the compiler always selects the kDark=true
+                    // template instantiation, which eliminates the three background-channel
+                    // multiply-add pairs (vmulq_u16 × 3 + vaddq_u16 × 3) from the inner loop.
+                    //
+                    // bg_a mirrors all three branches of a(defaultBackgroundColor).a exactly:
+                    //   disableTransparency + useOpaqueScreenshots → 0xF (fully opaque)
+                    //   disableTransparency only                   → max(c.a, 0xE)
+                    //   normal fade                                → min(c.a, opacity_limit)
+                    //
+                    // globalAlphaLimit caps the wallpaper source pixel alphas and is always
+                    // 0xF * s_opacity — unaffected by disableTransparency (same as
+                    // drawBitmapRGBA4444).
+                    //
+                    // For fully-transparent wallpaper pixels (src_a == 0) the kDark path
+                    // emits {r=0, g=0, b=0, a=bg_a} — identical to what fillScreen wrote —
+                    // so no pixel is left uninitialised and callers can skip fillScreen entirely.
                     const u8 globalAlphaLimit =
-                        static_cast<u8>(0xF * tsl::gfx::Renderer::s_opacity);
+                        static_cast<u8>(0xF * Renderer::s_opacity);
+                    const u8 bg_a = ult::disableTransparency
+                        ? (ult::useOpaqueScreenshots
+                               ? 0xFu
+                               : (tsl::defaultBackgroundColor.a > 0xEu
+                                      ? tsl::defaultBackgroundColor.a
+                                      : 0xEu))
+                        : (tsl::defaultBackgroundColor.a < globalAlphaLimit
+                               ? tsl::defaultBackgroundColor.a
+                               : globalAlphaLimit);
             
                     const u8* const src_base = ult::wallpaperData.data();
             
-                    if (bg_r == 0u && bg_g == 0u && bg_b == 0u) {
-                        dispatchRowChunks(kH, [=](u32 rowStart, u32 rowEnd) {
-                            drawWallpaperRows<true>(
-                                rowStart, rowEnd,
-                                framebuffer,
-                                src_base,
-                                s_yParts,
-                                s_xGroupParts,
-                                globalAlphaLimit,
-                                bg_r, bg_g, bg_b, bg_a
-                            );
-                        });
-                    } else {
-                        dispatchRowChunks(kH, [=](u32 rowStart, u32 rowEnd) {
-                            drawWallpaperRows<false>(
-                                rowStart, rowEnd,
-                                framebuffer,
-                                src_base,
-                                s_yParts,
-                                s_xGroupParts,
-                                globalAlphaLimit,
-                                bg_r, bg_g, bg_b, bg_a
-                            );
-                        });
-                    }
+                    // bg is always black — always use the kDark=true fast path.
+                    dispatchRowChunks(kH, [=](u32 rowStart, u32 rowEnd) {
+                        drawWallpaperRows<true>(
+                            rowStart, rowEnd,
+                            framebuffer,
+                            src_base,
+                            s_yParts,
+                            s_xGroupParts,
+                            globalAlphaLimit,
+                            0u, 0u, 0u, bg_a
+                        );
+                    });
                 }
             
                 ult::inPlot.store(false, std::memory_order_release);
@@ -4618,8 +4622,11 @@ namespace tsl {
             
             void draw(gfx::Renderer *renderer) override {
             
-                renderer->fillScreen(a(defaultBackgroundColor));
-                renderer->drawWallpaper();
+                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                    !ult::wallpaperData.empty() && ult::correctFrameSize)
+                    renderer->drawWallpaper();
+                else
+                    renderer->fillScreen(a(defaultBackgroundColor));
                 
                 y = 50;
                 offset = 0;
@@ -5081,9 +5088,15 @@ namespace tsl {
                 
                 
                 if (FullMode == true) {
-                    renderer->fillScreen(a(defaultBackgroundColor));
-                    if (lastMode.empty() || (lastMode.compare("returning") == 0))
-                        renderer->drawWallpaper();
+                    if ((lastMode.empty() || (lastMode.compare("returning") == 0)) &&
+                        ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                        !ult::wallpaperData.empty() && ult::correctFrameSize)
+                        renderer->drawWallpaper();   // bakes bg color — no fillScreen needed
+                    else {
+                        renderer->fillScreen(a(defaultBackgroundColor));
+                        if (lastMode.empty() || (lastMode.compare("returning") == 0))
+                            renderer->drawWallpaper();
+                    }
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
                 }
@@ -5264,8 +5277,11 @@ namespace tsl {
             
             virtual void draw(gfx::Renderer *renderer) override {
                 
-                renderer->fillScreen(a(defaultBackgroundColor));
-                renderer->drawWallpaper();
+                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                    !ult::wallpaperData.empty() && ult::correctFrameSize)
+                    renderer->drawWallpaper();
+                else
+                    renderer->fillScreen(a(defaultBackgroundColor));
                 renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
                 
                 #if USING_WIDGET_DIRECTIVE
