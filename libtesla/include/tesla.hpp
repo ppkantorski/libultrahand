@@ -11123,15 +11123,25 @@ namespace tsl {
             }
 
             auto currentFocus = currentGui->getFocusedElement();
-            
+
+            // Only suppress OK when the focused item has actually been scrolled
+            // *out of* the visible viewport by a long table.  A tiny table at the
+            // bottom (where the last list item is still fully on screen) must NOT
+            // trigger suppression, so we check real pixel bounds rather than just
+            // the isTableScrolling flag.
+            const bool blockOkAction = currentFocus &&
+                tsl::elm::isTableScrolling.load(std::memory_order_acquire) &&
+                (currentFocus->getTopBound()    < static_cast<s32>(ult::activeHeaderHeight) ||
+                 currentFocus->getBottomBound() > static_cast<s32>(tsl::cfg::FramebufferHeight) - 73);
+
             // Focus color debounce — snap true immediately, delay false.
-            // Also treat table-scrolling as "unfocused" so the OK button
-            // greys out and its footer touch is suppressed while the focused
-            // item is still scrolling into view.
+            // Also treat out-of-view table-scroll as "unfocused" so the OK
+            // button greys out and its footer touch is suppressed while the
+            // focused item is off-screen.
             {
                 static u64 focusLostTime_ns = 0;
                 static constexpr u64 UNFOCUS_DELAY_NS = 10'000'000ULL;
-                if (currentFocus && !tsl::elm::isTableScrolling.load(std::memory_order_acquire)) {
+                if (currentFocus && !blockOkAction) {
                     usingUnfocusedColor = true;
                     focusLostTime_ns = 0;
                 } else {
@@ -11258,11 +11268,9 @@ namespace tsl {
                 }
             }
             
-            // Don't let OK fire while the focused item is still scrolling into view.
-            // isTableScrolling is true whenever the cursor is pinned to a list item
-            // above/below a table that hasn't fully reached it yet, so masking
-            // KEY_A here covers both the physical button and simulatedSelect.
-            if (tsl::elm::isTableScrolling.load(std::memory_order_acquire))
+            // Suppress OK only when the focused item is genuinely off-screen —
+            // blockOkAction is false for small tables where the item is visible.
+            if (blockOkAction)
                 keysDown &= ~KEY_A;
 
             bool handled = false;
