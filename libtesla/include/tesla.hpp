@@ -11124,11 +11124,14 @@ namespace tsl {
 
             auto currentFocus = currentGui->getFocusedElement();
             
-            // Focus color debounce — snap true immediately, delay false
+            // Focus color debounce — snap true immediately, delay false.
+            // Also treat table-scrolling as "unfocused" so the OK button
+            // greys out and its footer touch is suppressed while the focused
+            // item is still scrolling into view.
             {
                 static u64 focusLostTime_ns = 0;
                 static constexpr u64 UNFOCUS_DELAY_NS = 10'000'000ULL;
-                if (currentFocus) {
+                if (currentFocus && !tsl::elm::isTableScrolling.load(std::memory_order_acquire)) {
                     usingUnfocusedColor = true;
                     focusLostTime_ns = 0;
                 } else {
@@ -11255,6 +11258,13 @@ namespace tsl {
                 }
             }
             
+            // Don't let OK fire while the focused item is still scrolling into view.
+            // isTableScrolling is true whenever the cursor is pinned to a list item
+            // above/below a table that hasn't fully reached it yet, so masking
+            // KEY_A here covers both the physical button and simulatedSelect.
+            if (tsl::elm::isTableScrolling.load(std::memory_order_acquire))
+                keysDown &= ~KEY_A;
+
             bool handled = false;
             for (elm::Element* p = currentFocus; !handled && p; p = p->getParent())
                 handled = p->onClick(keysDown) || p->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
