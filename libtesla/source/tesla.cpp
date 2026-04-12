@@ -1048,6 +1048,7 @@ void NotificationPrompt::update() {
         } else if (slot.flags & SLOT_SOUND_PENDING) {
             slot.flags &= ~SLOT_SOUND_PENDING;
             triggerNotificationSound.store(true, std::memory_order_release);
+            signalSound();
         }
 
         if (slot.data.iconPending) {

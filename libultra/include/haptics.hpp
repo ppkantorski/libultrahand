@@ -2,11 +2,10 @@
  * File: haptics.hpp
  * Author: ppkantorski
  * Description:
- *   This header declares functions and shared flags for managing haptic feedback
- *   in the Ultrahand Overlay. It includes routines for initializing vibration
- *   devices, sending rumble and double-click patterns, and controlling timing
- *   for single and double pulse haptics. Atomic flags ensure safe access across
- *   threads.
+ *   This header declares functions for managing haptic feedback in the
+ *   Ultrahand Overlay. It provides interfaces for initializing vibration
+ *   devices and triggering blocking rumble patterns used by the dedicated
+ *   haptics thread.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -20,24 +19,15 @@
 
 #pragma once
 #include <switch.h>
-#include <atomic>
-#include <cstdint>
-#include <algorithm>
 
 namespace ult {
-    
-    extern std::atomic<bool> clickActive;
-    extern std::atomic<bool> doubleClickActive;
-    
+
     void initHaptics();
     void deinitHaptics();
     void checkAndReinitHaptics();
-    
-    void rumbleClick();
-    void rumbleDoubleClick();
-    void processRumbleStop(u64 nowNs);
-    void processRumbleDoubleClick(u64 nowNs);
-    u64  nextRumbleWakeNs(u64 nowNs);   // ns until next rumble state transition; UINT64_MAX if idle
+
+    // Blocking rumble patterns — safe to call from a dedicated haptics thread.
+    // Both functions return only after the full haptic sequence has completed.
     void rumbleClickStandalone();
     void rumbleDoubleClickStandalone();
 }

@@ -4,10 +4,9 @@
  * Description:
  *   This source file provides implementations for the functions declared in
  *   haptics.hpp. These functions manage haptic feedback for the Ultrahand Overlay
- *   using libnx’s vibration interfaces. It includes routines for initializing
- *   rumble devices, sending vibration patterns, and handling single or double
- *   click feedback with timing control. Thread safety is maintained through
- *   atomic operations and synchronization mechanisms.
+ *   using libnx's vibration interfaces. The dedicated haptics thread calls the
+ *   standalone (blocking) functions directly, so no timer state machine or
+ *   atomic flags are needed here.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -22,48 +21,55 @@
 #include "haptics.hpp"
 
 namespace ult {
-    
-    // ===== Internal state (private to this file) =====
+
+    // ===== Internal state =====
     static HidVibrationDeviceHandle vibHandheldLeft;
     static HidVibrationDeviceHandle vibHandheldRight;
     static HidVibrationDeviceHandle vibPlayer1Left;
     static HidVibrationDeviceHandle vibPlayer1Right;
-    static u64 rumbleStartTick = 0;
-    static u64 doubleClickTick = 0;
-    static u8  doubleClickPulse = 0;
-    
+
     static u32 cachedHandheldStyle = 0;
     static u32 cachedPlayer1Style  = 0;
-    
-    // ===== Shared flags (accessible globally) =====
-    std::atomic<bool> clickActive{false};
-    std::atomic<bool> doubleClickActive{false};
-    
+
     // ===== Constants =====
     static constexpr u64 RUMBLE_DURATION_NS = 30'000'000ULL;
     static constexpr u64 DOUBLE_CLICK_PULSE_DURATION_NS = 30'000'000ULL;
     static constexpr u64 DOUBLE_CLICK_GAP_NS = 100'000'000ULL;
-    
-    
-    static constexpr HidVibrationValue hapticsPreset = {
-        .amp_low  = 0.20f,
-        .freq_low = 100.0f,
-        .amp_high = 0.80f,
-        .freq_high = 300.0f
+
+    static constexpr HidVibrationValue defaultHapticsPreset = {
+        .amp_low   = 0.80f,
+        .freq_low  = 210.0f,
+        .amp_high  = 0.00f,
+        .freq_high = 210.0f
+    };
+
+    static constexpr HidVibrationValue handheldHapticsPreset = {
+        .amp_low   = 0.76f,
+        .freq_low  = 210.0f,
+        .amp_high  = 0.00f,
+        .freq_high = 210.0f
     };
 
     static constexpr HidVibrationValue vibrationStop{0};
-    
+
     // ===== Internal helpers =====
+
+    // Returns the appropriate preset based on the current controller mode.
+    // Handheld mode uses handheldHapticsPreset; all others use defaultHapticsPreset.
+    static inline const HidVibrationValue& getHapticsPreset() {
+        return cachedHandheldStyle ? handheldHapticsPreset : defaultHapticsPreset;
+    }
+
     static inline void sendVibration(const HidVibrationValue* value) {
-        if (cachedHandheldStyle) {
-            hidSendVibrationValue(vibHandheldLeft,  value);
-            hidSendVibrationValue(vibHandheldRight, value);
-        }
-    
         if (cachedPlayer1Style) {
-            hidSendVibrationValue(vibPlayer1Left,  value);
-            hidSendVibrationValue(vibPlayer1Right, value);
+            const HidVibrationDeviceHandle handles[2] = { vibPlayer1Left, vibPlayer1Right };
+            const HidVibrationValue values[2] = { *value, *value };
+            hidSendVibrationValues(handles, values, 2);
+        }
+        else if (cachedHandheldStyle) {
+            const HidVibrationDeviceHandle handles[2] = { vibHandheldLeft, vibHandheldRight };
+            const HidVibrationValue values[2] = { *value, *value };
+            hidSendVibrationValues(handles, values, 2);
         }
     }
 
@@ -71,164 +77,77 @@ namespace ult {
         sendVibration(value);
         sendVibration(value);
     }
-    
+
     // ===== Public API =====
     void initHaptics() {
         const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 player1Style  = hidGetNpadStyleSet(HidNpadIdType_No1);
-    
+
         vibHandheldLeft = vibHandheldRight = vibPlayer1Left = vibPlayer1Right =
             (HidVibrationDeviceHandle)0;
-    
+
         static HidVibrationDeviceHandle tmp[2];
-    
+
         if (handheldStyle) {
             hidInitializeVibrationDevices(tmp, 2, HidNpadIdType_Handheld,
                                           (HidNpadStyleTag)handheldStyle);
             vibHandheldLeft  = tmp[0];
             vibHandheldRight = tmp[1];
         }
-    
         if (player1Style) {
             hidInitializeVibrationDevices(tmp, 2, HidNpadIdType_No1,
                                           (HidNpadStyleTag)player1Style);
             vibPlayer1Left  = tmp[0];
             vibPlayer1Right = tmp[1];
         }
-    
+
         cachedHandheldStyle = handheldStyle;
         cachedPlayer1Style  = player1Style;
     }
-    
+
+    void deinitHaptics() {
+        sendVibration(&vibrationStop);
+    }
+
     void checkAndReinitHaptics() {
         static u32 lastHandheldStyle = 0;
         static u32 lastPlayer1Style  = 0;
-        
+
         const u32 currentHandheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
         const u32 currentPlayer1Style  = hidGetNpadStyleSet(HidNpadIdType_No1);
-        
-        // Reinitialize only if something changed (appearance/disappearance or style change)
-        if ((currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style)) {
+
+        if ((currentHandheldStyle != lastHandheldStyle) || (currentPlayer1Style != lastPlayer1Style))
             initHaptics();
-        }
-        
-        // Update last-known styles for change detection
-        lastHandheldStyle = currentHandheldStyle;
-        lastPlayer1Style  = currentPlayer1Style;
-        
-        // Update cached styles used by sendVibration()/rumble paths
+
+        lastHandheldStyle   = currentHandheldStyle;
+        lastPlayer1Style    = currentPlayer1Style;
         cachedHandheldStyle = currentHandheldStyle;
         cachedPlayer1Style  = currentPlayer1Style;
     }
 
-    
-    void rumbleClick() {
-        // Use cached style bit instead of querying hid each call
-        sendVibration(&vibrationStop);
-        sendVibration2x(&hapticsPreset);
-        clickActive.store(true, std::memory_order_release);
-        rumbleStartTick = armGetSystemTick();
-
-    }
-    
-    void rumbleDoubleClick() {
-        sendVibration(&vibrationStop);
-        sendVibration2x(&hapticsPreset);
-        doubleClickActive.store(true, std::memory_order_release);
-        doubleClickPulse = 1;
-        doubleClickTick = armGetSystemTick();  // Set ONCE
-    }
-
-    
-    void processRumbleStop(u64 nowNs) {
-        if (clickActive.load(std::memory_order_acquire) &&
-            nowNs - armTicksToNs(rumbleStartTick) >= RUMBLE_DURATION_NS) {
-            sendVibration(&vibrationStop);
-            clickActive.store(false, std::memory_order_release);
-        }
-    }
-    
-    
-    void processRumbleDoubleClick(u64 nowNs) {
-        if (!doubleClickActive.load(std::memory_order_acquire)) return;
-    
-        const u64 elapsed = nowNs - armTicksToNs(doubleClickTick);  // Always from original start
-    
-        switch (doubleClickPulse) {
-            case 1:
-                if (elapsed >= DOUBLE_CLICK_PULSE_DURATION_NS) {
-                    sendVibration(&vibrationStop);
-                    doubleClickPulse = 2;
-                    // Don't reset tick!
-                }
-                break;
-    
-            case 2:
-                if (elapsed >= DOUBLE_CLICK_PULSE_DURATION_NS + DOUBLE_CLICK_GAP_NS) {
-                    sendVibration2x(&hapticsPreset);
-                    doubleClickPulse = 3;
-                    // Don't reset tick!
-                }
-                break;
-    
-            case 3:
-                if (elapsed >= (DOUBLE_CLICK_PULSE_DURATION_NS * 2) + DOUBLE_CLICK_GAP_NS) {
-                    sendVibration(&vibrationStop);
-                    doubleClickActive.store(false, std::memory_order_release);
-                    doubleClickPulse = 0;
-                }
-                break;
-        }
-    }
-
-    // Returns nanoseconds until the next rumble state transition needs to happen.
-    // Used by the feedback poller to sleep exactly as long as needed instead of
-    // polling on a fixed interval. Returns UINT64_MAX when no rumble is active.
-    u64 nextRumbleWakeNs(u64 nowNs) {
-        u64 earliest = UINT64_MAX;
-
-        if (clickActive.load(std::memory_order_acquire)) {
-            const u64 stopAt = armTicksToNs(rumbleStartTick) + RUMBLE_DURATION_NS;
-            earliest = (nowNs < stopAt) ? (stopAt - nowNs) : 0;
-        }
-
-        if (doubleClickActive.load(std::memory_order_acquire)) {
-            const u64 base = armTicksToNs(doubleClickTick);
-            u64 nextAt;
-            switch (doubleClickPulse) {
-                case 1: nextAt = base + DOUBLE_CLICK_PULSE_DURATION_NS; break;
-                case 2: nextAt = base + DOUBLE_CLICK_PULSE_DURATION_NS + DOUBLE_CLICK_GAP_NS; break;
-                case 3: nextAt = base + (DOUBLE_CLICK_PULSE_DURATION_NS * 2) + DOUBLE_CLICK_GAP_NS; break;
-                default: nextAt = nowNs; break;
-            }
-            const u64 remaining = (nowNs < nextAt) ? (nextAt - nowNs) : 0;
-            earliest = std::min(earliest, remaining);
-        }
-
-        return earliest;
-    }
-
     void rumbleClickStandalone() {
-        // Match regular rumbleClick() behavior, but blocking
+        const HidVibrationValue& preset = getHapticsPreset();
         sendVibration(&vibrationStop);
-        sendVibration2x(&hapticsPreset);
+        //sendVibration(&preset);
+        sendVibration2x(&preset);
         svcSleepThread(RUMBLE_DURATION_NS);
         sendVibration(&vibrationStop);
     }
 
-
     void rumbleDoubleClickStandalone() {
-        // Standalone uses sleeps, but still use cached style for decision
+        const HidVibrationValue& preset = getHapticsPreset();
         sendVibration(&vibrationStop);
-        sendVibration2x(&hapticsPreset);
+        //sendVibration(&preset);
+        sendVibration2x(&preset);
         svcSleepThread(DOUBLE_CLICK_PULSE_DURATION_NS);
-    
+
         sendVibration(&vibrationStop);
         svcSleepThread(DOUBLE_CLICK_GAP_NS);
 
-        sendVibration2x(&hapticsPreset);
+        //sendVibration(&preset);
+        sendVibration2x(&preset);
         svcSleepThread(DOUBLE_CLICK_PULSE_DURATION_NS);
-    
+
         sendVibration(&vibrationStop);
     }
 }

@@ -179,6 +179,7 @@ inline std::string lastOverlayMode;
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipRumbleDoubleClick{false};
+inline bool skipRumbleClick{false};
 
 inline std::mutex jumpItemMutex;
 inline std::string jumpItemName;
@@ -198,7 +199,13 @@ inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
 inline std::atomic<bool> feedbackPollerStop{false};
 inline std::atomic<bool> hidReinitInProgress{false};
-inline LEvent feedbackEvent;        // signals the feedback poller when work arrives
+inline LEvent hapticsEvent;   // wakes the dedicated haptics thread
+inline LEvent soundEvent;     // wakes the dedicated sound thread
+
+// Signal helpers.
+inline void signalHaptics()  { leventSignal(&hapticsEvent); }
+inline void signalSound()    { leventSignal(&soundEvent); }
+inline void signalFeedback() { leventSignal(&hapticsEvent); leventSignal(&soundEvent); }
 
 
 // Sound triggering variables
@@ -226,12 +233,27 @@ __attribute__((noinline)) static void triggerFeedbackImpl(
         std::atomic<bool>& rumble, std::atomic<bool>& sound) {
     rumble.store(true, std::memory_order_release);
     sound.store(true, std::memory_order_release);
-    leventSignal(&feedbackEvent);   // wake the poller immediately
+    signalFeedback();
 }
-inline void triggerNavigationFeedback() { triggerFeedbackImpl(triggerRumbleClick, triggerNavigationSound); }
-inline void triggerWallFeedback()       { triggerFeedbackImpl(triggerRumbleClick, triggerWallSound); }
-inline void triggerEnterFeedback()      { triggerFeedbackImpl(triggerRumbleClick, triggerEnterSound); }
-inline void triggerExitFeedback()       { triggerFeedbackImpl(triggerRumbleDoubleClick, triggerExitSound); }
+inline void triggerNavigationFeedback()                   { triggerFeedbackImpl(triggerRumbleClick, triggerNavigationSound); }
+inline void triggerWallFeedback(bool doubleClick = false) { triggerFeedbackImpl(!doubleClick ? triggerRumbleClick : triggerRumbleDoubleClick, triggerWallSound); }
+inline void triggerEnterFeedback()                        { triggerFeedbackImpl(triggerRumbleClick, triggerEnterSound); }
+inline void triggerExitFeedback()                         { triggerFeedbackImpl(triggerRumbleDoubleClick, triggerExitSound); }
+inline void triggerOnFeedback()                           { triggerFeedbackImpl(triggerRumbleClick, triggerOnSound); }
+inline void triggerOffFeedback(bool doubleClick = false)  { triggerFeedbackImpl(!doubleClick ? triggerRumbleClick : triggerRumbleDoubleClick, triggerOffSound); }
+inline void triggerSettingsFeedback()                     { triggerFeedbackImpl(triggerRumbleClick, triggerSettingsSound); }
+inline void triggerMoveFeedback(bool doubleClick = false) { triggerFeedbackImpl(!doubleClick ? triggerRumbleClick : triggerRumbleDoubleClick, triggerMoveSound); }
+
+// Rumble-only helpers (no paired sound) — store + signal in one call so the
+// poller is always woken immediately regardless of its current sleep timeout.
+inline void triggerRumbleClickFeedback() {
+    triggerRumbleClick.store(true, std::memory_order_release);
+    signalHaptics();
+}
+inline void triggerRumbleDoubleClickFeedback() {
+    triggerRumbleDoubleClick.store(true, std::memory_order_release);
+    signalHaptics();
+}
 
 
 /**
@@ -5566,9 +5588,44 @@ namespace tsl {
                     m_hasRenderedInitialFocus = true;
                 }
             
+                // Scissor constants that mirror exactly what TableDrawer::draw() sets:
+                //   enableScissoring(0, 88, FramebufferWidth, FramebufferHeight - 73 - 97 + 2 + 5)
+                // The List's logical bounds (topBound ≈ 97, bottomBound ≈ 647) don't match this,
+                // which causes two culling bugs for table items:
+                //
+                //  TOP BUG  – rect vanishes too early while scrolling up:
+                //    Outer cull stops when logical_bottom ≤ topBound (97), but the rounded-rect
+                //    background extends (20 − endGap + 2) px below logical_bottom (≤ 19 px for
+                //    the smallest endGap used).  Background is still inside scissor [88, 645] for
+                //    those extra pixels, so dropping the draw call makes the rect jump-disappear.
+                //    Fix: keep drawing until  logical_bottom + kTableBGOverhang > kTableScissorTop,
+                //    i.e. until the background has fully scrolled above the scissor edge.
+                //
+                //  BOTTOM BUG – lines appear only when they can fit (entering from below):
+                //    Outer cull starts when logical_top < bottomBound (647), but the first row
+                //    isn't drawn until logical_top + startGap < kTableScissorBottom (645), i.e.
+                //    logical_top < 625.  The 22 px gap (647→625) shows background with no rows.
+                //    Fix: don't start the draw call until the first row is about to enter the
+                //    scissor, i.e. logical_top < kTableScissorBottom − kTableFirstRowGap.
+                static constexpr s32 kTableScissorTop   = 88;
+                const         s32 kTableScissorBottom   = kTableScissorTop
+                    + static_cast<s32>(cfg::FramebufferHeight) - 73 - 97 + 2 + 5;
+                // Background overhang below logical bottom = 20 − endGap + 2.
+                // Worst case (smallest endGap = 3) → 19 px; use 20 to be safe.
+                static constexpr s32 kTableBGOverhang   = 20;
+                // Default startGap in buildTableDrawerLines (first row y-offset from logical top).
+                static constexpr s32 kTableFirstRowGap  = 20;
+
                 for (Element* entry : m_items) {
-                    if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
-                        entry->frame(renderer);
+                    if (entry->isTable()) {
+                        if (entry->getBottomBound() + kTableBGOverhang  > kTableScissorTop &&
+                            entry->getTopBound()                         < kTableScissorBottom - kTableFirstRowGap) {
+                            entry->frame(renderer);
+                        }
+                    } else {
+                        if (entry->getBottomBound() > topBound && entry->getTopBound() < bottomBound) {
+                            entry->frame(renderer);
+                        }
                     }
                 }
             
@@ -7049,9 +7106,9 @@ namespace tsl {
                             triggerOnSound.store(true, std::memory_order_release);
                         else
                             triggerEnterSound.store(true, std::memory_order_release);
+                        signalFeedback();
                     } else {
-                        triggerRumbleDoubleClick.store(true,std::memory_order_release);
-                        triggerWallSound.store(true, std::memory_order_release);
+                        triggerWallFeedback(true);
                     }
                     
                     if (m_flags.m_useClickAnimation)
@@ -7089,9 +7146,11 @@ namespace tsl {
                     if (m_flags.m_useLongThreshold && !m_flags.m_longThresholdCrossed && touchDurationInSeconds >= 1.0f) [[unlikely]] {
                         m_flags.m_longThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
+                        signalFeedback();
                     } else if (m_flags.m_useShortThreshold && !m_flags.m_shortThresholdCrossed && touchDurationInSeconds >= 0.5f) [[unlikely]] {
                         m_flags.m_shortThresholdCrossed = true;
                         triggerRumbleClick.store(true, std::memory_order_release);
+                        signalFeedback();
                     }
                     
                     return true;  // Keep handling hold
@@ -7698,6 +7757,7 @@ namespace tsl {
                         triggerOnSound.store(true, std::memory_order_release);
                     else
                         triggerOffSound.store(true, std::memory_order_release);
+                    signalFeedback();
                     
                     
                     this->m_state = !this->m_state;
@@ -8154,12 +8214,10 @@ namespace tsl {
                         m_holding = false;
                         if (ult::allowSlide.load(std::memory_order_acquire)) {
                             // Unlocking: rumble + on sound only, no click animation, no enter feedback
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         } else {
                             // Locking: rumble + off sound only, no click animation
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOffSound.store(true, std::memory_order_release);
+                            triggerOffFeedback();
                         }
                     } else {
                         // Always-unlocked trackbar: full click animation + enter feedback
@@ -8201,6 +8259,7 @@ namespace tsl {
 
                 if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
                     triggerRumbleClick.store(true, std::memory_order_release);
+                    signalFeedback();
 
                     m_holding = true;
                     m_wasLastHeld = false;
@@ -8326,8 +8385,8 @@ namespace tsl {
                     }
 
                     if (touchInSliderBounds) {
-                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                        triggerOffSound.store(true, std::memory_order_release);
+                        triggerOffFeedback(true);
+
                         tsl::shiftItemFocus(this);
                     }
 
@@ -8350,8 +8409,7 @@ namespace tsl {
                         touchInSliderBounds = true;
                         if (triggerOnce) {
                             triggerOnce = false;
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         }
 
                         // Round to nearest step (+0.5f) exactly as TrackBarV2 does — avoids
@@ -8755,12 +8813,10 @@ namespace tsl {
                         m_holding = false;
                         if (ult::allowSlide.load(std::memory_order_acquire)) {
                             // Unlocking: rumble + on sound only, no click animation, no enter feedback
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         } else {
                             // Locking: rumble + off sound only, no click animation
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOffSound.store(true, std::memory_order_release);
+                            triggerOffFeedback();
                         }
                     } else {
                         // Always-unlocked trackbar: full click animation + enter feedback
@@ -8887,8 +8943,7 @@ namespace tsl {
                     triggerOnce = true;
             
                     if (touchInSliderBounds) {
-                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                        triggerOffSound.store(true, std::memory_order_release);
+                        triggerOffFeedback(true);
                         tsl::shiftItemFocus(this);
                     }
             
@@ -8912,8 +8967,7 @@ namespace tsl {
                     if (currentlyInHorizontalBounds) {
                         if (triggerOnce) {
                             triggerOnce = false;
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         }
                         touchInSliderBounds = true;
             
@@ -9313,8 +9367,7 @@ namespace tsl {
                         m_holding = false;
 
                         if (ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         }
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
@@ -9323,8 +9376,7 @@ namespace tsl {
                             triggerClick = true;
                             triggerEnterFeedback();
                         } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOffSound.store(true, std::memory_order_release);
+                            triggerOffFeedback();
                         }
                         updateAndExecute();
                     }
@@ -9371,8 +9423,7 @@ namespace tsl {
                     // Handle initial key press
                     if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
                         triggerRumbleClick.store(true, std::memory_order_release);
-                        
-                        // Start tracking the hold
+                        signalFeedback();
                         m_holding = true;
                         m_wasLastHeld = false;
                         m_holdStartTime_ns = ult::nowNs();
@@ -9519,8 +9570,7 @@ namespace tsl {
                     if (touchInSliderBounds) {
                         updateAndExecute();
                         touchInSliderBounds = false;
-                        triggerRumbleDoubleClick.store(true, std::memory_order_release);
-                        triggerOffSound.store(true, std::memory_order_release);
+                        triggerOffFeedback(true);
                         tsl::shiftItemFocus(this);
                     }
                     return false;
@@ -9555,8 +9605,7 @@ namespace tsl {
                         touchInSliderBounds = true;
                         if (triggerOnce) {
                             triggerOnce = false;
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         }
                         
                         // Add 0.5 to round to nearest step instead of truncating
@@ -9895,8 +9944,7 @@ namespace tsl {
                         m_holding = false;
 
                         if (ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOnSound.store(true, std::memory_order_release);
+                            triggerOnFeedback();
                         }
                     }
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
@@ -9905,8 +9953,7 @@ namespace tsl {
                             triggerClick = true;
                             triggerEnterFeedback();
                         } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerRumbleClick.store(true, std::memory_order_release);
-                            triggerOffSound.store(true, std::memory_order_release);
+                            triggerOffFeedback();
                         }
                         updateAndExecute();
                     }
@@ -10619,16 +10666,20 @@ namespace tsl {
          *
          */
         void show() {
+            bool signalFeedbackAtEnd = false;
             if (ult::useHapticFeedback) {
                 if (!ult::isHidden.load(std::memory_order_acquire)) {
                     triggerInitHaptics.store(true, std::memory_order_release);
+                    signalFeedbackAtEnd = true;
                 }
             }
             
 
             // reinitialize audio for changes from handheld to docked and vise versa
-            if (!ult::limitedMemory && ult::useSoundEffects)
+            if (!ult::limitedMemory && ult::useSoundEffects) {
                 reloadIfDockedChangedNow.store(true, std::memory_order_release);
+                signalFeedbackAtEnd = true;
+            }
 
             if (this->m_disableNextAnimation) {
                 this->m_animationCounter = MAX_ANIMATION_COUNTER;
@@ -10644,7 +10695,20 @@ namespace tsl {
             ult::isHidden.store(false);
             
             if (ult::useHapticFeedback) {
-                triggerRumbleClick.store(true, std::memory_order_release);
+                // Skip the click if exit feedback (double click) is about to fire on the
+                // same show — the flag is set just before show() is called in that case.
+                //triggerRumbleClick.store(true, std::memory_order_release);
+
+                if (!skipRumbleClick) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                }
+                if (!skipRumbleClick)
+                    signalFeedbackAtEnd = true;
+                skipRumbleClick = false; // consume the flag regardless
+            }
+
+            if (signalFeedbackAtEnd) {
+                signalFeedback();
             }
         }
         
@@ -10691,6 +10755,7 @@ namespace tsl {
             this->onHide();
         #endif
             triggerRumbleClick.store(true, std::memory_order_release);
+            signalFeedback();
         }
         
         /**
@@ -12419,6 +12484,7 @@ namespace tsl {
 
                             triggerInitHaptics.store(true, std::memory_order_release);
                             hidReinitInProgress.store(false, std::memory_order_seq_cst);
+                            signalFeedback();   // wake poller to run initHaptics
                             break;
                             
                             
@@ -12471,120 +12537,104 @@ namespace tsl {
          *
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
-        static void backgroundFeedbackPoller(void *args) {
-            while (!feedbackPollerStop.load(std::memory_order_acquire)) {
-            
-                if (ult::launchingOverlay.load(std::memory_order_acquire))
-                    break;
-        
-                const u64 nowNs = ult::nowNs();
-        
-                // --- Haptics ---
-                if (ult::useHapticFeedback && !disableHaptics.load(std::memory_order_acquire)
-                    && !hidReinitInProgress.load(std::memory_order_acquire)) {
-                    if (triggerInitHaptics.exchange(false, std::memory_order_acq_rel)) {
-                        ult::initHaptics();
-                    } else {
-                        static u64 lastHapticsCheckNs = 0;
-                        if ((nowNs - lastHapticsCheckNs) >= 300'000'000ULL) {
-                            lastHapticsCheckNs = nowNs;
-                            ult::checkAndReinitHaptics();
-                        }
-                    }
-        
-                    if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
-                        triggerRumbleClick.store(false, std::memory_order_release);
-                        ult::rumbleDoubleClick();
-                    } else if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
-                        ult::rumbleClick();
-                    }
-                    
-                    // Must be called every loop to advance timing state
-                    ult::processRumbleStop(nowNs);
-                    ult::processRumbleDoubleClick(nowNs);
-                } else {
+        // ── Haptics thread ────────────────────────────────────────────────────────
+        // Dedicated thread for haptic feedback. Calls the blocking standalone
+        // rumble functions directly — no timer state machine needed.
+        static void backgroundHapticsPoller(void* /*args*/) {
+            // Initialize haptics once on thread start — equivalent to the call that
+            // lived in backgroundEventPoller before haptics moved to their own thread.
+            // Ensures cachedHandheldStyle/cachedPlayer1Style are valid before the
+            // first rumble trigger arrives. checkAndReinitHaptics() in the loop
+            // handles controller reconnects after this.
+            ult::initHaptics();
+
+            while (true) {
+
+                leventWait(&hapticsEvent, UINT64_MAX);
+                leventClear(&hapticsEvent);
+
+                // Capture both exit conditions before processing triggers so that
+                // exit/launch feedback (double click on return, click on reload)
+                // always completes its full sequence before the thread tears down.
+                const bool stopping  = feedbackPollerStop.load(std::memory_order_acquire);
+                const bool launching = ult::launchingOverlay.load(std::memory_order_acquire);
+
+                if (!ult::useHapticFeedback || disableHaptics.load(std::memory_order_acquire)
+                    || hidReinitInProgress.load(std::memory_order_acquire)) {
+                    triggerInitHaptics.store(false, std::memory_order_release);
                     triggerRumbleClick.store(false, std::memory_order_release);
                     triggerRumbleDoubleClick.store(false, std::memory_order_release);
-                }
-        
-                // --- Sound ---
-                if (!ult::limitedMemory) {
-                    if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
-                        triggerNavigationSound.store(false, std::memory_order_release);
-                        triggerEnterSound.store(false, std::memory_order_release);
-                        triggerExitSound.store(false, std::memory_order_release);
-                        triggerWallSound.store(false, std::memory_order_release);
-                        triggerOnSound.store(false, std::memory_order_release);
-                        triggerOffSound.store(false, std::memory_order_release);
-                        triggerSettingsSound.store(false, std::memory_order_release);
-                        triggerMoveSound.store(false, std::memory_order_release);
-                        triggerNotificationSound.store(false, std::memory_order_release);
-                    } else {
-                        if (reloadIfDockedChangedNow.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::reloadIfDockedChanged();
-                        if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::reloadAllSounds();
-        
-                        if (triggerNavigationSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playNavigateSound();
-                        else if (triggerEnterSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playEnterSound();
-                        else if (triggerExitSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playExitSound();
-                        else if (triggerWallSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playWallSound();
-                        else if (triggerOnSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playOnSound();
-                        else if (triggerOffSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playOffSound();
-                        else if (triggerSettingsSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playSettingsSound();
-                        else if (triggerMoveSound.exchange(false, std::memory_order_acq_rel))
-                            ult::Audio::playMoveSound();
-                        else if (triggerNotificationSound.exchange(false, std::memory_order_acq_rel) && !ult::silenceNotifications)
-                            ult::Audio::playNotificationSound();
-                        
+                } else {
+                    if (triggerInitHaptics.exchange(false, std::memory_order_acq_rel)) {
+                        ult::initHaptics();
+                    } else if (!stopping && !launching) {
+                        ult::checkAndReinitHaptics();
+                    }
+
+                    if (triggerRumbleDoubleClick.exchange(false, std::memory_order_acq_rel)) {
+                        triggerRumbleClick.store(false, std::memory_order_release);
+                        ult::rumbleDoubleClickStandalone();
+                    } else if (triggerRumbleClick.exchange(false, std::memory_order_acq_rel)) {
+                        ult::rumbleClickStandalone();
                     }
                 }
-                
-                // Event-based wait with precise haptic timing.
-                // When a rumble sequence is active, sleep exactly until the next
-                // state transition instead of polling every 4ms — eliminates wasted
-                // wakeups and gives sub-millisecond timing accuracy on each phase.
-                // A leventSignal from any trigger still wakes us early if needed.
-                //
-                // Timeout selection:
-                //   nextRumbleWakeNs — haptic pulse active: wake precisely at next transition
-                //  16 ms            — sound/haptics enabled but idle: responsive UI
-                //  ∞                — both features disabled: sleep until a trigger wakes us
-                const bool hapticsRunning =
-                    ult::clickActive.load(std::memory_order_acquire) ||
-                    ult::doubleClickActive.load(std::memory_order_acquire);
-                const u64 waitTimeoutNs =
-                    hapticsRunning
-                    ? ult::nextRumbleWakeNs(nowNs)
-                    : (ult::useSoundEffects || ult::useHapticFeedback)
-                    ? 16'000'000ULL
-                    : UINT64_MAX;
-                leventWait(&feedbackEvent, waitTimeoutNs);
-                leventClear(&feedbackEvent);
-            }
 
-            // Drain phase: let any active rumble sequence finish before the thread exits.
-            // Uses the same precise-sleep helper so we wake exactly at each transition
-            // rather than polling — at most 3 iterations for a full double-click
-            // (pulse1-end → pulse2-start → pulse2-end). Cap at 8 as a hard safety bound.
-            if (ult::useHapticFeedback && !disableHaptics.load(std::memory_order_acquire)
-                && !hidReinitInProgress.load(std::memory_order_acquire)) {
-                for (int drainIter = 0; drainIter < 8; ++drainIter) {
-                    if (!ult::clickActive.load(std::memory_order_acquire) &&
-                        !ult::doubleClickActive.load(std::memory_order_acquire)) break;
-                    const u64 nowNs = ult::nowNs();
-                    ult::processRumbleStop(nowNs);
-                    ult::processRumbleDoubleClick(nowNs);
-                    const u64 sleepNs = ult::nextRumbleWakeNs(nowNs);
-                    if (sleepNs > 0) svcSleepThread(sleepNs);
+                // Break only after triggers are drained — never mid-sequence.
+                if (stopping || launching) break;
+            }
+            ult::deinitHaptics();
+        }
+
+        // ── Sound thread ──────────────────────────────────────────────────────────
+        // Dedicated thread for audio playback. Sleeps until signalled; audio calls
+        // may block freely without affecting haptic timing.
+        static void backgroundSoundPoller(void* /*args*/) {
+            while (!feedbackPollerStop.load(std::memory_order_acquire)) {
+
+                leventWait(&soundEvent, UINT64_MAX);
+                leventClear(&soundEvent);
+
+                if (feedbackPollerStop.load(std::memory_order_acquire)) break;
+                if (ult::launchingOverlay.load(std::memory_order_acquire))  break;
+
+                if (ult::limitedMemory) continue;
+
+                if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
+                    triggerNavigationSound.store(false, std::memory_order_release);
+                    triggerEnterSound.store(false, std::memory_order_release);
+                    triggerExitSound.store(false, std::memory_order_release);
+                    triggerWallSound.store(false, std::memory_order_release);
+                    triggerOnSound.store(false, std::memory_order_release);
+                    triggerOffSound.store(false, std::memory_order_release);
+                    triggerSettingsSound.store(false, std::memory_order_release);
+                    triggerMoveSound.store(false, std::memory_order_release);
+                    triggerNotificationSound.store(false, std::memory_order_release);
+                    continue;
                 }
+
+                if (reloadIfDockedChangedNow.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::reloadIfDockedChanged();
+                if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::reloadAllSounds();
+
+                if (triggerNavigationSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playNavigateSound();
+                else if (triggerEnterSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playEnterSound();
+                else if (triggerExitSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playExitSound();
+                else if (triggerWallSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playWallSound();
+                else if (triggerOnSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playOnSound();
+                else if (triggerOffSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playOffSound();
+                else if (triggerSettingsSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playSettingsSound();
+                else if (triggerMoveSound.exchange(false, std::memory_order_acq_rel))
+                    ult::Audio::playMoveSound();
+                else if (triggerNotificationSound.exchange(false, std::memory_order_acq_rel) && !ult::silenceNotifications)
+                    ult::Audio::playNotificationSound();
             }
         }
     }
@@ -12930,9 +12980,15 @@ namespace tsl {
 
         eventCreate(&shData.comboEvent, false);
 
-        Thread backgroundFeedbackThread;
-        threadCreate(&backgroundFeedbackThread, impl::backgroundFeedbackPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
-        threadStart(&backgroundFeedbackThread);
+        Thread backgroundHapticsThread;
+        threadCreate(&backgroundHapticsThread, impl::backgroundHapticsPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
+        threadStart(&backgroundHapticsThread);
+
+        Thread backgroundSoundThread;
+        if (!ult::limitedMemory) {
+            threadCreate(&backgroundSoundThread, impl::backgroundSoundPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
+            threadStart(&backgroundSoundThread);
+        }
         
         Thread backgroundEventThread;
         threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
@@ -13124,6 +13180,16 @@ namespace tsl {
                     hlp::requestForeground(true);
     #endif
     
+                    // Suppress the click in show() when exit feedback (double click)
+                    // is about to fire on the first loop iteration — let the double
+                    // click stand alone rather than stacking a click on top of it.
+                    #if IS_LAUNCHER_DIRECTIVE
+                    skipRumbleClick = shouldFireEvent && !comboReturn;
+                    #elif IS_STATUS_MONITOR_DIRECTIVE
+                    skipRumbleClick = (lastMode.compare("returning") == 0);
+                    #else
+                    skipRumbleClick = isReturningLaunch;
+                    #endif
                     overlay->show();
                     if (!comboBreakout && !(notification && notification->isActive()))
                         overlay->clearScreen();
@@ -13239,11 +13305,16 @@ namespace tsl {
             overlay->exitServices();
             delete overlay;
             
-            // Stop feedback thread after overlay is closed / deleted
+            // Stop feedback threads after overlay is closed / deleted.
             feedbackPollerStop.store(true, std::memory_order_release);
-            leventSignal(&feedbackEvent);   // wake the poller so it sees the stop flag
-            threadWaitForExit(&backgroundFeedbackThread);
-            threadClose(&backgroundFeedbackThread);
+            signalFeedback();   // wake both threads so they see the stop flag
+            threadWaitForExit(&backgroundHapticsThread);
+            threadClose(&backgroundHapticsThread);
+
+            if (!ult::limitedMemory) {
+                threadWaitForExit(&backgroundSoundThread);
+                threadClose(&backgroundSoundThread);
+            }
             
             eventClose(&shData.comboEvent);
 
