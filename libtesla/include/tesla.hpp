@@ -197,16 +197,17 @@ inline bool bypassUnfocused = false;
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
-inline std::atomic<bool> feedbackPollerStop{false};
-inline std::atomic<bool> hidReinitInProgress{false};
-inline LEvent hapticsEvent;   // wakes the dedicated haptics thread
-inline LEvent soundEvent;     // wakes the dedicated sound thread
+
 
 // Signal helpers.
+inline LEvent hapticsEvent;   // wakes the dedicated haptics thread
+inline LEvent soundEvent;     // wakes the dedicated sound thread
 inline void signalHaptics()  { leventSignal(&hapticsEvent); }
 inline void signalSound()    { leventSignal(&soundEvent); }
 inline void signalFeedback() { leventSignal(&hapticsEvent); leventSignal(&soundEvent); }
 
+inline std::atomic<bool> feedbackPollerStop{false};
+inline std::atomic<bool> hidReinitInProgress{false};
 
 // Sound triggering variables
 inline std::atomic<bool> triggerNavigationSound{false};
@@ -6149,7 +6150,13 @@ namespace tsl {
                         }
                     }
                     
-                    // Emergency correction
+                    // Emergency correction: only activate when the scroll target (m_nextOffset)
+                    // does NOT already bring the focused item into view.  Without this guard,
+                    // navigateUp/Down sets m_nextOffset = idealOffset via updateScrollOffset and
+                    // then the EC immediately slams m_offset there (up to 0.9× of the full
+                    // distance in a single frame), causing the jarring jump the user sees.
+                    // When the animation is already heading to the right place, let the smooth
+                    // path handle it.
                     if (m_focusedIndex < m_items.size()) {
                         float itemTop = 0.0f;
                         for (size_t i = 0; i < m_focusedIndex; ++i) {
@@ -6159,16 +6166,23 @@ namespace tsl {
                         const float viewBottom = m_offset + getHeight();
                         
                         if (itemTop < m_offset || itemBottom > viewBottom) {
-                            const float emergencySpeed = (itemBottom < m_offset || itemTop > viewBottom) ? 0.9f : 0.6f;
-                            m_offset += diff * emergencySpeed;
-                            m_scrollVelocity = diff * 0.3f;
-                            s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
+                            const float futureViewBottom = m_nextOffset + static_cast<float>(getHeight());
+                            const bool itemWillBeVisible =
+                                (itemTop  >= m_nextOffset - 1.0f) &&
+                                (itemBottom <= futureViewBottom + 1.0f);
                             
-                            if (prevOffset != m_offset) {
-                                invalidate();
-                                prevOffset = m_offset;
+                            if (!itemWillBeVisible) {
+                                const float emergencySpeed = (itemBottom < m_offset || itemTop > viewBottom) ? 0.9f : 0.6f;
+                                m_offset += diff * emergencySpeed;
+                                m_scrollVelocity = diff * 0.3f;
+                                s_currentScrollVelocity.store(m_scrollVelocity, std::memory_order_release);
+                                
+                                if (prevOffset != m_offset) {
+                                    invalidate();
+                                    prevOffset = m_offset;
+                                }
+                                return;
                             }
-                            return;
                         }
                     }
                     
@@ -6268,7 +6282,61 @@ namespace tsl {
                 const float savedOffset = m_offset;
                 const float savedNextOffset = m_nextOffset;
                 
-                // Single loop with wraparound logic - visits each item exactly once
+                // When recovering from touch scroll (no oldFocus, scrolled into a table region),
+                // search BOTH directions from startIndex and pick whichever focusable item is
+                // closest to the current viewport center.  Without this the forward-wraparound
+                // search skips an entire long table and lands on an item at the opposite end of
+                // the list, causing either a jarring upward jump (DOWN) or blind scrollUp stutter (UP).
+                if (!oldFocus && startIndex > 0) {
+                    const float viewCenter = savedOffset + static_cast<float>(getHeight()) * 0.5f;
+
+                    // Forward search (with wraparound)
+                    size_t fwdIdx = itemCount;
+                    for (size_t count = 0; count < itemCount; ++count) {
+                        const size_t i = (startIndex + count) % itemCount;
+                        if (!m_items[i]->isTable()) {
+                            Element* f = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
+                            if (f && f != oldFocus) { fwdIdx = i; break; }
+                        }
+                    }
+
+                    // Backward search (no wraparound — items before startIndex)
+                    size_t bkwIdx = itemCount;
+                    for (ssize_t j = static_cast<ssize_t>(startIndex) - 1; j >= 0; --j) {
+                        const size_t i = static_cast<size_t>(j);
+                        if (!m_items[i]->isTable()) {
+                            Element* f = m_items[i]->requestFocus(oldFocus, FocusDirection::None);
+                            if (f && f != oldFocus) { bkwIdx = i; break; }
+                        }
+                    }
+
+                    // Pick whichever candidate is closer to the viewport centre
+                    size_t bestIdx = itemCount;
+                    if (fwdIdx < itemCount && bkwIdx < itemCount) {
+                        const float fwdCenter = calculateItemPosition(fwdIdx) + m_items[fwdIdx]->getHeight() * 0.5f;
+                        const float bkwCenter = calculateItemPosition(bkwIdx) + m_items[bkwIdx]->getHeight() * 0.5f;
+                        bestIdx = (std::abs(bkwCenter - viewCenter) <= std::abs(fwdCenter - viewCenter))
+                                  ? bkwIdx : fwdIdx;
+                    } else if (bkwIdx < itemCount) {
+                        bestIdx = bkwIdx;
+                    } else if (fwdIdx < itemCount) {
+                        bestIdx = fwdIdx;
+                    }
+
+                    if (bestIdx < itemCount) {
+                        Element* newFocus = m_items[bestIdx]->requestFocus(oldFocus, FocusDirection::None);
+                        if (newFocus && newFocus != oldFocus) {
+                            m_focusedIndex = bestIdx;
+                            m_offset = savedOffset;
+                            m_nextOffset = savedNextOffset;
+                            return newFocus;
+                        }
+                    }
+                    // Fall through to original logic if nothing found above
+                }
+                
+                // Original single forward-wraparound loop (used when oldFocus is set,
+                // when startIndex==0, or as fallback)
                 for (size_t count = 0; count < itemCount; ++count) {
                     const size_t i = (startIndex + count) % itemCount;
                     
@@ -6397,6 +6465,21 @@ namespace tsl {
                     scrollUp();
                     m_stoppedAtBoundary = false;
                     return oldFocus;
+                }
+                
+                // If the currently focused item is off-screen above (e.g. focus was restored
+                // to the nearest item after a touch scroll, but the list is still scrolled deep
+                // into a table below it), scroll up toward it instead of immediately jumping to
+                // the item above via navigateUp.  Without this guard, navigateUp(ListItem B)
+                // would succeed (finding ListItem A) and set m_nextOffset=0, causing the list
+                // to zoom all the way to the top in one press rather than scrolling gradually.
+                if (!atTop && m_focusedIndex < m_items.size()) {
+                    const float itemTop = calculateItemPosition(m_focusedIndex);
+                    if (itemTop < m_offset) {
+                        isTableScrolling.store(true, std::memory_order_release);
+                        scrollUp();
+                        return oldFocus;
+                    }
                 }
                 
                 Element* result = navigateUp(oldFocus);
@@ -11201,7 +11284,18 @@ namespace tsl {
                 if (singleArrowKeyPress) {
                     buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                     hasScrolled = false;
+                    singlePressHandled = false;
                     isNavigatingBackwards.store(false, std::memory_order_release);
+                    // On the very first directional press after touch scroll, restore focus
+                    // to the nearest item and immediately navigate — no wasted frame.
+                    if (topElement && currentGui && keysDown) {
+                        currentGui->removeFocus();
+                        currentGui->requestFocus(topElement, FocusDirection::None);
+                        if      (keysHeld & KEY_UP   ) currentGui->requestFocus(topElement, FocusDirection::Up,    false);
+                        else if (keysHeld & KEY_DOWN ) currentGui->requestFocus(topElement, FocusDirection::Down,  false);
+                        else if (keysHeld & KEY_LEFT ) currentGui->requestFocus(topElement, FocusDirection::Left,  false);
+                        else if (keysHeld & KEY_RIGHT) currentGui->requestFocus(topElement, FocusDirection::Right, false);
+                    }
                 }
             } else {
                 if (!touchDetected && !oldTouchDetected && !handled && currentFocus &&
