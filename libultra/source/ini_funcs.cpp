@@ -1336,22 +1336,20 @@ namespace ult {
                 
                 argEnd = pos;
                 if (pos < end) ++pos; // Skip closing quote
+
+                // Always push quoted tokens, even empty ones ('' or "" are valid
+                // empty labels used in table rows to produce a blank left column).
+                commandParts.emplace_back(argStart, argEnd - argStart);
             } else {
                 // Unquoted argument
                 while (pos < end && *pos != ' ' && *pos != '\t' && *pos != '\'' && *pos != '"') {
                     ++pos;
                 }
                 argEnd = pos;
-            }
-            
-            //if (argEnd >= argStart) {
-            //    commandParts.emplace_back(argStart, argEnd - argStart);
-            //}
 
-            if (argEnd > argStart) {
                 // Skip standalone "=" — it's the INI assignment separator (key = value),
                 // never a meaningful command argument.
-                if (!(argEnd - argStart == 1 && *argStart == '=')) {
+                if (argEnd > argStart && !(argEnd - argStart == 1 && *argStart == '=')) {
                     commandParts.emplace_back(argStart, argEnd - argStart);
                 }
             }
