@@ -346,24 +346,40 @@ namespace tsl {
         constexpr inline Color(u8 r, u8 g, u8 b, u8 a) : r(r), g(g), b(b), a(a) {}
     };
     
-    // Ultra-fast version - zero variables, optimized calculations
-    inline constexpr Color GradientColor(float temperature) {
-        if (temperature <= 35.0f) return Color(7, 7, 15, 0xF);
-        if (temperature >= 65.0f) return Color(15, 0, 0, 0xF);
-        
-        if (temperature < 45.0f) {
-            // Single calculation, avoid repetition
-            const float factor = (temperature - 35.0f) * 0.1f;
-            return Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xF);
+    struct TempGradientRange {
+        float t0, t1, t2, t3;
+        float inv01, inv12, inv23;
+    
+        // constexpr constructor → computed at compile time for constants
+        constexpr TempGradientRange(float a, float b, float c, float d)
+            : t0(a), t1(b), t2(c), t3(d),
+              inv01(1.0f / (b - a)),
+              inv12(1.0f / (c - b)),
+              inv23(1.0f / (d - c)) {}
+    };
+    
+    inline constexpr TempGradientRange DEFAULT_TEMP_RANGE(35.0f, 45.0f, 55.0f, 65.0f);
+    
+    inline constexpr Color GradientColor(
+        float temperature,
+        const TempGradientRange& r = DEFAULT_TEMP_RANGE
+    ) {
+        if (temperature <= r.t0) return Color(7, 7, 15, 0xF);
+        if (temperature >= r.t3) return Color(15, 0, 0, 0xF);
+    
+        if (temperature < r.t1) {
+            const float f = (temperature - r.t0) * r.inv01;
+            return Color(7 - 7 * f, 7 + 8 * f, 15 - 15 * f, 0xF);
         }
-        
-        if (temperature < 55.0f) {
-            return Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xF);
+    
+        if (temperature < r.t2) {
+            const float f = (temperature - r.t1) * r.inv12;
+            return Color(15 * f, 15, 0, 0xF);
         }
-        
-        return Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xF);
+    
+        const float f = (temperature - r.t2) * r.inv23;
+        return Color(15, 15 - 15 * f, 0, 0xF);
     }
-
 
     // Ultra-fast version - single variable, minimal branching
     inline Color RGB888(const std::string& hexColor, size_t alpha = 15, const std::string& defaultHexColor = ult::whiteColor) {
