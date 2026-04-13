@@ -134,7 +134,7 @@ namespace ult {
      */
     std::string getStringFromJsonFile(const std::string& filePath, const std::string& key) {
         // Load JSON from file using a smart pointer
-        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
         if (!root) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to load JSON file from path: " + filePath);
@@ -170,7 +170,7 @@ namespace ult {
      */
     bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists) {
         // Try to load existing file
-        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
         
         cJSON* croot = nullptr;
         
@@ -272,7 +272,7 @@ namespace ult {
      */
     bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey) {
         // Try to load existing file
-        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
         
         if (!root) {
             return false;

@@ -1415,7 +1415,7 @@ namespace tsl {
             }
 
             inline void drawRectAdaptive(s32 x, s32 y, s32 w, s32 h, const Color& color) {
-                if (ult::expandedMemory)
+                if (!ult::limitedMemory)
                     drawRectMultiThreaded(x, y, w, h, color);
                 else
                     drawRect(x, y, w, h, color);
@@ -2137,7 +2137,7 @@ namespace tsl {
             }
             
             inline void drawRoundedRect(s32 x, s32 y, s32 w, s32 h, s32 radius, Color color) {
-                if (ult::expandedMemory)
+                if (!ult::limitedMemory)
                     drawRoundedRectMultiThreaded(x, y, w, h, radius, color);
                 else
                     drawRoundedRectSingleThreaded(x, y, w, h, radius, color);
@@ -2530,7 +2530,7 @@ namespace tsl {
             // =============================================================================
             inline void drawWallpaper() {
                 // ── Same entry guards as Renderer::drawWallpaper() ──────────────────────
-                if (!ult::expandedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) return;
+                if (ult::limitedMemory || ult::refreshWallpaper.load(std::memory_order_acquire)) return;
             
                 ult::inPlot.store(true, std::memory_order_release);
             
@@ -4713,7 +4713,7 @@ namespace tsl {
             
             void draw(gfx::Renderer *renderer) override {
             
-                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                if (!ult::limitedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
                     !ult::wallpaperData.empty() && ult::correctFrameSize)
                     renderer->drawWallpaper();
                 else
@@ -5166,13 +5166,15 @@ namespace tsl {
                 
                 if (FullMode == true) {
                     if ((lastMode.empty() || (lastMode.compare("returning") == 0)) &&
-                        ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                        !ult::limitedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
                         !ult::wallpaperData.empty() && ult::correctFrameSize)
                         renderer->drawWallpaper();   // bakes bg color — no fillScreen needed
                     else {
-                        renderer->fillScreen(a(defaultBackgroundColor));
+                        
                         if (lastMode.empty() || (lastMode.compare("returning") == 0))
                             renderer->drawWallpaper();
+                        else
+                            renderer->fillScreen(a(defaultBackgroundColor));
                     }
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
@@ -5323,7 +5325,7 @@ namespace tsl {
             
             virtual void draw(gfx::Renderer *renderer) override {
                 
-                if (ult::expandedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
+                if (!ult::limitedMemory && !ult::refreshWallpaper.load(std::memory_order_acquire) &&
                     !ult::wallpaperData.empty() && ult::correctFrameSize)
                     renderer->drawWallpaper();
                 else
@@ -10770,7 +10772,7 @@ namespace tsl {
             
 
             // reinitialize audio for changes from handheld to docked and vise versa
-            if (!ult::limitedMemory && ult::useSoundEffects) {
+            if (ult::useSoundEffects) {
                 reloadIfDockedChangedNow.store(true, std::memory_order_release);
                 signalFeedbackAtEnd = true;
             }
@@ -11864,7 +11866,7 @@ namespace tsl {
             requiresLNY2 = amsVersionAtLeast(1,10,0);     // Detect if using HOS 21+
 
             // Initialize the audio service
-            if (ult::useSoundEffects && !ult::limitedMemory) {
+            if (ult::useSoundEffects) {
                 ult::Audio::initialize();
             }
 
@@ -12720,8 +12722,6 @@ namespace tsl {
                 if (feedbackPollerStop.load(std::memory_order_acquire)) break;
                 if (ult::launchingOverlay.load(std::memory_order_acquire))  break;
 
-                if (ult::limitedMemory) continue;
-
                 if (!ult::useSoundEffects || disableSound.load(std::memory_order_acquire)) {
                     triggerNavigationSound.store(false, std::memory_order_release);
                     triggerEnterSound.store(false, std::memory_order_release);
@@ -12929,16 +12929,16 @@ namespace tsl {
     #else
 
         ult::currentHeapSize = ult::getCurrentHeapSize();
-        ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_6MB;
-        ult::limitedMemory = false;//ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+        ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
+        ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
 
 
         // Initialize buffer sizes based on expanded memory setting
         if (ult::expandedMemory) {
-            ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_6MB;
+            ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB;
             
             if (!ult::furtherExpandedMemory) {
-                //ult::loaderTitle += "+";
+                ult::loaderTitle += "+";
                 ult::COPY_BUFFER_SIZE = 262144;
                 ult::HEX_BUFFER_SIZE = 8192;
                 ult::UNZIP_READ_BUFFER = 262144;
@@ -12946,28 +12946,18 @@ namespace tsl {
                 ult::DOWNLOAD_READ_BUFFER = 131072;
                 ult::DOWNLOAD_WRITE_BUFFER = 131072;
             } else {
-                if (ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB) {
-                    ult::loaderTitle += "+";
-                    ult::COPY_BUFFER_SIZE = 262144;
-                    ult::HEX_BUFFER_SIZE = 8192;
-                    ult::UNZIP_READ_BUFFER = 262144;
-                    ult::UNZIP_WRITE_BUFFER = 131072;
-                    ult::DOWNLOAD_READ_BUFFER = 131072;
-                    ult::DOWNLOAD_WRITE_BUFFER = 131072;
-                } else {
-                    ult::loaderTitle += "×";
-                    ult::COPY_BUFFER_SIZE = 262144*2;
-                    ult::HEX_BUFFER_SIZE = 8192;
-                    ult::UNZIP_READ_BUFFER = 262144*2;
-                    ult::UNZIP_WRITE_BUFFER = 131072*4;
-                    ult::DOWNLOAD_READ_BUFFER = 131072*4;
-                    ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
-                }
+                ult::loaderTitle += "×";
+                ult::COPY_BUFFER_SIZE = 262144*2;
+                ult::HEX_BUFFER_SIZE = 8192;
+                ult::UNZIP_READ_BUFFER = 262144*2;
+                ult::UNZIP_WRITE_BUFFER = 131072*4;
+                ult::DOWNLOAD_READ_BUFFER = 131072*4;
+                ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
             }
         } else if (ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB) {
             ult::loaderTitle += "-";
-            //ult::DOWNLOAD_READ_BUFFER = 16*1024;
-            //ult::UNZIP_READ_BUFFER = 16*1024;
+            ult::DOWNLOAD_READ_BUFFER = 16*1024;
+            ult::UNZIP_READ_BUFFER = 16*1024;
         }
     #endif
     
@@ -13118,10 +13108,8 @@ namespace tsl {
         threadStart(&backgroundHapticsThread);
 
         Thread backgroundSoundThread;
-        if (!ult::limitedMemory) {
-            threadCreate(&backgroundSoundThread, impl::backgroundSoundPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
-            threadStart(&backgroundSoundThread);
-        }
+        threadCreate(&backgroundSoundThread, impl::backgroundSoundPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
+        threadStart(&backgroundSoundThread);
         
         Thread backgroundEventThread;
         threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
@@ -13444,10 +13432,8 @@ namespace tsl {
             threadWaitForExit(&backgroundHapticsThread);
             threadClose(&backgroundHapticsThread);
 
-            if (!ult::limitedMemory) {
-                threadWaitForExit(&backgroundSoundThread);
-                threadClose(&backgroundSoundThread);
-            }
+            threadWaitForExit(&backgroundSoundThread);
+            threadClose(&backgroundSoundThread);
             
             eventClose(&shData.comboEvent);
 
@@ -13541,8 +13527,7 @@ extern "C" {
     void __appExit(void) {
         delete tsl::notification;
         eventClose(&tsl::notificationEvent);
-        if (!ult::limitedMemory)
-            ult::Audio::exit();
+        ult::Audio::exit();
 
         spsmExit();
         splExit();

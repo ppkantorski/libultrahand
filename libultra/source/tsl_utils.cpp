@@ -442,7 +442,7 @@ namespace ult {
     std::string OVERLAY_MEMORY;
     std::string NOT_ENOUGH_MEMORY;
     std::string WALLPAPER_SUPPORT_DISABLED;
-    std::string SOUND_SUPPORT_DISABLED;
+    //std::string SOUND_SUPPORT_DISABLED;
     std::string WALLPAPER_SUPPORT_ENABLED;
     std::string SOUND_SUPPORT_ENABLED;
     std::string EXIT_OVERLAY_SYSTEM;
@@ -652,7 +652,7 @@ namespace ult {
         {&OVERLAY_MEMORY,             "OVERLAY_MEMORY",             "Overlay Memory"},
         {&NOT_ENOUGH_MEMORY,          "NOT_ENOUGH_MEMORY",          "Not enough memory."},
         {&WALLPAPER_SUPPORT_DISABLED, "WALLPAPER_SUPPORT_DISABLED", "Wallpaper support disabled."},
-        {&SOUND_SUPPORT_DISABLED,     "SOUND_SUPPORT_DISABLED",     "Sound support disabled."},
+        //{&SOUND_SUPPORT_DISABLED,     "SOUND_SUPPORT_DISABLED",     "Sound support disabled."},
         {&WALLPAPER_SUPPORT_ENABLED,  "WALLPAPER_SUPPORT_ENABLED",  "Wallpaper support enabled."},
         {&SOUND_SUPPORT_ENABLED,      "SOUND_SUPPORT_ENABLED",      "Sound support enabled."},
         {&EXIT_OVERLAY_SYSTEM,        "EXIT_OVERLAY_SYSTEM",        "Exit Overlay System"},
@@ -905,7 +905,7 @@ namespace ult {
     
 
     void loadWallpaperFileWhenSafe() {
-        if (expandedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
+        if (!limitedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
             std::unique_lock<std::mutex> lock(wallpaperMutex);
             cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire); });
             if (wallpaperData.empty() && isFile(WALLPAPER_PATH)) {
@@ -1164,28 +1164,26 @@ namespace ult {
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
     bool hideWidgetBackdrop, centerWidgetAlignment, extendedWidgetBackdrop;
 
+    // Shared helper: single hash lookup instead of count() + at()
+    static bool getBoolFromSection(const std::map<std::string, std::string>& section,
+                                   const std::string& key, bool defaultValue = false) {
+        const auto it = section.find(key);
+        return (it != section.end()) ? (it->second != FALSE_STR) : defaultValue;
+    }
+
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars() {
         // Load INI data once instead of 8 separate file reads
         auto ultrahandSection = getKeyValuePairsFromSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME);
         
-        // Helper lambda to safely get boolean values with proper defaults
-        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
-            if (ultrahandSection.count(key) > 0) {
-                return (ultrahandSection.at(key) != FALSE_STR);
-            }
-            return defaultValue;
-        };
-        
-        // Set all values from the loaded section with correct defaults (matching initialization)
-        hideClock = getBoolValue("hide_clock", false);                           // FALSE_STR default
-        hideBattery = getBoolValue("hide_battery", true);                        // TRUE_STR default
-        hideSOCTemp = getBoolValue("hide_soc_temp", true);                       // TRUE_STR default  
-        hidePCBTemp = getBoolValue("hide_pcb_temp", true);                       // TRUE_STR default
-        dynamicWidgetColors = getBoolValue("dynamic_widget_colors", true);       // TRUE_STR default
-        hideWidgetBackdrop = getBoolValue("hide_widget_backdrop", false);        // FALSE_STR default
-        centerWidgetAlignment = getBoolValue("center_widget_alignment", true);   // TRUE_STR default
-        extendedWidgetBackdrop = getBoolValue("extended_widget_backdrop", false); // FALSE_STR default
+        hideClock             = getBoolFromSection(ultrahandSection, "hide_clock",               false);
+        hideBattery           = getBoolFromSection(ultrahandSection, "hide_battery",             true);
+        hideSOCTemp           = getBoolFromSection(ultrahandSection, "hide_soc_temp",            true);
+        hidePCBTemp           = getBoolFromSection(ultrahandSection, "hide_pcb_temp",            true);
+        dynamicWidgetColors   = getBoolFromSection(ultrahandSection, "dynamic_widget_colors",    true);
+        hideWidgetBackdrop    = getBoolFromSection(ultrahandSection, "hide_widget_backdrop",     false);
+        centerWidgetAlignment = getBoolFromSection(ultrahandSection, "center_widget_alignment",  true);
+        extendedWidgetBackdrop= getBoolFromSection(ultrahandSection, "extended_widget_backdrop", false);
     }
     #endif
     
@@ -1315,24 +1313,15 @@ namespace ult {
         // Load INI data once instead of 6 separate file reads
         auto ultrahandSection = getKeyValuePairsFromSection(ULTRAHAND_CONFIG_INI_PATH, ULTRAHAND_PROJECT_NAME);
         
-        // Helper lambda to safely get boolean values with proper defaults
-        auto getBoolValue = [&](const std::string& key, bool defaultValue = false) -> bool {
-            if (ultrahandSection.count(key) > 0) {
-                return (ultrahandSection.at(key) != FALSE_STR);
-            }
-            return defaultValue;
-        };
-        
-        // Set all values from the loaded section with correct defaults (matching initialization)
-        cleanVersionLabels = getBoolValue("clean_version_labels", false);        // FALSE_STR default
-        hideOverlayVersions = getBoolValue("hide_overlay_versions", false);      // FALSE_STR default  
-        hidePackageVersions = getBoolValue("hide_package_versions", false);      // FALSE_STR default
+        cleanVersionLabels  = getBoolFromSection(ultrahandSection, "clean_version_labels",  false);
+        hideOverlayVersions = getBoolFromSection(ultrahandSection, "hide_overlay_versions", false);
+        hidePackageVersions = getBoolFromSection(ultrahandSection, "hide_package_versions", false);
     }
     #endif
     
     
     // Number of renderer threads to use
-    const unsigned numThreads = 4;//expandedMemory ? 4 : 0;
+    constexpr unsigned numThreads = 4;//expandedMemory ? 4 : 0;
     std::vector<std::thread> renderThreads(numThreads);
 
     void InPlotBarrierCompletion::operator()() noexcept {

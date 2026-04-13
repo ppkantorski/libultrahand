@@ -722,7 +722,7 @@ namespace ult {
                 // if sourceFile is a file
                 if (!isDirectory(sourceFileOrDirectory)) {
                     moveFileOrDirectory(sourceFileOrDirectory, destinationPath, logSource, logDestination);
-                } else if (isDirectory(sourceFileOrDirectory)) {
+                } else {
                     // if sourceFile is a directory
                     folderName = getNameFromPath(sourceFileOrDirectory);
                     fixedDestinationPath = destinationPath + folderName + "/";
@@ -1023,6 +1023,10 @@ namespace ult {
                 return;
             }
     
+            // Build the slash-terminated from-path once, outside the loop
+            std::string fromWithSlash = fromPath;
+            if (fromWithSlash.back() != '/') fromWithSlash += '/';
+
             bool hasContent = false;
             dirent* entry;
             while ((entry = readdir(dir)) != nullptr) {
@@ -1035,12 +1039,6 @@ namespace ult {
                 if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
                 
                 hasContent = true;
-                
-                // Build paths for recursion - ensure fromPath has trailing slash
-                std::string fromWithSlash = fromPath;
-                if (fromWithSlash.back() != '/') {
-                    fromWithSlash += '/';
-                }
                 
                 std::string subFromPath = fromWithSlash + entry->d_name;
                 std::string subToPath = actualToPath + entry->d_name;
@@ -1282,10 +1280,7 @@ namespace ult {
     
             // Only care about "._" files and ".DS_Store"
             bool isDotUnderscore = (fileName[0] == '.' && fileName[1] == '_');
-            bool isDSStore = (fileName[0] == '.' && fileName[1] == 'D' && fileName[2] == 'S' &&
-                             fileName[3] == '_' && fileName[4] == 'S' && fileName[5] == 't' &&
-                             fileName[6] == 'o' && fileName[7] == 'r' && fileName[8] == 'e' &&
-                             fileName[9] == '\0');
+            bool isDSStore = (strcmp(fileName, ".DS_Store") == 0);
             
             if (!isDotUnderscore && !isDSStore) {
                 continue;

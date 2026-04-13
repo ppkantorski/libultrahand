@@ -207,10 +207,10 @@ namespace ult {
         
         struct dirent* entry;
         while ((entry = readdir(dir.get())) != nullptr) {
-            const std::string entryName = entry->d_name;
+            const char* entryName = entry->d_name;
             
             // Skip . and ..
-            if (entryName == "." || entryName == "..") continue;
+            if (entryName[0] == '.' && (entryName[1] == '\0' || (entryName[1] == '.' && entryName[2] == '\0'))) continue;
             
             const std::string fullPath = directoryPath + "/" + entryName;
             
@@ -244,7 +244,6 @@ namespace ult {
         size_t dirIndex = 0;
         while (dirIndex < dirsToProcess.size()) {
             currentDir = std::move(dirsToProcess[dirIndex]);
-            dirsToProcess[dirIndex].shrink_to_fit();
             dirIndex++;
 
             std::unique_ptr<DIR, DirCloser> dir(opendir(currentDir.c_str()));
@@ -306,7 +305,8 @@ namespace ult {
         while (!stack.empty()) {
             if (maxLines > 0 && results.size() >= maxLines) return;
             
-            std::tie(currentPath, currentPartIndex) = stack.back();
+            currentPath = std::move(stack.back().first);
+            currentPartIndex = stack.back().second;
             stack.pop_back();
             
             if (currentPartIndex >= parts.size()) continue;

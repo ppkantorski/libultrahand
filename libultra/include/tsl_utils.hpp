@@ -354,7 +354,7 @@ namespace ult {
     extern std::string OVERLAY_MEMORY;
     extern std::string NOT_ENOUGH_MEMORY;
     extern std::string WALLPAPER_SUPPORT_DISABLED;
-    extern std::string SOUND_SUPPORT_DISABLED;
+    //extern std::string SOUND_SUPPORT_DISABLED;
     extern std::string WALLPAPER_SUPPORT_ENABLED;
     extern std::string SOUND_SUPPORT_ENABLED;
     extern std::string EXIT_OVERLAY_SYSTEM;

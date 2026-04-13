@@ -286,38 +286,38 @@ namespace ult {
     }
 
     // Helper function for streaming comparison
-    void streamCompareAndWrite(const std::string& streamFilePath, 
-                              const std::unordered_set<std::string>& compareSet, 
-                              const std::string& outputTxtFilePath) {
-        std::lock_guard<std::mutex> lock(file_access_mutex);
-        
-        FILE* streamFile = fopen(streamFilePath.c_str(), "r");
-        if (!streamFile) return;
-        
-        FILE* outputFile = fopen(outputTxtFilePath.c_str(), "w");
-        if (!outputFile) {
-            fclose(streamFile);
-            return;
-        }
-        
-        static constexpr size_t BUFFER_SIZE = 8192;
-        char buffer[BUFFER_SIZE];
-        size_t len;
-        
-        while (fgets(buffer, BUFFER_SIZE, streamFile)) {
-            len = strlen(buffer);
-            if (len > 0 && buffer[len - 1] == '\n') {
-                buffer[len - 1] = '\0';
-            }
-            
-            if (compareSet.count(std::string(buffer))) {
-                fprintf(outputFile, "%s\n", buffer);
-            }
-        }
-        
-        fclose(streamFile);
-        fclose(outputFile);
-    }
+    //static void streamCompareAndWrite(const std::string& streamFilePath, 
+    //                          const std::unordered_set<std::string>& compareSet, 
+    //                          const std::string& outputTxtFilePath) {
+    //    std::lock_guard<std::mutex> lock(file_access_mutex);
+    //    
+    //    FILE* streamFile = fopen(streamFilePath.c_str(), "r");
+    //    if (!streamFile) return;
+    //    
+    //    FILE* outputFile = fopen(outputTxtFilePath.c_str(), "w");
+    //    if (!outputFile) {
+    //        fclose(streamFile);
+    //        return;
+    //    }
+    //    
+    //    static constexpr size_t BUFFER_SIZE = 8192;
+    //    char buffer[BUFFER_SIZE];
+    //    size_t len;
+    //    
+    //    while (fgets(buffer, BUFFER_SIZE, streamFile)) {
+    //        len = strlen(buffer);
+    //        if (len > 0 && buffer[len - 1] == '\n') {
+    //            buffer[len - 1] = '\0';
+    //        }
+    //        
+    //        if (compareSet.count(std::string(buffer))) {
+    //            fprintf(outputFile, "%s\n", buffer);
+    //        }
+    //    }
+    //    
+    //    fclose(streamFile);
+    //    fclose(outputFile);
+    //}
     
     // Function to compare two file lists and save duplicates to an output file
     void compareFilesLists(const std::string& txtFilePath1, const std::string& txtFilePath2, const std::string& outputTxtFilePath) {

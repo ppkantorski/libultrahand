@@ -694,7 +694,7 @@ namespace impl {
         // max_notifications — default to 3 so it's always clamped correctly
         {
             const std::string maxStr = getStr("max_notifications", "3");
-            const int cap = ult::limitedMemory ? 4 : tsl::NotificationPrompt::MAX_VISIBLE;
+            const int cap = tsl::NotificationPrompt::MAX_VISIBLE;
             tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
         }
     
