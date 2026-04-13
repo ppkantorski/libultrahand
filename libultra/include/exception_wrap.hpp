@@ -3,41 +3,43 @@
  * Author: ppkantorski
  * Description:
  *   This header defines linker-level exception interception hooks used in the
- *   Ultrahand Overlay project. It provides declarations for __wrap_* functions
- *   that override the C++ exception and unwind runtime when linked with
- *   -Wl,-wrap flags.
+ *   Ultrahand Overlay project.
  *
- *   These hooks are intended for deterministic fail-fast behavior in embedded
- *   environments (Nintendo Switch homebrew), where C++ exceptions are disabled
- *   and runtime exception handling is treated as a fatal error condition.
+ *   It declares __wrap_* functions used by the GNU linker --wrap mechanism to
+ *   override libstdc++ exception and unwind entry points.
  *
- *   This module is optional and must be explicitly enabled via build system
- *   linker flags (-Wl,-wrap,__cxa_throw, etc.).
+ *   This module is intended to disable C++ exceptions in a controlled and
+ *   deterministic way for Nintendo Switch homebrew environments where
+ *   exceptions are not used.
+ *
+ *   IMPORTANT:
+ *   This is a runtime-level override. It must only be enabled when the build
+ *   is compiled with -fno-exceptions and corresponding -Wl,-wrap flags.
  *
  *   Special thanks to @masagrator.
- * 
- *   For the latest updates and contributions, visit the project's GitHub repository:
- *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
  *
- *   Note: This notice is integral to the project's documentation and must not be
- *   altered or removed.
+ *   https://github.com/ppkantorski/Ultrahand-Overlay
  *
- *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Licensed under GPLv2 + CC-BY-4.0
  *  Copyright (c) 2026 ppkantorski
  ********************************************************************************/
 
-
 #pragma once
+
 #include <switch.h>
 #include <unwind.h>
 
+#if USE_EXCEPTION_WRAP
 namespace ult::wrap {
+extern "C" {
 
-extern "C" void __wrap___cxa_throw(void*, void*, void (*)(void*));
-extern "C" void __wrap__Unwind_Resume(void*);
-extern "C" _Unwind_Reason_Code __wrap___gxx_personality_v0(
+void __wrap___cxa_throw(void*, void*, void (*)(void*));
+void __wrap__Unwind_Resume(void*);
+_Unwind_Reason_Code __wrap___gxx_personality_v0(
     int, _Unwind_Action, uint64_t,
     _Unwind_Exception*,
     _Unwind_Context*);
 
 }
+}
+#endif

@@ -2,55 +2,65 @@
  * File: exception_wrap.cpp
  * Author: ppkantorski
  * Description:
- *   This source file implements linker-wrapped C++ runtime exception handlers
- *   for the Ultrahand Overlay project.
+ *   Implements linker-wrapped C++ exception and unwind handlers for Ultrahand.
  *
- *   These functions override the default libstdc++ exception and unwind paths
- *   via the GNU linker --wrap mechanism, forcing an immediate fatal break
- *   (svcBreak) whenever an exception is thrown or unwind is triggered.
+ *   This module disables C++ exception propagation by overriding libstdc++
+ *   runtime hooks using the GNU linker --wrap mechanism.
  *
- *   This design enforces a strict no-exception runtime model, ensuring that
- *   any unexpected C++ exception behavior results in deterministic failure
- *   rather than stack unwinding or recovery.
+ *   Behavior:
+ *   - __cxa_throw: immediate abort (no exception propagation allowed)
+ *   - __Unwind_Resume: abort (prevents invalid stack unwind continuation)
+ *   - __gxx_personality_v0: abort (prevents unwind metadata traversal)
  *
- *   Intended use is for embedded Nintendo Switch homebrew environments where
- *   exceptions are disabled and fail-fast debugging is preferred.
+ *   This ensures a strict no-exception runtime model suitable for embedded
+ *   Nintendo Switch homebrew environments.
  *
  *   Special thanks to @masagrator.
- * 
- *   For the latest updates and contributions, visit the project's GitHub repository:
- *   GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay
  *
- *   Note: This notice is integral to the project's documentation and must not be
- *   altered or removed.
+ *   https://github.com/ppkantorski/Ultrahand-Overlay
  *
- *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Licensed under GPLv2 + CC-BY-4.0
  *  Copyright (c) 2026 ppkantorski
  ********************************************************************************/
 
 #include "exception_wrap.hpp"
+#include <cstdlib>
 
+#if USE_EXCEPTION_WRAP
 using namespace ult::wrap;
 
 extern "C" void __wrap___cxa_throw(void* e, void* t, void (*d)(void*)) {
-    (void)e; (void)t; (void)d;
-    svcBreak(0xDEAD, 0, 0);
-    __builtin_trap();
+    (void)e;
+    (void)t;
+    (void)d;
+
+    // Exception usage is not allowed in this build
+    abort();
 }
 
 extern "C" void __wrap__Unwind_Resume(void* obj) {
     (void)obj;
-    svcBreak(0xBEEF, 0, 0);
-    __builtin_trap();
+
+    // Unwind continuation is unsafe in no-exception builds
+    abort();
 }
 
 extern "C" _Unwind_Reason_Code __wrap___gxx_personality_v0(
-    int v, _Unwind_Action a, uint64_t c,
+    int v,
+    _Unwind_Action a,
+    uint64_t c,
     _Unwind_Exception* e,
     _Unwind_Context* ctx) {
 
-    (void)v; (void)a; (void)c; (void)e; (void)ctx;
-    svcBreak(0xCAFE, 0, 0);
-    __builtin_trap();
+    (void)v;
+    (void)a;
+    (void)c;
+    (void)e;
+    (void)ctx;
+
+    // Personality routine should never be reached in valid builds
+    abort();
+
     return _URC_FATAL_PHASE1_ERROR;
 }
+#endif

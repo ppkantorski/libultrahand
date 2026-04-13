@@ -192,7 +192,7 @@ inline std::atomic<bool> screenshotsAreDisabled{false};
 inline std::atomic<bool> screenshotsAreForceDisabled{false};
 
 inline bool hideHidden = false;
-inline bool usingUnfocusedColor = true;
+inline bool selectIsUsingFocusedColor = true;
 inline bool bypassUnfocused = false;
 
 inline std::atomic<bool> mainComboHasTriggered{false};
@@ -4921,7 +4921,7 @@ namespace tsl {
     
                 renderer->drawStringWithColoredSections(currentBottomLine, false, tsl::s_footerSpecialChars,
                                                         buttonStartX, 693, 23, bottomTextColor, buttonColor);
-                if (_hasOkBtn && !usingUnfocusedColor) {
+                if (_hasOkBtn && !selectIsUsingFocusedColor) {
                     static const std::string okOverdraw = "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1;
                     renderer->drawStringWithColoredSections(okOverdraw, false, tsl::s_footerSpecialChars,
                                                             buttonStartX + _backWidth, 693, 23, unfocusedColor, unfocusedColor);
@@ -5231,7 +5231,7 @@ namespace tsl {
                 if (!deactivateOriginalFooter) {
                     renderer->drawStringWithColoredSections(menuBottomLine, false, tsl::s_footerSpecialChars,
                                                             buttonStartX, 693, 23, bottomTextColor, buttonColor);
-                    if (!m_noClickableItems && !usingUnfocusedColor) {
+                    if (!m_noClickableItems && !selectIsUsingFocusedColor) {
                         renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
                                                                 tsl::s_footerSpecialChars,
                                                                 buttonStartX + ult::backWidth.load(std::memory_order_acquire),
@@ -5366,7 +5366,7 @@ namespace tsl {
                                                         {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
                                                         buttonStartX, 693, 23,
                                                         bottomTextColor, buttonColor);
-                if (!usingUnfocusedColor) {
+                if (!selectIsUsingFocusedColor) {
                     renderer->drawStringWithColoredSections("\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1, false,
                                                             {"\uE0E1", "\uE0E0", "\uE0ED", "\uE0EE"},
                                                             buttonStartX + ult::backWidth.load(std::memory_order_acquire), 693, 23,
@@ -11171,15 +11171,15 @@ namespace tsl {
                 static u64 focusLostTime_ns = 0;
                 static constexpr u64 UNFOCUS_DELAY_NS = 10'000'000ULL;
                 if (currentFocus && !blockOkAction) {
-                    usingUnfocusedColor = true;
+                    selectIsUsingFocusedColor = true;
                     focusLostTime_ns = 0;
                 } else {
                     if (!bypassUnfocused) {
                         const u64 now = ult::nowNs();
                         if (focusLostTime_ns == 0) focusLostTime_ns = now;
-                        if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) usingUnfocusedColor = false;
+                        if (now - focusLostTime_ns >= UNFOCUS_DELAY_NS) selectIsUsingFocusedColor = false;
                     } else {
-                        usingUnfocusedColor = true;
+                        selectIsUsingFocusedColor = true;
                     }
                 }
             }
@@ -11531,7 +11531,7 @@ namespace tsl {
                     shouldTriggerRumble = true;
             };
             checkTouched(backTouched,     ult::touchingBack);
-            if (usingUnfocusedColor) checkTouched(selectTouched, ult::touchingSelect);
+            if (selectIsUsingFocusedColor) checkTouched(selectTouched, ult::touchingSelect);
             checkTouched(nextPageTouched, ult::touchingNextPage);
             if (menuTouched != ult::touchingMenu.exchange(menuTouched, std::memory_order_acq_rel)) {
                 if (menuTouched && (ult::inMainMenu.load(std::memory_order_acquire) ||
