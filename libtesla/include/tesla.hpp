@@ -176,6 +176,7 @@ inline std::atomic<bool> skipDown{false};
 inline u32 offsetWidthVar = 112;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
+inline std::string lastOpenPackagePath;  // set by PackageMenu::createUI() when navigating via UI (not --package args)
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipClosingExitFeedback{false};
@@ -12516,7 +12517,34 @@ namespace tsl {
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
                     #else
-                                if (lastOverlayFilename == overlayFileName  && lastOverlayMode == modeArg && lastOverlayMode.find("--package") != std::string::npos) {
+                                // For the launcher (Ultrahand), two cases require the redirect-to-ovlmenu
+                                // treatment instead of relaunching:
+                                //
+                                // Case 1 — standard overlay/mode match: handles regular overlay combos
+                                //   (quick launch, status monitor, etc.) where lastOverlayMode was set
+                                //   from the actual launch args and matches the combo's modeArg.
+                                //
+                                // Case 2 — UI-navigated package: when the user opened a package through
+                                //   the Ultrahand UI, no --package args were ever passed at launch, so
+                                //   lastOverlayMode is empty and Case 1 never fires.  Instead we compare
+                                //   the combo's package path against lastOpenPackagePath, which
+                                //   PackageMenu::createUI() sets whenever a root-level package is opened.
+                                if ([&]() -> bool {
+                                    if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg)
+                                        return true;  // Case 1
+                                    // Case 2: package path match for UI-navigated packages.
+                                    // Do NOT guard on lastOverlayFilename == overlayFileName here:
+                                    // lastOverlayFilename is cleared to "" during the overlays page build
+                                    // (createOverlaysMenu scroll-to logic), so that check would fail even
+                                    // though we are always in ovlmenu.ovl when IS_LAUNCHER_DIRECTIVE.
+                                    static const std::string pkgPrefix = "--package ";
+                                    if (!modeArg.empty() && modeArg.rfind(pkgPrefix, 0) == 0) {
+                                        const std::string comboPackagePath = modeArg.substr(pkgPrefix.size());
+                                        return !lastOpenPackagePath.empty() &&
+                                               ult::getNameFromPath(lastOpenPackagePath) == comboPackagePath;
+                                    }
+                                    return false;
+                                }()) {
                     #endif
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
@@ -13014,7 +13042,9 @@ namespace tsl {
                     if (strcmp(s, "--direct") == 0 ||
                         strcmp(s, "--skipCombo") == 0 ||
                         strcmp(s, "--lastTitleID") == 0 ||
-                        strcmp(s, "--foregroundFix") == 0) {
+                        strcmp(s, "--foregroundFix") == 0 ||
+                        strcmp(s, "--comboReturn") == 0 ||
+                        strcmp(s, "--playerReturn") == 0) {
                         skip = true;
                     }
                 }
