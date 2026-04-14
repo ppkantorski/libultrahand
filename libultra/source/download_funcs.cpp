@@ -504,6 +504,10 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
 
     // Pre-allocate ALL reusable strings and variables outside the main loop
     std::string fileName, extractedFilePath, directoryPath;
+    // Reserve capacity upfront — prevents any heap reallocation during the hot extraction loop.
+    // 512 covers virtually all ZIP entry paths; the strings grow once and never again.
+    fileName.reserve(512);
+    directoryPath.reserve(512);
 
     // Single large buffer for extraction - reused for all files
     const size_t bufferSize = UNZIP_WRITE_BUFFER;
@@ -532,6 +536,11 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     size_t invalid_pos;
     size_t start_pos;
     
+    // Last created directory cache — avoids redundant createDirectory syscalls
+    // when consecutive ZIP entries share the same parent (the common case).
+    // Plain string comparison; no extra heap structure needed.
+    std::string lastDir;
+    
     // Ensure destination directory exists
     createDirectory(toDestination);
     
@@ -542,6 +551,9 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
     if (!destination.empty() && destination.back() != '/') {
         destination += '/';
     }
+    // Reserve with destination prefix already known — both strings will never reallocate.
+    extractedFilePath.reserve(destination.size() + 512);
+    lastDir.reserve(destination.size() + 512);
     
     int newProgress;;
 
@@ -610,11 +622,14 @@ bool unzipFile(const std::string& zipFilePath, const std::string& toDestination)
             continue;
         }
 
-        // Create directory if needed
+        // Create directory if needed — skip if same parent as last file (common case)
         lastSlashPos = extractedFilePath.find_last_of('/');
         if (lastSlashPos != std::string::npos) {
             directoryPath.assign(extractedFilePath, 0, lastSlashPos + 1);
-            createDirectory(directoryPath);
+            if (directoryPath != lastDir) {
+                createDirectory(directoryPath);
+                lastDir = directoryPath;
+            }
         }
 
         // Open output file

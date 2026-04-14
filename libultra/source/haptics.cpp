@@ -44,7 +44,7 @@ namespace ult {
     };
 
     static constexpr HidVibrationValue handheldHapticsPreset = {
-        .amp_low   = 0.76f,
+        .amp_low   = 0.650f,
         .freq_low  = 210.0f,
         .amp_high  = 0.00f,
         .freq_high = 210.0f

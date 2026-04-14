@@ -178,8 +178,8 @@ inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
-inline bool skipRumbleDoubleClick{false};
-inline bool skipRumbleClick{false};
+inline bool skipClosingRumbleDoubleClick{false};
+inline bool skipInitialShowRumbleClick{false};
 
 inline std::mutex jumpItemMutex;
 inline std::string jumpItemName;
@@ -5489,8 +5489,7 @@ namespace tsl {
         static std::atomic<bool> s_directionalKeyReleased{false};
         static std::atomic<bool> lastInternalTouchRelease{true};
 
-        static std::mutex s_safeToSwapMutex;
-        static std::atomic<bool> s_safeToSwap{false};
+        //static std::atomic<bool> s_swapPending{false};
         static std::atomic<bool> skipOnce{false};
 
         static std::atomic<bool> isTableScrolling{false};
@@ -5500,8 +5499,6 @@ namespace tsl {
         public:
             List() : Element() {
             
-                s_safeToSwap.store(false, std::memory_order_release);
-                
                 // Clear table scrolling flag when list is cleared
                 isTableScrolling.store(false, std::memory_order_release);
 
@@ -5524,7 +5521,6 @@ namespace tsl {
             }
             
             virtual ~List() {
-                s_safeToSwap.store(false, std::memory_order_release);
                 purgePendingItems();
                 clearItems();
             }
@@ -5532,8 +5528,7 @@ namespace tsl {
                                                             
             virtual void draw(gfx::Renderer* renderer) override {
             
-                s_safeToSwap.store(false, std::memory_order_release);
-                std::lock_guard<std::mutex> lock(s_safeToSwapMutex);
+                //s_swapPending.store(false, std::memory_order_release);
                 
                 if (m_clearList) {
                     clearItems();
@@ -5668,7 +5663,6 @@ namespace tsl {
                     }
                 }
                 
-                s_safeToSwap.store(true, std::memory_order_release);
             }
             
             void resolveJumpImmediately() {
@@ -10811,12 +10805,12 @@ namespace tsl {
                 // same show — the flag is set just before show() is called in that case.
                 //triggerRumbleClick.store(true, std::memory_order_release);
 
-                if (!skipRumbleClick) {
+                if (!skipInitialShowRumbleClick) {
                     triggerRumbleClick.store(true, std::memory_order_release);
-                }
-                if (!skipRumbleClick)
                     signalFeedbackAtEnd = true;
-                skipRumbleClick = false; // consume the flag regardless
+                }
+                    
+                skipInitialShowRumbleClick = false; // consume the flag regardless
             }
 
             if (signalFeedbackAtEnd) {
@@ -11302,12 +11296,23 @@ namespace tsl {
             if (blockOkAction)
                 keysDown &= ~KEY_A;
 
+            // Capture raw pointer before any handler call.
+            // After a swapTo fires inside a handler, currentGui (a ref to the
+            // now-popped unique_ptr) becomes dangling.  All post-call checks must
+            // use this raw pointer instead of dereferencing currentGui.
+            tsl::Gui* const guiPtrBefore = currentGui.get();
+
             bool handled = false;
             for (elm::Element* p = currentFocus; !handled && p; p = p->getParent())
                 handled = p->onClick(keysDown) || p->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
             
-            if (currentGui != this->getCurrentGui()) return;
+            // Safe swap-detection: compare raw pointers, not the potentially-dangling reference
+            if (this->m_guiStack.empty() || this->getCurrentGui().get() != guiPtrBefore) return;
             handled |= currentGui->handleInput(keysDown, keysHeld, touchPos, joyStickPosLeft, joyStickPosRight);
+
+            // If a swap fired inside handleInput above, currentGui is now dangling — bail out
+            // before any code below attempts to call methods on it.
+            if (this->m_guiStack.empty() || this->getCurrentGui().get() != guiPtrBefore) return;
 
             // Directional key release tracking
             {
@@ -11713,7 +11718,9 @@ namespace tsl {
 
 
 
-            if (this->m_guiStack.top() != nullptr && this->m_guiStack.top()->m_focusedElement != nullptr)
+            if (!this->m_guiStack.empty() &&
+                this->m_guiStack.top() != nullptr &&
+                this->m_guiStack.top()->m_focusedElement != nullptr)
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
             isNavigatingBackwards.store(false, std::memory_order_release);
@@ -12970,10 +12977,17 @@ namespace tsl {
                 ult::DOWNLOAD_READ_BUFFER = 131072*4;
                 ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
             }
-        } else if (ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB) {
+        } else if (!ult::limitedMemory) {
+            ult::COPY_BUFFER_SIZE = 262144;
+            ult::HEX_BUFFER_SIZE = 8192;
+            ult::UNZIP_READ_BUFFER = 262144;
+            ult::UNZIP_WRITE_BUFFER = 131072;
+            ult::DOWNLOAD_READ_BUFFER = 131072;
+            ult::DOWNLOAD_WRITE_BUFFER = 131072;
+        } else {
             ult::loaderTitle += "-";
-            ult::DOWNLOAD_READ_BUFFER = 16*1024;
-            ult::UNZIP_READ_BUFFER = 16*1024;
+            //ult::DOWNLOAD_READ_BUFFER = 16*1024;
+            //ult::UNZIP_READ_BUFFER = 16*1024;
         }
     #endif
     
@@ -13212,6 +13226,17 @@ namespace tsl {
                 shData.overlayOpen.store(false, std::memory_order_release);
             };
 
+            // Suppress the click in show() when exit feedback (double click)
+            // is about to fire on the first loop iteration — let the double
+            // click stand alone rather than stacking a click on top of it.
+            #if IS_LAUNCHER_DIRECTIVE
+            skipInitialShowRumbleClick = shouldFireEvent && !comboReturn;
+            #elif IS_STATUS_MONITOR_DIRECTIVE
+            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0);
+            #else
+            skipInitialShowRumbleClick = !directMode;
+            #endif
+
             while (shData.running.load(std::memory_order_acquire)) {
                 // Early exit if launching new overlay
                 if (ult::launchingOverlay.load(std::memory_order_acquire)) {
@@ -13317,16 +13342,6 @@ namespace tsl {
                     hlp::requestForeground(true);
     #endif
     
-                    // Suppress the click in show() when exit feedback (double click)
-                    // is about to fire on the first loop iteration — let the double
-                    // click stand alone rather than stacking a click on top of it.
-                    #if IS_LAUNCHER_DIRECTIVE
-                    skipRumbleClick = shouldFireEvent && !comboReturn;
-                    #elif IS_STATUS_MONITOR_DIRECTIVE
-                    skipRumbleClick = (lastMode.compare("returning") == 0);
-                    #else
-                    skipRumbleClick = isReturningLaunch;
-                    #endif
                     overlay->show();
                     if (!comboBreakout && !(notification && notification->isActive()))
                         overlay->clearScreen();
@@ -13442,6 +13457,12 @@ namespace tsl {
             overlay->exitServices();
             delete overlay;
             
+            #if !IS_LAUNCHER_DIRECTIVE
+            if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
+                triggerExitFeedback();
+            }
+            #endif
+            
             // Stop feedback threads after overlay is closed / deleted.
             feedbackPollerStop.store(true, std::memory_order_release);
             signalFeedback();   // wake both threads so they see the stop flag
@@ -13452,15 +13473,6 @@ namespace tsl {
             threadClose(&backgroundSoundThread);
             
             eventClose(&shData.comboEvent);
-
-
-            //if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
-            //    if (!disableSound.load(std::memory_order_acquire) && ult::useSoundEffects)
-            //        ult::Audio::playExitSound();
-            //    if (ult::useHapticFeedback && !skipRumbleDoubleClick) {
-            //        ult::rumbleDoubleClickStandalone();
-            //    }
-            //}
     
             return 0;
         }
