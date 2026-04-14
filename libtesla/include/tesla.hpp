@@ -177,6 +177,8 @@ inline u32 offsetWidthVar = 112;
 inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 inline std::string lastOpenPackagePath;  // set by PackageMenu::createUI() when navigating via UI (not --package args)
+inline std::string comboReturnOverlayFilename;  // overlay that triggered a combo return; consumed by createOverlaysMenu to reposition cursor
+inline std::string comboReturnOverlayMode;      // mode arg of that overlay (stored for completeness; cursor always lands on the overlay row)
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipClosingExitFeedback{false};
@@ -12553,7 +12555,15 @@ namespace tsl {
                                         ult::TRUE_STR
                                     );
 
-                                    tsl::setNextOverlay(returnOverlayPath, "--direct --comboReturn");
+                                    // Pass the overlay filename across the process boundary so that
+                                    // ovlmenu can position its cursor on the correct list item after
+                                    // a combo return.  Inline vars are per-process and are always
+                                    // empty in the freshly-spawned ovlmenu process, so we embed the
+                                    // filename in the launch args instead and parse it from argv in
+                                    // main().  Covers plain overlays (Case 1), mode-arg overlays
+                                    // (Case 1), and UI-navigated packages (Case 2).
+                                    tsl::setNextOverlay(returnOverlayPath,
+                                        "--direct --comboReturn --comboReturnFrom " + overlayFileName);
                                     fireLaunch();
                                     return;
                                 }
