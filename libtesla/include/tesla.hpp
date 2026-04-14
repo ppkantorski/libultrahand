@@ -178,7 +178,7 @@ inline std::string lastOverlayFilename;
 inline std::string lastOverlayMode;
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
-inline bool skipClosingRumbleDoubleClick{false};
+inline bool skipClosingExitFeedback{false};
 inline bool skipInitialShowRumbleClick{false};
 
 inline std::mutex jumpItemMutex;
@@ -13458,11 +13458,11 @@ namespace tsl {
             delete overlay;
             
             #if !IS_LAUNCHER_DIRECTIVE
-            if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire)) {
+            if (directMode && !launchComboHasTriggered.load(std::memory_order_acquire) && !skipClosingExitFeedback) {
                 triggerExitFeedback();
             }
             #endif
-            
+
             // Stop feedback threads after overlay is closed / deleted.
             feedbackPollerStop.store(true, std::memory_order_release);
             signalFeedback();   // wake both threads so they see the stop flag
