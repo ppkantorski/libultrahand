@@ -13340,7 +13340,7 @@ namespace tsl {
             // is about to fire on the first loop iteration — let the double
             // click stand alone rather than stacking a click on top of it.
             #if IS_LAUNCHER_DIRECTIVE
-            skipInitialShowRumbleClick = shouldFireEvent && !comboReturn;
+            skipInitialShowRumbleClick = shouldFireEvent && !comboReturn && !ult::firstBoot;
             #elif IS_STATUS_MONITOR_DIRECTIVE
             skipInitialShowRumbleClick = (lastMode.compare("returning") == 0);
             #else
