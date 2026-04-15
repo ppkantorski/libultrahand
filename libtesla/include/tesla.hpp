@@ -5190,11 +5190,7 @@ namespace tsl {
                         !ult::wallpaperData.empty() && ult::correctFrameSize)
                         renderer->drawWallpaper();   // bakes bg color — no fillScreen needed
                     else {
-                        
-                        if (lastMode.empty() || (lastMode.compare("returning") == 0))
-                            renderer->drawWallpaper();
-                        else
-                            renderer->fillScreen(a(defaultBackgroundColor));
+                        renderer->fillScreen(a(defaultBackgroundColor));
                     }
                 } else {
                     renderer->fillScreen({ 0x0, 0x0, 0x0, 0x0});
