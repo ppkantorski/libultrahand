@@ -179,6 +179,7 @@ inline std::string lastOverlayMode;
 inline std::string lastOpenPackagePath;  // set by PackageMenu::createUI() when navigating via UI (not --package args)
 inline std::string comboReturnOverlayFilename;  // overlay that triggered a combo return; consumed by createOverlaysMenu to reposition cursor
 inline std::string comboReturnOverlayMode;      // mode arg of that overlay (stored for completeness; cursor always lands on the overlay row)
+inline std::string comboReturnPackageName;      // package folder that triggered a combo return; consumed by createPackagesMenu to reposition cursor
 
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipClosingExitFeedback{false};
@@ -12518,55 +12519,97 @@ namespace tsl {
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
-                    #else
-                                // For the launcher (Ultrahand), two cases require the redirect-to-ovlmenu
-                                // treatment instead of relaunching:
-                                //
-                                // Case 1 — standard overlay/mode match: handles regular overlay combos
-                                //   (quick launch, status monitor, etc.) where lastOverlayMode was set
-                                //   from the actual launch args and matches the combo's modeArg.
-                                //
-                                // Case 2 — UI-navigated package: when the user opened a package through
-                                //   the Ultrahand UI, no --package args were ever passed at launch, so
-                                //   lastOverlayMode is empty and Case 1 never fires.  Instead we compare
-                                //   the combo's package path against lastOpenPackagePath, which
-                                //   PackageMenu::createUI() sets whenever a root-level package is opened.
-                                if ([&]() -> bool {
-                                    if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg)
-                                        return true;  // Case 1
-                                    // Case 2: package path match for UI-navigated packages.
-                                    // Do NOT guard on lastOverlayFilename == overlayFileName here:
-                                    // lastOverlayFilename is cleared to "" during the overlays page build
-                                    // (createOverlaysMenu scroll-to logic), so that check would fail even
-                                    // though we are always in ovlmenu.ovl when IS_LAUNCHER_DIRECTIVE.
-                                    static const std::string pkgPrefix = "--package ";
-                                    if (!modeArg.empty() && modeArg.rfind(pkgPrefix, 0) == 0) {
-                                        const std::string comboPackagePath = modeArg.substr(pkgPrefix.size());
-                                        return !lastOpenPackagePath.empty() &&
-                                               ult::getNameFromPath(lastOpenPackagePath) == comboPackagePath;
-                                    }
-                                    return false;
-                                }()) {
-                    #endif
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
                                         ult::ULTRAHAND_PROJECT_NAME,
                                         ult::IN_OVERLAY_STR,
                                         ult::TRUE_STR
                                     );
-
-                                    // Pass the overlay filename across the process boundary so that
-                                    // ovlmenu can position its cursor on the correct list item after
-                                    // a combo return.  Inline vars are per-process and are always
-                                    // empty in the freshly-spawned ovlmenu process, so we embed the
-                                    // filename in the launch args instead and parse it from argv in
-                                    // main().  Covers plain overlays (Case 1), mode-arg overlays
-                                    // (Case 1), and UI-navigated packages (Case 2).
+                                    // If this overlay is hidden, always route the returning
+                                    // ovlmenu to the hidden page — hidden overlays are never
+                                    // visible on the normal page so the hidden page is always
+                                    // the correct destination regardless of launch origin.
+                                    {
+                                        const auto hideStatus = ult::parseValueFromIniSection(
+                                            ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::HIDE_STR);
+                                        if (hideStatus == ult::TRUE_STR) {
+                                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                                ult::ULTRAHAND_PROJECT_NAME,
+                                                ult::IN_HIDDEN_OVERLAY_STR, ult::TRUE_STR);
+                                        }
+                                    }
                                     tsl::setNextOverlay(returnOverlayPath,
                                         "--direct --comboReturn --comboReturnFrom " + overlayFileName);
                                     fireLaunch();
                                     return;
                                 }
+                    #else
+                                // Case 1 — overlay/mode match (quick-launch, status-monitor, etc.)
+                                if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
+                                    ult::setIniFileValue(
+                                        ult::ULTRAHAND_CONFIG_INI_PATH,
+                                        ult::ULTRAHAND_PROJECT_NAME,
+                                        ult::IN_OVERLAY_STR,
+                                        ult::TRUE_STR
+                                    );
+                                    // Build return args. When this overlay was launched in
+                                    // --package mode (e.g. "ovlmenu.ovl --package My Pkg"),
+                                    // the new ovlmenu process must also know which package to
+                                    // return to — append --comboReturnPackage so main() sets
+                                    // to_packages=true and comboReturnPackageName correctly.
+                                    std::string case1Args = "--direct --comboReturn --comboReturnFrom " + overlayFileName;
+                                    {
+                                        static const std::string pkgPfx1 = "--package ";
+                                        if (modeArg.rfind(pkgPfx1, 0) == 0) {
+                                            case1Args += " --comboReturnPackage " + modeArg.substr(pkgPfx1.size());
+                                        }
+                                    }
+                                    tsl::setNextOverlay(returnOverlayPath, case1Args);
+                                    fireLaunch();
+                                    return;
+                                }
+                                // Case 2 — UI-navigated package match.
+                                // Do NOT guard on lastOverlayFilename == overlayFileName: it is
+                                // cleared to "" during the overlays-page build so that check
+                                // always fails inside IS_LAUNCHER.
+                                {
+                                    static const std::string pkgPrefix = "--package ";
+                                    if (!modeArg.empty() && modeArg.rfind(pkgPrefix, 0) == 0) {
+                                        const std::string comboPackagePath = modeArg.substr(pkgPrefix.size());
+                                        // lastOpenPackagePath always ends with '/' (e.g. "sdmc:/…/FolderName/").
+                                        // getNameFromPath returns "" for trailing-slash paths, so strip it first.
+                                        const std::string strippedPkg = (!lastOpenPackagePath.empty() && lastOpenPackagePath.back() == '/')
+                                            ? lastOpenPackagePath.substr(0, lastOpenPackagePath.size() - 1)
+                                            : lastOpenPackagePath;
+                                        if (!strippedPkg.empty() &&
+                                            ult::getNameFromPath(strippedPkg) == comboPackagePath) {
+
+                                            ult::setIniFileValue(
+                                                ult::ULTRAHAND_CONFIG_INI_PATH,
+                                                ult::ULTRAHAND_PROJECT_NAME,
+                                                ult::IN_OVERLAY_STR,
+                                                ult::TRUE_STR
+                                            );
+                                            // If the package was on the hidden page, preserve that
+                                            // so the new ovlmenu boots into hidden-packages mode.
+                                            if (ult::inHiddenMode.load(std::memory_order_acquire)) {
+                                                ult::setIniFileValue(
+                                                    ult::ULTRAHAND_CONFIG_INI_PATH,
+                                                    ult::ULTRAHAND_PROJECT_NAME,
+                                                    ult::IN_HIDDEN_PACKAGE_STR,
+                                                    ult::TRUE_STR
+                                                );
+                                            }
+                                            // Pass the folder name via argv; main() writes
+                                            // to_packages=true and sets comboReturnPackageName.
+                                            tsl::setNextOverlay(returnOverlayPath,
+                                                "--direct --comboReturn --comboReturnPackage " + comboPackagePath);
+                                            fireLaunch();
+                                            return;
+                                        }
+                                    }
+                                }
+                    #endif
                                 
                                 // Compose launch args
                                 std::string finalArgs;
@@ -12595,6 +12638,24 @@ namespace tsl {
                                     finalArgs += " --comboReturn";
                                     ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                 }
+
+                                #if IS_LAUNCHER_DIRECTIVE
+                                // When a key combo launches a hidden overlay, persist
+                                // IN_HIDDEN_OVERLAY_STR so the returning ovlmenu boots into the
+                                // hidden page.  We check the overlay's hide flag in the INI
+                                // directly — NOT inHiddenMode — because the user may not have
+                                // visited the hidden page in this session yet (e.g. they used a
+                                // quick-launch combo straight from the normal page).
+                                if (overlayFileName.compare("ovlmenu.ovl") != 0) {
+                                    const auto hideStatus = ult::parseValueFromIniSection(
+                                        ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::HIDE_STR);
+                                    if (hideStatus == ult::TRUE_STR) {
+                                        ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                            ult::ULTRAHAND_PROJECT_NAME,
+                                            ult::IN_HIDDEN_OVERLAY_STR, ult::TRUE_STR);
+                                    }
+                                }
+                                #endif
 
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 fireLaunch();
@@ -13034,15 +13095,28 @@ namespace tsl {
     
             lastOverlayMode.clear();
             bool skip;
+            // --comboReturnPackage takes a multi-word value (package names may contain spaces).
+            // Track when we're consuming its value words so they don't leak into lastOverlayMode.
+            bool skippingMultiWordValue = false;
             for (u8 arg = 1; arg < argc; arg++) {
                 const char* s = argv[arg];
 
                 skip = false;
+
+                // If the previous flag was --comboReturnPackage, consume all non-flag words
+                // that belong to its value (e.g. "My" and "Package" for "My Package").
+                if (skippingMultiWordValue) {
+                    if (!(s[0] == '-' && s[1] == '-')) {
+                        continue;  // Still a value word — skip it
+                    }
+                    skippingMultiWordValue = false;  // Hit a new flag; stop consuming
+                }
     
                 if (arg > 1) {
                     const char* prev = argv[arg - 1];
                     if (prev[0] == '-' && prev[1] == '-') {
-                        if (strcmp(prev, "--lastTitleID") == 0 || strcmp(prev, "--foregroundFix") == 0) {
+                        if (strcmp(prev, "--lastTitleID") == 0 || strcmp(prev, "--foregroundFix") == 0 ||
+                            strcmp(prev, "--comboReturnFrom") == 0 || strcmp(prev, "--comboReturnPackage") == 0) {
                             skip = true;
                         }
                     }
@@ -13054,8 +13128,14 @@ namespace tsl {
                         strcmp(s, "--lastTitleID") == 0 ||
                         strcmp(s, "--foregroundFix") == 0 ||
                         strcmp(s, "--comboReturn") == 0 ||
-                        strcmp(s, "--playerReturn") == 0) {
+                        strcmp(s, "--playerReturn") == 0 ||
+                        strcmp(s, "--comboReturnFrom") == 0 ||
+                        strcmp(s, "--comboReturnPackage") == 0) {
                         skip = true;
+                        // --comboReturnPackage value may be multi-word; arm the skip state
+                        if (strcmp(s, "--comboReturnPackage") == 0) {
+                            skippingMultiWordValue = true;
+                        }
                     }
                 }
     
