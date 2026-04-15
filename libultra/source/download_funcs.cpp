@@ -19,8 +19,155 @@
 
 #include "download_funcs.hpp"
 
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+// __nx_time_service_type is a weak symbol defined in libnx's time.c but is
+// intentionally NOT declared in time.h. Provide an extern "C" declaration at
+// file scope (the only place C++ allows linkage-specification declarations) so
+// the compiler can see it before we use it inside syncNtpIfPending().
+extern "C" TimeServiceType __nx_time_service_type;
 
 namespace ult {
+
+// Performs a one-shot NTP sync if NTP_SYNC_PENDING.flag exists.
+// Entirely self-contained — no external NTP header required.
+// Called after internet connectivity is confirmed. The flag is only
+// removed on a successful clock update, so a failed attempt will
+// automatically retry on the next download call.
+static void syncNtpIfPending() {
+    if (!isFile(NTP_SYNC_PENDING_FLAG_FILEPATH))
+        return;
+
+    // Minimal 48-byte NTP packet (LI=0, VN=3, Mode=3 → 0x1B)
+    uint8_t packet[48] = {};
+    packet[0] = 0x1B;
+
+    // DNS on Switch resolves through the BSD socket service, which socketInitialize()
+    // (called by the caller before us) already set up. No nifmInitialize needed here.
+    struct addrinfo hints = {}, *res = nullptr;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    int gaErr = getaddrinfo("pool.ntp.org", "123", &hints, &res);
+    if (gaErr != 0 || !res) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: getaddrinfo failed (" + std::to_string(gaErr) + ")");
+        #endif
+        return;
+    }
+
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: socket() failed");
+        #endif
+        freeaddrinfo(res);
+        return;
+    }
+
+    struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    bool synced = false;
+    ssize_t sent = sendto(sock, packet, sizeof(packet), 0, res->ai_addr, res->ai_addrlen);
+    if (sent > 0) {
+        struct sockaddr_storage addr;
+        socklen_t addrLen = sizeof(addr);
+        // Use >= sizeof(packet): some servers append extension fields, making the
+        // response longer than 48 bytes. recvfrom truncates to the buffer and still
+        // returns sizeof(packet), but == 48 is needlessly fragile.
+        ssize_t received = recvfrom(sock, packet, sizeof(packet), 0,
+                                    (struct sockaddr*)&addr, &addrLen);
+        if (received >= static_cast<ssize_t>(sizeof(packet))) {
+            // Transmit timestamp sits at bytes 40–43 (seconds, big-endian)
+            uint32_t ntpSecs;
+            memcpy(&ntpSecs, packet + 40, 4);
+            time_t ntpTime = static_cast<time_t>(ntohl(ntpSecs)) - 2208988800UL;
+
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("NTP: received ntpTime=" + std::to_string(ntpTime));
+            #endif
+
+            // Sanity check: must be after Nintendo Switch launch (Jan 1 2017)
+            if (ntpTime > 1483228800L) {
+                // Two requirements for a successful timeSetCurrentTime on Switch:
+                //
+                // 1. Service type must be TimeServiceType_System (time:s).
+                //    time:u (the default) does not expose SetCurrentTime at all,
+                //    causing MAKERESULT(116,1) from the time sysmodule.
+                //    __nx_time_service_type is declared extern "C" at file scope
+                //    above (C++ forbids linkage-spec declarations inside functions).
+                //
+                // 2. Clock type must be TimeType_NetworkSystemClock.
+                //    This is what every working Switch NTP homebrew targets
+                //    (QuickNTP, NX-ntpc, switch-time). TimeType_LocalSystemClock
+                //    yields MAKERESULT(116,1) from the time sysmodule even with
+                //    time:s open — it requires different internal permissions.
+                //    NetworkSystemClock is the standard homebrew-accessible target.
+                TimeServiceType savedServiceType = __nx_time_service_type;
+                __nx_time_service_type = TimeServiceType_System;
+                Result initRc = timeInitialize();
+                __nx_time_service_type = savedServiceType; // restore immediately
+
+                if (R_SUCCEEDED(initRc)) {
+                    Result rc = timeSetCurrentTime(TimeType_NetworkSystemClock,
+                                                   static_cast<uint64_t>(ntpTime));
+                    synced = R_SUCCEEDED(rc);
+                    timeExit();
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("NTP: timeSetCurrentTime rc=0x" +
+                                   [](uint32_t v){ char buf[16]; snprintf(buf,sizeof(buf),"%08X",v); return std::string(buf); }(rc) +
+                                   " synced=" + (synced ? "true" : "false"));
+                    #endif
+                } else {
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("NTP: timeInitialize(System) failed rc=0x" +
+                                   [](uint32_t v){ char buf[16]; snprintf(buf,sizeof(buf),"%08X",v); return std::string(buf); }(initRc));
+                    #endif
+                }
+            } else {
+                #if USING_LOGGING_DIRECTIVE
+                if (!disableLogging)
+                    logMessage("NTP: ntpTime out of range: " + std::to_string(ntpTime));
+                #endif
+            }
+        } else {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("NTP: recvfrom returned " + std::to_string(received));
+            #endif
+        }
+    } else {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sendto failed (" + std::to_string(sent) + ")");
+        #endif
+    }
+
+    close(sock);
+    freeaddrinfo(res);
+
+    if (synced) {
+        deleteFileOrDirectory(NTP_SYNC_PENDING_FLAG_FILEPATH);
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sync successful, pending flag removed");
+        #endif
+    } else {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sync failed, flag retained for retry on next download");
+        #endif
+    }
+}
 
 // Base loader definitions
 size_t DOWNLOAD_READ_BUFFER = 32*1024;//64 * 1024;//4096*10;
@@ -124,6 +271,39 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         return false;
     }
 
+    static constexpr SocketInitConfig socketInitConfig = {
+        // TCP buffers
+        .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
+        .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
+        .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
+        .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
+        
+        // UDP buffers
+        .udp_tx_buf_size     = 512,                // 512 B default
+        .udp_rx_buf_size     = 512,                // 512 B default
+    
+        // Socket buffer efficiency
+        .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
+                                                   // 1 = prioritize memory efficiency (smaller internal allocations)
+        .bsd_service_type    = BsdServiceType_Auto // Auto-select service
+    };
+    
+    if (!noSocketInit) {
+        if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Failed to initialize socket.");
+            #endif
+            return false;
+        }
+    }
+
+    // One-shot NTP sync: if NTP_SYNC_PENDING.flag exists, sync the clock now
+    // before curl touches TLS — skewed time is a common silent download killer.
+    // Must run AFTER hasInternetAccess() so that connectivity is confirmed and
+    // NIFM has been initialized at least once (required for DNS on Switch).
+    syncNtpIfPending();
+
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
@@ -159,33 +339,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
         // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
         setvbuf(file.get(), writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
-    }
-
-    static constexpr SocketInitConfig socketInitConfig = {
-        // TCP buffers
-        .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
-        .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
-        .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
-        .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
-        
-        // UDP buffers
-        .udp_tx_buf_size     = 512,                // 512 B default
-        .udp_rx_buf_size     = 512,                // 512 B default
-    
-        // Socket buffer efficiency
-        .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
-                                                   // 1 = prioritize memory efficiency (smaller internal allocations)
-        .bsd_service_type    = BsdServiceType_Auto // Auto-select service
-    };
-    
-    if (!noSocketInit) {
-        if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
-            #if USING_LOGGING_DIRECTIVE
-            if (!disableLogging)
-                logMessage("Failed to initialize socket.");
-            #endif
-            return false;
-        }
     }
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());

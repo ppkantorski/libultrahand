@@ -79,6 +79,7 @@ namespace ult {
 
     extern const std::string NOTIFICATIONS_FLAG_FILEPATH;
     extern const std::string RELOADING_FLAG_FILEPATH;
+    extern const std::string NTP_SYNC_PENDING_FLAG_FILEPATH;
 
     extern const std::set<std::string> PROTECTED_FILES;
 

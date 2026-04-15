@@ -75,6 +75,7 @@ namespace ult {
     const std::string PACKAGES_INI_FILEPATH       = BASE_CONFIG_PATH + PACKAGES_INI_FILENAME;
     const std::string NOTIFICATIONS_FLAG_FILEPATH = FLAGS_PATH + NOTIFICATIONS_FLAG_FILENAME;
     const std::string RELOADING_FLAG_FILEPATH     = FLAGS_PATH + RELOADING_FLAG_FILENAME;
+    const std::string NTP_SYNC_PENDING_FLAG_FILEPATH = FLAGS_PATH + "NTP_SYNC_PENDING.flag";
 
     // Protected files
     const std::set<std::string> PROTECTED_FILES = {
