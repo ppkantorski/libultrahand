@@ -110,6 +110,7 @@ namespace ult {
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool useLaunchCombos;
+    extern bool useLaunchRecall;
     extern bool useNotifications;
     extern bool useNotificationsHotkey;
     extern bool useStartupNotification;
@@ -374,6 +375,7 @@ namespace ult {
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
+    extern std::string LAUNCH_RECALL;
     extern std::string NOTIFICATIONS;
     extern std::string NOTIFICATION_SETTINGS;
     extern std::string SILENCE_NOTIFICATIONS;

@@ -211,6 +211,7 @@ namespace ult {
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
+    bool useLaunchRecall = true;
     bool useNotifications = true;
     bool useNotificationsHotkey = true;
     bool useStartupNotification = true;
@@ -459,6 +460,7 @@ namespace ult {
     std::string OPTIONS;
     std::string FAILED_TO_OPEN;
     std::string LAUNCH_COMBOS;
+    std::string LAUNCH_RECALL;
     std::string NOTIFICATIONS;
     std::string NOTIFICATION_SETTINGS;
     std::string SILENCE_NOTIFICATIONS;
@@ -669,6 +671,7 @@ namespace ult {
         {&OPTIONS,                    "OPTIONS",                    "Options"},
         {&FAILED_TO_OPEN,             "FAILED_TO_OPEN",             "Failed to open file"},
         {&LAUNCH_COMBOS,              "LAUNCH_COMBOS",              "Launch Combos"},
+        {&LAUNCH_RECALL,              "LAUNCH_RECALL",              "Launch Recall"},
         {&NOTIFICATIONS,              "NOTIFICATIONS",              "Notifications"},
         {&NOTIFICATION_SETTINGS,      "NOTIFICATION_SETTINGS",      "Notification Settings"},
         {&SILENCE_NOTIFICATIONS,      "SILENCE_NOTIFICATIONS",      "Silence Notifications"},
