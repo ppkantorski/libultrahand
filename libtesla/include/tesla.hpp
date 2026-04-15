@@ -12548,6 +12548,18 @@ namespace tsl {
                                         ult::IN_OVERLAY_STR,
                                         ult::TRUE_STR
                                     );
+                                    // If this overlay is hidden, route the returning ovlmenu to
+                                    // the hidden page — set only here (combo-return path), never
+                                    // on fresh launch, so a plain exit never leaves the flag dirty.
+                                    {
+                                        const auto hideStatus = ult::parseValueFromIniSection(
+                                            ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::HIDE_STR);
+                                        if (hideStatus == ult::TRUE_STR) {
+                                            ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                                ult::ULTRAHAND_PROJECT_NAME,
+                                                ult::IN_HIDDEN_OVERLAY_STR, ult::TRUE_STR);
+                                        }
+                                    }
                                     // Build return args. When this overlay was launched in
                                     // --package mode (e.g. "ovlmenu.ovl --package My Pkg"),
                                     // the new ovlmenu process must also know which package to
@@ -12634,24 +12646,6 @@ namespace tsl {
                                     finalArgs += " --comboReturn";
                                     ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::TRUE_STR);
                                 }
-
-                                #if IS_LAUNCHER_DIRECTIVE
-                                // When a key combo launches a hidden overlay, persist
-                                // IN_HIDDEN_OVERLAY_STR so the returning ovlmenu boots into the
-                                // hidden page.  We check the overlay's hide flag in the INI
-                                // directly — NOT inHiddenMode — because the user may not have
-                                // visited the hidden page in this session yet (e.g. they used a
-                                // quick-launch combo straight from the normal page).
-                                if (overlayFileName.compare("ovlmenu.ovl") != 0) {
-                                    const auto hideStatus = ult::parseValueFromIniSection(
-                                        ult::OVERLAYS_INI_FILEPATH, overlayFileName, ult::HIDE_STR);
-                                    if (hideStatus == ult::TRUE_STR) {
-                                        ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
-                                            ult::ULTRAHAND_PROJECT_NAME,
-                                            ult::IN_HIDDEN_OVERLAY_STR, ult::TRUE_STR);
-                                    }
-                                }
-                                #endif
 
                                 tsl::setNextOverlay(overlayPath, finalArgs);
                                 fireLaunch();
