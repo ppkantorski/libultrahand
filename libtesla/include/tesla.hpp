@@ -11130,6 +11130,7 @@ namespace tsl {
             static bool notificationTouchConsumed = false;
             static constexpr u64 CLICK_THRESHOLD_NS = 340000000ULL;
             static bool hasScrolled = false;
+            static bool hadNonScrollTap = false;
             static void* lastGuiPtr = nullptr;
             static std::array<bool, 4> lastSimulatedTouch = {};
         
@@ -11245,6 +11246,7 @@ namespace tsl {
         
             if (currentGui.get() != lastGuiPtr) {
                 hasScrolled = false;
+                hadNonScrollTap = false;
                 oldTouchEvent = elm::TouchEvent::None;
                 oldTouchDetected = false;
                 oldTouchPos = { 0 };
@@ -11281,6 +11283,7 @@ namespace tsl {
                     !ult::simulatedBack.load(std::memory_order_acquire) &&
                     !ult::simulatedNextPage.load(std::memory_order_acquire) && topElement) {
                     if (oldTouchEvent == elm::TouchEvent::Scroll) hasScrolled = true;
+                    if (hadNonScrollTap) { hasScrolled = true; hadNonScrollTap = false; }
                     if (!hasScrolled) {
                         currentGui->removeFocus();
                         currentGui->requestFocus(topElement, FocusDirection::None);
@@ -11593,6 +11596,10 @@ namespace tsl {
                 }
                 ult::stillTouching.store(true, std::memory_order_release);
             } else {
+                // Detect tap-release: finger was down last frame, now lifted, not a scroll.
+                // Set flag so the focus-restore block two frames later is suppressed.
+                if (oldTouchDetected && oldTouchEvent != elm::TouchEvent::Scroll && !interpreterIsRunning)
+                    hadNonScrollTap = true;
                 for (int i = 0; i < 4; ++i) {
                     if (!lastSimulatedTouch[i]) continue;
                     if (!ult::interruptedTouch.load(std::memory_order_acquire) && !interpreterIsRunning) {
