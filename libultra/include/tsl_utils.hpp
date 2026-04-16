@@ -111,6 +111,7 @@ namespace ult {
     extern bool useSwipeToOpen;
     extern bool useLaunchCombos;
     extern bool useLaunchRecall;
+    extern bool usePageRecall;
     extern bool useNotifications;
     extern bool useNotificationsHotkey;
     extern bool useStartupNotification;
@@ -331,6 +332,8 @@ namespace ult {
     extern std::string SHOW_UNSUPPORTED;
 
     extern std::string PAGE_SWAP;
+    extern std::string PAGE_RECALL;
+    extern std::string LAUNCH_RECALL;
     extern std::string RIGHT_SIDE_MODE;
     extern std::string OVERLAY_VERSIONS;
     extern std::string PACKAGE_VERSIONS;
@@ -375,7 +378,6 @@ namespace ult {
     extern std::string FAILED_TO_OPEN;
 
     extern std::string LAUNCH_COMBOS;
-    extern std::string LAUNCH_RECALL;
     extern std::string NOTIFICATIONS;
     extern std::string NOTIFICATION_SETTINGS;
     extern std::string SILENCE_NOTIFICATIONS;

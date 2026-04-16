@@ -683,7 +683,7 @@ namespace impl {
     
         // Behavior flags — shared across all overlays
         ult::useLaunchCombos        = getBool("launch_combos",        true);
-        ult::useLaunchRecall        = getBool("launch_recall",        true);
+        //ult::useLaunchRecall        = getBool("launch_recall",        true);
         ult::useNotifications       = getBool("notifications",        true);
         ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
         ult::silenceNotifications   = getBool("silence_notifications");

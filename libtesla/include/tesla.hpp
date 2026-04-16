@@ -198,6 +198,7 @@ inline std::atomic<bool> screenshotsAreForceDisabled{false};
 inline bool hideHidden = false;
 inline bool selectIsUsingFocusedColor = true;
 inline bool bypassUnfocused = false;
+inline std::string s_lastFocusedItemText; // tracks the text of whatever focusable item is currently focused
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
@@ -7285,6 +7286,7 @@ namespace tsl {
                     m_scrollOffset = 0;
                     timeIn_ns = ult::nowNs();
                     Element::setFocused(state);
+                    if (state) s_lastFocusedItemText = m_text;
                 }
             }
         
@@ -8291,6 +8293,11 @@ namespace tsl {
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
             }
+
+            virtual void setFocused(bool focused) override {
+                Element::setFocused(focused);
+                if (focused) s_lastFocusedItemText = m_label;
+            }
             
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
                 const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
@@ -8823,6 +8830,23 @@ namespace tsl {
             void setRange(s16 minValue, s16 maxValue) {
                 m_minValue = minValue;
                 m_maxValue = maxValue;
+            }
+
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool exactMatch = true) const override {
+                if (jumpText.empty() && jumpValue.empty()) return false;
+
+                bool textMatches, valueMatches;
+                if (exactMatch) {
+                    textMatches = (m_label == jumpText);
+                    valueMatches = (m_selection == jumpValue);
+                } else {
+                    textMatches = (!jumpText.empty() && m_label.find(jumpText) != std::string::npos);
+                    valueMatches = (!jumpValue.empty() && m_selection.find(jumpValue) != std::string::npos);
+                }
+
+                if (jumpText.empty())  return valueMatches;
+                if (jumpValue.empty()) return textMatches;
+                return textMatches && valueMatches;
             }
 
         protected:
@@ -9381,6 +9405,11 @@ namespace tsl {
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) {
                 return this;
+            }
+
+            virtual void setFocused(bool focused) override {
+                Element::setFocused(focused);
+                if (focused) s_lastFocusedItemText = m_label;
             }
         
             inline void updateAndExecute(bool updateIni = true) {
@@ -9946,6 +9975,23 @@ namespace tsl {
         
             inline void disableClickAnimation() {
                 m_useClickAnimation = false;
+            }
+
+            virtual bool matchesJumpCriteria(const std::string& jumpText, const std::string& jumpValue, bool exactMatch = true) const override {
+                if (jumpText.empty() && jumpValue.empty()) return false;
+
+                bool textMatches, valueMatches;
+                if (exactMatch) {
+                    textMatches = (m_label == jumpText);
+                    valueMatches = (m_selection == jumpValue);
+                } else {
+                    textMatches = (!jumpText.empty() && m_label.find(jumpText) != std::string::npos);
+                    valueMatches = (!jumpValue.empty() && m_selection.find(jumpValue) != std::string::npos);
+                }
+
+                if (jumpText.empty())  return valueMatches;
+                if (jumpValue.empty()) return textMatches;
+                return textMatches && valueMatches;
             }
 
         protected:

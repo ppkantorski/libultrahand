@@ -212,6 +212,7 @@ namespace ult {
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
     bool useLaunchRecall = true;
+    bool usePageRecall = true;
     bool useNotifications = true;
     bool useNotificationsHotkey = true;
     bool useStartupNotification = true;
@@ -420,6 +421,7 @@ namespace ult {
     std::string SHOW_DELETE;
     std::string SHOW_UNSUPPORTED;
     std::string PAGE_SWAP;
+    std::string PAGE_RECALL;
     std::string RIGHT_SIDE_MODE;
     std::string OVERLAY_VERSIONS;
     std::string PACKAGE_VERSIONS;
@@ -631,6 +633,7 @@ namespace ult {
         {&SHOW_DELETE,                "SHOW_DELETE",                "Show Delete"},
         {&SHOW_UNSUPPORTED,           "SHOW_UNSUPPORTED",           "Show Unsupported"},
         {&PAGE_SWAP,                  "PAGE_SWAP",                  "Page Swap"},
+        {&PAGE_RECALL,                "PAGE_RECALL",                "Page Recall"},
         {&RIGHT_SIDE_MODE,            "RIGHT_SIDE_MODE",            "Right-side Mode"},
         {&OVERLAY_VERSIONS,           "OVERLAY_VERSIONS",           "Overlay Versions"},
         {&PACKAGE_VERSIONS,           "PACKAGE_VERSIONS",           "Package Versions"},
