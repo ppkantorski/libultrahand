@@ -118,6 +118,7 @@ namespace ult {
     extern bool silenceNotifications;
     extern bool useSoundEffects;
     extern bool useHapticFeedback;
+    extern bool useAutoNTPSync;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
 
@@ -392,6 +393,7 @@ namespace ult {
     extern std::string HOLD_FOR_4S;
 
     extern std::string HAPTIC_FEEDBACK;
+    extern std::string AUTO_NTP_SYNC;
     extern std::string OPAQUE_SCREENSHOTS;
 
     extern std::string PACKAGE_INFO;

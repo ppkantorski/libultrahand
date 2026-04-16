@@ -302,7 +302,8 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     // before curl touches TLS — skewed time is a common silent download killer.
     // Must run AFTER hasInternetAccess() so that connectivity is confirmed and
     // NIFM has been initialized at least once (required for DNS on Switch).
-    syncNtpIfPending();
+    if (ult::useAutoNTPSync)
+        syncNtpIfPending();
 
     std::string destination = toDestination;
     if (destination.back() == '/') {

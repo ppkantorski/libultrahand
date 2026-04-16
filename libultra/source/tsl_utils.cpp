@@ -219,6 +219,7 @@ namespace ult {
     bool silenceNotifications = false;
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
+    bool useAutoNTPSync = true;
     bool usePageSwap = false;
     bool useDynamicLogo = true;
     bool useSelectionBG = true;
@@ -477,6 +478,7 @@ namespace ult {
     std::string HOLD_FOR_4S;
 
     std::string HAPTIC_FEEDBACK;
+    std::string AUTO_NTP_SYNC;
     std::string OPAQUE_SCREENSHOTS;
     std::string PACKAGE_INFO;
     std::string _TITLE;
@@ -688,6 +690,7 @@ namespace ult {
         {&TAP,                        "TAP",                        "tap"},
         {&HOLD_FOR_4S,                "HOLD_FOR_4S",                "hold for 4s"},
         {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
+        {&AUTO_NTP_SYNC,              "AUTO_NTP_SYNC",              "Auto NTP Sync"},
         {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
         {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},
         {&_TITLE,                     "_TITLE",                     "Title"},
