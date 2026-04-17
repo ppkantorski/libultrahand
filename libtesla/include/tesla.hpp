@@ -11028,7 +11028,20 @@ namespace tsl {
         bool shouldCloseAfter() {
             return this->m_shouldCloseAfter;
         }
-        
+
+        /**
+         * @brief Whether the overlay is currently in any closing/hiding state.
+         * Used by the B-press handler to suppress the inter-GUI "exit chirp"
+         * when goBack() has actually initiated an overlay-close path
+         * (e.g., notification-active branch which calls closeAfter()+hide()
+         * without popping the Gui stack, so stack size alone is misleading).
+         *
+         * @return true if m_shouldClose, m_shouldCloseAfter, or m_shouldHide is set
+         */
+        bool isClosing() const {
+            return this->m_shouldClose || this->m_shouldCloseAfter || this->m_shouldHide;
+        }
+
 
         /**
          * @brief Quadratic ease-in-out function
@@ -11256,7 +11269,10 @@ namespace tsl {
                     if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                         if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                             this->goBack();
-                            if (this->m_guiStack.size() >= 1) triggerExitFeedback();
+                            // Suppress inter-GUI "exit chirp" if goBack() triggered an overlay-close
+                            // path (e.g., notification-active: closeAfter()+hide() without popping
+                            // the stack). The real overlay-exit feedback is handled downstream.
+                            if (this->m_guiStack.size() >= 1 && !this->isClosing()) triggerExitFeedback();
                         }
                         return;
                     }
@@ -11277,7 +11293,10 @@ namespace tsl {
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
                     if (!currentGui->handleInput(KEY_B,0,{},{},{})) {
                         this->goBack();
-                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) triggerExitFeedback();
+                        // Suppress inter-GUI "exit chirp" if goBack() triggered an overlay-close
+                        // path (e.g., notification-active: closeAfter()+hide() without popping
+                        // the stack). The real overlay-exit feedback is handled downstream.
+                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning && !this->isClosing()) triggerExitFeedback();
                     }
                     return;
                 }
