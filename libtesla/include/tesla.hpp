@@ -6458,8 +6458,12 @@ namespace tsl {
                     return oldFocus;
                 }
                 
-                // Check for wrapping (single tap only)
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence) {
+                // Check for wrapping (single tap only).
+                // Require s_directionalKeyReleased so that clicking another button while
+                // still physically holding DOWN (which causes a timing gap that clears
+                // m_isHolding) cannot trigger a spurious wrap mid-hold.
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence
+                        && s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
@@ -6545,8 +6549,12 @@ namespace tsl {
                     return oldFocus;
                 }
                 
-                // Check for wrapping (single tap only)
-                if (!m_isHolding && !m_hasWrappedInCurrentSequence) {
+                // Check for wrapping (single tap only).
+                // Require s_directionalKeyReleased so that clicking another button while
+                // still physically holding UP (which causes a timing gap that clears
+                // m_isHolding) cannot trigger a spurious wrap mid-hold.
+                if (!m_isHolding && !m_hasWrappedInCurrentSequence
+                        && s_directionalKeyReleased.load(std::memory_order_acquire)) {
                     s_directionalKeyReleased.store(false, std::memory_order_release);
                     m_hasWrappedInCurrentSequence = true;
                     m_lastNavigationResult = NavigationResult::Wrapped;
@@ -7203,7 +7211,7 @@ namespace tsl {
             }
         
             virtual bool onClick(u64 keys) override {
-                if (keys & KEY_A) [[likely]] {
+                if (keys & KEY_A && !(keys & ~KEY_A & ALL_KEYS_MASK)) [[likely]] {
                     
                     if (!isLocked) {
                         triggerRumbleClick.store(true, std::memory_order_release);
@@ -7697,7 +7705,7 @@ namespace tsl {
             using tsl::elm::ListItem::ListItem;
             virtual bool onClick(u64 keys) override {
                 // Skip all sound/rumble triggers, go straight to click listener
-                if (keys & KEY_A) {
+                if (keys & KEY_A && !(keys & ~KEY_A & ALL_KEYS_MASK)) {
                     if (m_flags.m_useClickAnimation)
                         triggerClickAnimation();
                 } else if (keys & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
@@ -7859,7 +7867,7 @@ namespace tsl {
                 #endif
 
                 // Handle KEY_A for toggling
-                if (keys & KEY_A) {
+                if (keys & KEY_A && !(keys & ~KEY_A & ALL_KEYS_MASK)) {
                     triggerRumbleClick.store(true, std::memory_order_release);
                     if (!this->m_state)
                         triggerOnSound.store(true, std::memory_order_release);
@@ -7881,7 +7889,7 @@ namespace tsl {
 
                 #if IS_LAUNCHER_DIRECTIVE
                 // Handle SCRIPT_KEY for executing script logic
-                else if (keys & SCRIPT_KEY) {
+                else if (keys & SCRIPT_KEY && !(keys & ~SCRIPT_KEY & ALL_KEYS_MASK)) {
                     // Trigger the script key listener
                     if (this->m_scriptKeyListener) {
                         this->m_scriptKeyListener(this->m_state);  // Pass the current state to the script key listener
@@ -11422,6 +11430,26 @@ namespace tsl {
                     !ult::stillTouching.load(std::memory_order_acquire) && !interpreterIsRunning) {
                     static bool shouldShake = true;
                     if (singleArrowKeyPress) {
+                        // Detect a direction key that is already held without a fresh keysDown
+                        // event — this happens when the overlay is opened via a combo that
+                        // includes a direction key (e.g. ZL+ZR+DDOWN): the key is physically
+                        // held on the first frame the overlay processes input, so
+                        // buttonPressTime_ns is stale/zero, causing durationSincePress_ns to be
+                        // enormous and singlePressHandled to become true immediately, making the
+                        // cursor zoom downward at max speed.  Resetting the timing here makes the
+                        // overlay treat it exactly like a key that was just freshly pressed,
+                        // so the normal initial-delay then hold-repeat behaviour applies.
+                        {
+                            static u64 prevHeldDir = 0;
+                            const u64 curHeldDir = keysHeld & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT);
+                            const u64 newHeldDir = curHeldDir & ~prevHeldDir;
+                            if (newHeldDir && !(keysDown & newHeldDir)) {
+                                // Key appeared in held-state without a matching press event
+                                buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
+                                singlePressHandled = false;
+                            }
+                            prevHeldDir = curHeldDir;
+                        }
                         if (keysDown) {
                             buttonPressTime_ns = lastKeyEventTime_ns = currentTime_ns;
                             singlePressHandled = false;
