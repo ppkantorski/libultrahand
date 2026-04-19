@@ -8379,8 +8379,8 @@ namespace tsl {
                 const s16 sliderMax = m_maxValue - m_minValue;
 
                 if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    signalFeedback();
+                    //triggerRumbleClick.store(true, std::memory_order_release);
+                    //signalFeedback();
 
                     m_holding = true;
                     m_wasLastHeld = false;
@@ -8999,11 +8999,11 @@ namespace tsl {
                     lastUpdate_ns = currentTime_ns;
                     
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
-                        triggerNavigationFeedback();
+                        //triggerNavigationFeedback();
                         this->m_value = std::max(this->m_value - stepSize, 0);
                         this->m_valueChangedListener(this->getProgress());
                     } else if (keysDown & KEY_RIGHT && this->m_value < maxValue) {
-                        triggerNavigationFeedback();
+                        //triggerNavigationFeedback();
                         this->m_value = std::min(this->m_value + stepSize, maxValue);
                         this->m_valueChangedListener(this->getProgress());
                     }
@@ -9565,8 +9565,8 @@ namespace tsl {
             
                     // Handle initial key press
                     if (keysDown & KEY_LEFT || keysDown & KEY_RIGHT) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        signalFeedback();
+                        //triggerRumbleClick.store(true, std::memory_order_release);
+                        //signalFeedback();
                         m_holding = true;
                         m_wasLastHeld = false;
                         m_holdStartTime_ns = ult::nowNs();
@@ -12787,6 +12787,15 @@ namespace tsl {
                     switch (idx) {
                         case WaiterObject_HomeButton:
                             eventClear(&homeButtonPressEvent);
+                            {
+                                // Write current tick so sysmodules can compare against their
+                                // own tid-change tick to detect HOME pressed during loading.
+                                FILE* f = fopen("/config/ultrahand/flags/HOME_EVENT.flag", "w");
+                                if (f) {
+                                    fprintf(f, "%016llX", (unsigned long long)svcGetSystemTick());
+                                    fclose(f);
+                                }
+                            }
                             break;
                         case WaiterObject_PowerButton:
                             eventClear(&powerButtonPressEvent);
