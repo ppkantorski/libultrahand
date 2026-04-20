@@ -411,6 +411,7 @@ namespace ult {
     std::string SOC_TEMPERATURE;
     std::string PCB_TEMPERATURE;
     std::string BACKDROP;
+    std::string BORDER;
     std::string DYNAMIC_COLORS;
     std::string CENTER_ALIGNMENT;
     std::string EXTENDED_BACKDROP;
@@ -624,6 +625,7 @@ namespace ult {
         {&SOC_TEMPERATURE,            "SOC_TEMPERATURE",            "SOC Temperature"},
         {&PCB_TEMPERATURE,            "PCB_TEMPERATURE",            "PCB Temperature"},
         {&BACKDROP,                   "BACKDROP",                   "Backdrop"},
+        {&BORDER,                     "BORDER",                     "Border"},
         {&DYNAMIC_COLORS,             "DYNAMIC_COLORS",             "Dynamic Colors"},
         {&CENTER_ALIGNMENT,           "CENTER_ALIGNMENT",           "Center Alignment"},
         {&EXTENDED_BACKDROP,          "EXTENDED_BACKDROP",          "Extended Backdrop"},
@@ -1171,7 +1173,7 @@ namespace ult {
     
     // Widget settings
     bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
-    bool hideWidgetBackdrop, centerWidgetAlignment, extendedWidgetBackdrop;
+    bool hideWidgetBackdrop, hideWidgetBorder, centerWidgetAlignment, extendedWidgetBackdrop;
 
     // Shared helper: single hash lookup instead of count() + at()
     static bool getBoolFromSection(const std::map<std::string, std::string>& section,
@@ -1191,6 +1193,7 @@ namespace ult {
         hidePCBTemp           = getBoolFromSection(ultrahandSection, "hide_pcb_temp",            true);
         dynamicWidgetColors   = getBoolFromSection(ultrahandSection, "dynamic_widget_colors",    true);
         hideWidgetBackdrop    = getBoolFromSection(ultrahandSection, "hide_widget_backdrop",     false);
+        hideWidgetBorder      = getBoolFromSection(ultrahandSection, "hide_widget_border",       false);
         centerWidgetAlignment = getBoolFromSection(ultrahandSection, "center_widget_alignment",  true);
         extendedWidgetBackdrop= getBoolFromSection(ultrahandSection, "extended_widget_backdrop", false);
     }

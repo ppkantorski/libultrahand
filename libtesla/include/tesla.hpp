@@ -465,6 +465,7 @@ namespace tsl {
     extern Color batteryLowColor;
     extern size_t widgetBackdropAlpha;
     extern Color widgetBackdropColor;
+    extern Color widgetBorderColor;
 
     extern Color overlayTextColor;
     extern Color ultOverlayTextColor;
@@ -2257,6 +2258,138 @@ namespace tsl {
                 }
             }
 
+            // Draws only the border ring of a uniform pill (radius = h/2), thickness T px.
+            // Single-pass: each pixel is tested once against both the outer arc (radius R)
+            // and the inner arc (radius R-T).  The fill interior is never touched.
+            // AA uses the same 4-sample box approximation as drawUniformRoundedRect,
+            // applied to both edges so the ring fades cleanly in and out.
+            inline void drawUniformRoundedRectBorder(const s32 x, const s32 y,
+                                                      const s32 w, const s32 h,
+                                                      const s32 T, const Color& color) {
+                const s32 R  = h >> 1;
+                const s32 Ri = R - T;
+                if (T <= 0 || Ri < 0 || w <= 0 || h <= 0) return;
+
+                s32 clip_left   = std::max(0, x);
+                s32 clip_top    = std::max(0, y);
+                s32 clip_right  = std::min(static_cast<s32>(cfg::FramebufferWidth),  x + w);
+                s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), y + h);
+
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                    clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
+                    clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
+                    clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
+                    clip_bottom = std::min(clip_bottom, static_cast<s32>(sc.y_max));
+                }
+                if (clip_left >= clip_right || clip_top >= clip_bottom) return;
+
+                const s32   x_end          = x + w;
+                const s32   corner_x_left  = x + R;
+                const s32   corner_x_right = x_end - R - 1;
+                const s32   corner_y_top   = y + R;
+                const s32   corner_y_bot   = y + h - R - 1;
+                const float r_f            = static_cast<float>(R);
+                const float ri_f           = static_cast<float>(Ri);
+                const float r2             = r_f  * r_f;
+                const float ri2            = ri_f * ri_f;
+                const u8    base_a         = color.a;
+
+                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+
+                for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                    const u32  rowBase    = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                    const bool in_corners = (yc < corner_y_top) || (yc > corner_y_bot);
+
+                    if (!in_corners) {
+                        // Flat middle row — draw left-T and right-T strips only.
+                        const s32 ls = std::max(x,       clip_left);
+                        const s32 le = std::min(x + T,   clip_right);
+                        if (ls < le) fillRowSpanNEON(fb16, rowBase, ls, le, color);
+
+                        const s32 rs = std::max(x_end - T, std::max(clip_left, le));
+                        const s32 re = std::min(x_end,     clip_right);
+                        if (rs < re) fillRowSpanNEON(fb16, rowBase, rs, re, color);
+                        continue;
+                    }
+
+                    // Corner row — dy is distance from the nearest arc-centre row.
+                    const float dy    = (yc < corner_y_top) ? float(corner_y_top - yc)
+                                                             : float(yc - corner_y_bot);
+                    const float dy_sq = dy * dy;
+                    // Squared-distance early-reject: (R+0.5)² = r2 + r_f + 0.25
+                    if (dy_sq >= r2 + r_f + 0.25f) continue;
+
+                    const s32 span_start = std::max(x,     clip_left);
+                    const s32 span_end   = std::min(x_end, clip_right);
+
+                    // Per-pixel blender with smooth analytical AA on both edges.
+                    //
+                    // outer_t: linear ramp, 0 → 1 over the 1-px band just inside R.
+                    // inner_t: linear ramp, 1 → 0 over the 1-px band just outside Ri.
+                    // Both clamp to [0,1] so solid ring pixels get exactly base_a.
+                    //
+                    // sqrtf is called only for pixels that survive the squared-distance
+                    // pre-rejects — typically 2-4 pixels per arc row, never the flat middle.
+                    auto arcBorderPixel = [&](s32 xc_, float dx) __attribute__((always_inline)) {
+                        const float d2 = dx * dx + dy_sq;
+
+                        // Outer pre-reject  (R+0.5)²
+                        if (d2 >= r2 + r_f + 0.25f) return;
+                        // Inner pre-reject  (Ri-0.5)²  — pixel fully inside the fill
+                        if (d2 <= ri2 - ri_f + 0.25f) return;
+
+                        const float d       = sqrtf(d2);
+                        const float outer_t = std::min(1.0f, r_f  + 0.5f - d);         // 0 outside → 1 inside outer edge
+                        const float inner_t = std::min(1.0f, d    - ri_f + 0.5f);      // 0 inside  → 1 outside inner edge
+                        const float combined = outer_t * inner_t;
+                        if (combined <= 0.0f) return;
+
+                        const u32 off   = blockLinearOffset(static_cast<u32>(xc_), rowBase);
+                        const u8  alpha = static_cast<u8>(base_a * combined + 0.5f);
+                        if (alpha > 0u)
+                            blendPixelDirect(fb16, off, color, alpha);
+                    };
+
+                    s32 xc = span_start;
+
+                    // Left arc
+                    const s32 left_end = std::min(corner_x_left + 1, span_end);
+                    for (; xc < left_end; ++xc)
+                        arcBorderPixel(xc, float(corner_x_left - xc));
+
+                    // Middle of this corner row.
+                    // Both ramps mirror arcBorderPixel exactly (evaluated at dx=0):
+                    //   outer_mid_t: fades the outer edge (top/bottom of the pill) over 1 px.
+                    //   inner_mid_t: fades the inner edge (bottom of the ring cap) over 1 px.
+                    // Multiplied together they give identical coverage to arcBorderPixel at the
+                    // left/right arc boundaries, so all four edges are perfectly continuous.
+                    const s32   mid_end     = std::min(corner_x_right, span_end);
+                    const float outer_mid_t = std::min(1.0f, r_f  + 0.5f - dy);  // outer edge fade
+                    const float inner_mid_t = std::min(1.0f, dy   - ri_f + 0.5f); // inner edge fade
+                    const float combined_mid = outer_mid_t * inner_mid_t;
+                    if (combined_mid > 0.0f && xc < mid_end) {
+                        if (combined_mid >= 1.0f) {
+                            // Solid — fast NEON path for the fully-opaque interior rows.
+                            fillRowSpanNEON(fb16, rowBase, xc, mid_end, color);
+                        } else {
+                            // Transition row (outer OR inner edge, or both): per-pixel blend.
+                            // Fires for at most ~2 rows total (1 outer + 1 inner), no overhead.
+                            const u8 mid_alpha = static_cast<u8>(base_a * combined_mid + 0.5f);
+                            for (s32 xi = xc; xi < mid_end; ++xi) {
+                                const u32 off = blockLinearOffset(static_cast<u32>(xi), rowBase);
+                                blendPixelDirect(fb16, off, color, mid_alpha);
+                            }
+                        }
+                    }
+                    xc = mid_end;
+
+                    // Right arc
+                    for (; xc < span_end; ++xc)
+                        arcBorderPixel(xc, float(xc - corner_x_right));
+                }
+            }
+
             ALWAYS_INLINE static u32 blockLinearYPart(u32 y, u32 owv) noexcept {
                 return ((((y & 127u) >> 4u) + ((y >> 7u) * owv)) << 9u)
                      + ((y & 8u) << 5u) + ((y & 6u) << 4u) + ((y & 1u) << 3u);
@@ -3163,12 +3296,31 @@ namespace tsl {
                 if (showAnyWidget) {
                     drawRect(239, 15 + 2 - 2, 1, 64 + 2, aWithOpacity(topSeparatorColor));
                     if (!ult::hideWidgetBackdrop) {
-                        drawUniformRoundedRect(
+                        if (!ult::hideWidgetBorder) {
+                            drawUniformRoundedRect(
+                                247+1, 15 + 2 - 2+1,
+                                (ult::extendedWidgetBackdrop
+                                    ? tsl::cfg::FramebufferWidth - 255
+                                    : tsl::cfg::FramebufferWidth - 215)-2,
+                                64 + 2-2, a(widgetBackdropColor)
+                            );
+                        } else {
+                            drawUniformRoundedRect(
+                                247, 15 + 2 - 2,
+                                (ult::extendedWidgetBackdrop
+                                    ? tsl::cfg::FramebufferWidth - 255
+                                    : tsl::cfg::FramebufferWidth - 215),
+                                64 + 2, a(widgetBackdropColor)
+                            );
+                        }
+                    }
+                    if (!ult::hideWidgetBorder) {
+                        drawUniformRoundedRectBorder(
                             247, 15 + 2 - 2,
                             (ult::extendedWidgetBackdrop
                                 ? tsl::cfg::FramebufferWidth - 255
                                 : tsl::cfg::FramebufferWidth - 215),
-                            64 + 2, a(widgetBackdropColor)
+                            64 + 2, 3, a(widgetBorderColor)
                         );
                     }
                 }

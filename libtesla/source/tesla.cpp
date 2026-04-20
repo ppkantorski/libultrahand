@@ -126,6 +126,7 @@ Color batteryChargingColor;
 Color batteryLowColor;
 size_t widgetBackdropAlpha = 0;
 Color widgetBackdropColor;
+Color widgetBorderColor;
 
 Color overlayTextColor;
 Color ultOverlayTextColor;
@@ -275,6 +276,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"warning_text_color",              "FF7777"},
     {"widget_backdrop_alpha",           "15"},
     {"widget_backdrop_color",           "000000"},
+    {"widget_border_color",             "FFFFFF"}
 };
 const size_t defaultThemeSettingsCount = sizeof(defaultThemeSettings) / sizeof(defaultThemeSettings[0]);
 
@@ -358,6 +360,7 @@ void initializeThemeVars() {
     batteryLowColor              = getColor("battery_low_color");
     widgetBackdropAlpha          = getAlpha("widget_backdrop_alpha");
     widgetBackdropColor          = getColor("widget_backdrop_color", widgetBackdropAlpha);
+    widgetBorderColor            = getColor("widget_border_color");
     overlayTextColor             = getColor("overlay_text_color");
     ultOverlayTextColor          = getColor("ult_overlay_text_color");
     packageTextColor             = getColor("package_text_color");
