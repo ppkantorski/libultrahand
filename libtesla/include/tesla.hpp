@@ -13114,24 +13114,40 @@ namespace tsl {
                 if (reloadSoundCacheNow.exchange(false, std::memory_order_acq_rel))
                     ult::Audio::reloadAllSounds();
 
-                if (triggerNavigationSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playNavigateSound();
-                else if (triggerEnterSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playEnterSound();
-                else if (triggerExitSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playExitSound();
-                else if (triggerWallSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playWallSound();
-                else if (triggerOnSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playOnSound();
-                else if (triggerOffSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playOffSound();
-                else if (triggerSettingsSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playSettingsSound();
-                else if (triggerMoveSound.exchange(false, std::memory_order_acq_rel))
-                    ult::Audio::playMoveSound();
-                else if (triggerNotificationSound.exchange(false, std::memory_order_acq_rel) && !ult::silenceNotifications)
-                    ult::Audio::playNotificationSound();
+                // ── General priority-based sound dispatch ──────────────────────────
+                // All pending flags are read unconditionally and collected into a
+                // two-slot array in strict priority order. The top two are then
+                // mixed into a single DMA submission via playTwoSounds(), so any
+                // two concurrent sounds are heard — not just nav + one priority.
+                //
+                // Priority (high → low): Enter > Exit > On > Off > Wall > Settings
+                //   > Move > Notification > Navigate
+                //
+                // A third simultaneous sound (extremely rare) is dropped for this
+                // wakeup — three overlapping short UI ticks are imperceptible anyway.
+
+                ult::Audio::SoundType pending[2];
+                int pendingCount = 0;
+
+                auto collect = [&](std::atomic<bool>& flag,
+                                   ult::Audio::SoundType type,
+                                   bool condition = true) {
+                    if (flag.exchange(false, std::memory_order_acq_rel) && condition)
+                        if (pendingCount < 2) pending[pendingCount++] = type;
+                };
+
+                collect(triggerEnterSound,        ult::Audio::SoundType::Enter);
+                collect(triggerExitSound,         ult::Audio::SoundType::Exit);
+                collect(triggerOnSound,           ult::Audio::SoundType::On);
+                collect(triggerOffSound,          ult::Audio::SoundType::Off);
+                collect(triggerWallSound,         ult::Audio::SoundType::Wall);
+                collect(triggerSettingsSound,     ult::Audio::SoundType::Settings);
+                collect(triggerMoveSound,         ult::Audio::SoundType::Move);
+                collect(triggerNotificationSound, ult::Audio::SoundType::Notification, !ult::silenceNotifications);
+                collect(triggerNavigationSound,   ult::Audio::SoundType::Navigate);
+
+                if      (pendingCount == 2) ult::Audio::playTwoSounds(pending[0], pending[1]);
+                else if (pendingCount == 1) ult::Audio::playSound(pending[0]);
             }
         }
     }

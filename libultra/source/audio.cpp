@@ -160,88 +160,133 @@ namespace ult {
         }
     }
 
-    // ── renderToPlayBuf ───────────────────────────────────────────────────────
-    // Writes rawBuf → m_playBuf: resample to 48 kHz (linear interp if needed),
-    // expand mono → L+R, apply current volume and dock attenuation.
-    // Returns actual output byte count written, or 0 on error.
+    // ── blendSound ────────────────────────────────────────────────────────────
+    // Unified render kernel: resamples s to 48 kHz (linear interp if needed),
+    // expands mono → stereo, applies vol (0–256 fixed-point).
+    //
+    // mixMode=false : always writes directly to dst[i*2 / i*2+1].
+    // mixMode=true  : saturating-adds for frame i < primFrames (overlap region),
+    //                 writes directly for i >= primFrames (primary zero-filled there).
+    //
+    // Returns stereo output byte count (outPerChan * 2 * sizeof(s16)).
     // Must be called under m_audioMutex.
-    uint32_t Audio::renderToPlayBuf(const CachedSound& s) {
-        if (!s.rawBuf || s.rawSize == 0 || !m_playBuf) return 0;
+    uint32_t Audio::blendSound(const CachedSound& s, s16* dst, int32_t vol,
+                               uint32_t primFrames, bool mixMode) {
+        if (!s.rawBuf || s.rawSize == 0) return 0;
 
         const uint32_t srcSamples = s.rawSize / sizeof(s16);
         const uint32_t srcPerChan = s.isMono ? srcSamples : srcSamples / 2;
-
         const uint32_t outPerChan = (s.sampleRate == TARGET_RATE || s.sampleRate == 0)
             ? srcPerChan
             : static_cast<uint32_t>(
                 ((uint64_t)srcPerChan * TARGET_RATE + s.sampleRate - 1) / s.sampleRate);
 
-        const uint32_t stereoBytes = outPerChan * 2 * sizeof(s16);
-        const uint32_t needed      = (stereoBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        const s16*     src          = static_cast<const s16*>(s.rawBuf);
+        const bool     needsResample = (s.sampleRate != TARGET_RATE && s.sampleRate != 0);
+        const uint64_t step          = needsResample
+            ? (((uint64_t)s.sampleRate << 16) / TARGET_RATE)
+            : 0;
+        uint64_t srcFixed = 0;
 
-        if (needed > m_playBufCap) return 0;  // shouldn't happen after growPlayBuf()
+        for (uint32_t i = 0; i < outPerChan; ++i) {
+            int32_t l, r;
 
-        // Effective volume: master * 0.5 when docked (TV speaker protection).
-        // Fixed-point: 0–256 where 256 == 1.0.
-        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
-        if (m_lastDockedState) vol >>= 1;
-
-        const s16* src = static_cast<const s16*>(s.rawBuf);
-        s16*       dst = static_cast<s16*>(m_playBuf);
-
-        const bool needsResample = (s.sampleRate != TARGET_RATE && s.sampleRate != 0);
-
-        if (!needsResample) {
-            // ── Fast path: native 48 kHz — no resampling ─────────────────────
-            if (s.isMono) {
-                for (uint32_t i = 0; i < srcSamples; ++i) {
-                    const s16 v = static_cast<s16>((static_cast<int32_t>(src[i]) * vol) >> 8);
-                    *dst++ = v;  // L
-                    *dst++ = v;  // R
+            if (needsResample) {
+                const uint32_t i0   = static_cast<uint32_t>(srcFixed >> 16);
+                const uint32_t i1   = (i0 + 1 < srcPerChan) ? i0 + 1 : i0;
+                const int32_t  frac = static_cast<int32_t>(srcFixed & 0xFFFF);
+                if (s.isMono) {
+                    const int32_t s0 = src[i0], s1 = src[i1];
+                    l = r = ((s0 + (((s1 - s0) * frac) >> 16)) * vol) >> 8;
+                } else {
+                    const int32_t l0 = src[i0*2],     l1 = src[i1*2];
+                    const int32_t r0 = src[i0*2 + 1], r1 = src[i1*2 + 1];
+                    l = ((l0 + (((l1 - l0) * frac) >> 16)) * vol) >> 8;
+                    r = ((r0 + (((r1 - r0) * frac) >> 16)) * vol) >> 8;
                 }
+                srcFixed += step;
             } else {
-                for (uint32_t i = 0; i < srcSamples; ++i)
-                    *dst++ = static_cast<s16>((static_cast<int32_t>(src[i]) * vol) >> 8);
+                if (s.isMono) {
+                    l = r = (static_cast<int32_t>(src[i]) * vol) >> 8;
+                } else {
+                    l = (static_cast<int32_t>(src[i*2])     * vol) >> 8;
+                    r = (static_cast<int32_t>(src[i*2 + 1]) * vol) >> 8;
+                }
             }
-        } else {
-            // ── Resample path: linear interpolation to 48 kHz ────────────────
-            // step is source frames per output frame in 16.16 fixed-point.
-            // For all rates ≤ 48 kHz this is < 1.0 (upsampling).
-            const uint64_t step = ((uint64_t)s.sampleRate << 16) / TARGET_RATE;
-            uint64_t srcFixed = 0;
 
-            if (s.isMono) {
-                for (uint32_t i = 0; i < outPerChan; ++i) {
-                    const uint32_t i0   = static_cast<uint32_t>(srcFixed >> 16);
-                    const uint32_t i1   = (i0 + 1 < srcPerChan) ? i0 + 1 : i0;
-                    const int32_t  frac = static_cast<int32_t>(srcFixed & 0xFFFF);
-                    const int32_t  s0   = src[i0], s1 = src[i1];
-                    const s16 v = static_cast<s16>(
-                        ((s0 + (((s1 - s0) * frac) >> 16)) * vol) >> 8);
-                    *dst++ = v;  // L
-                    *dst++ = v;  // R
-                    srcFixed += step;
-                }
+            if (mixMode && i < primFrames) {
+                dst[i*2]     = static_cast<s16>(std::clamp<int32_t>(dst[i*2]     + l, INT16_MIN, INT16_MAX));
+                dst[i*2 + 1] = static_cast<s16>(std::clamp<int32_t>(dst[i*2 + 1] + r, INT16_MIN, INT16_MAX));
             } else {
-                // Stereo interleaved: index [frame*2+0] = L, [frame*2+1] = R
-                for (uint32_t i = 0; i < outPerChan; ++i) {
-                    const uint32_t i0   = static_cast<uint32_t>(srcFixed >> 16);
-                    const uint32_t i1   = (i0 + 1 < srcPerChan) ? i0 + 1 : i0;
-                    const int32_t  frac = static_cast<int32_t>(srcFixed & 0xFFFF);
-                    const int32_t  l0 = src[i0*2],     l1 = src[i1*2];
-                    const int32_t  r0 = src[i0*2 + 1], r1 = src[i1*2 + 1];
-                    *dst++ = static_cast<s16>(((l0 + (((l1-l0)*frac)>>16)) * vol) >> 8);
-                    *dst++ = static_cast<s16>(((r0 + (((r1-r0)*frac)>>16)) * vol) >> 8);
-                    srcFixed += step;
-                }
+                dst[i*2]     = static_cast<s16>(l);
+                dst[i*2 + 1] = static_cast<s16>(r);
             }
         }
 
-        // Zero-fill alignment padding
+        return outPerChan * 2u * sizeof(s16);
+    }
+
+    // ── renderToPlayBuf ───────────────────────────────────────────────────────
+    // Validates size, guards against overflow, delegates to blendSound (write mode),
+    // then zero-fills alignment padding. Must be called under m_audioMutex.
+    uint32_t Audio::renderToPlayBuf(const CachedSound& s) {
+        if (!s.rawBuf || s.rawSize == 0 || !m_playBuf) return 0;
+
+        const uint32_t srcSamples = s.rawSize / sizeof(s16);
+        const uint32_t srcPerChan = s.isMono ? srcSamples : srcSamples / 2;
+        const uint32_t outPerChan = (s.sampleRate == TARGET_RATE || s.sampleRate == 0)
+            ? srcPerChan
+            : static_cast<uint32_t>(
+                ((uint64_t)srcPerChan * TARGET_RATE + s.sampleRate - 1) / s.sampleRate);
+
+        const uint32_t stereoBytes = outPerChan * 2u * sizeof(s16);
+        const uint32_t needed      = (stereoBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        if (needed > m_playBufCap) return 0;
+
+        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
+        if (m_lastDockedState) vol >>= 1;
+
+        blendSound(s, static_cast<s16*>(m_playBuf), vol, 0, false);
+
         if (stereoBytes < needed)
             memset(static_cast<u8*>(m_playBuf) + stereoBytes, 0, needed - stereoBytes);
 
         return stereoBytes;
+    }
+
+    // ── renderMixedToPlayBuf ──────────────────────────────────────────────────
+    // Renders `a` (primary) into m_playBuf, then mixes `b` (secondary) via
+    // blendSound in mix mode. Output = max(primary, secondary) bytes.
+    // Always fits in m_playBufCap since max(x,y) <= largest single sound.
+    // Must be called under m_audioMutex.
+    uint32_t Audio::renderMixedToPlayBuf(const CachedSound& a, const CachedSound& b) {
+        const uint32_t primaryBytes = renderToPlayBuf(a);
+        if (!b.rawBuf || b.rawSize == 0) return primaryBytes;
+        if (primaryBytes == 0)           return renderToPlayBuf(b);
+
+        // Compute secondary output size for the overflow guard.
+        const uint32_t srcSamples     = b.rawSize / sizeof(s16);
+        const uint32_t srcPerChan     = b.isMono ? srcSamples : srcSamples / 2;
+        const uint32_t outPerChan     = (b.sampleRate == TARGET_RATE || b.sampleRate == 0)
+            ? srcPerChan
+            : static_cast<uint32_t>(
+                ((uint64_t)srcPerChan * TARGET_RATE + b.sampleRate - 1) / b.sampleRate);
+        const uint32_t secondaryBytes = outPerChan * 2u * sizeof(s16);
+        if (secondaryBytes > m_playBufCap) return primaryBytes;
+
+        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
+        if (m_lastDockedState) vol >>= 1;
+
+        const uint32_t primFrames = primaryBytes / (2u * sizeof(s16));
+        blendSound(b, static_cast<s16*>(m_playBuf), vol, primFrames, true);
+
+        // Zero-fill alignment padding after whichever output is longer.
+        const uint32_t totalBytes = std::max(primaryBytes, secondaryBytes);
+        const uint32_t needed     = (totalBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        if (totalBytes < needed)
+            memset(static_cast<u8*>(m_playBuf) + totalBytes, 0, needed - totalBytes);
+
+        return totalBytes;
     }
 
     // ── loadSoundFromWav ──────────────────────────────────────────────────────
@@ -354,41 +399,63 @@ namespace ult {
         return (m_playBuf != nullptr);
     }
 
-    // ── playSound ─────────────────────────────────────────────────────────────
-    // Drains the audout queue, renders the sound into the shared play buffer,
-    // then submits. Volume and dock attenuation are applied live inside render.
-    void Audio::playSound(SoundType type) {
-        if (!m_enabled.load(std::memory_order_relaxed)) return;
+    // ── submitPlayBuf ─────────────────────────────────────────────────────────
+    // Fills m_audoutBuf from m_playBuf and submits to audout.
+    // Must be called under m_audioMutex after a successful render.
+    void Audio::submitPlayBuf(uint32_t outBytes) {
+        const uint32_t bufCap   = (outBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        m_audoutBuf             = {};
+        m_audoutBuf.buffer      = m_playBuf;
+        m_audoutBuf.buffer_size = bufCap;
+        m_audoutBuf.data_size   = outBytes;
+        m_audoutBuf.data_offset = 0;
+        m_audoutBuf.next        = nullptr;
+        AudioOutBuffer* rel     = nullptr;
+        audoutPlayBuffer(&m_audoutBuf, &rel);
+    }
 
-        const uint32_t idx = static_cast<uint32_t>(type);
-        if (idx >= static_cast<uint32_t>(SoundType::Count)) return;
-
+    // ── playSoundImpl ─────────────────────────────────────────────────────────
+    // Shared body for playSound / playTwoSounds.
+    // idxB == Count is the "no secondary" sentinel (single-sound path).
+    void Audio::playSoundImpl(uint32_t idxA, uint32_t idxB) {
         std::lock_guard<std::mutex> lock(m_audioMutex);
         if (!m_initialized || !m_playBuf) return;
 
-        const CachedSound& s = m_cachedSounds[idx];
-        if (!s.rawBuf) return;  // sound file not loaded
+        const uint32_t    kCount = static_cast<uint32_t>(SoundType::Count);
+        const bool        hasB   = (idxB < kCount);
+        const CachedSound& a     = m_cachedSounds[idxA];
+        const CachedSound* bPtr  = hasB ? &m_cachedSounds[idxB] : nullptr;
+        if (!a.rawBuf && (!bPtr || !bPtr->rawBuf)) return;
 
-        // Drain finished buffers so audout's queue stays healthy and so we know
-        // the shared buffer is no longer in use by a previous submission.
         AudioOutBuffer* released = nullptr;
-        u32 releasedCount = 0;
+        u32 releasedCount        = 0;
         audoutGetReleasedAudioOutBuffer(&released, &releasedCount);
 
-        const uint32_t outBytes = renderToPlayBuf(s);
-        if (outBytes == 0) return;
+        const uint32_t outBytes =
+            (!a.rawBuf)                ? renderToPlayBuf(*bPtr)
+            : (!bPtr || !bPtr->rawBuf) ? renderToPlayBuf(a)
+            :                            renderMixedToPlayBuf(a, *bPtr);
 
-        const uint32_t bufCap = (outBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        if (outBytes) submitPlayBuf(outBytes);
+    }
 
-        m_audoutBuf              = {};
-        m_audoutBuf.buffer       = m_playBuf;
-        m_audoutBuf.buffer_size  = bufCap;
-        m_audoutBuf.data_size    = outBytes;
-        m_audoutBuf.data_offset  = 0;
-        m_audoutBuf.next         = nullptr;
+    // ── playSound ─────────────────────────────────────────────────────────────
+    void Audio::playSound(SoundType type) {
+        if (!m_enabled.load(std::memory_order_relaxed)) return;
+        const uint32_t idx = static_cast<uint32_t>(type);
+        if (idx >= static_cast<uint32_t>(SoundType::Count)) return;
+        playSoundImpl(idx, static_cast<uint32_t>(SoundType::Count));
+    }
 
-        AudioOutBuffer* rel = nullptr;
-        audoutPlayBuffer(&m_audoutBuf, &rel);
+    // ── playTwoSounds ─────────────────────────────────────────────────────────
+    // Mixes two sounds into the single shared DMA buffer and submits once.
+    void Audio::playTwoSounds(SoundType primary, SoundType secondary) {
+        if (!m_enabled.load(std::memory_order_relaxed)) return;
+        const uint32_t idxA = static_cast<uint32_t>(primary);
+        const uint32_t idxB = static_cast<uint32_t>(secondary);
+        if (idxA >= static_cast<uint32_t>(SoundType::Count) ||
+            idxB >= static_cast<uint32_t>(SoundType::Count)) return;
+        playSoundImpl(idxA, idxB);
     }
 
     // ── Volume / enable accessors ─────────────────────────────────────────────
