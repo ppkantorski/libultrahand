@@ -710,6 +710,7 @@ namespace impl {
         ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
         ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
         ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
+        ult::hideWidgetBorder       = getBool("hide_widget_border");
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
         ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
         ult::useDynamicLogo         = getBool("dynamic_logo",            true);
