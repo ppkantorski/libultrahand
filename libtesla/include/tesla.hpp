@@ -3404,6 +3404,10 @@ namespace tsl {
                     const float pcbTemp = ult::PCB_temperature.load(std::memory_order_acquire);
                     const uint32_t batteryCharge = ult::batteryCharge.load(std::memory_order_acquire);
                     const bool charging = ult::isCharging.load(std::memory_order_acquire);
+
+                    // "100%" is one digit wider than other values, so tighten the
+                    // gap before it by 1 px to keep visual spacing consistent.
+                    const int batteryGap = (batteryCharge == 100) ? 4 : 5;
                     
                     if (!ult::hideSOCTemp && socTemp > 0.0f) {
                         socWidth = getTextDimensions(SOC_temperatureStr, false, 20).first;
@@ -3418,7 +3422,7 @@ namespace tsl {
                     }
                     if (!ult::hideBattery && batteryCharge > 0) {
                         chargeWidth = getTextDimensions(chargeString, false, 20).first;
-                        if (hasMultiple) totalWidth += 5;
+                        if (hasMultiple) totalWidth += batteryGap;
                         totalWidth += chargeWidth;
                     }
                     
@@ -3430,7 +3434,7 @@ namespace tsl {
                                 ? tsl::GradientColor(socTemp)
                                 : temperatureColor
                         );
-                        currentX += socWidth + 5;
+                        currentX += socWidth + (pcbWidth > 0 ? 5 : batteryGap);
                     }
                     if (pcbWidth > 0) {
                         drawString(
@@ -3439,7 +3443,7 @@ namespace tsl {
                                 ? tsl::GradientColor(pcbTemp)
                                 : temperatureColor
                         );
-                        currentX += pcbWidth + 5;
+                        currentX += pcbWidth + batteryGap;
                     }
                     if (chargeWidth > 0) {
                         const Color batteryColorToUse = charging
