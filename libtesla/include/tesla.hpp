@@ -13115,25 +13115,25 @@ namespace tsl {
                     ult::Audio::reloadAllSounds();
 
                 // ── General priority-based sound dispatch ──────────────────────────
-                // All pending flags are read unconditionally and collected into a
-                // two-slot array in strict priority order. The top two are then
-                // mixed into a single DMA submission via playTwoSounds(), so any
-                // two concurrent sounds are heard — not just nav + one priority.
+                // All pending flags are read unconditionally and collected into an
+                // 8-slot array in strict priority order. All concurrent sounds are
+                // mixed into a single DMA submission via playSounds() — no sound is
+                // ever dropped because something else fired in the same wakeup.
                 //
                 // Priority (high → low): Enter > Exit > On > Off > Wall > Settings
                 //   > Move > Notification > Navigate
                 //
-                // A third simultaneous sound (extremely rare) is dropped for this
-                // wakeup — three overlapping short UI ticks are imperceptible anyway.
+                // 9+ simultaneous UI events (impossible in practice) would drop
+                // the lowest-priority extras for that wakeup — inaudible in any case.
 
-                ult::Audio::SoundType pending[2];
+                ult::Audio::SoundType pending[8];
                 int pendingCount = 0;
 
                 auto collect = [&](std::atomic<bool>& flag,
                                    ult::Audio::SoundType type,
                                    bool condition = true) {
                     if (flag.exchange(false, std::memory_order_acq_rel) && condition)
-                        if (pendingCount < 2) pending[pendingCount++] = type;
+                        if (pendingCount < 8) pending[pendingCount++] = type;
                 };
 
                 collect(triggerEnterSound,        ult::Audio::SoundType::Enter);
@@ -13146,8 +13146,8 @@ namespace tsl {
                 collect(triggerNotificationSound, ult::Audio::SoundType::Notification, !ult::silenceNotifications);
                 collect(triggerNavigationSound,   ult::Audio::SoundType::Navigate);
 
-                if      (pendingCount == 2) ult::Audio::playTwoSounds(pending[0], pending[1]);
-                else if (pendingCount == 1) ult::Audio::playSound(pending[0]);
+                if (pendingCount == 1) ult::Audio::playSound(pending[0]);
+                else if (pendingCount > 1) ult::Audio::playSounds(pending, static_cast<uint32_t>(pendingCount));
             }
         }
     }

@@ -226,69 +226,6 @@ namespace ult {
         return outPerChan * 2u * sizeof(s16);
     }
 
-    // ── renderToPlayBuf ───────────────────────────────────────────────────────
-    // Validates size, guards against overflow, delegates to blendSound (write mode),
-    // then zero-fills alignment padding. Must be called under m_audioMutex.
-    uint32_t Audio::renderToPlayBuf(const CachedSound& s) {
-        if (!s.rawBuf || s.rawSize == 0 || !m_playBuf) return 0;
-
-        const uint32_t srcSamples = s.rawSize / sizeof(s16);
-        const uint32_t srcPerChan = s.isMono ? srcSamples : srcSamples / 2;
-        const uint32_t outPerChan = (s.sampleRate == TARGET_RATE || s.sampleRate == 0)
-            ? srcPerChan
-            : static_cast<uint32_t>(
-                ((uint64_t)srcPerChan * TARGET_RATE + s.sampleRate - 1) / s.sampleRate);
-
-        const uint32_t stereoBytes = outPerChan * 2u * sizeof(s16);
-        const uint32_t needed      = (stereoBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
-        if (needed > m_playBufCap) return 0;
-
-        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
-        if (m_lastDockedState) vol >>= 1;
-
-        blendSound(s, static_cast<s16*>(m_playBuf), vol, 0, false);
-
-        if (stereoBytes < needed)
-            memset(static_cast<u8*>(m_playBuf) + stereoBytes, 0, needed - stereoBytes);
-
-        return stereoBytes;
-    }
-
-    // ── renderMixedToPlayBuf ──────────────────────────────────────────────────
-    // Renders `a` (primary) into m_playBuf, then mixes `b` (secondary) via
-    // blendSound in mix mode. Output = max(primary, secondary) bytes.
-    // Always fits in m_playBufCap since max(x,y) <= largest single sound.
-    // Must be called under m_audioMutex.
-    uint32_t Audio::renderMixedToPlayBuf(const CachedSound& a, const CachedSound& b) {
-        const uint32_t primaryBytes = renderToPlayBuf(a);
-        if (!b.rawBuf || b.rawSize == 0) return primaryBytes;
-        if (primaryBytes == 0)           return renderToPlayBuf(b);
-
-        // Compute secondary output size for the overflow guard.
-        const uint32_t srcSamples     = b.rawSize / sizeof(s16);
-        const uint32_t srcPerChan     = b.isMono ? srcSamples : srcSamples / 2;
-        const uint32_t outPerChan     = (b.sampleRate == TARGET_RATE || b.sampleRate == 0)
-            ? srcPerChan
-            : static_cast<uint32_t>(
-                ((uint64_t)srcPerChan * TARGET_RATE + b.sampleRate - 1) / b.sampleRate);
-        const uint32_t secondaryBytes = outPerChan * 2u * sizeof(s16);
-        if (secondaryBytes > m_playBufCap) return primaryBytes;
-
-        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
-        if (m_lastDockedState) vol >>= 1;
-
-        const uint32_t primFrames = primaryBytes / (2u * sizeof(s16));
-        blendSound(b, static_cast<s16*>(m_playBuf), vol, primFrames, true);
-
-        // Zero-fill alignment padding after whichever output is longer.
-        const uint32_t totalBytes = std::max(primaryBytes, secondaryBytes);
-        const uint32_t needed     = (totalBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
-        if (totalBytes < needed)
-            memset(static_cast<u8*>(m_playBuf) + totalBytes, 0, needed - totalBytes);
-
-        return totalBytes;
-    }
-
     // ── loadSoundFromWav ──────────────────────────────────────────────────────
     // Reads WAV → rawBuf (16-bit, native channels, no volume applied).
     // Rejects source rates > 48 kHz. Calls growPlayBuf() after a successful load.
@@ -415,47 +352,69 @@ namespace ult {
     }
 
     // ── playSoundImpl ─────────────────────────────────────────────────────────
-    // Shared body for playSound / playTwoSounds.
-    // idxB == Count is the "no secondary" sentinel (single-sound path).
-    void Audio::playSoundImpl(uint32_t idxA, uint32_t idxB) {
+    // Shared body for playSound / playSounds.
+    // Iterates types[0..count-1], skipping unloaded entries.
+    // First valid sound → blendSound write mode (fills m_playBuf fresh).
+    // Each subsequent → blendSound mix mode (saturating-add into filled region,
+    //                   direct write into any zero-filled tail beyond it).
+    // Output size = max(all rendered lengths) — always ≤ m_playBufCap.
+    // One audoutPlayBuffer call regardless of count. Zero extra allocation.
+    void Audio::playSoundImpl(const SoundType* types, uint32_t count) {
         std::lock_guard<std::mutex> lock(m_audioMutex);
-        if (!m_initialized || !m_playBuf) return;
+        if (!m_initialized || !m_playBuf || count == 0) return;
 
-        const uint32_t    kCount = static_cast<uint32_t>(SoundType::Count);
-        const bool        hasB   = (idxB < kCount);
-        const CachedSound& a     = m_cachedSounds[idxA];
-        const CachedSound* bPtr  = hasB ? &m_cachedSounds[idxB] : nullptr;
-        if (!a.rawBuf && (!bPtr || !bPtr->rawBuf)) return;
+        int32_t vol = m_masterVolumeFixed.load(std::memory_order_relaxed);
+        if (m_lastDockedState) vol >>= 1;
 
         AudioOutBuffer* released = nullptr;
         u32 releasedCount        = 0;
         audoutGetReleasedAudioOutBuffer(&released, &releasedCount);
 
-        const uint32_t outBytes =
-            (!a.rawBuf)                ? renderToPlayBuf(*bPtr)
-            : (!bPtr || !bPtr->rawBuf) ? renderToPlayBuf(a)
-            :                            renderMixedToPlayBuf(a, *bPtr);
+        s16*     dst          = static_cast<s16*>(m_playBuf);
+        uint32_t filledFrames = 0;   // stereo frames successfully written so far
+        uint32_t totalBytes   = 0;
 
-        if (outBytes) submitPlayBuf(outBytes);
+        const uint32_t kCount = static_cast<uint32_t>(SoundType::Count);
+
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint32_t idx = static_cast<uint32_t>(types[i]);
+            if (idx >= kCount) continue;
+            const CachedSound& s = m_cachedSounds[idx];
+
+            // blendSound returns 0 if rawBuf is null/empty or output would overflow.
+            // No need to pre-check — growPlayBuf() guarantees all loaded sounds fit.
+            const bool     mixMode  = (filledFrames > 0);
+            const uint32_t outBytes = blendSound(s, dst, vol, filledFrames, mixMode);
+            if (outBytes == 0) continue;
+
+            const uint32_t outFrames = outBytes / (2u * sizeof(s16));
+            if (outFrames > filledFrames) filledFrames = outFrames;
+            if (outBytes  > totalBytes)   totalBytes   = outBytes;
+        }
+
+        if (totalBytes == 0) return;
+
+        // Zero-fill alignment padding beyond the audio data.
+        const uint32_t needed = (totalBytes + AUDIO_ALIGN - 1) & ~(AUDIO_ALIGN - 1);
+        if (totalBytes < needed)
+            memset(static_cast<u8*>(m_playBuf) + totalBytes, 0, needed - totalBytes);
+
+        submitPlayBuf(totalBytes);
     }
 
     // ── playSound ─────────────────────────────────────────────────────────────
     void Audio::playSound(SoundType type) {
         if (!m_enabled.load(std::memory_order_relaxed)) return;
-        const uint32_t idx = static_cast<uint32_t>(type);
-        if (idx >= static_cast<uint32_t>(SoundType::Count)) return;
-        playSoundImpl(idx, static_cast<uint32_t>(SoundType::Count));
+        playSoundImpl(&type, 1);
     }
 
-    // ── playTwoSounds ─────────────────────────────────────────────────────────
-    // Mixes two sounds into the single shared DMA buffer and submits once.
-    void Audio::playTwoSounds(SoundType primary, SoundType secondary) {
+    // ── playSounds ────────────────────────────────────────────────────────────
+    // Mix up to 8 sounds into a single DMA submission. Output = max of all
+    // input lengths — always fits in m_playBufCap. Zero extra allocation.
+    void Audio::playSounds(const SoundType* types, uint32_t count) {
         if (!m_enabled.load(std::memory_order_relaxed)) return;
-        const uint32_t idxA = static_cast<uint32_t>(primary);
-        const uint32_t idxB = static_cast<uint32_t>(secondary);
-        if (idxA >= static_cast<uint32_t>(SoundType::Count) ||
-            idxB >= static_cast<uint32_t>(SoundType::Count)) return;
-        playSoundImpl(idxA, idxB);
+        if (!types || count == 0) return;
+        playSoundImpl(types, count);
     }
 
     // ── Volume / enable accessors ─────────────────────────────────────────────

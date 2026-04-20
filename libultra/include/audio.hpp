@@ -63,7 +63,9 @@ namespace ult {
         }
 
         static void playSound(SoundType type);
-        static void playTwoSounds(SoundType primary, SoundType secondary);
+        // Mix up to 8 sounds into a single DMA submission (zero extra allocation).
+        // Output size = max of all input lengths — always fits in m_playBufCap.
+        static void playSounds(const SoundType* types, uint32_t count);
 
         static inline void playNavigateSound()     { playSound(SoundType::Navigate);     }
         static inline void playEnterSound()        { playSound(SoundType::Enter);        }
@@ -118,35 +120,26 @@ namespace ult {
         // 48 kHz stereo output. Call after any load. Must hold m_audioMutex.
         static void growPlayBuf();
 
-        // Unified render kernel shared by renderToPlayBuf and renderMixedToPlayBuf.
-        // Resamples s to 48 kHz, expands mono → stereo, applies vol.
-        //   mixMode=false : writes directly to dst (fresh render).
-        //   mixMode=true  : saturating-adds for frame i < primFrames,
-        //                   writes directly for i >= primFrames.
+        // Unified render kernel: resamples s to 48 kHz, expands mono → stereo,
+        // applies vol (0–256 fixed-point).
+        //   mixMode=false : writes directly to dst (fresh render, first sound).
+        //   mixMode=true  : saturating-adds for frame i < primFrames (overlap),
+        //                   writes directly for i >= primFrames (zero-filled tail).
         // Returns output byte count (outPerChan * 2 * sizeof(s16)).
-        // dst must have capacity for at least that many bytes.
         // Must be called under m_audioMutex.
         static uint32_t blendSound(const CachedSound& s, s16* dst, int32_t vol,
                                    uint32_t primFrames, bool mixMode);
-
-        // Renders rawBuf → m_playBuf on demand: resample to 48 kHz if needed,
-        // expand mono → stereo, apply current volume + dock attenuation.
-        // Returns actual output byte count written, or 0 on error.
-        // Must be called under m_audioMutex.
-        static uint32_t renderToPlayBuf(const CachedSound& s);
-
-        // Renders primary into m_playBuf via renderToPlayBuf(), then mixes
-        // secondary into the same buffer with saturating add.
-        // Output size = max(primary, secondary) — always fits within m_playBufCap.
-        // Must be called under m_audioMutex.
-        static uint32_t renderMixedToPlayBuf(const CachedSound& primary, const CachedSound& secondary);
 
         // Sets up m_audoutBuf from m_playBuf and calls audoutPlayBuffer.
         // Must be called under m_audioMutex after a successful render.
         static void submitPlayBuf(uint32_t outBytes);
 
-        // Shared implementation for playSound / playTwoSounds.
-        // idxB == Count acts as a "no secondary" sentinel.
-        static void playSoundImpl(uint32_t idxA, uint32_t idxB);
+        // Shared body for playSound / playSounds.
+        // Iterates types[0..count-1], blending each loaded sound into m_playBuf.
+        // First valid sound: write mode. Every subsequent: saturating-add mode.
+        // Output = max of all rendered lengths — always fits in m_playBufCap.
+        // Return value from blendSound (0 = skip) is the only guard needed;
+        // growPlayBuf() already guarantees all loaded sounds fit.
+        static void playSoundImpl(const SoundType* types, uint32_t count);
     };
 }
