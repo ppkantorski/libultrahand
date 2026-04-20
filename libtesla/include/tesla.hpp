@@ -3291,14 +3291,15 @@ namespace tsl {
                 static time_t lastSensorUpdate = 0;
                 
                 const bool showAnyWidget = !(ult::hideBattery && ult::hidePCBTemp && ult::hideSOCTemp && ult::hideClock);
-                
+                static constexpr size_t xStart = 247-2;
+
                 // Draw separator and backdrop if showing any widget
                 if (showAnyWidget) {
-                    drawRect(239, 15 + 2 - 2, 1, 64 + 2, aWithOpacity(topSeparatorColor));
+                    drawRect(xStart-8-2, 15 + 2 - 2, 1, 64 + 2, aWithOpacity(topSeparatorColor));
                     if (!ult::hideWidgetBackdrop) {
                         if (!ult::hideWidgetBorder) {
                             drawUniformRoundedRect(
-                                247+1, 15 + 2 - 2+1,
+                                xStart+1, 15 + 2 - 2+1,
                                 (ult::extendedWidgetBackdrop
                                     ? tsl::cfg::FramebufferWidth - 255
                                     : tsl::cfg::FramebufferWidth - 215)-2,
@@ -3306,7 +3307,7 @@ namespace tsl {
                             );
                         } else {
                             drawUniformRoundedRect(
-                                247, 15 + 2 - 2,
+                                xStart, 15 + 2 - 2,
                                 (ult::extendedWidgetBackdrop
                                     ? tsl::cfg::FramebufferWidth - 255
                                     : tsl::cfg::FramebufferWidth - 215),
@@ -3316,7 +3317,7 @@ namespace tsl {
                     }
                     if (!ult::hideWidgetBorder) {
                         drawUniformRoundedRectBorder(
-                            247, 15 + 2 - 2,
+                            xStart, 15 + 2 - 2,
                             (ult::extendedWidgetBackdrop
                                 ? tsl::cfg::FramebufferWidth - 255
                                 : tsl::cfg::FramebufferWidth - 215),
@@ -3331,7 +3332,7 @@ namespace tsl {
                                   : (44 + 2 - 1);
                 
                 // Constants for centering calculations
-                const int backdropCenterX = 247 + ((tsl::cfg::FramebufferWidth - 255) >> 1);
+                const int backdropCenterX = xStart + ((tsl::cfg::FramebufferWidth - 255) >> 1);
                 
                 time_t currentTime = time(nullptr);
                 
@@ -4918,7 +4919,7 @@ namespace tsl {
                          (ult::inHiddenMode.load(std::memory_order_acquire) &&
                           !ult::inSettingsMenu.load(std::memory_order_acquire) &&
                           !ult::inSubSettingsMenu.load(std::memory_order_acquire)))) {
-                        renderer->drawRoundedRect(7.0f, 12.0f, 232.0f, 73.0f, 12.0f, a(clickColor));
+                        renderer->drawRoundedRect(11.0f, 12.0f, 224.0f, 73.0f, 12.0f, a(clickColor));
                     }
                     x = 20; fontSize = 42; offset = 6;
                     if (ult::useDynamicLogo) {
@@ -5175,7 +5176,7 @@ namespace tsl {
             void calcScrollWidth(gfx::Renderer* renderer, ScrollState& s, const std::string& text, u32 fontSize, bool widgetDrawn) {
                 if (s.maxW) return;
                 
-                s.maxW = widgetDrawn ? 217 : (tsl::cfg::FramebufferWidth - 40);
+                s.maxW = widgetDrawn ? 214 : (tsl::cfg::FramebufferWidth - 40);
                 
                 const u32 w = renderer->getTextDimensions(text, false, fontSize).first;
                 s.trunc = w > s.maxW;
@@ -11764,7 +11765,7 @@ namespace tsl {
             const bool  noClickable    = ult::noClickableItems.load(std::memory_order_acquire);
             const float nextPageLeftEdge  = noClickable ? backRightEdge : selectRightEdge;
             const float nextPageRightEdge = nextPageLeftEdge + ult::nextPageWidth.load(std::memory_order_acquire);
-            const float menuRightEdge  = 245.0f + ult::layerEdge - 13;
+            const float menuRightEdge  = 245.0f + ult::layerEdge - 17;
             const u32   footerY        = cfg::FramebufferHeight - 73U + 1;
 
             const bool backTouched = (touchPos.x >= backLeftEdge && touchPos.x < backRightEdge && touchPos.y > footerY) &&
@@ -11775,8 +11776,8 @@ namespace tsl {
             const bool nextPageTouched = ult::hasNextPageButton.load(std::memory_order_acquire) &&
                                          (touchPos.x >= nextPageLeftEdge && touchPos.x < nextPageRightEdge && touchPos.y > footerY) &&
                                          (initialTouchPos.x >= nextPageLeftEdge && initialTouchPos.x < nextPageRightEdge && initialTouchPos.y > footerY);
-            const bool menuTouched = (touchPos.x > ult::layerEdge+7U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
-                                     (initialTouchPos.x > ult::layerEdge+7U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
+            const bool menuTouched = (touchPos.x > ult::layerEdge+11U && touchPos.x <= menuRightEdge && touchPos.y > 10U && touchPos.y <= 83U) &&
+                                     (initialTouchPos.x > ult::layerEdge+11U && initialTouchPos.x <= menuRightEdge && initialTouchPos.y > 10U && initialTouchPos.y <= 83U);
 
             bool shouldTriggerRumble = false;
             auto checkTouched = [&](bool touched, std::atomic<bool>& state) {

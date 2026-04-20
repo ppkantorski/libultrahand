@@ -276,7 +276,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"warning_text_color",              "FF7777"},
     {"widget_backdrop_alpha",           "15"},
     {"widget_backdrop_color",           "000000"},
-    {"widget_border_color",             "FFFFFF"}
+    {"widget_border_color",             "555555"}
 };
 const size_t defaultThemeSettingsCount = sizeof(defaultThemeSettings) / sizeof(defaultThemeSettings[0]);
 
