@@ -101,6 +101,24 @@ A growing ecosystem of libultrahand-based overlays, all launchable and manageabl
 
 ## Compiling
 
+### MSYS2 Users
+
+MSYS2 will mangle compiler arguments that start with `/` (like devkitPro paths and flags), causing build failures. Prevent this by adding the following to your `~/.bashrc`:
+
+```sh
+if [[ -n "${DEVKITPRO:-}" ]]; then
+    export MSYS2_ARG_CONV_EXCL='*'
+fi
+```
+
+Then reload your shell:
+
+```sh
+source ~/.bashrc
+```
+
+This disables MSYS2's argument conversion entirely when building with devkitPro and avoids any path-mangling issues.
+
 ### Adding libultrahand to Your Project
 
 The easiest way is to use `ultrahand.mk`. Add this after your `SOURCES` and `INCLUDES` definitions, adjusting the path to where you placed `libultrahand`:
