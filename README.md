@@ -323,6 +323,7 @@ Intercepts C++ exception entry points at the linker level, eliminating unwind ta
 
 ```makefile
 CFLAGS   += -DUSE_EXCEPTION_WRAP=1
+CXXFLAGS += -DUSE_EXCEPTION_WRAP=1
 CXXFLAGS += -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
 LDFLAGS  += -Wl,-wrap,__cxa_throw \
             -Wl,-wrap,_Unwind_Resume \
