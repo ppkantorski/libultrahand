@@ -70,7 +70,7 @@ CFLAGS += $(INCLUDE) -D__SWITCH__ -DAPP_VERSION="\"$(APP_VERSION)\"" -D_FORTIFY_
 #---------------------------------------------------------------------------------
 
 # Overlay UI config path
-UI_OVERRIDE_PATH := /config/ultragb/
+UI_OVERRIDE_PATH := /config/ultrahand_example/
 CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 
 # Enable Widget
