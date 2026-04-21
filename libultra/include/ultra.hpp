@@ -31,13 +31,13 @@
 //
 
 // ── Ultra targeted optimizations ─────────────────────────────
-#ifdef ULTRA_TARGETED_SPEED
-    #define ULTRA_OPT_SPEED_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"O3\")")
-    #define ULTRA_OPT_SPEED_POP  _Pragma("GCC pop_options")
-#else
-    #define ULTRA_OPT_SPEED_PUSH
-    #define ULTRA_OPT_SPEED_POP
-#endif
+//#ifdef ULTRA_TARGETED_SPEED
+//    #define ULTRA_OPT_SPEED_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"O3\")")
+//    #define ULTRA_OPT_SPEED_POP  _Pragma("GCC pop_options")
+//#else
+//    #define ULTRA_OPT_SPEED_PUSH
+//    #define ULTRA_OPT_SPEED_POP
+//#endif
 
 #ifdef ULTRA_TARGETED_SIZE
     #define ULTRA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")

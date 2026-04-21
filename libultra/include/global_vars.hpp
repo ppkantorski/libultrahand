@@ -59,7 +59,7 @@ namespace ult {
     extern const std::string PAYLOADS_PATH;
     extern const std::string HB_APPSTORE_JSON;
     
-    // Can be overriden with APPEARANCE_OVERRIDE_PATH directive
+    // Can be overriden with UI_OVERRIDE_PATH directive
     extern std::string THEME_CONFIG_INI_PATH;
     extern std::string WALLPAPER_PATH;
 

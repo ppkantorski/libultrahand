@@ -53,13 +53,13 @@
     #define TESLA_OPT_SPEED_POP
 #endif
 
-#ifdef TESLA_TARGETED_SIZE
-    #define TESLA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")
-    #define TESLA_OPT_SIZE_POP  _Pragma("GCC pop_options")
-#else
-    #define TESLA_OPT_SIZE_PUSH
-    #define TESLA_OPT_SIZE_POP
-#endif
+//#ifdef TESLA_TARGETED_SIZE
+//    #define TESLA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")
+//    #define TESLA_OPT_SIZE_POP  _Pragma("GCC pop_options")
+//#else
+//    #define TESLA_OPT_SIZE_PUSH
+//    #define TESLA_OPT_SIZE_POP
+//#endif
 
 
 #include <ultra.hpp>
