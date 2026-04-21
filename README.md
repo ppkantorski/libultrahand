@@ -7,7 +7,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/ppkantorski/libultrahand?color=222222)](https://github.com/ppkantorski/libultrahand/issues)
 [![GitHub stars](https://img.shields.io/github/stars/ppkantorski/libultrahand)](https://github.com/ppkantorski/libultrahand/stargazers)
 
-An expanded fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library — a comprehensive foundation for Nintendo Switch overlay development.
+An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library — a comprehensive foundation for Nintendo Switch overlay development.
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
