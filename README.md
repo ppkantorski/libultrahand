@@ -143,7 +143,7 @@ include $(TOPDIR)/lib/libultrahand/ultrahand.mk
 Alternatively, add these manually:
 
 ```makefile
-SOURCES  += lib/libultrahand/common lib/libultrahand/libultra/source
+SOURCES  += lib/libultrahand/common lib/libultrahand/libultra/source lib/libultrahand/libtesla/source
 INCLUDES += lib/libultrahand/common lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
 ```
 
@@ -298,13 +298,24 @@ CXXFLAGS += -DNO_BACK_KEY_DIRECTIVE=1
 
 ```makefile
 # Apply -O3 to rendering components only (tesla.hpp)
-CFLAGS += -DTESLA_TARGETED_SPEED
+CFLAGS   += -DTESLA_TARGETED_SPEED
+CXXFLAGS += -DTESLA_TARGETED_SPEED
 
 # Apply -Os to libultra utility components only
-CFLAGS += -DULTRA_TARGETED_SIZE
+CFLAGS   += -DULTRA_TARGETED_SIZE
+CXXFLAGS += -DULTRA_TARGETED_SIZE
 ```
 
 These can be used together — `TESLA_TARGETED_SPEED` optimizes the hot rendering path while `ULTRA_TARGETED_SIZE` keeps utility code compact.
+
+### Launcher Build
+
+Enables launcher-specific code paths used exclusively when building the Ultrahand Overlay launcher itself. Not intended for general overlay development:
+
+```makefile
+CFLAGS   += -DIS_LAUNCHER_DIRECTIVE=1
+CXXFLAGS += -DIS_LAUNCHER_DIRECTIVE=1
+```
 
 ### Exception Wrap (~20KB size reduction)
 
