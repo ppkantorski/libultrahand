@@ -1627,49 +1627,63 @@ namespace tsl {
             }
                         
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
-                // Use Bresenham-style algorithm for small radii
+                // Small-radius fast path: radius ∈ {0,1,2,3}.
                 if (radius <= 3) {
-                    s32 x = radius;
-                    s32 y = 0;
-                    s32 radiusError = 0;
-                    s32 xChange = 1 - (radius << 1);
-                    s32 yChange = 0;
-                    
-                    while (x >= y) {
-                        if (filled) {
-                            for (s32 i = centerX - x; i <= centerX + x; i++) {
-                                this->setPixelBlendDst(i, centerY + y, color);
-                                this->setPixelBlendDst(i, centerY - y, color);
-                            }
-                            for (s32 i = centerX - y; i <= centerX + y; i++) {
-                                this->setPixelBlendDst(i, centerY + x, color);
-                                this->setPixelBlendDst(i, centerY - x, color);
-                            }
-                            y++;
-                            radiusError += yChange;
-                            yChange += 2;
-                            if (((radiusError << 1) + xChange) > 0) {
-                                x--;
-                                radiusError += xChange;
-                                xChange += 2;
-                            }
-                        } else {
-                            this->setPixelBlendDst(centerX + x, centerY + y, color);
-                            this->setPixelBlendDst(centerX + y, centerY + x, color);
-                            this->setPixelBlendDst(centerX - y, centerY + x, color);
-                            this->setPixelBlendDst(centerX - x, centerY + y, color);
-                            this->setPixelBlendDst(centerX - x, centerY - y, color);
-                            this->setPixelBlendDst(centerX - y, centerY - x, color);
-                            this->setPixelBlendDst(centerX + y, centerY - x, color);
-                            this->setPixelBlendDst(centerX + x, centerY - y, color);
-                            if (radiusError <= 0) {
-                                y++;
-                                radiusError += 2 * y + 1;
-                            } else {
-                                x--;
-                                radiusError -= 2 * x + 1;
-                            }
+                    if (filled) {
+                        // Pre-computed per-row half-widths for every possible small radius.
+                        // Derived once from the Bresenham span accumulator; stored in .rodata.
+                        // Eliminates: two 7-element stack arrays, an initialisation loop, a
+                        // capturing lambda, and the entire accumulation loop — replaced by a
+                        // single pointer load and a tiny draw loop (at most 7 iterations).
+                        // Row index 0 == centerY - radius; index 2*radius == centerY + radius.
+                        static constexpr s8 kHW[4][7] = {
+                            {0, 0, 0, 0, 0, 0, 0},  // r=0: 1×1
+                            {1, 1, 1, 0, 0, 0, 0},  // r=1: 3×3
+                            {1, 2, 2, 2, 1, 0, 0},  // r=2: 5-wide pill
+                            {2, 3, 3, 3, 3, 3, 2},  // r=3: 7-wide pill
+                        };
+
+                        const s32 r = static_cast<s32>(radius);
+                        // Clamp to framebuffer bounds here (not just scissor) so that
+                        // blockLinearYPart never receives a negative or out-of-range row.
+                        s32 clip_left   = 0,                                       clip_right  = static_cast<s32>(cfg::FramebufferWidth);
+                        s32 clip_top    = std::max(centerY - r, 0),                clip_bottom = std::min(centerY + r, static_cast<s32>(cfg::FramebufferHeight) - 1);
+                        if (clip_top > clip_bottom) return;
+                        if (this->m_scissorDepth != 0) [[unlikely]] {
+                            const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                            clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
+                            clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
+                            clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
+                            clip_bottom = std::min(clip_bottom, static_cast<s32>(sc.y_max));
+                            if (clip_left >= clip_right || clip_top > clip_bottom) return;
                         }
+
+                        const s8* hw = kHW[radius];
+                        for (s32 dr = -r; dr <= r; dr++) {
+                            const s32 row = centerY + dr;
+                            if (row < clip_top || row > clip_bottom) continue;
+                            const s32 hw_r = static_cast<s32>(hw[dr + r]);
+                            const s32 xl   = std::max(centerX - hw_r, clip_left);
+                            const s32 xr_  = std::min(centerX + hw_r + 1, clip_right);
+                            for (s32 xi = xl; xi < xr_; xi++)
+                                this->setPixelBlendDst(xi, row, color);
+                        }
+                        return;
+                    }
+
+                    // Unfilled outline — Bresenham 8-point symmetry
+                    s32 x = radius, y = 0, err = 0;
+                    while (x >= y) {
+                        this->setPixelBlendDst(centerX + x, centerY + y, color);
+                        this->setPixelBlendDst(centerX + y, centerY + x, color);
+                        this->setPixelBlendDst(centerX - y, centerY + x, color);
+                        this->setPixelBlendDst(centerX - x, centerY + y, color);
+                        this->setPixelBlendDst(centerX - x, centerY - y, color);
+                        this->setPixelBlendDst(centerX - y, centerY - x, color);
+                        this->setPixelBlendDst(centerX + y, centerY - x, color);
+                        this->setPixelBlendDst(centerX + x, centerY - y, color);
+                        if (err <= 0) { y++; err += 2 * y + 1; }
+                        else          { x--; err -= 2 * x + 1; }
                     }
                     return;
                 }
