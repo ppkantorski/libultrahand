@@ -1250,7 +1250,7 @@ namespace tsl {
             static inline Color a2(const Color& c) {
                 if (!ult::disableTransparency)
                     return c;
-                const u8 a = ult::useOpaqueScreenshots ? 0xF : (c.a > 0xE ? c.a : 0xE);
+                const u8 a = 0xF;
                 return (c.rgba & 0x0FFF) | (static_cast<u16>(a) << 12);
             }
             
@@ -6290,9 +6290,9 @@ namespace tsl {
                 }
             
                 // Draw scrollbar with interpolated color
-                renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(currentColor));
                 renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(currentColor));
                 renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(currentColor));
+                renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(currentColor));
             }
 
             
