@@ -9470,7 +9470,7 @@ namespace tsl {
                                        (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 } else {
                     const auto textDimensions = renderer->getTextDimensions(this->m_selection, false, 16);
                     const s32 textWidth = textDimensions.first;
@@ -9478,10 +9478,10 @@ namespace tsl {
                     const s32 textY = this->getY() + 14 + 16;
                     
                     renderer->drawString(this->m_selection.c_str(), false, textX, textY, 16, 
-                                       a(this->m_focused ? tsl::style::color::ColorHighlight : tsl::style::color::ColorText));
+                                       (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
                     if (m_icon[0] != '\0')
-                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, tsl::style::color::ColorText);
+                        renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 }
             
                 // Draw separators
