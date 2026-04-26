@@ -9170,11 +9170,11 @@ namespace tsl {
                     lastUpdate_ns = currentTime_ns;
                     
                     if (keysDown & KEY_LEFT && this->m_value > 0) {
-                        //triggerNavigationFeedback();
+                        triggerNavigationFeedback();
                         this->m_value = std::max(this->m_value - stepSize, 0);
                         this->m_valueChangedListener(this->getProgress());
                     } else if (keysDown & KEY_RIGHT && this->m_value < maxValue) {
-                        //triggerNavigationFeedback();
+                        triggerNavigationFeedback();
                         this->m_value = std::min(this->m_value + stepSize, maxValue);
                         this->m_valueChangedListener(this->getProgress());
                     }
