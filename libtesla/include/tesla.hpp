@@ -5746,7 +5746,7 @@ namespace tsl {
                                                        static_cast<float>(m_listHeight - viewHeight) : 0.0f;
                                 
                                 const float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                                const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f;
+                                const float viewportCenter = viewHeight / 2.0f + m_viewCenterOffset + 0.5f;
                                 const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
                                 
                                 m_offset = m_nextOffset = idealOffset;
@@ -5853,7 +5853,7 @@ namespace tsl {
                                                static_cast<float>(m_listHeight - viewHeight) : 0.0f;
                         
                         const float itemCenterPos = h + (itemHeight / 2.0f);
-                        const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f;
+                        const float viewportCenter = viewHeight / 2.0f + m_viewCenterOffset + 0.5f;
                         const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
                         
                         m_offset = m_nextOffset = idealOffset;
@@ -5893,7 +5893,7 @@ namespace tsl {
                                                    static_cast<float>(m_listHeight - viewHeight) : 0.0f;
                             
                             const float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                            const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f;
+                            const float viewportCenter = viewHeight / 2.0f + m_viewCenterOffset + 0.5f;
                             const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
                             
                             m_offset = m_nextOffset = idealOffset;
@@ -6062,6 +6062,14 @@ namespace tsl {
                     updateScrollOffset();
                 }
             }
+
+            // Shift the vertical position the list tries to center the focused
+            // item on.  Positive values move the focal point downward (item
+            // appears higher on screen); negative values move it upward.
+            // Default is 7.0f (the original hard-coded centering offset).
+            // Call this any time after the List is constructed — it takes
+            // effect on the next scroll recalculation with no other side effects.
+            inline void setCenterOffset(float offset) { m_viewCenterOffset = offset; }
             
             inline void onDirectionalKeyReleased() {
                 m_hasWrappedInCurrentSequence = false;
@@ -6123,7 +6131,7 @@ namespace tsl {
             static constexpr float TABLE_SCROLL_SPEED_CLICK_PPS = 120.0f*4; // Pixels per second for single click
 
             static constexpr float BOTTOM_PADDING = 7.0f;
-            static constexpr float VIEW_CENTER_OFFSET = 7.0f;
+            float m_viewCenterOffset = 7.0f;  // tunable via setCenterOffset()
 
             u64 m_lastScrollTime = 0;
             float m_scrollVelocity = 0.0f;
@@ -6838,7 +6846,7 @@ namespace tsl {
                         const float itemHeight = m_items[i]->getHeight();
                         // For middle items, use centering logic
                         const float itemCenterPos = h + (itemHeight / 2.0f);  // FIXED: Use center, not bottom
-                        const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f; // Same offset as updateScrollOffset
+                        const float viewportCenter = viewHeight / 2.0f + m_viewCenterOffset + 0.5f; // Same offset as updateScrollOffset
 
                         // Clamp to valid bounds (same as updateScrollOffset)
                         const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
@@ -7079,7 +7087,7 @@ namespace tsl {
                     for (size_t i = 0; i < edgeFocusableIndex; ++i) itemPos += m_items[i]->getHeight();
                     const float itemCenter    = itemPos + m_items[edgeFocusableIndex]->getHeight() * 0.5f;
                     const float viewHeight    = static_cast<float>(getHeight());
-                    const float viewportCenter = m_nextOffset + (viewHeight * 0.5f + VIEW_CENTER_OFFSET + 0.5f);
+                    const float viewportCenter = m_nextOffset + (viewHeight * 0.5f + m_viewCenterOffset + 0.5f);
                     isTableScrolling.store(
                         toBottom ? (itemCenter < viewportCenter - 1.0f)
                                  : (itemCenter > viewportCenter + 1.0f),
@@ -7143,7 +7151,7 @@ namespace tsl {
                     ? (targetViewportTop - m_offset)
                     : (m_offset - targetViewportTop);
                 const bool traveledFullViewport = (actualTravelDistance >= viewHeight - tolerance);
-                const float targetViewportCenter = targetViewportTop + (viewHeight * 0.5f + VIEW_CENTER_OFFSET);
+                const float targetViewportCenter = targetViewportTop + (viewHeight * 0.5f + m_viewCenterOffset);
 
                 // Find the focusable item closest to the target viewport center
                 float itemTop = 0.0f;
@@ -7268,7 +7276,7 @@ namespace tsl {
 
                 // For middle items, use centering logic
                 const float itemCenterPos = itemPos + (itemHeight / 2.0f);
-                const float viewportCenter = viewHeight / 2.0f + VIEW_CENTER_OFFSET + 0.5f; // add slight offset
+                const float viewportCenter = viewHeight / 2.0f + m_viewCenterOffset + 0.5f; // add slight offset
                 
                 // Clamp to valid scroll bounds
                 const float idealOffset = std::max(0.0f, std::min(itemCenterPos - viewportCenter, maxOffset));
