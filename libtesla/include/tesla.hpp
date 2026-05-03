@@ -8249,14 +8249,15 @@ namespace tsl {
                     const int valueWidth = renderer->getTextDimensions(m_value, false, fontHeight).first;
                     const int valueX = this->getX() + 2 + this->getWidth() - valueWidth;
             
-                    renderer->drawString(
+                    renderer->drawStringWithColoredSections(
                         m_value,
                         false,
+                        s_dividerSpecialChars,
                         valueX,
                         textY,
                         fontHeight,
                         m_valueColor,
-                        0, true, nullptr, nullptr, 0, 0, false
+                        textSeparatorColor
                     );
                 }
             }
@@ -13348,7 +13349,7 @@ namespace tsl {
             if (!ult::furtherExpandedMemory) {
                 ult::loaderTitle += "+";
                 ult::COPY_BUFFER_SIZE = 262144;
-                ult::HEX_BUFFER_SIZE = 8192;
+                ult::HEX_BUFFER_SIZE = 32768;
                 ult::UNZIP_READ_BUFFER = 262144;
                 ult::UNZIP_WRITE_BUFFER = 131072;
                 ult::DOWNLOAD_READ_BUFFER = 131072;
@@ -13356,7 +13357,7 @@ namespace tsl {
             } else {
                 ult::loaderTitle += "×";
                 ult::COPY_BUFFER_SIZE = 262144*2;
-                ult::HEX_BUFFER_SIZE = 8192;
+                ult::HEX_BUFFER_SIZE = 32768;
                 ult::UNZIP_READ_BUFFER = 262144*2;
                 ult::UNZIP_WRITE_BUFFER = 131072*4;
                 ult::DOWNLOAD_READ_BUFFER = 131072*4;
@@ -13364,7 +13365,7 @@ namespace tsl {
             }
         } else if (!ult::limitedMemory) {
             ult::COPY_BUFFER_SIZE = 262144;
-            ult::HEX_BUFFER_SIZE = 8192;
+            ult::HEX_BUFFER_SIZE = 32768;
             ult::UNZIP_READ_BUFFER = 262144;
             ult::UNZIP_WRITE_BUFFER = 131072;
             ult::DOWNLOAD_READ_BUFFER = 131072;
