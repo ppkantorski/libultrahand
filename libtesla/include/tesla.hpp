@@ -364,7 +364,7 @@ namespace tsl {
     };
     
     inline constexpr TempGradientRange DEFAULT_TEMP_RANGE(35.0f, 45.0f, 55.0f, 65.0f);
-    inline constexpr TempGradientRange DEFAULT_TEMP_RANGE_HIGH(45.0f, 55.0f, 65.0f, 80.0f);
+    inline constexpr TempGradientRange DEFAULT_TEMP_RANGE_HIGH(45.0f, 57.0f, 68.0f, 80.0f);
     
     inline constexpr Color GradientColor(
         float temperature,
