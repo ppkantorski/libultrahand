@@ -223,7 +223,7 @@ LDFLAGS  += -flto=6 -fuse-linker-plugin
 
 ### Ultrahand Signature
 
-All libultrahand overlays should append the `ULTR` four-byte signature to the final `.ovl` binary. This is how Ultrahand identifies libultrahand-compiled overlays and enables first-class integration — theming, the status bar widget, notifications, combo launching, and more:
+All libultrahand overlays should append the `ULTR` four-byte signature to the final `.ovl` binary. This is how Ultrahand identifies libultrahand-compiled overlays in the overlay menu:
 
 ```makefile
 $(OUTPUT).ovl: $(OUTPUT).elf $(OUTPUT).nacp
