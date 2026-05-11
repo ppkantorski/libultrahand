@@ -202,6 +202,9 @@ inline std::string s_lastFocusedItemText; // tracks the text of whatever focusab
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
+// Set by fireLaunch() so exitServices() runs the exit package even when
+// exitingUltrahand was never set (e.g. quick-combo or return-to-ovlmenu).
+inline std::atomic<bool> pendingExitPackage{false};
 
 
 // Signal helpers.
@@ -12180,6 +12183,7 @@ namespace tsl {
             SharedThreadData *shData = static_cast<SharedThreadData*>(args);
 
             const auto fireLaunch = [&]() __attribute__((noinline)) {
+                pendingExitPackage.store(true, std::memory_order_release);
                 ult::launchingOverlay.store(true, std::memory_order_release);
                 tsl::Overlay::get()->close();
                 eventFire(&shData->comboEvent);
