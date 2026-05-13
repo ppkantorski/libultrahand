@@ -3268,20 +3268,34 @@ namespace tsl {
                         }
                     }
 
+                    // Horizontal: expand layer by HP (in LayerMaxWidth-reference units, no scale needed).
+                    // room is signed to avoid u32 underflow for full-width layers where room == 0.
+                    if (verticalUnderscanPixels > 0) {
+                        const s32 room = static_cast<s32>(cfg::ScreenHeight)
+                                       - static_cast<s32>(cfg::LayerPosY)
+                                       - static_cast<s32>(cfg::LayerHeight);
+                        if (room > 0) {
+                            const u32 expansion = static_cast<u32>(verticalUnderscanPixels);
+                            cfg::LayerHeight += static_cast<u16>(std::min(expansion, static_cast<u32>(room)));
+                        }
+                    }
+
                     // Vertical: shift layer so its content lands in the TV's visible area.
                     // Infer anchor from current LayerPosY:
                     //   top-anchored    (LayerPosY <= ScreenHeight/3) → move down by vp_vi
                     //   bottom-anchored (LayerPosY  > ScreenHeight/3) → move up   by vp_vi
-                    {
-                        const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
-                        const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
+                    //{
+                    //    const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
+                    //    const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
+                    //    
+                    //    if (cfg::LayerPosY <= cfg::ScreenHeight / 3u) {
+                    //        cfg::LayerPosY = std::min(vp_vi, maxY);
+                    //    } else {
+                    //        cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
+                    //    }
+                    //}
+                } else { // HANDLE 1080p case
 
-                        if (cfg::LayerPosY <= cfg::ScreenHeight / 3u) {
-                            cfg::LayerPosY = std::min(vp_vi, maxY);
-                        } else {
-                            cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
-                        }
-                    }
                 }
             
                 // Apply to the VI layer. Right-aligned overlays call twice (size then position)
@@ -3882,45 +3896,58 @@ namespace tsl {
                     cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / divH);
                 }
 
-                // Right-aligned overlay: set layerEdge (logical left edge in 1280-ref space) accounting
-                // for underscan, then derive LayerPosX as layerEdge scaled to VI space (×1.5).
-                // This keeps layerEdge and LayerPosX consistent — layerEdge drives touch/render offsets,
-                // LayerPosX drives the VI compositor. They must agree or content appears mis-registered.
-                if (ult::useRightAlignment && ult::correctFrameSize) {
-                    ult::layerEdge = (1280 - 448) - horizontalUnderscanPixels; // 832 - HP
-                    cfg::LayerPosX = static_cast<u16>(
-                        float(ult::layerEdge) * float(cfg::ScreenWidth) / float(cfg::LayerMaxWidth) + 0.5f);
-                }
-
                 // Universal underscan corrections. Skipped in pixel-perfect mode (layer == framebuffer 1:1).
                 if (!ult::windowedLayerPixelPerfect) {
-                    const float hScale = float(cfg::ScreenWidth)  / float(cfg::LayerMaxWidth);  // 1.5
-                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight); // 1.5
+                    // VP is in LayerMaxHeight-reference (720) units; scale to VI space for position math.
+                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
 
-                    // Horizontal: expand layer toward the right screen edge.
-                    // room = space between layer's current right edge and ScreenWidth (signed to avoid u32 wrap).
-                    // For right-aligned: room = hScale*HP exactly, expansion fills it perfectly → right edge = ScreenWidth.
-                    // For full-width layers: room = 0 → no-op, no crash, no mode-specific guard needed.
+                    // Right-aligned overlay: recompute X from current underscan before deriving room.
+                    if (ult::useRightAlignment && ult::correctFrameSize) {
+                        cfg::LayerPosX = static_cast<u16>(
+                            std::max(0, 1280 - 32 - horizontalUnderscanPixels));
+                        ult::layerEdge = (1280 - 448);
+                    }
+
+                    // Horizontal: expand layer by HP (in LayerMaxWidth-reference units, no scale needed).
+                    // room is signed to avoid u32 underflow for full-width layers where room == 0.
                     if (horizontalUnderscanPixels > 0) {
                         const s32 room = static_cast<s32>(cfg::ScreenWidth)
                                        - static_cast<s32>(cfg::LayerPosX)
                                        - static_cast<s32>(cfg::LayerWidth);
                         if (room > 0) {
-                            const u32 expansion = static_cast<u32>(hScale * float(horizontalUnderscanPixels) + 0.5f);
+                            const u32 expansion = static_cast<u32>(horizontalUnderscanPixels);
                             cfg::LayerWidth += static_cast<u16>(std::min(expansion, static_cast<u32>(room)));
                         }
                     }
 
-                    // Vertical: LayerPosY is always 0 here (just reset above), so this shifts
-                    // top-anchored layers down into the TV's visible area by vp_vi.
-                    // Bottom-anchored layers (e.g. micro) get their final Y from setLayerPos()
-                    // in the overlay constructor, which runs after init() and overrides this.
+                    // Horizontal: expand layer by HP (in LayerMaxWidth-reference units, no scale needed).
+                    // room is signed to avoid u32 underflow for full-width layers where room == 0.
                     if (verticalUnderscanPixels > 0) {
-                        const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
-                        const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
-                        cfg::LayerPosY  = std::min(vp_vi, maxY);
+                        const s32 room = static_cast<s32>(cfg::ScreenHeight)
+                                       - static_cast<s32>(cfg::LayerPosY)
+                                       - static_cast<s32>(cfg::LayerHeight);
+                        if (room > 0) {
+                            const u32 expansion = static_cast<u32>(verticalUnderscanPixels);
+                            cfg::LayerHeight += static_cast<u16>(std::min(expansion, static_cast<u32>(room)));
+                        }
                     }
+
+                    // Vertical: shift layer so its content lands in the TV's visible area.
+                    // Infer anchor from current LayerPosY:
+                    //   top-anchored    (LayerPosY <= ScreenHeight/3) → move down by vp_vi
+                    //   bottom-anchored (LayerPosY  > ScreenHeight/3) → move up   by vp_vi
+                    //{
+                    //    const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
+                    //    const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
+                    //    
+                    //    if (cfg::LayerPosY <= cfg::ScreenHeight / 3u) {
+                    //        cfg::LayerPosY = std::min(vp_vi, maxY);
+                    //    } else {
+                    //        cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
+                    //    }
+                    //}
                 }
+            
                 
                 if (this->m_initialized)
                     return;
