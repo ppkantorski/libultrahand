@@ -3235,66 +3235,64 @@ namespace tsl {
 
             void updateLayerSize() {
                 const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
-                
-                // Recalculate layer dimensions with new underscan values
-                //cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
-                //cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
-
+            
+                // Recalculate base layer dimensions from framebuffer size.
                 {
                     const float divW = ult::windowedLayerPixelPerfect ? float(cfg::ScreenWidth)  : float(cfg::LayerMaxWidth);
                     const float divH = ult::windowedLayerPixelPerfect ? float(cfg::ScreenHeight) : float(cfg::LayerMaxHeight);
                     cfg::LayerWidth  = cfg::ScreenWidth  * (float(cfg::FramebufferWidth)  / divW);
                     cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / divH);
                 }
-                
-                // Apply underscan adjustments.
-                // Skipped in 1080p pixel-perfect mode to keep layer == framebuffer exactly.
+            
+                // Universal underscan corrections. Skipped in pixel-perfect mode (layer == framebuffer 1:1).
                 if (!ult::windowedLayerPixelPerfect) {
-                    if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28)
-                        cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
-                    else if (cfg::FramebufferWidth == cfg::LayerMaxWidth) {
-                        // Layer already at full VI width — cannot expand. No-op; position
-                        // adjustment handles underscan where applicable (e.g. 360px micro mode).
-                    } else if (ult::correctFrameSize) {
-                        const u32 expanded = static_cast<u32>(cfg::LayerWidth) + horizontalUnderscanPixels;
-                        cfg::LayerWidth = static_cast<u16>(std::min(expanded, static_cast<u32>(cfg::ScreenWidth)));
-                    } else if (horizontalUnderscanPixels > 0) {
-                        const int expansion = static_cast<int>(
-                            horizontalUnderscanPixels *
-                            (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
-                        const u32 expanded = static_cast<u32>(cfg::LayerWidth) + expansion;
-                        cfg::LayerWidth = static_cast<u16>(std::min(expanded, static_cast<u32>(cfg::ScreenWidth)));
+                    // VP is in LayerMaxHeight-reference (720) units; scale to VI space for position math.
+                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
+
+                    // Right-aligned overlay: recompute X from current underscan before deriving room.
+                    if (ult::useRightAlignment && ult::correctFrameSize) {
+                        cfg::LayerPosX = static_cast<u16>(
+                            std::max(0, 1280 - 32 - horizontalUnderscanPixels));
+                        ult::layerEdge = (1280 - 448);
+                    }
+
+                    // Horizontal: expand layer by HP (in LayerMaxWidth-reference units, no scale needed).
+                    // room is signed to avoid u32 underflow for full-width layers where room == 0.
+                    if (horizontalUnderscanPixels > 0) {
+                        const s32 room = static_cast<s32>(cfg::ScreenWidth)
+                                       - static_cast<s32>(cfg::LayerPosX)
+                                       - static_cast<s32>(cfg::LayerWidth);
+                        if (room > 0) {
+                            const u32 expansion = static_cast<u32>(horizontalUnderscanPixels);
+                            cfg::LayerWidth += static_cast<u16>(std::min(expansion, static_cast<u32>(room)));
+                        }
+                    }
+
+                    // Vertical: shift layer so its content lands in the TV's visible area.
+                    // Infer anchor from current LayerPosY:
+                    //   top-anchored    (LayerPosY <= ScreenHeight/3) → move down by vp_vi
+                    //   bottom-anchored (LayerPosY  > ScreenHeight/3) → move up   by vp_vi
+                    {
+                        const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
+                        const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
+
+                        if (cfg::LayerPosY <= cfg::ScreenHeight / 3u) {
+                            cfg::LayerPosY = std::min(vp_vi, maxY);
+                        } else {
+                            cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
+                        }
                     }
                 }
-                
-                // Update position if using right alignment
-                if (ult::useRightAlignment && ult::correctFrameSize) {
-                    ult::layerEdge = (1280 - 448);
-                }
-                
-                // Update the existing layer with new dimensions
+            
+                // Apply to the VI layer. Right-aligned overlays call twice (size then position)
+                // to work around a compositor ordering quirk.
                 viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
-                
-                // Update position if using right alignment
                 if (ult::useRightAlignment && ult::correctFrameSize) {
-                    viSetLayerPosition(&this->m_layer, 1280-32 - horizontalUnderscanPixels, 0);
+                    viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY);
                     viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
-                    viSetLayerPosition(&this->m_layer, 1280-32 - horizontalUnderscanPixels, 0);
-                }
-                // 360px micro mode bottom repositioning on underscan change
-                else if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 360 && cfg::LayerPosY > 400) {
-                    // LayerPosY > 400 reliably identifies bottom-positioned micro mode.
-                    // VI space is always 1080p. verticalUnderscanPixels is in 720p-logical
-                    // units (computed from a 720-unit reference), so multiply by (ScreenHeight/720)
-                    // to convert to VI pixels. The layer is not resized — just repositioned so
-                    // its bottom edge lands at the TV's visible bottom edge.
-                    //   targetY = ScreenHeight - LayerHeight - verticalUnderscanPixels*(ScreenHeight/720)
-                    const float targetYf = float(cfg::ScreenHeight) - float(cfg::LayerHeight)
-                                         - (float(cfg::ScreenHeight) / 720.0f * float(verticalUnderscanPixels));
-                    const u32 targetY = targetYf > 0.0f ? static_cast<u32>(targetYf + 0.5f) : 0u;
-                    cfg::LayerPosY = targetY;
-                    viSetLayerSize(&this->m_layer, cfg::LayerWidth, cfg::LayerHeight);
-                    viSetLayerPosition(&this->m_layer, 0, targetY);
+                    viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY);
+                } else {
+                    viSetLayerPosition(&this->m_layer, cfg::LayerPosX, cfg::LayerPosY);
                 }
             }
 
@@ -3874,11 +3872,6 @@ namespace tsl {
                 offsetWidthVar = (((cfg::FramebufferWidth / 2) >> 4) << 3);
 
                 ult::correctFrameSize = (cfg::FramebufferWidth == 448 && cfg::FramebufferHeight == 720); // for detecting the correct Overlay display size
-                if (ult::useRightAlignment && ult::correctFrameSize) {
-                    cfg::LayerPosX = 1280-32 - horizontalUnderscanPixels;
-                    ult::layerEdge = (1280-448);
-                }
-
                 //cfg::LayerWidth  = cfg::ScreenWidth * (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth));
                 //cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / float(cfg::LayerMaxHeight));
 
@@ -3889,34 +3882,43 @@ namespace tsl {
                     cfg::LayerHeight = cfg::ScreenHeight * (float(cfg::FramebufferHeight) / divH);
                 }
 
-                // Apply underscanning offset.
-                // Skipped entirely in 1080p pixel-perfect mode: the layer equals the
-                // framebuffer exactly (1:1), so adding underscan pixels would break that
-                // mapping and make cfg::LayerWidth/Height incorrect for bounds calculation.
+                // Right-aligned overlay: set layerEdge (logical left edge in 1280-ref space) accounting
+                // for underscan, then derive LayerPosX as layerEdge scaled to VI space (×1.5).
+                // This keeps layerEdge and LayerPosX consistent — layerEdge drives touch/render offsets,
+                // LayerPosX drives the VI compositor. They must agree or content appears mis-registered.
+                if (ult::useRightAlignment && ult::correctFrameSize) {
+                    ult::layerEdge = (1280 - 448) - horizontalUnderscanPixels; // 832 - HP
+                    cfg::LayerPosX = static_cast<u16>(
+                        float(ult::layerEdge) * float(cfg::ScreenWidth) / float(cfg::LayerMaxWidth) + 0.5f);
+                }
+
+                // Universal underscan corrections. Skipped in pixel-perfect mode (layer == framebuffer 1:1).
                 if (!ult::windowedLayerPixelPerfect) {
-                    if (ult::DefaultFramebufferWidth == 1280 && ult::DefaultFramebufferHeight == 28) {
-                        // Legacy 28px status-bar micro mode: expand height so the bar
-                        // reaches the TV's visible bottom edge through FitToLayer scaling.
-                        cfg::LayerHeight += cfg::ScreenHeight/720. * verticalUnderscanPixels;
-                    } else if (cfg::FramebufferWidth == cfg::LayerMaxWidth) {
-                        // Layer already spans the full VI width (LayerWidth == ScreenWidth == 1920).
-                        // Expanding further would exceed the VI compositor's hard limit and crash.
-                        // Underscan is unavoidable for full-width layers; position-based adjustment
-                        // is used instead (e.g. 360px micro mode via setLayerPos in constructor).
-                    } else if (ult::correctFrameSize) {
-                        // 448×720 full-mode: layer is 672 VI units wide, safe to expand.
-                        // Guard anyway so a misconfigured underscan value can't overflow u16.
-                        const u32 expanded = static_cast<u32>(cfg::LayerWidth) + horizontalUnderscanPixels;
-                        cfg::LayerWidth = static_cast<u16>(std::min(expanded, static_cast<u32>(cfg::ScreenWidth)));
-                    } else if (horizontalUnderscanPixels > 0) {
-                        // General windowed mode: scale the expansion proportionally.
-                        // Clamp to ScreenWidth so a large underscan value can never produce
-                        // a LayerWidth that viSetLayerSize will reject.
-                        const int expansion = static_cast<int>(
-                            horizontalUnderscanPixels *
-                            (float(cfg::FramebufferWidth) / float(cfg::LayerMaxWidth)) + 0.5f);
-                        const u32 expanded = static_cast<u32>(cfg::LayerWidth) + expansion;
-                        cfg::LayerWidth = static_cast<u16>(std::min(expanded, static_cast<u32>(cfg::ScreenWidth)));
+                    const float hScale = float(cfg::ScreenWidth)  / float(cfg::LayerMaxWidth);  // 1.5
+                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight); // 1.5
+
+                    // Horizontal: expand layer toward the right screen edge.
+                    // room = space between layer's current right edge and ScreenWidth (signed to avoid u32 wrap).
+                    // For right-aligned: room = hScale*HP exactly, expansion fills it perfectly → right edge = ScreenWidth.
+                    // For full-width layers: room = 0 → no-op, no crash, no mode-specific guard needed.
+                    if (horizontalUnderscanPixels > 0) {
+                        const s32 room = static_cast<s32>(cfg::ScreenWidth)
+                                       - static_cast<s32>(cfg::LayerPosX)
+                                       - static_cast<s32>(cfg::LayerWidth);
+                        if (room > 0) {
+                            const u32 expansion = static_cast<u32>(hScale * float(horizontalUnderscanPixels) + 0.5f);
+                            cfg::LayerWidth += static_cast<u16>(std::min(expansion, static_cast<u32>(room)));
+                        }
+                    }
+
+                    // Vertical: LayerPosY is always 0 here (just reset above), so this shifts
+                    // top-anchored layers down into the TV's visible area by vp_vi.
+                    // Bottom-anchored layers (e.g. micro) get their final Y from setLayerPos()
+                    // in the overlay constructor, which runs after init() and overrides this.
+                    if (verticalUnderscanPixels > 0) {
+                        const u32 vp_vi = static_cast<u32>(vScale * float(verticalUnderscanPixels) + 0.5f);
+                        const u32 maxY  = static_cast<u32>(cfg::ScreenHeight) - cfg::LayerHeight;
+                        cfg::LayerPosY  = std::min(vp_vi, maxY);
                     }
                 }
                 
