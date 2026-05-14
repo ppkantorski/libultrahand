@@ -3247,7 +3247,7 @@ namespace tsl {
                 // Universal underscan corrections. Skipped in pixel-perfect mode (layer == framebuffer 1:1).
                 if (!ult::windowedLayerPixelPerfect) {
                     // VP is in LayerMaxHeight-reference (720) units; scale to VI space for position math.
-                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
+                    //const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
 
                     // Right-aligned overlay: recompute X from current underscan before deriving room.
                     if (ult::useRightAlignment && ult::correctFrameSize) {
@@ -3899,7 +3899,7 @@ namespace tsl {
                 // Universal underscan corrections. Skipped in pixel-perfect mode (layer == framebuffer 1:1).
                 if (!ult::windowedLayerPixelPerfect) {
                     // VP is in LayerMaxHeight-reference (720) units; scale to VI space for position math.
-                    const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
+                    //const float vScale = float(cfg::ScreenHeight) / float(cfg::LayerMaxHeight);
 
                     // Right-aligned overlay: recompute X from current underscan before deriving room.
                     if (ult::useRightAlignment && ult::correctFrameSize) {
@@ -3946,6 +3946,8 @@ namespace tsl {
                     //        cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
                     //    }
                     //}
+                } else {
+                    // handle pixel perfect case
                 }
             
                 
