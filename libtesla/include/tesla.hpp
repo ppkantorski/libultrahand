@@ -10281,6 +10281,7 @@ namespace tsl {
             u64 m_holdStartTime_ns = 0;
             u64 m_prevKeysHeld = 0;
             bool m_wasLastHeld = false;
+            u32 m_tick = 0;
             bool m_drawFrameless = false;
 
             bool m_useClickAnimation = true;
@@ -10311,13 +10312,8 @@ namespace tsl {
             virtual ~StepTrackBarV2() {}
             
             virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState leftJoyStick, HidAnalogStickState rightJoyStick) override {
-                static u32 tick = 0;
-                static bool holding = false;
-                static u64 prevKeysHeld = 0;
-                const u64 keysReleased = prevKeysHeld & ~keysHeld;
-                prevKeysHeld = keysHeld;
-            
-                static bool wasLastHeld = false;
+                const u64 keysReleased = m_prevKeysHeld & ~keysHeld;
+                m_prevKeysHeld = keysHeld;
             
                 // Update KEY_R state for visual appearance
                 m_keyRHeld = (keysHeld & KEY_R) != 0;
@@ -10371,26 +10367,29 @@ namespace tsl {
             
                 if (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) {
                     if (((keysReleased & KEY_LEFT) || (keysReleased & KEY_RIGHT)) ||
-                        (wasLastHeld && !(keysHeld & (KEY_LEFT | KEY_RIGHT)))) {
-                        updateAndExecute();
-                        holding = false;
-                        wasLastHeld = false;
-                        tick = 0;
+                        (m_wasLastHeld && !(keysHeld & (KEY_LEFT | KEY_RIGHT)))) {
+                        if (m_holding || m_wasLastHeld)
+                            updateAndExecute();
+                        m_holding = false;
+                        m_wasLastHeld = false;
+                        m_tick = 0;
                         return true;
                     }
                     
                     if (keysHeld & KEY_LEFT && keysHeld & KEY_RIGHT) {
-                        tick = 0;
+                        m_tick = 0;
                         return true;
                     }
                     
                     if (keysHeld & (KEY_LEFT | KEY_RIGHT)) {
-                        if (!holding) {
-                            holding = true;
-                            tick = 0;
+                        if (!m_holding) {
+                            if (!(keysDown & (KEY_LEFT | KEY_RIGHT)))
+                                return false;
+                            m_holding = true;
+                            m_tick = 0;
                         }
                         
-                        if ((tick == 0 || tick > 20) && (tick % 3) == 0) {
+                        if ((m_tick == 0 || m_tick > 20) && (m_tick % 3) == 0) {
                             const float stepSize = static_cast<float>(m_maxValue - m_minValue) / (this->m_numSteps - 1);
                             if (keysHeld & KEY_LEFT && this->m_index > 0) {
                                 triggerNavigationFeedback();
@@ -10408,13 +10407,13 @@ namespace tsl {
                             this->m_valueChangedListener(this->getProgress());
                             if (m_executeOnEveryTick)
                                 updateAndExecute(false);
-                            wasLastHeld = true;
+                            m_wasLastHeld = true;
                         }
-                        tick++;
+                        m_tick++;
                         return true;
                     } else {
-                        holding = false;
-                        tick = 0;
+                        m_holding = false;
+                        m_tick = 0;
                     }
                 }
                 
