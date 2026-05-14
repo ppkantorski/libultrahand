@@ -29,6 +29,7 @@ namespace ult {
     const std::string NX_OVLLOADER_PATH = ROOT_PATH + "config/nx-ovlloader/";
     const std::string OVL_HEAP_CONFIG_PATH = NX_OVLLOADER_PATH + "heap_size.bin";
     const std::string OVL_EXIT_FLAG_PATH = NX_OVLLOADER_PATH + "exit_flag.bin";
+    const std::string OVL_RELOAD_FLAG_PATH = NX_OVLLOADER_PATH + "reload_flag.bin";
     
     // Filenames
     CONSTEXPR_STRING std::string CONFIG_FILENAME       = "config.ini";

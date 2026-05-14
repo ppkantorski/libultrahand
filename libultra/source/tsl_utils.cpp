@@ -1310,6 +1310,25 @@ namespace ult {
         return success;
     }
 
+    bool requestOverlayReload() {
+        // Create reloading flag to indicate this was an intentional restart
+        ult::createDirectory(ult::FLAGS_PATH);
+        FILE* f = fopen(ult::RELOADING_FLAG_FILEPATH.c_str(), "wb");
+        if (f) {
+            fclose(f);  // Empty file, just needs to exist
+        }
+
+        ult::createDirectory(ult::NX_OVLLOADER_PATH);
+        
+        f = fopen(ult::OVL_RELOAD_FLAG_PATH.c_str(), "wb");
+        if (!f) return false;
+        
+        u8 flag = 1;
+        bool success = (fwrite(&flag, 1, 1, f) == 1);
+        fclose(f);
+        
+        return success;
+    }
 
     const std::string loaderInfo = envGetLoaderInfo();
     std::string loaderTitle = extractTitle(loaderInfo);

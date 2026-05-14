@@ -660,6 +660,8 @@ namespace ult {
     // Implementation
     bool requestOverlayExit();
 
+    bool requestOverlayReload();
+
     extern const std::string loaderInfo;
     extern std::string loaderTitle;
     extern bool expandedMemory;
