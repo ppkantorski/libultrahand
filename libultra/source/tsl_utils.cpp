@@ -255,7 +255,9 @@ namespace ult {
     std::atomic<bool> threadFailure(false);
     std::atomic<bool> runningInterpreter(false);
     std::atomic<bool> shakingProgress(true);
-    
+
+    u32 holdDurationMs = 3000;
+
     std::atomic<bool> isHidden(false);
     std::atomic<bool> externalAbortCommands(false);
     
@@ -403,6 +405,8 @@ namespace ult {
     std::string FAVORITE;
     std::string MAIN_SETTINGS;
     std::string UI_SETTINGS;
+    std::string INPUT;
+    std::string HOLD_TIME;
     std::string WIDGET;
     std::string WIDGET_ITEMS;
     std::string WIDGET_SETTINGS;
@@ -617,6 +621,8 @@ namespace ult {
         {&FAVORITE,                   "FAVORITE",                   "Favorite"},
         {&MAIN_SETTINGS,              "MAIN_SETTINGS",              "Main Settings"},
         {&UI_SETTINGS,                "UI_SETTINGS",                "UI Settings"},
+        {&INPUT,                      "INPUT",                      "Input"},
+        {&HOLD_TIME,                  "HOLD_TIME",                  "Hold Time"},
         {&WIDGET,                     "WIDGET",                     "Widget"},
         {&WIDGET_ITEMS,               "WIDGET_ITEMS",               "Widget Items"},
         {&WIDGET_SETTINGS,            "WIDGET_SETTINGS",            "Widget Settings"},
