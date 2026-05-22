@@ -5063,7 +5063,7 @@ namespace tsl {
                         renderer->disableScissoring();
                         updateScroll(subScroll);
                     } else {
-                        renderer->drawString(m_subtitle, false, subtitleX, subtitleY, 15, bannerVersionTextColor);
+                        renderer->drawStringWithColoredSections(m_subtitle, false, s_dividerSpecialChars, subtitleX, subtitleY, 15, bannerVersionTextColor, textSeparatorColor);
                     }
                 }
             #endif
@@ -5437,7 +5437,7 @@ namespace tsl {
                 const std::string& renderSubtitle = m_subtitle;
                 
                 renderer->drawString(renderTitle, false, 20, 50, 32, defaultOverlayColor);
-                renderer->drawString(renderSubtitle, false, 20, y+2+23, 15, bannerVersionTextColor);
+                renderer->drawStringWithColoredSections(renderSubtitle, false, tsl::s_dividerSpecialChars, 20, y+2+23, 15, bannerVersionTextColor, separatorColor);
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -13708,7 +13708,7 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
             skipInitialShowRumbleClick = shouldFireEvent && !comboReturn && skipCombo;
             #elif IS_STATUS_MONITOR_DIRECTIVE
-            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0);
+            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0) || (isValidOverlayMode() && !directMode);
             #else
             skipInitialShowRumbleClick = !directMode;
             #endif
