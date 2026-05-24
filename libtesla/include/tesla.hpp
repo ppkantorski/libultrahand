@@ -3402,8 +3402,64 @@ namespace tsl {
                     //        cfg::LayerPosY = vp_vi <= maxY ? maxY - vp_vi : 0u;
                     //    }
                     //}
-                } else { // HANDLE 1080p case
+                } else {
+                    // Pixel-perfect mode (832×1080 layer in 1920×1080 VI space).
+                    // getUnderscanPixels() returns the total crop in 1280×720 reference
+                    // space.  Apply the same direct expansion the 720p path uses — no
+                    // scaling — so the layer extends past the TV's crop on both sides
+                    // and the visible portion lands 1:1 with the framebuffer content.
+                    //
+                    // We do NOT gate the expansion on a "room" calculation against the
+                    // current cfg::LayerPosX/Y the way the 720p path does.  In pixel-
+                    // perfect mode the layer is small and movable: Mini.hpp's sliding
+                    // window can leave LayerPosX/Y at any value in [0, ScreenW-LayerW]
+                    // / [0, ScreenH-LayerH] before underscan engages.  Room-limited
+                    // expansion would then apply asymmetrically (e.g. full horizontal
+                    // expansion when LayerPosX is small, no vertical expansion when
+                    // LayerPosY is large), distorting the aspect ratio so the rect
+                    // appears wider than it should be on the transition.
+                    //
+                    // Instead: always expand both dimensions by the full underscan
+                    // amount (capped only by what fits on-screen if positioned at the
+                    // origin), then clamp LayerPosX/Y to the new valid range so the
+                    // layer never extends off-screen.  Mini.hpp's next updateLayerPos()
+                    // call will recompute the correct anchored position from the live
+                    // cfg::LayerWidth/Height — the renderingStopEvent signal below
+                    // wakes the render loop immediately so this happens within ~one
+                    // frame of the underscan transition.
+                    if (horizontalUnderscanPixels > 0) {
+                        const s32 maxExpansion = static_cast<s32>(cfg::ScreenWidth)
+                                               - static_cast<s32>(cfg::LayerWidth);
+                        if (maxExpansion > 0) {
+                            const u32 expansion = static_cast<u32>(horizontalUnderscanPixels);
+                            cfg::LayerWidth += static_cast<u16>(
+                                std::min(expansion, static_cast<u32>(maxExpansion)));
+                        }
+                    }
+                    if (verticalUnderscanPixels > 0) {
+                        const s32 maxExpansion = static_cast<s32>(cfg::ScreenHeight)
+                                               - static_cast<s32>(cfg::LayerHeight);
+                        if (maxExpansion > 0) {
+                            const u32 expansion = static_cast<u32>(verticalUnderscanPixels);
+                            cfg::LayerHeight += static_cast<u16>(
+                                std::min(expansion, static_cast<u32>(maxExpansion)));
+                        }
+                    }
 
+                    // Clamp the existing layer position to the new valid range so the
+                    // layer never extends past the screen edge after the expansion.
+                    // Mini.hpp will replace these values within ~one frame via its
+                    // own clamp logic, but this guarantees a single transient frame
+                    // (the one VI displays between this expansion and Mini's next
+                    // updateLayerPos call) lands at a valid on-screen position.
+                    const s32 maxPosX = static_cast<s32>(cfg::ScreenWidth)
+                                      - static_cast<s32>(cfg::LayerWidth);
+                    const s32 maxPosY = static_cast<s32>(cfg::ScreenHeight)
+                                      - static_cast<s32>(cfg::LayerHeight);
+                    if (static_cast<s32>(cfg::LayerPosX) > maxPosX)
+                        cfg::LayerPosX = static_cast<u16>(std::max(0, maxPosX));
+                    if (static_cast<s32>(cfg::LayerPosY) > maxPosY)
+                        cfg::LayerPosY = static_cast<u16>(std::max(0, maxPosY));
                 }
             
                 // Apply to the VI layer. Right-aligned overlays call twice (size then position)
@@ -4055,7 +4111,30 @@ namespace tsl {
                     //    }
                     //}
                 } else {
-                    // handle pixel perfect case
+                    // Pixel-perfect mode: same room-free expansion as updateLayerSize().
+                    // On a fresh init() cfg::LayerPosX/Y are both 0 (set just above), so
+                    // the room-vs-maxExpansion distinction doesn't matter here — but we
+                    // keep the same code path for consistency with the runtime poller
+                    // so reopen-during-underscan and transition-into-underscan converge
+                    // on identical cfg::LayerWidth/Height values.
+                    if (horizontalUnderscanPixels > 0) {
+                        const s32 maxExpansion = static_cast<s32>(cfg::ScreenWidth)
+                                               - static_cast<s32>(cfg::LayerWidth);
+                        if (maxExpansion > 0) {
+                            const u32 expansion = static_cast<u32>(horizontalUnderscanPixels);
+                            cfg::LayerWidth += static_cast<u16>(
+                                std::min(expansion, static_cast<u32>(maxExpansion)));
+                        }
+                    }
+                    if (verticalUnderscanPixels > 0) {
+                        const s32 maxExpansion = static_cast<s32>(cfg::ScreenHeight)
+                                               - static_cast<s32>(cfg::LayerHeight);
+                        if (maxExpansion > 0) {
+                            const u32 expansion = static_cast<u32>(verticalUnderscanPixels);
+                            cfg::LayerHeight += static_cast<u16>(
+                                std::min(expansion, static_cast<u32>(maxExpansion)));
+                        }
+                    }
                 }
             
                 
@@ -12501,7 +12580,21 @@ namespace tsl {
                         if (firstUnderscanCheck || currentUnderscanPixels != lastUnderscanPixels) {
                             // Update layer dimensions without destroying state
                             tsl::gfx::Renderer::get().updateLayerSize();
-                            
+                            // Wake the frame limiter immediately after a real underscan
+                            // change so a corrected frame is drawn at the new layer
+                            // dimensions right away.  Without this the compositor shows
+                            // the resized layer filled with stale framebuffer content for
+                            // up to 1/TeslaFPS seconds — the visible stretch/squish step.
+                            // Gated on IS_STATUS_MONITOR_DIRECTIVE because renderingStopEvent
+                            // and isRendering are only meaningful in that build path (endFrame).
+                            // Only signal when isRendering is true so we don't leave a stale
+                            // signal that would cause the next frame to skip its wait interval.
+                            #if IS_STATUS_MONITOR_DIRECTIVE
+                            if (!firstUnderscanCheck && isRendering) {
+                                leventSignal(&renderingStopEvent);
+                            }
+                            #endif
+
                             lastUnderscanPixels = currentUnderscanPixels;
                             firstUnderscanCheck = false;
                         }
