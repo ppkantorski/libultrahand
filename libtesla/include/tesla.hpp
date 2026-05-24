@@ -3312,7 +3312,38 @@ namespace tsl {
 
             void updateLayerSize() {
                 const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = getUnderscanPixels();
-            
+
+                // ── Z-order adjustment on underscan transitions ──────────────────
+                // VI clips Z=max layers when the display is in underscan mode, so
+                // the overlay must drop to Z=34 (the "underscan edge") when
+                // underscan becomes active and rise back to Z=max when it clears.
+                // init() sets Z once at startup based on the initial underscan
+                // state; this catches later transitions (e.g. handheld→docked-
+                // with-underscan while the overlay is already open) without
+                // requiring the user to close and reopen.
+                //
+                // The static guard makes this a no-op when the active/inactive
+                // state hasn't changed, so a flicker of underscan recompute that
+                // produces the same logical state (active vs not) doesn't issue
+                // a redundant viSetLayerZ call.
+                {
+                    static int  s_lastUnderscanActive = -1;  // -1 = uninitialised
+                    const  int  underscanActive = (horizontalUnderscanPixels != 0) ? 1 : 0;
+                    if (underscanActive != s_lastUnderscanActive) {
+                        if (underscanActive) {
+                            viSetLayerZ(&this->m_layer, 34); // edge for underscanning
+                        } else {
+                            s32 layerZ = 0;
+                            if (R_SUCCEEDED(viGetZOrderCountMax(&this->m_display, &layerZ)) && layerZ > 0) {
+                                viSetLayerZ(&this->m_layer, layerZ);
+                            } else {
+                                viSetLayerZ(&this->m_layer, 255);
+                            }
+                        }
+                        s_lastUnderscanActive = underscanActive;
+                    }
+                }
+
                 // Recalculate base layer dimensions from framebuffer size.
                 {
                     const float divW = ult::windowedLayerPixelPerfect ? float(cfg::ScreenWidth)  : float(cfg::LayerMaxWidth);
