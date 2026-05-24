@@ -13806,6 +13806,12 @@ namespace tsl {
         
 
         bool shouldFireEvent = false;
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        // One-shot flag: true until the first overlay->loop() completes, then
+        // consumed by the post-frame feedback block so enter feedback fires
+        // exactly once on launch (for both menu and direct-combo paths).
+        bool pendingFirstFrameFeedback = true;
+    #endif
 
     #if IS_LAUNCHER_DIRECTIVE
        
@@ -13891,7 +13897,13 @@ namespace tsl {
             #if IS_LAUNCHER_DIRECTIVE
             skipInitialShowRumbleClick = shouldFireEvent && !comboReturn && skipCombo;
             #elif IS_STATUS_MONITOR_DIRECTIVE
-            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0) || (isValidOverlayMode() && !directMode);
+            // For Status Monitor, also suppress on direct combo launches.
+            // Modes with heavy first-frame work (e.g. Mini's font-cache priming
+            // and width pre-calculation) need the rumble to fire AFTER the
+            // first frame is rendered so haptic and visual feedback coincide.
+            // The post-frame fallback below fires triggerEnterFeedback() once
+            // the first overlay->loop() completes.
+            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0) || isValidOverlayMode();
             #else
             skipInitialShowRumbleClick = !directMode;
             #endif
@@ -14040,22 +14052,38 @@ namespace tsl {
                             }
                         }
                         #else
+                        #if IS_STATUS_MONITOR_DIRECTIVE
+                        // Status Monitor: fire enter feedback after the first
+                        // frame for BOTH menu-launched (!directMode + skipCombo)
+                        // and direct-combo (directMode) paths. The show() rumble
+                        // was suppressed for both above so haptic+visual sync up.
+                        // pendingFirstFrameFeedback is one-shot — flipped false
+                        // after firing so it only happens on the first iteration.
+                        // Direct-combo gets RUMBLE-ONLY (no enter/exit sound) so
+                        // a combo launch feels like a quick tactile confirmation,
+                        // not a UI navigation event.
+                        if (pendingFirstFrameFeedback && (shouldFireEvent || directMode)) {
+                            pendingFirstFrameFeedback = false;
+                            shouldFireEvent = false;
+                            const bool returning = (lastMode.compare("returning") == 0);
+                            if (directMode) {
+                                if (returning) triggerRumbleDoubleClickFeedback();
+                                else           triggerRumbleClickFeedback();
+                            } else {
+                                if (returning) triggerExitFeedback();
+                                else           triggerEnterFeedback();
+                            }
+                        }
+                        #else
                         if (!directMode && shouldFireEvent) {
                             shouldFireEvent = false;
-                            #if IS_STATUS_MONITOR_DIRECTIVE
-                            if (lastMode.compare("returning") == 0) {
-                                triggerExitFeedback();
-                            } else {
-                                triggerEnterFeedback();
-                            }
-                            #else
                             if (isReturningLaunch) {
                                 triggerExitFeedback();
                             } else {
                                 triggerEnterFeedback();
                             }
-                            #endif
                         }
+                        #endif
                         #endif
                     }
     
