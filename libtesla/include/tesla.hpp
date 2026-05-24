@@ -184,6 +184,7 @@ inline std::string comboReturnPackageName;      // package folder that triggered
 static inline std::string returnOverlayPath{ult::OVERLAY_PATH + "ovlmenu.ovl"};
 inline bool skipClosingExitFeedback{false};
 inline bool skipInitialShowRumbleClick{false};
+inline std::atomic<bool> silentLaunch{false}; // set by --silentLaunch argv; suppresses entry+exit feedback for one launch cycle
 
 inline std::mutex jumpItemMutex;
 inline std::string jumpItemName;
@@ -13684,7 +13685,8 @@ namespace tsl {
         {"foregroundFix", 13, 4},
         {"package", 7, 5},
         {"lastSelectedItem", 16, 6},
-        {"comboReturn", 11, 7} // new option
+        {"comboReturn", 11, 7}, // new option
+        {"silentLaunch", 12, 8} // suppress entry+exit feedback for one launch cycle
     };
 
 
@@ -13846,7 +13848,7 @@ namespace tsl {
             if (s[0] != '-' || s[1] != '-') continue;
             const char* opt = s + 2;
     
-            for (u8 i = 0; i < 7; i++) { // now 6 instead of 5
+            for (u8 i = 0; i < 8; i++) { // now 7 options (added silentLaunch)
                 if (memcmp(opt, options[i].name, options[i].len) == 0 && opt[options[i].len] == '\0') {
                     switch (options[i].action) {
                         case 1: // direct
@@ -13886,6 +13888,9 @@ namespace tsl {
                             #if IS_LAUNCHER_DIRECTIVE
                             comboReturn = true;
                             #endif
+                            break;
+                        case 8: // silentLaunch — suppress entry+exit feedback for this one launch cycle
+                            silentLaunch.store(true, std::memory_order_release);
                             break;
                     }
                 }
@@ -14019,17 +14024,11 @@ namespace tsl {
             // is about to fire on the first loop iteration — let the double
             // click stand alone rather than stacking a click on top of it.
             #if IS_LAUNCHER_DIRECTIVE
-            skipInitialShowRumbleClick = shouldFireEvent && !comboReturn && skipCombo;
+            skipInitialShowRumbleClick = (shouldFireEvent && !comboReturn && skipCombo) || silentLaunch.load(std::memory_order_acquire);
             #elif IS_STATUS_MONITOR_DIRECTIVE
-            // For Status Monitor, also suppress on direct combo launches.
-            // Modes with heavy first-frame work (e.g. Mini's font-cache priming
-            // and width pre-calculation) need the rumble to fire AFTER the
-            // first frame is rendered so haptic and visual feedback coincide.
-            // The post-frame fallback below fires triggerEnterFeedback() once
-            // the first overlay->loop() completes.
-            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0) || isValidOverlayMode();
+            skipInitialShowRumbleClick = (lastMode.compare("returning") == 0) || isValidOverlayMode() || silentLaunch.load(std::memory_order_acquire);
             #else
-            skipInitialShowRumbleClick = !directMode;
+            skipInitialShowRumbleClick = !directMode || silentLaunch.load(std::memory_order_acquire);
             #endif
 
             while (shData.running.load(std::memory_order_acquire)) {
@@ -14189,22 +14188,29 @@ namespace tsl {
                         if (pendingFirstFrameFeedback && (shouldFireEvent || directMode)) {
                             pendingFirstFrameFeedback = false;
                             shouldFireEvent = false;
-                            const bool returning = (lastMode.compare("returning") == 0);
-                            if (directMode) {
-                                if (returning) triggerRumbleDoubleClickFeedback();
-                                else           triggerRumbleClickFeedback();
-                            } else {
-                                if (returning) triggerExitFeedback();
-                                else           triggerEnterFeedback();
+                            if (!silentLaunch.exchange(false, std::memory_order_acq_rel)) {
+                                // Normal launch — fire the appropriate haptic/sound feedback.
+                                const bool returning = (lastMode.compare("returning") == 0);
+                                if (directMode) {
+                                    if (returning) triggerRumbleDoubleClickFeedback();
+                                    else           triggerRumbleClickFeedback();
+                                } else {
+                                    if (returning) triggerExitFeedback();
+                                    else           triggerEnterFeedback();
+                                }
                             }
+                            // If silentLaunch was true it is now cleared (exchange returned true);
+                            // feedback is silently skipped for this one launch cycle only.
                         }
                         #else
                         if (!directMode && shouldFireEvent) {
                             shouldFireEvent = false;
-                            if (isReturningLaunch) {
-                                triggerExitFeedback();
-                            } else {
-                                triggerEnterFeedback();
+                            if (!silentLaunch.exchange(false, std::memory_order_acq_rel)) {
+                                if (isReturningLaunch) {
+                                    triggerExitFeedback();
+                                } else {
+                                    triggerEnterFeedback();
+                                }
                             }
                         }
                         #endif
