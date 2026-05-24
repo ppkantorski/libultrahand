@@ -217,6 +217,35 @@ inline void signalFeedback() { leventSignal(&hapticsEvent); leventSignal(&soundE
 inline std::atomic<bool> feedbackPollerStop{false};
 inline std::atomic<bool> hidReinitInProgress{false};
 
+// ─── Shallow-sleep coordination ───────────────────────────────────────────────
+// Maintained by backgroundEventPoller via the PSC (Power State Coordinator)
+// service, the same OS mechanism Nintendo's own sysmodules use for sleep/wake
+// notification.  The poller registers a custom PscPmModule with psc:m; HOS
+// dispatches PscPmState_ReadySleep on sleep entry and PscPmState_ReadyAwaken on
+// wake, and we flip these globals in response.  No polling anywhere — the OS
+// signals us directly.
+//
+//   systemSleeping  — fast atomic check, suitable for the hot path of any
+//                     background thread ("am I about to do work that the
+//                     sleeping system can't use?")
+//   wakeEvent       — signalled the instant PSC reports wake, cleared the
+//                     instant PSC reports sleep entry.  Consumer threads can
+//                     leventWait(&wakeEvent, UINT64_MAX) to pay literally
+//                     zero CPU until wake.
+//
+// Helpers tsl::hlp::isSystemSleeping() / waitWhileSleeping(timeout_ns) below
+// wrap the common cases for use in overlay-side polling threads.
+// Shared sleep state — maintained by backgroundSleepPoller via PSC.
+// All overlays and their worker threads read these to gate hardware access.
+//
+//   systemSleeping  — fast atomic check for hot paths
+//   wakeEvent       — signalled on wake, cleared on sleep entry.
+//                     Consumer threads call leventWait(&wakeEvent, UINT64_MAX)
+//                     to block at zero CPU cost during sleep.
+inline std::atomic<bool> systemSleeping{false};
+inline UEvent sleepStopEvent;  // signalled on shutdown to unblock backgroundSleepPoller
+inline LEvent wakeEvent;  // zero-initialised; leventCreate not required
+
 // Sound triggering variables
 inline std::atomic<bool> triggerNavigationSound{false};
 inline std::atomic<bool> triggerEnterSound{false};
@@ -620,6 +649,54 @@ namespace tsl {
     // Helpers
     
     namespace hlp {
+
+        /**
+         * @brief Fast check: is the system currently in shallow sleep?
+         *
+         * Wraps the global ::systemSleeping atomic, which is maintained by
+         * libultrahand's backgroundEventPoller via PSC (Power State
+         * Coordinator) notifications.  Suitable for the hot path of any
+         * background thread — single relaxed-acquire atomic load.
+         *
+         * Returns false until the first PSC sleep transition is observed, so
+         * it is safe to call regardless of when the consumer thread starts.
+         */
+        ALWAYS_INLINE bool isSystemSleeping() {
+            return ::systemSleeping.load(std::memory_order_acquire);
+        }
+
+        /**
+         * @brief Block the calling thread until the system wakes from shallow
+         *        sleep, or until timeout_ns elapses, whichever comes first.
+         *
+         * Returns immediately if the system is not currently sleeping.
+         * Otherwise waits on the shared ::wakeEvent (signalled by
+         * backgroundEventPoller when PSC reports PscPmState_ReadyAwaken), so
+         * the calling thread consumes zero CPU during the entire sleep
+         * window regardless of how long it lasts.
+         *
+         * Recommended usage at the top of any polling-thread loop:
+         *
+         *     do {
+         *         if (tsl::hlp::waitWhileSleeping(timeout_ns)) continue;
+         *         // ... normal poll work ...
+         *     } while (!leventWait(&threadexit, timeout_ns));
+         *
+         * Pass a finite timeout (e.g. matching the thread's normal exit-event
+         * cadence) if the thread also needs to wake periodically to observe
+         * its own exit flag.  UINT64_MAX is safe too — backgroundEventPoller
+         * signals wakeEvent unconditionally on shutdown to release any
+         * indefinitely-blocked consumers.
+         *
+         * @param timeout_ns Max wait while sleeping.  Defaults to UINT64_MAX.
+         * @return true if the system was sleeping when called (caller should
+         *         restart its loop), false if it was already awake.
+         */
+        ALWAYS_INLINE bool waitWhileSleeping(u64 timeout_ns = UINT64_MAX) {
+            if (!::systemSleeping.load(std::memory_order_acquire)) return false;
+            leventWait(&::wakeEvent, timeout_ns);
+            return true;
+        }
 
         /**
          * @brief Wrapper for service initialization
@@ -12179,6 +12256,7 @@ namespace tsl {
     namespace impl {
         static constexpr const char* TESLA_CONFIG_FILE = "/config/tesla/config.ini";
         static constexpr const char* ULTRAHAND_CONFIG_FILE = "/config/ultrahand/config.ini";
+
         
         /**
          * @brief Data shared between the different ult::renderThreads
@@ -12339,7 +12417,8 @@ namespace tsl {
             u64 lastNotifCheck = 0;
             u64 minusHoldStartTick = 0;
             bool minusHoldArmed = false;
-            
+
+
             while (shData->running.load(std::memory_order_acquire)) {
 
                 u64 nowTick = armGetSystemTick();
@@ -13041,40 +13120,35 @@ namespace tsl {
                         case WaiterObject_PowerButton:
                             eventClear(&powerButtonPressEvent);
 
-                            // Block feedback thread from touching HID during reinit
+                            // The sleep button fires on both sleep entry and wake.
+                            // Reinitialize HID unconditionally — this restores input
+                            // state on wake, and is safe on sleep entry too (HID
+                            // will simply reinit again on wake if needed).
                             hidReinitInProgress.store(true, std::memory_order_seq_cst);
-                            svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish its current iteration
-        
-                            // Perform any necessary cleanup
-                            hidExit();
-        
-                            // Reinitialize resources
-                            ASSERT_FATAL(hidInitialize()); // Reinitialize HID to reset states
-                            
-                            // Reinitialize both controllers
-                            padInitialize(&pad_p1, HidNpadIdType_No1);
-                            padInitialize(&pad_handheld, HidNpadIdType_Handheld);
-                            hidInitializeTouchScreen();
-                            
-                            // Update both controllers
-                            padUpdate(&pad_p1);
-                            padUpdate(&pad_handheld);
+                            svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish
 
-                            // Clear shared input state so wake doesn't see phantom held keys
-                            {
-                                std::lock_guard<std::mutex> lock(shData->dataMutex);
-                                shData->keysDown        = 0;
-                                shData->keysHeld        = 0;
-                                shData->keysDownPending = 0;
-                                shData->touchState      = { 0 };
+                            hidExit();
+                            if (R_SUCCEEDED(hidInitialize())) {
+                                padInitialize(&pad_p1, HidNpadIdType_No1);
+                                padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+                                hidInitializeTouchScreen();
+                                padUpdate(&pad_p1);
+                                padUpdate(&pad_handheld);
+                                {
+                                    std::lock_guard<std::mutex> lock(shData->dataMutex);
+                                    shData->keysDown        = 0;
+                                    shData->keysHeld        = 0;
+                                    shData->keysDownPending = 0;
+                                    shData->touchState      = { 0 };
+                                }
+                                triggerInitHaptics.store(true, std::memory_order_release);
+                                signalFeedback(); // wake poller to run initHaptics
                             }
 
-                            triggerInitHaptics.store(true, std::memory_order_release);
                             hidReinitInProgress.store(false, std::memory_order_seq_cst);
-                            signalFeedback();   // wake poller to run initHaptics
                             break;
-                            
-                            
+
+
                         case WaiterObject_CaptureButton:
                             if (screenshotsAreDisabled) {
                                 eventClear(&captureButtonPressEvent);
@@ -13117,6 +13191,11 @@ namespace tsl {
             }
             //hidExit();
 
+            // Signal wakeEvent so any consumer threads blocked in
+            // waitWhileSleeping() can observe their exit flags and shut down.
+            systemSleeping.store(false, std::memory_order_release);
+            leventSignal(&wakeEvent);
+
         }
 
         /**
@@ -13124,6 +13203,104 @@ namespace tsl {
          *
          * @param args Used to pass in a pointer to a \ref SharedThreadData struct
          */
+        // ── Sleep poller thread ───────────────────────────────────────────────────
+        // Dedicated thread for PSC (Power State Coordinator) sleep/wake detection.
+        // Registers a PscPmModule and blocks indefinitely on its event — zero CPU
+        // between sleep/wake transitions.  Shutdown via sleepStopEvent UEvent.
+        // Kept separate from backgroundEventPoller so PSC acks are never delayed
+        // by input processing or the waitObjects timeout.
+        //
+        // Module ID 0x5453 ("ST" — Switch Tesla), no dependencies.
+        // Best-effort: if PSC init fails, just exits — the sleep gate becomes a
+        // no-op and the overlay behaves as it did before this mechanism existed.
+        static void backgroundSleepPoller(void* /*args*/) {
+            constexpr PscPmModuleId kModuleId = (PscPmModuleId)0x5453;
+
+            if (R_FAILED(pscmInitialize()))
+                return;
+
+            PscPmModule pscModule = {};
+            if (R_FAILED(pscmGetPmModule(&pscModule, kModuleId, nullptr, 0, /*autoclear=*/true))) {
+                pscmExit();
+                return;
+            }
+
+            // Wait on either a PSC event or the shutdown signal — zero CPU,
+            // no polling, instant response to both sleep transitions and overlay exit.
+            enum SleepWaiter { SleepWaiter_PSC = 0, SleepWaiter_Stop = 1 };
+            const Waiter sleepWaiters[] = {
+                [SleepWaiter_PSC]  = waiterForEvent(&pscModule.event),
+                [SleepWaiter_Stop] = waiterForUEvent(&sleepStopEvent),
+            };
+
+            while (true) {
+                s32 idx = -1;
+                Result rc = waitObjects(&idx, sleepWaiters, 2, UINT64_MAX);
+
+                if (R_FAILED(rc))
+                    continue;
+
+                if (idx == SleepWaiter_Stop)
+                    break; // shutdown signalled
+
+                // PSC event fired — read and handle the state change
+                PscPmState state = PscPmState_Awake;
+                u32        flags = 0;
+                if (R_FAILED(pscPmModuleGetRequest(&pscModule, &state, &flags))) {
+                    continue;
+                }
+
+                switch (state) {
+                    case PscPmState_ReadySleep:
+                    case PscPmState_ReadySleepCritical:
+                        leventClear(&wakeEvent);
+                        systemSleeping.store(true, std::memory_order_release);
+                        break;
+
+                    case PscPmState_ReadyAwaken:
+                    case PscPmState_ReadyAwakenCritical:
+                    case PscPmState_ReadyShutdown:
+                        systemSleeping.store(false, std::memory_order_release);
+                        leventSignal(&wakeEvent);
+                        break;
+
+                    default:
+                        break;
+                }
+
+                // Mandatory ack — HOS waits for this before progressing
+                pscPmModuleAcknowledge(&pscModule, state);
+
+                // ── Temporary sleep/wake logging ──────────────────────────
+                //if (tsl::notification) {
+                //    if (state == PscPmState_ReadySleep || state == PscPmState_ReadySleepCritical)
+                //        tsl::notification->show("PSC: sleep entered", 22);
+                //    else if (state == PscPmState_ReadyAwaken || state == PscPmState_ReadyAwakenCritical)
+                //        tsl::notification->show("PSC: wake detected", 22);
+                //}
+
+                //if (tsl::notification) {
+                //    if (state == PscPmState_ReadySleep)
+                //        tsl::notification->show("PSC: sleep entered", 22, 20, "", "", 0);
+                //    else if (state == PscPmState_ReadyAwaken)
+                //        tsl::notification->show("PSC: wake detected", 22, 20, "", "", 0);
+                //}
+                // ─────────────────────────────────────────────────────────
+
+                // On shutdown state, exit the loop
+                if (state == PscPmState_ReadyShutdown)
+                    break;
+            }
+
+            // Cleanup
+            systemSleeping.store(false, std::memory_order_release);
+            leventSignal(&wakeEvent); // release any waiting consumer threads
+
+            pscPmModuleFinalize(&pscModule);
+            pscPmModuleClose(&pscModule);
+            pscmExit();
+        }
+
         // ── Haptics thread ────────────────────────────────────────────────────────
         // Dedicated thread for haptic feedback. Calls the blocking standalone
         // rumble functions directly — no timer state machine needed.
@@ -13616,10 +13793,16 @@ namespace tsl {
         Thread backgroundSoundThread;
         threadCreate(&backgroundSoundThread, impl::backgroundSoundPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
         threadStart(&backgroundSoundThread);
-        
+
         Thread backgroundEventThread;
         threadCreate(&backgroundEventThread, impl::backgroundEventPoller, &shData, nullptr, 0x2000, 0x2c, -2);
         threadStart(&backgroundEventThread);
+
+        // PSC sleep/wake detection — dedicated thread, zero CPU between transitions
+        ueventCreate(&sleepStopEvent, true); // auto-clear; used to wake poller on shutdown
+        Thread backgroundSleepThread;
+        threadCreate(&backgroundSleepThread, impl::backgroundSleepPoller, nullptr, nullptr, 0x1000, 0x2c, -2);
+        threadStart(&backgroundSleepThread);
         
 
         bool shouldFireEvent = false;
@@ -13926,6 +14109,11 @@ namespace tsl {
             shData.running.store(false, std::memory_order_release);
             threadWaitForExit(&backgroundEventThread);
             threadClose(&backgroundEventThread);
+
+            // Stop sleep poller — instant unblock via stop event
+            ueventSignal(&sleepStopEvent);
+            threadWaitForExit(&backgroundSleepThread);
+            threadClose(&backgroundSleepThread);
             
             // Cleanup overlay resources
             hlp::requestForeground(false);
