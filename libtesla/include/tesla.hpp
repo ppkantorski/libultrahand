@@ -13030,6 +13030,16 @@ namespace tsl {
                                 const std::string& modeArg = comboInfo.launchArg;
                                 const std::string overlayFileName = ult::getNameFromPath(overlayPath);
                     
+                                // Overlay file must actually exist before any support checks,
+                                // otherwise usingLNY2() (which returns false when fopen fails)
+                                // would misreport a missing overlay as AMS-incompatible.
+                                if (!ult::isFile(overlayPath)) {
+                                    if (tsl::notification) {
+                                        tsl::notification->showNow(ult::NOTIFY_HEADER+ult::OVERLAY_DOES_NOT_EXIST, 22);
+                                    }
+                                    continue;
+                                }
+                    
                                 // Check HOS21 support before doing anything
                                 if (requiresLNY2 && !usingLNY2(overlayPath)) {
                                     // Skip launch if not supported

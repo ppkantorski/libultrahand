@@ -520,6 +520,7 @@ namespace ult {
     #endif
 
     std::string INCOMPATIBLE_WARNING;
+    std::string OVERLAY_DOES_NOT_EXIST;
     std::string SYSTEM_RAM;
     std::string FREE;
     std::string UNAVAILABLE_SELECTION;
@@ -733,6 +734,7 @@ namespace ult {
         #endif
 
         {&INCOMPATIBLE_WARNING,       "INCOMPATIBLE_WARNING",       "Incompatible on AMS v1.10+"},
+        {&OVERLAY_DOES_NOT_EXIST,     "OVERLAY_DOES_NOT_EXIST",     "Overlay does not exist!"},
         {&SYSTEM_RAM,                 "SYSTEM_RAM",                 "System RAM"},
         {&FREE,                       "FREE",                       "free"},
         {&UNAVAILABLE_SELECTION,      "UNAVAILABLE_SELECTION",      "Not available"},

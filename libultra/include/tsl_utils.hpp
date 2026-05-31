@@ -442,6 +442,7 @@ namespace ult {
     #endif
 
     extern std::string INCOMPATIBLE_WARNING;
+    extern std::string OVERLAY_DOES_NOT_EXIST;
     extern std::string SYSTEM_RAM;
     extern std::string FREE;
     
