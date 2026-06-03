@@ -203,6 +203,13 @@ inline std::string s_lastFocusedItemText; // tracks the text of whatever focusab
 
 inline std::atomic<bool> mainComboHasTriggered{false};
 inline std::atomic<bool> launchComboHasTriggered{false};
+
+// Opt-in (set by the host overlay, e.g. Status Monitor): when true, pressing the
+// mode-combo of the mode you are CURRENTLY in returns to that overlay's OWN main
+// menu (relaunching itself with --lastSelectedItem <label>) instead of returning to
+// ovlmenu. Default false preserves the original return-to-ovlmenu behavior for every
+// other consumer.
+inline std::atomic<bool> comboReturnToSelfMenu{false};
 // Set by fireLaunch() so exitServices() runs the exit package even when
 // exitingUltrahand was never set (e.g. quick-combo or return-to-ovlmenu).
 inline std::atomic<bool> pendingExitPackage{false};
@@ -13070,6 +13077,35 @@ namespace tsl {
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
+                                    // Opt-in: return to the overlay's OWN main menu instead of
+                                    // ovlmenu. Relaunch this same overlay with no mode arg (so it
+                                    // boots its default/menu Gui) and --lastSelectedItem <label>
+                                    // so the cursor lands on the row for the mode we were just in.
+                                    // The label is mapped from modeArg via this overlay's
+                                    // mode_args/mode_labels lists in overlays.ini.
+                                    if (comboReturnToSelfMenu.load(std::memory_order_acquire)) {
+                                        std::string selfLabel;
+                                        {
+                                            const std::string argsList = ult::parseValueFromIniSection(
+                                                ult::OVERLAYS_INI_FILEPATH, overlayFileName, "mode_args");
+                                            const std::string labelsList = ult::parseValueFromIniSection(
+                                                ult::OVERLAYS_INI_FILEPATH, overlayFileName, "mode_labels");
+                                            const auto args   = ult::splitIniList(argsList);
+                                            const auto labels = ult::splitIniList(labelsList);
+                                            for (size_t i = 0; i < args.size() && i < labels.size(); ++i) {
+                                                if (args[i] == modeArg) { selfLabel = labels[i]; break; }
+                                            }
+                                        }
+                                        // Relaunch ourselves exactly like a fresh (non-ovlmenu) combo
+                                        // launch: no IN_OVERLAY write here (the normal launch path only
+                                        // sets that for ovlmenu.ovl), so no stale flag is left behind.
+                                        std::string selfArgs = "--direct";
+                                        if (!selfLabel.empty())
+                                            selfArgs += " --lastSelectedItem " + selfLabel;
+                                        tsl::setNextOverlay(overlayPath, selfArgs);
+                                        fireLaunch();
+                                        return;
+                                    }
                                     ult::setIniFileValue(
                                         ult::ULTRAHAND_CONFIG_INI_PATH,
                                         ult::ULTRAHAND_PROJECT_NAME,
