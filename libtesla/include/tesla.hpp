@@ -264,6 +264,7 @@ inline std::atomic<bool> triggerOffSound{false};
 inline std::atomic<bool> triggerSettingsSound{false};
 inline std::atomic<bool> triggerMoveSound{false};
 inline std::atomic<bool> triggerNotificationSound{false};
+inline std::atomic<bool> suppressNextBackFeedback{false};
 inline std::atomic<bool> disableSound{false};
 inline std::atomic<bool> disableHaptics{false};
 inline std::atomic<bool> reloadIfDockedChangedNow{false};
@@ -11715,7 +11716,9 @@ namespace tsl {
                             // Suppress inter-GUI "exit chirp" if goBack() triggered an overlay-close
                             // path (e.g., notification-active: closeAfter()+hide() without popping
                             // the stack). The real overlay-exit feedback is handled downstream.
-                            if (this->m_guiStack.size() >= 1 && !this->isClosing()) triggerExitFeedback();
+                            if (this->m_guiStack.size() >= 1 && !this->isClosing()
+                                && !suppressNextBackFeedback.exchange(false, std::memory_order_acq_rel))
+                                triggerExitFeedback();
                         }
                         return;
                     }
@@ -11739,14 +11742,18 @@ namespace tsl {
                         // Suppress inter-GUI "exit chirp" if goBack() triggered an overlay-close
                         // path (e.g., notification-active: closeAfter()+hide() without popping
                         // the stack). The real overlay-exit feedback is handled downstream.
-                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning && !this->isClosing()) triggerExitFeedback();
+                        if (this->m_guiStack.size() >= 1 && !interpreterIsRunning && !this->isClosing()
+                                && !suppressNextBackFeedback.exchange(false, std::memory_order_acq_rel))
+                                triggerExitFeedback();
                     }
                     return;
                 }
             } else {
                 #if IS_LAUNCHER_DIRECTIVE
                 if (keysDown & KEY_B && !(keysHeld & ~KEY_B & ALL_KEYS_MASK)) {
-                    if (this->m_guiStack.size() >= 1 && !interpreterIsRunning) triggerExitFeedback();
+                    if (this->m_guiStack.size() >= 1 && !interpreterIsRunning
+                            && !suppressNextBackFeedback.exchange(false, std::memory_order_acq_rel))
+                        triggerExitFeedback();
                 }
                 #endif
             }
@@ -13100,8 +13107,15 @@ namespace tsl {
                                         // launch: no IN_OVERLAY write here (the normal launch path only
                                         // sets that for ovlmenu.ovl), so no stale flag is left behind.
                                         std::string selfArgs = "--direct";
-                                        if (!selfLabel.empty())
-                                            selfArgs += " --lastSelectedItem " + selfLabel;
+                                        if (!selfLabel.empty()) {
+                                            // Quote multi-word labels (e.g. "FPS Counter") so the arg
+                                            // parser treats them as one token, matching how the in-mode
+                                            // handleInput exits emit --lastSelectedItem.
+                                            if (selfLabel.find(' ') != std::string::npos)
+                                                selfArgs += " --lastSelectedItem '" + selfLabel + "'";
+                                            else
+                                                selfArgs += " --lastSelectedItem " + selfLabel;
+                                        }
                                         tsl::setNextOverlay(overlayPath, selfArgs);
                                         fireLaunch();
                                         return;
@@ -13574,6 +13588,7 @@ namespace tsl {
 
                 collect(triggerEnterSound,        ult::Audio::SoundType::Enter);
                 collect(triggerExitSound,         ult::Audio::SoundType::Exit);
+
                 collect(triggerOnSound,           ult::Audio::SoundType::On);
                 collect(triggerOffSound,          ult::Audio::SoundType::Off);
                 collect(triggerWallSound,         ult::Audio::SoundType::Wall);
@@ -14238,8 +14253,11 @@ namespace tsl {
                                 // Normal launch — fire the appropriate haptic/sound feedback.
                                 const bool returning = (lastMode.compare("returning") == 0);
                                 if (directMode) {
-                                    if (returning) triggerRumbleDoubleClickFeedback();
-                                    else           triggerRumbleClickFeedback();
+                                    // directMode + returning is uniquely the combo-return-to-own-menu
+                                    // path (--direct --lastSelectedItem): it returns to OUR menu, not an
+                                    // exit to ovlmenu, so it gets a single click, not a double-click.
+                                    // (Plain directMode launch into a mode is also a single click.)
+                                    triggerRumbleClickFeedback();
                                 } else {
                                     if (returning) triggerExitFeedback();
                                     else           triggerEnterFeedback();
