@@ -488,7 +488,40 @@ namespace ult {
         return sections;
     }
     
-    
+    /**
+     * @brief Returns INI section names for ini_file_source (single path or wildcard merge).
+     *
+     * Single-file paths use parseSectionsFromIni unchanged. Wildcard paths enumerate matching
+     * files and merge section names (skips empty, deduplicates by first occurrence).
+     *
+     * The append overload writes into an existing vector, enabling chained ini_file_source
+     * declarations to accumulate sections with cross-call deduplication (first occurrence wins).
+     */
+    void parseSectionsFromIniPattern(const std::string& iniPathPattern, std::vector<std::string>& out, size_t maxItemsLimit) {
+        const auto appendDeduped = [&](std::vector<std::string> sections) {
+            for (auto& sectionName : sections) {
+                if (!sectionName.empty() &&
+                    std::find(out.begin(), out.end(), sectionName) == out.end()) {
+                    out.push_back(std::move(sectionName));
+                }
+            }
+        };
+
+        if (iniPathPattern.find('*') == std::string::npos) {
+            appendDeduped(parseSectionsFromIni(iniPathPattern));
+            return;
+        }
+
+        for (const auto& filePath : getFilesListByWildcards(iniPathPattern, maxItemsLimit)) {
+            appendDeduped(parseSectionsFromIni(filePath));
+        }
+    }
+
+    std::vector<std::string> parseSectionsFromIniPattern(const std::string& iniPathPattern, size_t maxItemsLimit) {
+        std::vector<std::string> out;
+        parseSectionsFromIniPattern(iniPathPattern, out, maxItemsLimit);
+        return out;
+    }
     
     /**
      * @brief Parses a specific value from a section and key in an INI file.
@@ -1666,5 +1699,6 @@ namespace ult {
                                         const std::string& keyToRemove) {
         processKeysInMatchingSections(filePath, patternKey, keyToRemove, "", KeyOp::REMOVE);
     }
+
 
 }

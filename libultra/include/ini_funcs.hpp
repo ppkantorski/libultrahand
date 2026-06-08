@@ -140,6 +140,18 @@ namespace ult {
      */
     std::vector<std::string> parseSectionsFromIni(const std::string& filePath);
     
+
+    /**
+     * @brief Returns INI section names for ini_file_source (single path or wildcard merge).
+     *
+     * Single-file paths use parseSectionsFromIni unchanged. Wildcard paths enumerate matching
+     * files and merge section names (skips empty, deduplicates by first occurrence).
+     *
+     * The append overload writes into an existing vector, enabling chained ini_file_source
+     * declarations to accumulate sections with cross-call deduplication (first occurrence wins).
+     */
+    void parseSectionsFromIniPattern(const std::string& iniPathPattern, std::vector<std::string>& out, size_t maxItemsLimit = 0);
+    std::vector<std::string> parseSectionsFromIniPattern(const std::string& iniPathPattern, size_t maxItemsLimit = 0);
     
     
     /**
