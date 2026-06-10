@@ -693,6 +693,7 @@ namespace impl {
         ult::useSoundEffects        = getBool("sound_effects",        true);
         ult::useHapticFeedback      = getBool("haptic_feedback");
         ult::useAutoNTPSync         = getBool("auto_ntp_sync",        true);
+        ult::useStickNavigation     = getBool("stick_navigation",     true);
         ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
         ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
     

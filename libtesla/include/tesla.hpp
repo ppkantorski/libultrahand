@@ -8304,12 +8304,18 @@ namespace tsl {
 
                 // Handle KEY_A for toggling
                 if (keys & KEY_A && !(keys & ~KEY_A & ALL_KEYS_MASK)) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    if (!this->m_state)
-                        triggerOnSound.store(true, std::memory_order_release);
-                    else
-                        triggerOffSound.store(true, std::memory_order_release);
-                    signalFeedback();
+                    if (m_flags.m_useClickAnimation) {
+                        // Normal toggle: play on/off sound immediately.
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        if (!this->m_state)
+                            triggerOnSound.store(true, std::memory_order_release);
+                        else
+                            triggerOffSound.store(true, std::memory_order_release);
+                        signalFeedback();
+                    } else {
+                        // Hold-to-toggle: play standard click on press; on/off sound fires on completion.
+                        triggerEnterFeedback();
+                    }
                     
                     
                     this->m_state = !this->m_state;

@@ -110,8 +110,8 @@ namespace ult {
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
     extern bool useLaunchCombos;
-    extern bool useLaunchRecall;
-    extern bool usePageRecall;
+    //extern bool useLaunchRecall;
+    //extern bool usePageRecall;
     extern bool useNotifications;
     extern bool useNotificationsHotkey;
     extern bool useStartupNotification;
@@ -119,6 +119,7 @@ namespace ult {
     extern bool useSoundEffects;
     extern bool useHapticFeedback;
     extern bool useAutoNTPSync;
+    extern bool useStickNavigation;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
 
@@ -157,8 +158,6 @@ namespace ult {
     extern std::atomic<bool> threadFailure;
     extern std::atomic<bool> runningInterpreter;
     extern std::atomic<bool> shakingProgress;
-    
-    extern u32 holdDurationMs;
     
     extern std::atomic<bool> isHidden;
     extern std::atomic<bool> externalAbortCommands;
@@ -206,10 +205,10 @@ namespace ult {
     #define KEY_SR HidNpadButton_AnySR
     #define KEY_LSTICK HidNpadButton_StickL
     #define KEY_RSTICK HidNpadButton_StickR
-    #define KEY_UP HidNpadButton_AnyUp
-    #define KEY_DOWN HidNpadButton_AnyDown
-    #define KEY_LEFT HidNpadButton_AnyLeft
-    #define KEY_RIGHT HidNpadButton_AnyRight
+    #define KEY_UP    (ult::useStickNavigation ? HidNpadButton_AnyUp    : HidNpadButton_Up)
+    #define KEY_DOWN  (ult::useStickNavigation ? HidNpadButton_AnyDown  : HidNpadButton_Down)
+    #define KEY_LEFT  (ult::useStickNavigation ? HidNpadButton_AnyLeft  : HidNpadButton_Left)
+    #define KEY_RIGHT (ult::useStickNavigation ? HidNpadButton_AnyRight : HidNpadButton_Right)
     
     #define SCRIPT_KEY HidNpadButton_Minus
     #define SYSTEM_SETTINGS_KEY HidNpadButton_Plus
@@ -315,9 +314,6 @@ namespace ult {
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
 
-    extern std::string INPUT;
-    extern std::string HOLD_TIME;
-
     extern std::string WIDGET;
     extern std::string WIDGET_ITEMS;
     extern std::string WIDGET_SETTINGS;
@@ -331,6 +327,10 @@ namespace ult {
     extern std::string CENTER_ALIGNMENT;
     extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
+    extern std::string INPUT_SETTINGS;
+    extern std::string HAPTIC_FEEDBACK;
+    extern std::string STICK_NAVIGATION;
+    extern std::string HOLD_DURATION;
     extern std::string MENU_SETTINGS;
     extern std::string USER_GUIDE;
     extern std::string PACKAGES_MENU;
@@ -397,8 +397,7 @@ namespace ult {
     extern std::string CLICK;
     extern std::string TAP;
     extern std::string HOLD_FOR_4S;
-
-    extern std::string HAPTIC_FEEDBACK;
+    
     extern std::string AUTO_NTP_SYNC;
     extern std::string OPAQUE_SCREENSHOTS;
 

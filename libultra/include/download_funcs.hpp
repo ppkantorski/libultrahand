@@ -58,4 +58,5 @@ namespace ult {
     // Main API functions - thread-safe and optimized
     bool downloadFile(const std::string& url, const std::string& toDestination, bool noSocketInit=false, bool noPercentagePolling=false);
     bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
+    bool syncNtp(const std::string& ntpUrl);
 }

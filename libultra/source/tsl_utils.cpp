@@ -211,8 +211,8 @@ namespace ult {
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
     bool useLaunchCombos = true;
-    bool useLaunchRecall = true;
-    bool usePageRecall = true;
+    //bool useLaunchRecall = true;
+    //bool usePageRecall = true;
     bool useNotifications = true;
     bool useNotificationsHotkey = true;
     bool useStartupNotification = true;
@@ -220,6 +220,7 @@ namespace ult {
     bool useSoundEffects = true;
     bool useHapticFeedback = false;
     bool useAutoNTPSync = true;
+    bool useStickNavigation = true;
     bool usePageSwap = false;
     bool useDynamicLogo = true;
     bool useSelectionBG = true;
@@ -255,9 +256,7 @@ namespace ult {
     std::atomic<bool> threadFailure(false);
     std::atomic<bool> runningInterpreter(false);
     std::atomic<bool> shakingProgress(true);
-
-    u32 holdDurationMs = 3000;
-
+    
     std::atomic<bool> isHidden(false);
     std::atomic<bool> externalAbortCommands(false);
     
@@ -405,8 +404,6 @@ namespace ult {
     std::string FAVORITE;
     std::string MAIN_SETTINGS;
     std::string UI_SETTINGS;
-    std::string INPUT;
-    std::string HOLD_TIME;
     std::string WIDGET;
     std::string WIDGET_ITEMS;
     std::string WIDGET_SETTINGS;
@@ -420,6 +417,10 @@ namespace ult {
     std::string CENTER_ALIGNMENT;
     std::string EXTENDED_BACKDROP;
     std::string MISCELLANEOUS;
+    std::string INPUT_SETTINGS;
+    std::string HAPTIC_FEEDBACK;
+    std::string STICK_NAVIGATION;
+    std::string HOLD_DURATION;
     std::string MENU_SETTINGS;
     std::string USER_GUIDE;
     std::string PACKAGES_MENU;
@@ -482,7 +483,6 @@ namespace ult {
     std::string TAP;
     std::string HOLD_FOR_4S;
 
-    std::string HAPTIC_FEEDBACK;
     std::string AUTO_NTP_SYNC;
     std::string OPAQUE_SCREENSHOTS;
     std::string PACKAGE_INFO;
@@ -622,8 +622,6 @@ namespace ult {
         {&FAVORITE,                   "FAVORITE",                   "Favorite"},
         {&MAIN_SETTINGS,              "MAIN_SETTINGS",              "Main Settings"},
         {&UI_SETTINGS,                "UI_SETTINGS",                "UI Settings"},
-        {&INPUT,                      "INPUT",                      "Input"},
-        {&HOLD_TIME,                  "HOLD_TIME",                  "Hold Time"},
         {&WIDGET,                     "WIDGET",                     "Widget"},
         {&WIDGET_ITEMS,               "WIDGET_ITEMS",               "Widget Items"},
         {&WIDGET_SETTINGS,            "WIDGET_SETTINGS",            "Widget Settings"},
@@ -637,6 +635,10 @@ namespace ult {
         {&CENTER_ALIGNMENT,           "CENTER_ALIGNMENT",           "Center Alignment"},
         {&EXTENDED_BACKDROP,          "EXTENDED_BACKDROP",          "Extended Backdrop"},
         {&MISCELLANEOUS,              "MISCELLANEOUS",              "Miscellaneous"},
+        {&INPUT_SETTINGS,             "INPUT_SETTINGS",             "Input Settings"},
+        {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
+        {&STICK_NAVIGATION,           "STICK_NAVIGATION",           "Stick Navigation"},
+        {&HOLD_DURATION,              "HOLD_DURATION",              "Hold Duration"},
         {&MENU_SETTINGS,              "MENU_SETTINGS",              "Menu Settings"},
         {&USER_GUIDE,                 "USER_GUIDE",                 "User Guide"},
         {&PACKAGES_MENU,              "PACKAGES_MENU",              "Packages Menu"},
@@ -668,7 +670,6 @@ namespace ult {
         {&OVERLAY_MEMORY,             "OVERLAY_MEMORY",             "Overlay Memory"},
         {&NOT_ENOUGH_MEMORY,          "NOT_ENOUGH_MEMORY",          "Not enough memory."},
         {&WALLPAPER_SUPPORT_DISABLED, "WALLPAPER_SUPPORT_DISABLED", "Wallpaper support disabled."},
-        //{&SOUND_SUPPORT_DISABLED,     "SOUND_SUPPORT_DISABLED",     "Sound support disabled."},
         {&WALLPAPER_SUPPORT_ENABLED,  "WALLPAPER_SUPPORT_ENABLED",  "Wallpaper support enabled."},
         {&SOUND_SUPPORT_ENABLED,      "SOUND_SUPPORT_ENABLED",      "Sound support enabled."},
         {&EXIT_OVERLAY_SYSTEM,        "EXIT_OVERLAY_SYSTEM",        "Exit Overlay System"},
@@ -698,7 +699,6 @@ namespace ult {
         {&CLICK,                      "CLICK",                      "click"},
         {&TAP,                        "TAP",                        "tap"},
         {&HOLD_FOR_4S,                "HOLD_FOR_4S",                "hold for 4s"},
-        {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
         {&AUTO_NTP_SYNC,              "AUTO_NTP_SYNC",              "Auto NTP Sync"},
         {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
         {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},

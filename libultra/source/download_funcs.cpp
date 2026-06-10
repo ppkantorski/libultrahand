@@ -32,15 +32,29 @@ extern "C" TimeServiceType __nx_time_service_type;
 
 namespace ult {
 
-// Performs a one-shot NTP sync if NTP_SYNC_PENDING.flag exists.
-// Entirely self-contained — no external NTP header required.
-// Called after internet connectivity is confirmed. The flag is only
-// removed on a successful clock update, so a failed attempt will
-// automatically retry on the next download call.
-static void syncNtpIfPending() {
-    if (!isFile(NTP_SYNC_PENDING_FLAG_FILEPATH))
-        return;
 
+// Quick connectivity pre-check before spinning up curl
+static bool hasInternetAccess() {
+    if (R_FAILED(nifmInitialize(NifmServiceType_User)))
+        return false;
+    NifmInternetConnectionType type;
+    u32 strength;
+    NifmInternetConnectionStatus status;
+    u32 current_addr, subnet_mask, gateway, primary_dns, secondary_dns;
+    bool connected = R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status))
+                     && status == NifmInternetConnectionStatus_Connected
+                     && R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&current_addr, &subnet_mask, &gateway, &primary_dns, &secondary_dns))
+                     && current_addr != 0
+                     && primary_dns != 0;
+    nifmExit();
+    return connected;
+}
+
+
+// Core NTP sync logic. ntpUrl is the hostname (no port). Caller must have
+// already set up sockets (socketInitialize) before calling this. Returns true
+// if the clock was successfully updated.
+static bool syncNtpCore(const std::string& ntpUrl) {
     // Minimal 48-byte NTP packet (LI=0, VN=3, Mode=3 → 0x1B)
     uint8_t packet[48] = {};
     packet[0] = 0x1B;
@@ -50,13 +64,13 @@ static void syncNtpIfPending() {
     struct addrinfo hints = {}, *res = nullptr;
     hints.ai_family   = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
-    int gaErr = getaddrinfo("pool.ntp.org", "123", &hints, &res);
+    int gaErr = getaddrinfo(ntpUrl.c_str(), "123", &hints, &res);
     if (gaErr != 0 || !res) {
         #if USING_LOGGING_DIRECTIVE
         if (!disableLogging)
             logMessage("NTP: getaddrinfo failed (" + std::to_string(gaErr) + ")");
         #endif
-        return;
+        return false;
     }
 
     int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
@@ -66,7 +80,7 @@ static void syncNtpIfPending() {
             logMessage("NTP: socket() failed");
         #endif
         freeaddrinfo(res);
-        return;
+        return false;
     }
 
     struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
@@ -154,7 +168,41 @@ static void syncNtpIfPending() {
 
     close(sock);
     freeaddrinfo(res);
+    return synced;
+}
 
+// Public on-demand NTP sync. Checks internet access, initializes sockets,
+// calls the core sync, then tears down. Returns true on success.
+bool syncNtp(const std::string& ntpUrl) {
+    if (!hasInternetAccess())
+        return false;
+
+    static constexpr SocketInitConfig socketInitConfig = {
+        .tcp_tx_buf_size     = 0,
+        .tcp_rx_buf_size     = 0,
+        .tcp_tx_buf_max_size = 0,
+        .tcp_rx_buf_max_size = 0,
+        .udp_tx_buf_size     = 512,
+        .udp_rx_buf_size     = 512,
+        .sb_efficiency       = 1,
+        .bsd_service_type    = BsdServiceType_Auto
+    };
+    if (!R_SUCCEEDED(socketInitialize(&socketInitConfig)))
+        return false;
+
+    const bool synced = syncNtpCore(ntpUrl);
+    socketExit();
+    return synced;
+}
+
+// Performs a one-shot NTP sync if NTP_SYNC_PENDING.flag exists.
+// Called after internet connectivity is confirmed (inside downloadFile).
+// The flag is only removed on success, so a failed attempt retries next download.
+static void syncNtpIfPending() {
+    if (!isFile(NTP_SYNC_PENDING_FLAG_FILEPATH))
+        return;
+
+    const bool synced = syncNtpCore("pool.ntp.org");
     if (synced) {
         deleteFileOrDirectory(NTP_SYNC_PENDING_FLAG_FILEPATH);
         #if USING_LOGGING_DIRECTIVE
@@ -231,22 +279,6 @@ int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownlo
     return 0;  // Continue the download
 }
 
-// Quick connectivity pre-check before spinning up curl
-static bool hasInternetAccess() {
-    if (R_FAILED(nifmInitialize(NifmServiceType_User)))
-        return false;
-    NifmInternetConnectionType type;
-    u32 strength;
-    NifmInternetConnectionStatus status;
-    u32 current_addr, subnet_mask, gateway, primary_dns, secondary_dns;
-    bool connected = R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status))
-                     && status == NifmInternetConnectionStatus_Connected
-                     && R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&current_addr, &subnet_mask, &gateway, &primary_dns, &secondary_dns))
-                     && current_addr != 0
-                     && primary_dns != 0;
-    nifmExit();
-    return connected;
-}
 
 /**
  * @brief Downloads a file from a URL to a specified destination.
