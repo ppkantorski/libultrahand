@@ -158,6 +158,8 @@ namespace ult {
     extern std::atomic<bool> runningInterpreter;
     extern std::atomic<bool> shakingProgress;
     
+    extern u32 holdDurationMs;
+    
     extern std::atomic<bool> isHidden;
     extern std::atomic<bool> externalAbortCommands;
     
@@ -312,6 +314,9 @@ namespace ult {
     extern std::string FAVORITE;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
+
+    extern std::string INPUT;
+    extern std::string HOLD_TIME;
 
     extern std::string WIDGET;
     extern std::string WIDGET_ITEMS;
