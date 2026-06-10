@@ -327,24 +327,39 @@ namespace ult {
     extern std::string CENTER_ALIGNMENT;
     extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
+
     extern std::string INPUT_SETTINGS;
+    extern std::string LAUNCH_COMBOS;
+    extern std::string SWIPE_TO_OPEN;
     extern std::string HAPTIC_FEEDBACK;
     extern std::string STICK_NAVIGATION;
     extern std::string HOLD_DURATION;
+
+    extern std::string FEATURE_SETTINGS;
+    extern std::string OPAQUE_SCREENSHOTS;
+    extern std::string RIGHT_SIDE_MODE;
+    extern std::string NTP_SYNC_DOWNLOADS;
+
     extern std::string MENU_SETTINGS;
-    extern std::string USER_GUIDE;
     extern std::string PACKAGES_MENU;
+    extern std::string USER_GUIDE;
     extern std::string SHOW_HIDDEN;
     extern std::string SHOW_DELETE;
     extern std::string SHOW_UNSUPPORTED;
-
     extern std::string PAGE_SWAP;
-    extern std::string PAGE_RECALL;
-    extern std::string LAUNCH_RECALL;
-    extern std::string RIGHT_SIDE_MODE;
     extern std::string OVERLAY_VERSIONS;
     extern std::string PACKAGE_VERSIONS;
     extern std::string CLEAN_VERSIONS;
+
+    extern std::string THEME_SETTINGS;
+    extern std::string DYNAMIC_LOGO;
+    extern std::string SELECTION_BACKGROUND;
+    extern std::string SELECTION_TEXT;
+    extern std::string SELECTION_VALUE;
+    extern std::string LIBULTRAHAND_TITLES;
+    extern std::string LIBULTRAHAND_VERSIONS;
+    extern std::string PACKAGE_TITLES;
+
     extern std::string KEY_COMBO;
     extern std::string MODE;
     extern std::string LAUNCH_MODES;
@@ -384,7 +399,6 @@ namespace ult {
     extern std::string OPTIONS;
     extern std::string FAILED_TO_OPEN;
 
-    extern std::string LAUNCH_COMBOS;
     extern std::string NOTIFICATIONS;
     extern std::string NOTIFICATION_SETTINGS;
     extern std::string SILENCE_NOTIFICATIONS;
@@ -397,9 +411,6 @@ namespace ult {
     extern std::string CLICK;
     extern std::string TAP;
     extern std::string HOLD_FOR_4S;
-    
-    extern std::string AUTO_NTP_SYNC;
-    extern std::string OPAQUE_SCREENSHOTS;
 
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
@@ -415,17 +426,6 @@ namespace ult {
     extern std::string ON_MAIN_MENU;
     extern std::string ON_A_COMMAND;
     extern std::string ON_OVERLAY_PACKAGE;
-    extern std::string FEATURES;
-    extern std::string SWIPE_TO_OPEN;
-
-    extern std::string THEME_SETTINGS;
-    extern std::string DYNAMIC_LOGO;
-    extern std::string SELECTION_BACKGROUND;
-    extern std::string SELECTION_TEXT;
-    extern std::string SELECTION_VALUE;
-    extern std::string LIBULTRAHAND_TITLES;
-    extern std::string LIBULTRAHAND_VERSIONS;
-    extern std::string PACKAGE_TITLES;
 
     extern std::string ULTRAHAND_HAS_STARTED;
     extern std::string ULTRAHAND_HAS_RESTARTED;
