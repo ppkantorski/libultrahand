@@ -535,6 +535,7 @@ namespace ult {
     
     extern std::atomic<bool> refreshWallpaperNow;
     extern std::atomic<bool> refreshWallpaper;
+    extern std::atomic<bool> refreshCombos;
     extern std::vector<u8> wallpaperData;
     extern std::atomic<bool> inPlot;
     
