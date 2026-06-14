@@ -13,26 +13,19 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
 
-#ifndef HEX_FUNCS_HPP
-#define HEX_FUNCS_HPP
-
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <functional>
-//#include <cstdio> // Added for FILE and fopen
 #include <cstring> // Added for std::memcmp
+#include <mutex>
+#include <shared_mutex>
 
 #include <global_vars.hpp>
 #include <debug_funcs.hpp>
@@ -47,8 +40,25 @@ namespace ult {
     extern std::unordered_map<std::string, std::string> hexSumCache; // MOVED TO main.cpp
     
     // Lookup table for hex characters
-    extern const char hexLookup[];
+    inline constexpr char hexLookup[] = "0123456789ABCDEF";
     
+
+    // ULTRA-FAST hex conversion with lookup table
+    inline constexpr unsigned char hexTable[256] = {
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,
+        0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    };
+
+
+    extern void clearHexSumCache();
+    extern size_t getHexSumCacheSize();
+
     /**
      * @brief Converts an ASCII string to a hexadecimal string.
      *
@@ -57,9 +67,6 @@ namespace ult {
      * @param asciiStr The ASCII string to convert.
      * @return The corresponding hexadecimal string.
      */
-    
-    
-    // Function to convert ASCII string to Hex string
     std::string asciiToHex(const std::string& asciiStr);
     
     /**
@@ -70,7 +77,7 @@ namespace ult {
      * @param decimalStr The decimal string to convert.
      * @return The corresponding hexadecimal string.
      */
-    std::string decimalToHex(const std::string& decimalStr);
+    std::string decimalToHex(const std::string& decimalStr, int byteGroupSize = 2);
     
     
     /**
@@ -91,13 +98,13 @@ namespace ult {
      * @brief Converts a decimal string to a reversed hexadecimal string.
      *
      * This function takes a decimal string as input, converts it into a hexadecimal
-     * string, and reverses the resulting hexadecimal string in groups of order.
+     * string, and reverses the resulting hexadecimal string in groups of byteGroupSize.
      *
      * @param decimalStr The decimal string to convert.
-     * @param order The grouping order for reversing the hexadecimal string.
+     * @param byteGroupSize The grouping byteGroupSize for reversing the hexadecimal string.
      * @return The reversed hexadecimal string.
      */
-    std::string decimalToReversedHex(const std::string& decimalStr, int order = 2);
+    std::string decimalToReversedHex(const std::string& decimalStr, int byteGroupSize = 2);
     
     
     
@@ -187,6 +194,7 @@ namespace ult {
     
     
     std::string extractVersionFromBinary(const std::string &filePath);
-}
 
-#endif
+
+    std::string decodeBase64ToString(const std::string& b64);
+}

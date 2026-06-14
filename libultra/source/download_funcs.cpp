@@ -1,13 +1,230 @@
+/********************************************************************************
+ * File: download_funcs.cpp
+ * Author: ppkantorski
+ * Description:
+ *   This source file provides implementations for the functions declared in
+ *   download_funcs.hpp. These functions utilize libcurl for downloading files
+ *   from the internet and minizip-ng for extracting ZIP archives with proper
+ *   64-bit file support.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ * 
+ *  Licensed under both GPLv2 and CC-BY-4.0
+ *  Copyright (c) 2023-2026 ppkantorski
+ ********************************************************************************/
+
 #include "download_funcs.hpp"
+
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+// __nx_time_service_type is a weak symbol defined in libnx's time.c but is
+// intentionally NOT declared in time.h. Provide an extern "C" declaration at
+// file scope (the only place C++ allows linkage-specification declarations) so
+// the compiler can see it before we use it inside syncNtpIfPending().
+extern "C" TimeServiceType __nx_time_service_type;
 
 namespace ult {
 
-size_t DOWNLOAD_BUFFER_SIZE = 4096*4;
-size_t UNZIP_BUFFER_SIZE = 4096*4;
 
-// Path to the CA certificate
-const std::string cacertPath = "sdmc:/config/ultrahand/cacert.pem";
-const std::string cacertURL = "https://curl.se/ca/cacert.pem";
+// Quick connectivity pre-check before spinning up curl
+static bool hasInternetAccess() {
+    if (R_FAILED(nifmInitialize(NifmServiceType_User)))
+        return false;
+    NifmInternetConnectionType type;
+    u32 strength;
+    NifmInternetConnectionStatus status;
+    u32 current_addr, subnet_mask, gateway, primary_dns, secondary_dns;
+    bool connected = R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status))
+                     && status == NifmInternetConnectionStatus_Connected
+                     && R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&current_addr, &subnet_mask, &gateway, &primary_dns, &secondary_dns))
+                     && current_addr != 0
+                     && primary_dns != 0;
+    nifmExit();
+    return connected;
+}
+
+
+// Core NTP sync logic. ntpUrl is the hostname (no port). Caller must have
+// already set up sockets (socketInitialize) before calling this. Returns true
+// if the clock was successfully updated.
+static bool syncNtpCore(const std::string& ntpUrl) {
+    // Minimal 48-byte NTP packet (LI=0, VN=3, Mode=3 → 0x1B)
+    uint8_t packet[48] = {};
+    packet[0] = 0x1B;
+
+    // DNS on Switch resolves through the BSD socket service, which socketInitialize()
+    // (called by the caller before us) already set up. No nifmInitialize needed here.
+    struct addrinfo hints = {}, *res = nullptr;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    int gaErr = getaddrinfo(ntpUrl.c_str(), "123", &hints, &res);
+    if (gaErr != 0 || !res) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: getaddrinfo failed (" + std::to_string(gaErr) + ")");
+        #endif
+        return false;
+    }
+
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: socket() failed");
+        #endif
+        freeaddrinfo(res);
+        return false;
+    }
+
+    struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    bool synced = false;
+    ssize_t sent = sendto(sock, packet, sizeof(packet), 0, res->ai_addr, res->ai_addrlen);
+    if (sent > 0) {
+        struct sockaddr_storage addr;
+        socklen_t addrLen = sizeof(addr);
+        // Use >= sizeof(packet): some servers append extension fields, making the
+        // response longer than 48 bytes. recvfrom truncates to the buffer and still
+        // returns sizeof(packet), but == 48 is needlessly fragile.
+        ssize_t received = recvfrom(sock, packet, sizeof(packet), 0,
+                                    (struct sockaddr*)&addr, &addrLen);
+        if (received >= static_cast<ssize_t>(sizeof(packet))) {
+            // Transmit timestamp sits at bytes 40–43 (seconds, big-endian)
+            uint32_t ntpSecs;
+            memcpy(&ntpSecs, packet + 40, 4);
+            time_t ntpTime = static_cast<time_t>(ntohl(ntpSecs)) - 2208988800UL;
+
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("NTP: received ntpTime=" + std::to_string(ntpTime));
+            #endif
+
+            // Sanity check: must be after Nintendo Switch launch (Jan 1 2017)
+            if (ntpTime > 1483228800L) {
+                // Two requirements for a successful timeSetCurrentTime on Switch:
+                //
+                // 1. Service type must be TimeServiceType_System (time:s).
+                //    time:u (the default) does not expose SetCurrentTime at all,
+                //    causing MAKERESULT(116,1) from the time sysmodule.
+                //    __nx_time_service_type is declared extern "C" at file scope
+                //    above (C++ forbids linkage-spec declarations inside functions).
+                //
+                // 2. Clock type must be TimeType_NetworkSystemClock.
+                //    This is what every working Switch NTP homebrew targets
+                //    (QuickNTP, NX-ntpc, switch-time). TimeType_LocalSystemClock
+                //    yields MAKERESULT(116,1) from the time sysmodule even with
+                //    time:s open — it requires different internal permissions.
+                //    NetworkSystemClock is the standard homebrew-accessible target.
+                TimeServiceType savedServiceType = __nx_time_service_type;
+                __nx_time_service_type = TimeServiceType_System;
+                Result initRc = timeInitialize();
+                __nx_time_service_type = savedServiceType; // restore immediately
+
+                if (R_SUCCEEDED(initRc)) {
+                    Result rc = timeSetCurrentTime(TimeType_NetworkSystemClock,
+                                                   static_cast<uint64_t>(ntpTime));
+                    synced = R_SUCCEEDED(rc);
+                    timeExit();
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("NTP: timeSetCurrentTime rc=0x" +
+                                   [](uint32_t v){ char buf[16]; snprintf(buf,sizeof(buf),"%08X",v); return std::string(buf); }(rc) +
+                                   " synced=" + (synced ? "true" : "false"));
+                    #endif
+                } else {
+                    #if USING_LOGGING_DIRECTIVE
+                    if (!disableLogging)
+                        logMessage("NTP: timeInitialize(System) failed rc=0x" +
+                                   [](uint32_t v){ char buf[16]; snprintf(buf,sizeof(buf),"%08X",v); return std::string(buf); }(initRc));
+                    #endif
+                }
+            } else {
+                #if USING_LOGGING_DIRECTIVE
+                if (!disableLogging)
+                    logMessage("NTP: ntpTime out of range: " + std::to_string(ntpTime));
+                #endif
+            }
+        } else {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("NTP: recvfrom returned " + std::to_string(received));
+            #endif
+        }
+    } else {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sendto failed (" + std::to_string(sent) + ")");
+        #endif
+    }
+
+    close(sock);
+    freeaddrinfo(res);
+    return synced;
+}
+
+// Public on-demand NTP sync. Checks internet access, initializes sockets,
+// calls the core sync, then tears down. Returns true on success.
+bool syncNtp(const std::string& ntpUrl) {
+    if (!hasInternetAccess())
+        return false;
+
+    static constexpr SocketInitConfig socketInitConfig = {
+        .tcp_tx_buf_size     = 0,
+        .tcp_rx_buf_size     = 0,
+        .tcp_tx_buf_max_size = 0,
+        .tcp_rx_buf_max_size = 0,
+        .udp_tx_buf_size     = 512,
+        .udp_rx_buf_size     = 512,
+        .sb_efficiency       = 1,
+        .bsd_service_type    = BsdServiceType_Auto
+    };
+    if (!R_SUCCEEDED(socketInitialize(&socketInitConfig)))
+        return false;
+
+    const bool synced = syncNtpCore(ntpUrl);
+    socketExit();
+    return synced;
+}
+
+// Performs a one-shot NTP sync if NTP_SYNC_PENDING.flag exists.
+// Called after internet connectivity is confirmed (inside downloadFile).
+// The flag is only removed on success, so a failed attempt retries next download.
+static void syncNtpIfPending() {
+    if (!isFile(NTP_SYNC_PENDING_FLAG_FILEPATH))
+        return;
+
+    const bool synced = syncNtpCore("pool.ntp.org");
+    if (synced) {
+        deleteFileOrDirectory(NTP_SYNC_PENDING_FLAG_FILEPATH);
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sync successful, pending flag removed");
+        #endif
+    } else {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("NTP: sync failed, flag retained for retry on next download");
+        #endif
+    }
+}
+
+// Base loader definitions
+size_t DOWNLOAD_READ_BUFFER = 32*1024;//64 * 1024;//4096*10;
+size_t DOWNLOAD_WRITE_BUFFER = 16*1024;//64 * 1024;
+size_t UNZIP_READ_BUFFER = 32*1024;//131072*2;//4096*4;
+size_t UNZIP_WRITE_BUFFER = 16*1024;//131072*2;//4096*4;
+
+// User agent string for curl requests
+static constexpr const char* userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
 // Shared atomic flag to indicate whether to abort the download operation
 std::atomic<bool> abortDownload(false);
@@ -16,57 +233,42 @@ std::atomic<bool> abortUnzip(false);
 std::atomic<int> downloadPercentage(-1);
 std::atomic<int> unzipPercentage(-1);
 
-const std::string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+// Thread-safe curl initialization
+static std::mutex curlInitMutex;
+static std::atomic<bool> curlInitialized(false);
+
 
 // Definition of CurlDeleter
-void CurlDeleter::operator()(CURL* curl) const {
-    if (curl) {
-        curl_easy_cleanup(curl);
+struct CurlDeleter {
+    void operator()(CURL* curl) const noexcept {
+        if (curl) {
+            curl_easy_cleanup(curl);
+        }
     }
-}
+};
 
-// Definition of ZzipDirDeleter
-void ZzipDirDeleter::operator()(ZZIP_DIR* dir) const {
-    if (dir) {
-        zzip_dir_close(dir);
+struct FileDeleter {
+    void operator()(FILE* f) const { 
+        if (f) {
+            fclose(f); 
+        }
     }
-}
+};
 
-// Definition of ZzipFileDeleter
-void ZzipFileDeleter::operator()(ZZIP_FILE* file) const {
-    if (file) {
-        zzip_file_close(file);
-    }
-}
-
-// Callback function to write received data to a file.
-#if NO_FSTREAM_DIRECTIVE
 // Using stdio.h functions (FILE*, fwrite)
 size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream) {
-    size_t totalBytes = size * nmemb;
-    size_t writtenBytes = fwrite(ptr, 1, totalBytes, stream);
-    return writtenBytes;
+    if (!ptr || !stream) return 0;
+    return fwrite(ptr, 1, size * nmemb, stream);
 }
-#else
-// Using std::ofstream for writing
-size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream) {
-    auto& file = *static_cast<std::ofstream*>(stream);
-    size_t totalBytes = size * nmemb;
-    file.write(static_cast<const char*>(ptr), totalBytes);
-    return totalBytes;
-}
-#endif
-
-
-
 
 // Your C function
-extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
+int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded) {
+    if (!ptr) return 1;
+    
     auto percentage = static_cast<std::atomic<int>*>(ptr);
 
     if (totalToDownload > 0) {
-        //int newProgress = static_cast<int>(float(nowDownloaded) / float(totalToDownload) *100);
-        percentage->store(static_cast<int>(float(nowDownloaded) / float(totalToDownload) *100), std::memory_order_release);
+        percentage->store(static_cast<int>((static_cast<double>(nowDownloaded) / static_cast<double>(totalToDownload)) * 100.0), std::memory_order_release);
     }
 
     if (abortDownload.load(std::memory_order_acquire)) {
@@ -78,23 +280,6 @@ extern "C" int progressCallback(void *ptr, curl_off_t totalToDownload, curl_off_
 }
 
 
-// Global initialization function
-void initializeCurl() {
-    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-    if (res != CURLE_OK) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("curl_global_init() failed: " + std::string(curl_easy_strerror(res)));
-        #endif
-        // Handle error appropriately, possibly exit the program
-    }
-}
-
-// Global cleanup function
-void cleanupCurl() {
-    curl_global_cleanup();
-}
-
-
 /**
  * @brief Downloads a file from a URL to a specified destination.
  *
@@ -102,25 +287,66 @@ void cleanupCurl() {
  * @param toDestination The destination path where the file should be saved.
  * @return True if the download was successful, false otherwise.
  */
-bool downloadFile(const std::string& url, const std::string& toDestination) {
-    abortDownload.store(false);
+bool downloadFile(const std::string& url, const std::string& toDestination, bool noSocketInit, bool noPercentagePolling) {
+    abortDownload.store(false, std::memory_order_release);
 
     if (url.find_first_of("{}") != std::string::npos) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Invalid URL: " + url);
+        if (!disableLogging)
+            logMessage("Invalid URL: " + url);
         #endif
         return false;
     }
 
+    // Fast pre-flight: ~1.5s max vs curl's unpredictable DNS hang
+    if (!hasInternetAccess()) {
+        return false;
+    }
+
+    static constexpr SocketInitConfig socketInitConfig = {
+        // TCP buffers
+        .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
+        .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
+        .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
+        .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
+        
+        // UDP buffers
+        .udp_tx_buf_size     = 512,                // 512 B default
+        .udp_rx_buf_size     = 512,                // 512 B default
+    
+        // Socket buffer efficiency
+        .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
+                                                   // 1 = prioritize memory efficiency (smaller internal allocations)
+        .bsd_service_type    = BsdServiceType_Auto // Auto-select service
+    };
+    
+    if (!noSocketInit) {
+        if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Failed to initialize socket.");
+            #endif
+            return false;
+        }
+    }
+
+    // One-shot NTP sync: if NTP_SYNC_PENDING.flag exists, sync the clock now
+    // before curl touches TLS — skewed time is a common silent download killer.
+    // Must run AFTER hasInternetAccess() so that connectivity is confirmed and
+    // NIFM has been initialized at least once (required for DNS on Switch).
+    if (ult::useAutoNTPSync)
+        syncNtpIfPending();
+
     std::string destination = toDestination;
     if (destination.back() == '/') {
         createDirectory(destination);
-        size_t lastSlash = url.find_last_of('/');
+        const size_t lastSlash = url.find_last_of('/');
         if (lastSlash != std::string::npos) {
             destination += url.substr(lastSlash + 1);
         } else {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Invalid URL: " + url);
+            if (!disableLogging)
+                logMessage("Invalid URL: " + url);
             #endif
             return false;
         }
@@ -128,285 +354,602 @@ bool downloadFile(const std::string& url, const std::string& toDestination) {
         createDirectory(destination.substr(0, destination.find_last_of('/')));
     }
 
-    std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
+    const std::string tempFilePath = getParentDirFromPath(destination) + "." + getFileName(destination) + ".tmp";
 
-#ifndef NO_FSTREAM_DIRECTIVE
-    // Use ofstream if NO_FSTREAM_DIRECTIVE is not defined
-    std::ofstream file(tempFilePath, std::ios::binary);
-    if (!file.is_open()) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening file: " + tempFilePath);
-        #endif
-        return false;
-    }
-#else
     // Alternative method of opening file (depending on your platform, like using POSIX open())
-    int file = open(tempFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (file < 0) {
+    std::unique_ptr<FILE, FileDeleter> file(fopen(tempFilePath.c_str(), "wb"));
+    if (!file) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening file: " + tempFilePath);
+        if (!disableLogging)
+            logMessage("Error opening file: " + tempFilePath);
         #endif
         return false;
     }
-#endif
+
+    // ADD THIS: Set up write buffer for better performance
+    std::unique_ptr<char[]> writeBuffer;
+    if (DOWNLOAD_WRITE_BUFFER > 0) {
+        writeBuffer = std::make_unique<char[]>(DOWNLOAD_WRITE_BUFFER);
+        // _IOFBF = full buffering, _IOLBF = line buffering, _IONBF = no buffering
+        setvbuf(file.get(), writeBuffer.get(), _IOFBF, DOWNLOAD_WRITE_BUFFER);
+    }
 
     std::unique_ptr<CURL, CurlDeleter> curl(curl_easy_init());
     if (!curl) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error initializing curl.");
+        if (!disableLogging)
+            logMessage("Error initializing curl.");
         #endif
-#ifndef NO_FSTREAM_DIRECTIVE
-        file.close();
-#else
-        close(file);
-#endif
+
+        file.reset();
+        writeBuffer.reset();
         return false;
     }
 
-    downloadPercentage.store(0, std::memory_order_release);
+    // Only initialize downloadPercentage if we're tracking progress
+    if (!noPercentagePolling) {
+        downloadPercentage.store(0, std::memory_order_release);
+    }
 
-    
     curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
-#ifndef NO_FSTREAM_DIRECTIVE
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &file);
-#else
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, reinterpret_cast<void*>(file));
-#endif
-    curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
-    curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
-    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent.c_str());
-    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); // Enable HTTP/2
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
+
+    // Conditionally set up progress callback based on noPercentagePolling
+    if (noPercentagePolling) {
+        // Disable progress function entirely
+        curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 1L);
+    } else {
+        // Enable progress callback for percentage updates
+        curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progressCallback);
+        curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &downloadPercentage);
+    }
+
+    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent);
+    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1); // Enable HTTP/2
+    curl_easy_setopt(curl.get(), CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
 
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_BUFFER_SIZE); // Increase buffer size
+    curl_easy_setopt(curl.get(), CURLOPT_BUFFERSIZE, DOWNLOAD_READ_BUFFER); // Increase buffer size
+
+    // Add timeout options
+    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 4L);   // 10 seconds to connect
+    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1L);   // 1 byte/s (virtually any progress)
+    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
+
+    //curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
+    //curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
+    //curl_easy_setopt(curl.get(), CURLOPT_CLOSESOCKETDATA, NULL); // ensure no dangling sockets
+    //curl_easy_setopt(curl.get(), CURLOPT_TCP_NODELAY, 1L);
 
     CURLcode result = curl_easy_perform(curl.get());
 
-#ifndef NO_FSTREAM_DIRECTIVE
-    file.close();
-#else
-    close(file);
-#endif
+    // Check HTTP response code BEFORE closing file/curl
+    long http_code = 0;
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+
+    file.reset();
+    writeBuffer.reset();
+    curl.reset();
+
+    if (!noSocketInit) {
+        socketExit();
+    }
+    
+    // Check for HTTP errors (404, 500, etc.)
+    if (result == CURLE_OK && (http_code < 200 || http_code >= 300)) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("HTTP error " + std::to_string(http_code) + " downloading: " + url);
+        #endif
+        deleteFileOrDirectory(tempFilePath);
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
+        return false;
+    }
+
 
     if (result != CURLE_OK) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        if (result == CURLE_ABORTED_BY_CALLBACK) {
+            if (!disableLogging)
+                logMessage("Download aborted by user: " + url);
+        } else if (result == CURLE_OPERATION_TIMEDOUT) {
+            if (!disableLogging)
+                logMessage("Download timed out: " + url);
+        } else if (result == CURLE_COULDNT_CONNECT) {
+            if (!disableLogging)
+                logMessage("Could not connect to: " + url);
+        } else {
+            if (!disableLogging)
+                logMessage("Error downloading file: " + std::string(curl_easy_strerror(result)));
+        }
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
         return false;
     }
 
-#ifndef NO_FSTREAM_DIRECTIVE
-    std::ifstream checkFile(tempFilePath);
-    if (!checkFile || checkFile.peek() == std::ifstream::traits_type::eof()) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
-        #endif
-        deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
-        checkFile.close();
-        return false;
-    }
-    checkFile.close();
-#else
     // Alternative method for checking if the file is empty (POSIX example)
     struct stat fileStat;
     if (stat(tempFilePath.c_str(), &fileStat) != 0 || fileStat.st_size == 0) {
         #if USING_LOGGING_DIRECTIVE
-        logMessage("Error downloading file: Empty file");
+        if (!disableLogging)
+            logMessage("Error downloading file: Empty file");
         #endif
         deleteFileOrDirectory(tempFilePath);
-        downloadPercentage.store(-1, std::memory_order_release);
+        // Only update percentage if we're tracking it
+        if (!noPercentagePolling) {
+            downloadPercentage.store(-1, std::memory_order_release);
+        }
         return false;
     }
-#endif
 
-    downloadPercentage.store(100, std::memory_order_release);
+    // Only update percentage if we're tracking it
+    if (!noPercentagePolling) {
+        downloadPercentage.store(100, std::memory_order_release);
+    }
+
+    // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+    if (PROTECTED_FILES.find(destination) != PROTECTED_FILES.end()) {
+        destination += ".ultra";
+        
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("Protected file detected, renaming download to: " + destination);
+        #endif
+    }
+
     moveFile(tempFilePath, destination);
 
     return true;
 }
 
 
+/**
+ * @brief Custom I/O function for opening files with larger buffer
+ */
+static voidpf ZCALLBACK fopen64_file_func_custom(voidpf opaque, const void* filename, int mode) {
+    FILE* file = nullptr;
+    const char* mode_fopen = nullptr;
+    
+    if ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)
+        mode_fopen = "rb";
+    else if (mode & ZLIB_FILEFUNC_MODE_EXISTING)
+        mode_fopen = "r+b";
+    else if (mode & ZLIB_FILEFUNC_MODE_CREATE)
+        mode_fopen = "wb";
 
-// Define a custom deleter for the unique_ptr to properly close the ZZIP_DIR handle
-//struct ZzipDirDeleter {
-//    void operator()(ZZIP_DIR* dir) const {
-//        if (dir) {
-//            zzip_dir_close(dir);
-//        }
-//    }
-//};
+    if ((filename != nullptr) && (mode_fopen != nullptr)) {
+        file = fopen((const char*)filename, mode_fopen);
+        if (file && ((mode & ZLIB_FILEFUNC_MODE_READWRITEFILTER) == ZLIB_FILEFUNC_MODE_READ)) {
+            // Set 64KB buffer for reading the ZIP file - reduces syscalls
+            setvbuf(file, nullptr, _IOFBF, UNZIP_READ_BUFFER);
+        }
+    }
+    return file;
+}
 
-//struct ZzipFileDeleter {
-//    void operator()(ZZIP_FILE* file) const {
-//        if (file) {
-//            zzip_file_close(file);
-//        }
-//    }
-//};
-
+static int ZCALLBACK fclose64_file_func_custom(voidpf opaque, voidpf stream) {
+    int ret = EOF;
+    if (stream != nullptr) {
+        ret = fclose((FILE*)stream);
+    }
+    return ret;
+}
 
 /**
  * @brief Extracts files from a ZIP archive to a specified destination.
  *
+ * Ultra-optimized single-pass extraction with smooth byte-based progress reporting
+ * using miniz with proper 64-bit file support and streaming extraction.
+ * Fixed memory leaks with RAII for proper resource cleanup on abort.
+ * 
  * @param zipFilePath The path to the ZIP archive file.
  * @param toDestination The destination directory where files should be extracted.
  * @return True if the extraction was successful, false otherwise.
  */
 bool unzipFile(const std::string& zipFilePath, const std::string& toDestination) {
-    abortUnzip.store(false, std::memory_order_release); // Reset abort flag
+    abortUnzip.store(false, std::memory_order_release);
+    unzipPercentage.store(0, std::memory_order_release);
 
-    std::unique_ptr<ZZIP_DIR, ZzipDirDeleter> dir(zzip_dir_open(zipFilePath.c_str(), nullptr));
-    if (!dir) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Error opening zip file: " + zipFilePath);
-        #endif
-        return false;
-    }
-
-    ZZIP_DIRENT entry;
-    zzip_ssize_t totalUncompressedSize = 0;
-
-    // First pass: Calculate the total size of all files
-    while (zzip_dir_read(dir.get(), &entry)) {
-        if (entry.d_name[0] != '\0' && entry.st_size > 0) {
-            totalUncompressedSize += entry.st_size;
-        }
-    }
-
-    // Close and reopen the directory for extraction
-    dir.reset(zzip_dir_open(zipFilePath.c_str(), nullptr));
-    if (!dir) {
-        #if USING_LOGGING_DIRECTIVE
-        logMessage("Failed to reopen zip file: " + zipFilePath);
-        #endif
-        return false;
-    }
-
+    // Time-based abort checking - pre-calculated constants
     bool success = true;
-    zzip_ssize_t currentUncompressedSize = 0;
 
-    std::string fileName, extractedFilePath;
-    std::string directoryPath;
-    char buffer[UNZIP_BUFFER_SIZE];
-    zzip_ssize_t bytesRead;
+    // RAII wrapper for unzFile
+    struct UnzFileManager {
+        unzFile file = nullptr;
+        
+        UnzFileManager(const std::string& path) {
+            zlib_filefunc64_def ffunc;
+            fill_fopen64_filefunc(&ffunc);
+            ffunc.zopen64_file = fopen64_file_func_custom;
+            ffunc.zclose_file = fclose64_file_func_custom;
+            file = unzOpen2_64(path.c_str(), &ffunc);
+        }
+        
+        ~UnzFileManager() {
+            if (file) {
+                unzClose(file);
+                file = nullptr;
+            }
+        }
+        
+        bool is_valid() const { return file != nullptr; }
+        operator unzFile() const { return file; }
+    };
 
-    unzipPercentage.store(0, std::memory_order_release); // Initialize percentage
+    // RAII wrapper for output file
+    struct OutputFileManager {
+        FILE* file = nullptr;
+        std::unique_ptr<char[]> buffer;
+        size_t bufferSize;
+        
+        OutputFileManager(size_t bufSize) : bufferSize(bufSize) {
+            buffer = std::make_unique<char[]>(bufferSize);
+        }
+        
+        bool open(const std::string& path) {
+            close();
+            file = fopen(path.c_str(), "wb");
+            if (file) {
+                setvbuf(file, buffer.get(), _IOFBF, bufferSize);
+            }
+            return file != nullptr;
+        }
+        
+        void close() {
+            if (file) {
+                fclose(file);
+                file = nullptr;
+            }
+        }
+        
+        bool is_open() const { return file != nullptr; }
+        
+        size_t write(const void* data, size_t size) {
+            return file ? fwrite(data, 1, size, file) : 0;
+        }
+        
+        ~OutputFileManager() { close(); }
+    };
 
-    std::unique_ptr<ZZIP_FILE, ZzipFileDeleter> file;
+    UnzFileManager zipFile(zipFilePath);
+    if (!zipFile.is_valid()) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("Failed to open zip file: " + zipFilePath);
+        #endif
+        return false;
+    }
+
+    // Get global info about the ZIP file
+    unz_global_info64 globalInfo;
+    if (unzGetGlobalInfo64(zipFile, &globalInfo) != UNZ_OK) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("Failed to get zip file info");
+        #endif
+        return false;
+    }
+
+    const uLong numFiles = globalInfo.number_entry;
+    if (numFiles == 0) {
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("No files found in archive");
+        #endif
+        return false;
+    }
+
+    // ALWAYS calculate total size for accurate byte-based progress
+    ZPOS64_T totalUncompressedSize = 0;
+    char tempFilenameBuffer[512];
+    unz_file_info64 fileInfo;
     
-    // Declare file pointer for use with fopen and fwrite when NO_FSTREAM_DIRECTIVE is enabled
-    #if NO_FSTREAM_DIRECTIVE
-    FILE* outputFile = nullptr;
-    #else
-    std::ofstream outputFile;
+    // First pass: calculate total uncompressed size
+    int result = unzGoToFirstFile(zipFile);
+    while (result == UNZ_OK) {
+        if (abortUnzip.load(std::memory_order_relaxed)) {
+            unzipPercentage.store(-1, std::memory_order_release);
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Extraction aborted during size calculation");
+            #endif
+            abortUnzip.store(false, std::memory_order_release);
+            return false;
+        }
+
+        if (unzGetCurrentFileInfo64(zipFile, &fileInfo, tempFilenameBuffer, sizeof(tempFilenameBuffer), 
+                                   nullptr, 0, nullptr, 0) == UNZ_OK) {
+            const size_t nameLen = strlen(tempFilenameBuffer);
+            if (nameLen > 0 && tempFilenameBuffer[nameLen - 1] != '/') {
+                totalUncompressedSize += std::max(fileInfo.uncompressed_size, static_cast<ZPOS64_T>(1));
+            }
+        }
+        result = unzGoToNextFile(zipFile);
+    }
+
+    // Fallback to 1 if no actual data (avoid division by zero)
+    if (totalUncompressedSize == 0) {
+        totalUncompressedSize = 1;
+    }
+
+    #if USING_LOGGING_DIRECTIVE
+    if (!disableLogging) {
+        logMessage("Processing " + std::to_string(numFiles) + " files, " + 
+                  std::to_string(totalUncompressedSize) + " total bytes from archive");
+    }
+
     #endif
 
-    auto it = extractedFilePath.end();
-    // Second pass: Extract files and update progress
-    while (zzip_dir_read(dir.get(), &entry)) {
-        if (entry.d_name[0] == '\0') continue; // Skip empty entries
+    // Pre-allocate ALL reusable strings and variables outside the main loop
+    std::string fileName, extractedFilePath, directoryPath;
+    // Reserve capacity upfront — prevents any heap reallocation during the hot extraction loop.
+    // 512 covers virtually all ZIP entry paths; the strings grow once and never again.
+    fileName.reserve(512);
+    directoryPath.reserve(512);
 
-        fileName = entry.d_name;
+    // Single large buffer for extraction - reused for all files
+    const size_t bufferSize = UNZIP_WRITE_BUFFER;
+    
+    std::unique_ptr<char[]> writeBuffer = std::make_unique<char[]>(bufferSize);
 
-        // Remove invalid characters
-        extractedFilePath = toDestination + fileName;
-        it = extractedFilePath.begin() + std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
-        extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
-            return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
-        }), extractedFilePath.end());
+    char filenameBuffer[512]; // Stack allocated for filename reading
+    
+    // Progress tracking variables - OPTIMIZED for smooth byte-based tracking
+    ZPOS64_T totalBytesProcessed = 0;
+    uLong filesProcessed = 0;
+    int currentProgress = 0;  // Current percentage (0-100)
+    
+    // Create output file manager
+    OutputFileManager outputFile(bufferSize);
+    
+    // Loop variables moved outside
+    bool extractSuccess;
+    ZPOS64_T fileBytesProcessed;
+    int bytesRead;
+    
+    // String operation variables
+    const char* filename;
+    size_t nameLen;
+    size_t lastSlashPos;
+    size_t invalid_pos;
+    size_t start_pos;
+    
+    // Last created directory cache — avoids redundant createDirectory syscalls
+    // when consecutive ZIP entries share the same parent (the common case).
+    // Plain string comparison; no extra heap structure needed.
+    std::string lastDir;
+    
+    // Ensure destination directory exists
+    createDirectory(toDestination);
+    
+    // Ensure destination ends with '/' - pre-allocate final string
+    std::string destination;
 
-        if (!extractedFilePath.empty() && extractedFilePath.back() == '/') continue; // Skip directories
+    destination = toDestination;
+    if (!destination.empty() && destination.back() != '/') {
+        destination += '/';
+    }
+    // Reserve with destination prefix already known — both strings will never reallocate.
+    extractedFilePath.reserve(destination.size() + 512);
+    lastDir.reserve(destination.size() + 512);
+    
+    int newProgress;;
 
-        directoryPath = extractedFilePath.substr(0, extractedFilePath.find_last_of('/') + 1);
-        createDirectory(directoryPath);
+    // Extract files
+    result = unzGoToFirstFile(zipFile);
+    while (result == UNZ_OK && success) {
 
-        // Reset the unique_ptr before opening a new file
-        file.reset(zzip_file_open(dir.get(), entry.d_name, 0));
-        if (!file) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening file in zip: " + fileName);
-            #endif
+        if (abortUnzip.load(std::memory_order_relaxed)) {
             success = false;
+            break; // RAII will handle cleanup
+        }
+        
+        // Get current file info - reuse fileInfo variable
+        if (unzGetCurrentFileInfo64(zipFile, &fileInfo, filenameBuffer, sizeof(filenameBuffer), 
+                                   nullptr, 0, nullptr, 0) != UNZ_OK) {
+            result = unzGoToNextFile(zipFile);
             continue;
         }
 
-        #if NO_FSTREAM_DIRECTIVE
-        outputFile = fopen(extractedFilePath.c_str(), "wb");
-        if (!outputFile) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening output file: " + extractedFilePath);
-            #endif
-            success = false;
+        filename = filenameBuffer;
+        
+        // Quick filename validation
+        if (!filename || filename[0] == '\0') {
+            result = unzGoToNextFile(zipFile);
             continue;
         }
-        #else
-        outputFile.open(extractedFilePath, std::ios::binary);
-        if (!outputFile.is_open()) {
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Error opening output file: " + extractedFilePath);
-            #endif
-            success = false;
+        
+        nameLen = strlen(filename);
+        if (nameLen > 0 && filename[nameLen - 1] == '/') { // Skip directories
+            result = unzGoToNextFile(zipFile);
             continue;
         }
-        #endif
+        
+        // Build extraction path - reuse allocated strings
+        fileName.assign(filename, nameLen);
+        extractedFilePath = destination;
+        extractedFilePath += fileName;
+        
+        // Optimized character cleaning - only if needed
+        invalid_pos = extractedFilePath.find_first_of(":*?\"<>|");
+        if (invalid_pos != std::string::npos) {
+            start_pos = std::min(extractedFilePath.find(ROOT_PATH) + 5, extractedFilePath.size());
+            auto it = extractedFilePath.begin() + start_pos;
+            extractedFilePath.erase(std::remove_if(it, extractedFilePath.end(), [](char c) {
+                return c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|';
+            }), extractedFilePath.end());
+        }
 
-        while ((bytesRead = zzip_file_read(file.get(), buffer, UNZIP_BUFFER_SIZE)) > 0) {
-            if (abortUnzip.load(std::memory_order_acquire)) {
-                #if USING_LOGGING_DIRECTIVE
-                logMessage("Aborting unzip operation during file extraction.");
-                #endif
+        // CHECK FOR PROTECTED FILES AND ADD .ultra EXTENSION IF NEEDED
+        if (PROTECTED_FILES.find(extractedFilePath) != PROTECTED_FILES.end()) {
+            extractedFilePath += ".ultra";
+            
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Protected file detected, renaming to: " + extractedFilePath);
+            #endif
+        }
 
-                #if NO_FSTREAM_DIRECTIVE
-                fclose(outputFile); // Close file handle for FILE*
-                #else
-                outputFile.close(); // Close ofstream
-                #endif
-                
-                deleteFileOrDirectory(extractedFilePath); // Cleanup partial file
+        // Open the current file in the ZIP
+        if (unzOpenCurrentFile(zipFile) != UNZ_OK) {
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Could not open file in ZIP: " + fileName);
+            #endif
+            result = unzGoToNextFile(zipFile);
+            continue;
+        }
+
+        // Create directory if needed — skip if same parent as last file (common case)
+        lastSlashPos = extractedFilePath.find_last_of('/');
+        if (lastSlashPos != std::string::npos) {
+            directoryPath.assign(extractedFilePath, 0, lastSlashPos + 1);
+            if (directoryPath != lastDir) {
+                createDirectory(directoryPath);
+                lastDir = directoryPath;
+            }
+        }
+
+        // Open output file
+        if (!outputFile.open(extractedFilePath)) {
+            unzCloseCurrentFile(zipFile);
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Error creating file: " + extractedFilePath);
+            #endif
+            result = unzGoToNextFile(zipFile);
+            continue;
+        }
+
+        // Extract file data in chunks
+        extractSuccess = true;
+        fileBytesProcessed = 0;
+        
+        
+        while ((bytesRead = unzReadCurrentFile(zipFile, writeBuffer.get(), bufferSize)) > 0) {
+            if (abortUnzip.load(std::memory_order_relaxed)) {
+                extractSuccess = false;
+                break; // RAII will handle cleanup
+            }
+            
+            // Write data to file
+            if (outputFile.write(writeBuffer.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
+                extractSuccess = false;
+                break;
+            }
+            
+            // Update progress tracking
+            fileBytesProcessed += bytesRead;
+            totalBytesProcessed += bytesRead;
+            
+            // FIXED: Allow progress to reach 100% naturally during processing
+            if (totalUncompressedSize > 0) {
+                newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+                if (newProgress > currentProgress && newProgress <= 100) {
+                    currentProgress = newProgress;
+                    unzipPercentage.store(currentProgress, std::memory_order_release);
+                    
+                    #if USING_LOGGING_DIRECTIVE
+                    // Only log at 10% intervals to avoid spam
+                    if (currentProgress % 10 == 0) {
+                        if (!disableLogging) {
+                            logMessage("Progress: " + std::to_string(currentProgress) + "% (" + 
+                                      std::to_string(totalBytesProcessed) + "/" + 
+                                      std::to_string(totalUncompressedSize) + " bytes)");
+                        }
+                    }
+                    #endif
+                }
+            }
+        }
+
+        // CRITICAL FIX: Handle 0-byte files that don't enter the while loop
+        if (bytesRead == 0 && fileBytesProcessed == 0 && extractSuccess) {
+            // This is a 0-byte file - update progress by 1 byte equivalent
+            totalBytesProcessed += 1;
+            
+            // Update progress for 0-byte files
+            if (totalUncompressedSize > 0) {
+                newProgress = static_cast<int>((totalBytesProcessed * 100) / totalUncompressedSize);
+                if (newProgress > currentProgress && newProgress <= 100) {
+                    currentProgress = newProgress;
+                    unzipPercentage.store(currentProgress, std::memory_order_release);
+                    
+                    #if USING_LOGGING_DIRECTIVE
+                    if (currentProgress % 10 == 0) {
+                        if (!disableLogging)
+                            logMessage("Progress: " + std::to_string(currentProgress) + "% (0-byte file processed)");
+                    }
+                    #endif
+                }
+            }
+        }
+
+        // Check for read errors
+        if (bytesRead < 0) {
+            extractSuccess = false;
+        }
+
+        // Close current file handles
+        outputFile.close();
+        unzCloseCurrentFile(zipFile);
+
+        if (!extractSuccess) {
+            deleteFileOrDirectory(extractedFilePath);
+            #if USING_LOGGING_DIRECTIVE
+            if (!disableLogging)
+                logMessage("Failed to extract: " + fileName);
+            #endif
+            
+            if (abortUnzip.load(std::memory_order_relaxed)) {
                 success = false;
                 break;
             }
-
-            #if NO_FSTREAM_DIRECTIVE
-            fwrite(buffer, 1, bytesRead, outputFile); // Write to FILE* stream
-            #else
-            outputFile.write(buffer, bytesRead); // Write to std::ofstream
-            #endif
-
-            #if USING_LOGGING_DIRECTIVE
-            logMessage("Extracted: " + extractedFilePath);
-            #endif
-
-            currentUncompressedSize += bytesRead;
-
-            unzipPercentage.store(totalUncompressedSize != 0 ?
-                static_cast<int>(100.0 * std::min(1.0, static_cast<double>(currentUncompressedSize) / static_cast<double>(totalUncompressedSize))) : 0,
-                std::memory_order_release);
+        } else {
+            filesProcessed++;
         }
 
-        #if NO_FSTREAM_DIRECTIVE
-        fclose(outputFile); // Close FILE* stream
-        #else
-        outputFile.close(); // Close std::ofstream
-        #endif
-
-        if (!success) break; // Exit the outer loop if interrupted during extraction
+        // Move to next file
+        result = unzGoToNextFile(zipFile);
     }
 
-    if (success) {
-        unzipPercentage.store(100, std::memory_order_release); // Ensure it's set to 100% on successful extraction
-        //logMessage("Extraction Complete!");
-    } else {
+    writeBuffer.reset();
+
+    // Check final abort state
+    if (abortUnzip.load(std::memory_order_relaxed)) {
         unzipPercentage.store(-1, std::memory_order_release);
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging)
+            logMessage("Extraction aborted by user");
+        #endif
+        abortUnzip.store(false, std::memory_order_release);
+        return false;
     }
 
-    return success;
+    if (success && filesProcessed > 0) {
+        abortUnzip.store(false, std::memory_order_release);
+        unzipPercentage.store(100, std::memory_order_release);
+        
+        #if USING_LOGGING_DIRECTIVE
+        if (!disableLogging) {
+            logMessage("Extraction completed: " + std::to_string(filesProcessed) + " files, " + 
+                      std::to_string(totalBytesProcessed) + " bytes");
+        }
+        #endif
+        
+        return true;
+    } else {
+        abortUnzip.store(false, std::memory_order_release);
+        unzipPercentage.store(-1, std::memory_order_release);
+        return false;
+    }
 }
-
 }

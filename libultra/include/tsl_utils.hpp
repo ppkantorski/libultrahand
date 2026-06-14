@@ -18,27 +18,19 @@
  *   altered or removed.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 
 #pragma once
-#ifndef TSL_UTILS_HPP
-#define TSL_UTILS_HPP
 
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <ultra.hpp>
 #include <switch.h>
 #include <arm_neon.h>
 
 #include <stdlib.h>
 #include <strings.h>
-#include <math.h>
 
 #include <algorithm>
 #include <cstring>
@@ -48,58 +40,119 @@
 #include <type_traits>
 #include <mutex>
 #include <memory>
-#include <chrono>
+
 #include <list>
 #include <stack>
 #include <map>
 #include <barrier>
 
 
+struct OverlayCombo {
+    std::string path;   // full overlay path
+    std::string launchArg; // empty = use per-overlay launch_args key, otherwise a “mode” arg
+};
+
+struct SwapDepth {
+    u32 value;
+    explicit SwapDepth(u32 v) : value(v) {}
+};
 
 namespace ult {
+
+    static inline u64 nowNs() {
+        return armTicksToNs(armGetSystemTick());
+    }
+
+    void formatTimestamp(time_t t, char* buf, size_t bufSize);
+
+    // math funcs
+    double cos(double x);
+    
+    extern bool correctFrameSize; // for detecting the correct Overlay display size
+
+    extern u16 DefaultFramebufferWidth;            ///< Width of the framebuffer
+    extern u16 DefaultFramebufferHeight;           ///< Height of the framebuffer
+
+    extern bool windowedLayerPixelPerfect;
+
     extern std::unordered_map<std::string, std::string> translationCache;
+
+    extern std::unordered_map<u64, OverlayCombo> g_entryCombos;
+    extern std::atomic<bool> launchingOverlay;
+    extern std::atomic<bool> settingsInitialized;
+    extern std::atomic<bool> currentForeground;
+
+
     bool readFileContent(const std::string& filePath, std::string& content);
     void parseJsonContent(const std::string& content, std::unordered_map<std::string, std::string>& result);
     bool parseJsonToMap(const std::string& filePath, std::unordered_map<std::string, std::string>& result);
 
     bool loadTranslationsFromJSON(const std::string& filePath);
 
+    // Function to clear the translation cache
+    void clearTranslationCache();
+
     extern u16 activeHeaderHeight;
 
     bool consoleIsDocked();
     
+    std::string getBuildIdAsString();
+
     std::string getTitleIdAsString();
     
+    extern std::string lastTitleID;
+    extern std::atomic<bool> resetForegroundCheck;
+
+
     //extern bool isLauncher;
-    extern bool internalTouchReleased;
+    extern std::atomic<bool> internalTouchReleased;
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
-    extern bool noClickableItems;
+    extern bool useLaunchCombos;
+    //extern bool useLaunchRecall;
+    //extern bool usePageRecall;
+    extern bool useNotifications;
+    extern bool useNotificationsHotkey;
+    extern bool useStartupNotification;
+    extern bool silenceNotifications;
+    extern bool useSoundEffects;
+    extern bool useHapticFeedback;
+    extern bool useAutoNTPSync;
+    extern bool useStickNavigation;
+    extern bool usePageSwap;
+    extern std::atomic<bool> noClickableItems;
 
+    extern bool useDynamicLogo;
+    extern bool useSelectionBG;
+    extern bool useSelectionText;
+    extern bool useSelectionValue;
 
     
-    // Define the duration boundaries (for smooth scrolling)
-    extern const std::chrono::milliseconds initialInterval;  // Example initial interval
-    extern const std::chrono::milliseconds shortInterval;    // Short interval after long hold
-    extern const std::chrono::milliseconds transitionPoint; // Point at which the shortest interval is reached
-    
-    // Function to interpolate between two durations
-    std::chrono::milliseconds interpolateDuration(std::chrono::milliseconds start, std::chrono::milliseconds end, float t);
-    
+#if IS_LAUNCHER_DIRECTIVE
+    extern std::atomic<bool> overlayLaunchRequested;
+    extern std::string requestedOverlayPath;
+    extern std::string requestedOverlayArgs;
+    extern std::mutex overlayLaunchMutex;
+#endif
     
     
-    //#include <filesystem> // Comment out filesystem
     
     // CUSTOM SECTION START
-    extern float backWidth, selectWidth, nextPageWidth;
-    extern bool inMainMenu;
-    extern bool inOverlaysPage;
-    extern bool inPackagesPage;
+    extern std::atomic<float> backWidth;
+    extern std::atomic<float> selectWidth;
+    extern std::atomic<float> nextPageWidth;
+    extern std::atomic<bool> inMainMenu;
+    extern std::atomic<bool> inHiddenMode;
+    extern std::atomic<bool> inSettingsMenu;
+    extern std::atomic<bool> inSubSettingsMenu;
+    extern std::atomic<bool> inOverlaysPage;
+    extern std::atomic<bool> inPackagesPage;
     
+    extern std::atomic<bool> hasNextPageButton;
+
     extern bool firstBoot; // for detecting first boot
-    
-    //static std::unordered_map<std::string, std::string> hexSumCache;
+    extern bool reloadingBoot; // for detedting reloading boots
     
     // Define an atomic bool for interpreter completion
     extern std::atomic<bool> threadFailure;
@@ -107,17 +160,17 @@ namespace ult {
     extern std::atomic<bool> shakingProgress;
     
     extern std::atomic<bool> isHidden;
+    extern std::atomic<bool> externalAbortCommands;
     
-    //bool progressAnimation = false;
     extern bool disableTransparency;
-    //bool useCustomWallpaper = false;
-    extern bool useMemoryExpansion;
     extern bool useOpaqueScreenshots;
     
-    extern bool onTrackBar;
-    extern bool allowSlide;
-    extern bool unlockedSlide;
+    extern std::atomic<bool> onTrackBar;
+    extern std::atomic<bool> allowSlide;
+    extern std::atomic<bool> unlockedSlide;
     
+    void atomicToggle(std::atomic<bool>& b);
+
     /**
      * @brief Shutdown modes for the Ultrahand-Overlay project.
      *
@@ -152,10 +205,10 @@ namespace ult {
     #define KEY_SR HidNpadButton_AnySR
     #define KEY_LSTICK HidNpadButton_StickL
     #define KEY_RSTICK HidNpadButton_StickR
-    #define KEY_UP HidNpadButton_AnyUp
-    #define KEY_DOWN HidNpadButton_AnyDown
-    #define KEY_LEFT HidNpadButton_AnyLeft
-    #define KEY_RIGHT HidNpadButton_AnyRight
+    #define KEY_UP    (ult::useStickNavigation ? HidNpadButton_AnyUp    : HidNpadButton_Up)
+    #define KEY_DOWN  (ult::useStickNavigation ? HidNpadButton_AnyDown  : HidNpadButton_Down)
+    #define KEY_LEFT  (ult::useStickNavigation ? HidNpadButton_AnyLeft  : HidNpadButton_Left)
+    #define KEY_RIGHT (ult::useStickNavigation ? HidNpadButton_AnyRight : HidNpadButton_Right)
     
     #define SCRIPT_KEY HidNpadButton_Minus
     #define SYSTEM_SETTINGS_KEY HidNpadButton_Plus
@@ -205,10 +258,7 @@ namespace ult {
      *
      * Ordered as they should be displayed
      */
-    extern std::array<KeyInfo, 18> KEYS_INFO;
-
-    std::unordered_map<std::string, std::string> createButtonCharMap();
-    
+    extern const std::array<KeyInfo, 18> KEYS_INFO;
     extern std::unordered_map<std::string, std::string> buttonCharMap;
     
     
@@ -219,9 +269,12 @@ namespace ult {
     
     extern const std::string whiteColor;
     extern const std::string blackColor;
+    extern const std::string greyColor;
+
+    extern std::atomic<bool> languageWasChanged;
     
-    constexpr float _M_PI = 3.14159265358979323846;
-    constexpr float RAD_TO_DEG = 180.0f / _M_PI;
+    inline constexpr double _M_PI = 3.14159265358979323846;  // For double precision
+    inline constexpr double RAD_TO_DEG = 180.0f / _M_PI;
     
     #if IS_LAUNCHER_DIRECTIVE
     extern std::string ENGLISH;
@@ -234,11 +287,13 @@ namespace ult {
     extern std::string DUTCH;
     extern std::string PORTUGUESE;
     extern std::string RUSSIAN;
+    extern std::string UKRAINIAN;
     extern std::string POLISH;
     extern std::string SIMPLIFIED_CHINESE;
     extern std::string TRADITIONAL_CHINESE;
 
     extern std::string OVERLAYS; //defined in libTesla now
+    extern std::string OVERLAYS_ABBR;
     extern std::string OVERLAY;
     extern std::string HIDDEN_OVERLAYS;
     extern std::string PACKAGES; //defined in libTesla now
@@ -248,29 +303,70 @@ namespace ult {
     extern std::string HIDE_OVERLAY;
     extern std::string HIDE_PACKAGE;
     extern std::string LAUNCH_ARGUMENTS;
+    extern std::string FORCE_AMS110_SUPPORT;
+    extern std::string QUICK_LAUNCH;
     extern std::string BOOT_COMMANDS;
     extern std::string EXIT_COMMANDS;
     extern std::string ERROR_LOGGING;
     extern std::string COMMANDS;
     extern std::string SETTINGS;
+    extern std::string FAVORITE;
     extern std::string MAIN_SETTINGS;
     extern std::string UI_SETTINGS;
 
     extern std::string WIDGET;
+    extern std::string WIDGET_ITEMS;
+    extern std::string WIDGET_SETTINGS;
     extern std::string CLOCK;
     extern std::string BATTERY;
     extern std::string SOC_TEMPERATURE;
     extern std::string PCB_TEMPERATURE;
+    extern std::string BACKDROP;
+    extern std::string BORDER;
+    extern std::string DYNAMIC_COLORS;
+    extern std::string CENTER_ALIGNMENT;
+    extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
-    extern std::string MENU_ITEMS;
+
+    extern std::string INPUT_SETTINGS;
+    extern std::string LAUNCH_COMBOS;
+    extern std::string SWIPE_TO_OPEN;
+    extern std::string HAPTIC_FEEDBACK;
+    extern std::string STICK_NAVIGATION;
+    extern std::string HOLD_DURATION;
+
+    extern std::string FEATURE_SETTINGS;
+    extern std::string OPAQUE_SCREENSHOTS;
+    extern std::string RIGHT_SIDE_MODE;
+    extern std::string NTP_SYNC_DOWNLOADS;
+
+    extern std::string MENU_SETTINGS;
+    extern std::string PACKAGES_MENU;
     extern std::string USER_GUIDE;
-    extern std::string VERSION_LABELS;
+    extern std::string SHOW_HIDDEN;
+    extern std::string SHOW_DELETE;
+    extern std::string SHOW_UNSUPPORTED;
+    extern std::string PAGE_SWAP;
+    extern std::string OVERLAY_VERSIONS;
+    extern std::string PACKAGE_VERSIONS;
+    extern std::string CLEAN_VERSIONS;
+
+    extern std::string THEME_SETTINGS;
+    extern std::string DYNAMIC_LOGO;
+    extern std::string SELECTION_BACKGROUND;
+    extern std::string SELECTION_TEXT;
+    extern std::string SELECTION_VALUE;
+    extern std::string LIBULTRAHAND_TITLES;
+    extern std::string LIBULTRAHAND_VERSIONS;
+    extern std::string PACKAGE_TITLES;
+
     extern std::string KEY_COMBO;
+    extern std::string MODE;
+    extern std::string LAUNCH_MODES;
     extern std::string LANGUAGE;
     extern std::string OVERLAY_INFO;
     extern std::string SOFTWARE_UPDATE;
     extern std::string UPDATE_ULTRAHAND;
-    extern std::string UPDATE_LANGUAGES;
     extern std::string SYSTEM;
     extern std::string DEVICE_INFO;
     extern std::string FIRMWARE;
@@ -280,22 +376,41 @@ namespace ult {
     extern std::string VENDOR;
     extern std::string MODEL;
     extern std::string STORAGE;
-    extern std::string NOTICE;
-    extern std::string UTILIZES;
-    extern std::string FREE;
-    extern std::string MEMORY_EXPANSION;
-    extern std::string REBOOT_REQUIRED;
+
+    extern std::string OVERLAY_MEMORY;
+    extern std::string NOT_ENOUGH_MEMORY;
+    extern std::string WALLPAPER_SUPPORT_DISABLED;
+    //extern std::string SOUND_SUPPORT_DISABLED;
+    extern std::string WALLPAPER_SUPPORT_ENABLED;
+    extern std::string SOUND_SUPPORT_ENABLED;
+    extern std::string EXIT_OVERLAY_SYSTEM;
+
+    extern std::string ULTRAHAND_ABOUT;
+    extern std::string ULTRAHAND_CREDITS_START;
+    extern std::string ULTRAHAND_CREDITS_END;
+
     extern std::string LOCAL_IP;
     extern std::string WALLPAPER;
     extern std::string THEME;
+    extern std::string SOUNDS;
     extern std::string DEFAULT;
     extern std::string ROOT_PACKAGE;
     extern std::string SORT_PRIORITY;
+    extern std::string OPTIONS;
     extern std::string FAILED_TO_OPEN;
-    extern std::string CLEAN_VERSIONS;
-    extern std::string OVERLAY_VERSIONS;
-    extern std::string PACKAGE_VERSIONS;
-    extern std::string OPAQUE_SCREENSHOTS;
+
+    extern std::string NOTIFICATIONS;
+    extern std::string NOTIFICATION_SETTINGS;
+    extern std::string SILENCE_NOTIFICATIONS;
+    extern std::string STARTUP_NOTIFICATION;
+    extern std::string MAX_SLOTS;
+    extern std::string API_NOTIFICATIONS;
+    extern std::string API_TOGGLE_HOTKEY;
+    extern std::string DISMISS_NOTIFICATION;
+    extern std::string API_TOGGLE;
+    extern std::string CLICK;
+    extern std::string TAP;
+    extern std::string HOLD_FOR_4S;
 
     extern std::string PACKAGE_INFO;
     extern std::string _TITLE;
@@ -304,7 +419,6 @@ namespace ult {
     extern std::string _ABOUT;
     extern std::string _CREDITS;
 
-    extern std::string USERGUIDE_OFFSET;
     extern std::string SETTINGS_MENU;
     extern std::string SCRIPT_OVERLAY;
     extern std::string STAR_FAVORITE;
@@ -312,10 +426,18 @@ namespace ult {
     extern std::string ON_MAIN_MENU;
     extern std::string ON_A_COMMAND;
     extern std::string ON_OVERLAY_PACKAGE;
-    extern std::string EFFECTS;
-    extern std::string SWIPE_TO_OPEN;
-    extern std::string RIGHT_SIDE_MODE;
-    extern std::string PROGRESS_ANIMATION;
+
+    extern std::string ULTRAHAND_HAS_STARTED;
+    extern std::string ULTRAHAND_HAS_RESTARTED;
+    extern std::string NEW_UPDATE_IS_AVAILABLE;
+
+    extern std::string DELETE_PACKAGE;
+    extern std::string DELETE_OVERLAY;
+    extern std::string SELECTION_IS_EMPTY;
+    extern std::string FORCED_SUPPORT_WARNING;
+
+    extern std::string TASK_IS_COMPLETE;
+    extern std::string TASK_HAS_FAILED;
 
     extern std::string REBOOT_TO;
     extern std::string REBOOT;
@@ -323,7 +445,11 @@ namespace ult {
     extern std::string BOOT_ENTRY;
     #endif
 
-    extern std::string DEFAULT_CHAR_WIDTH;
+    extern std::string INCOMPATIBLE_WARNING;
+    extern std::string OVERLAY_DOES_NOT_EXIST;
+    extern std::string SYSTEM_RAM;
+    extern std::string FREE;
+    
     extern std::string UNAVAILABLE_SELECTION;
 
     extern std::string ON;
@@ -331,13 +457,13 @@ namespace ult {
 
     extern std::string OK;
     extern std::string BACK;
+    extern std::string HIDE;
+    extern std::string CANCEL;
 
     extern std::string GAP_1;
     extern std::string GAP_2;
-    
+    extern std::atomic<float> halfGap;
 
-    extern std::string EMPTY;
-    
     #if USING_WIDGET_DIRECTIVE
     extern std::string SUNDAY;
     extern std::string MONDAY;
@@ -382,14 +508,9 @@ namespace ult {
     extern std::string DEC;
     #endif
     
-    #if IS_LAUNCHER_DIRECTIVE
     // Constant string definitions (English)
     void reinitializeLangVars();
-    #endif
     
-    
-    // Define the updateIfNotEmpty function
-    void updateIfNotEmpty(std::string& constant, const char* jsonKey, const json_t* jsonData);
     
     void parseLanguage(const std::string& langFile);
     
@@ -401,32 +522,20 @@ namespace ult {
     void applyLangReplacements(std::string& text, bool isValue = false);
     
     
-    
-    //// Map of character widths (pre-calibrated)
-    //extern std::unordered_map<wchar_t, float> characterWidths;
-    
-    //extern float defaultNumericCharWidth;
-    
-    
-    
     // Predefined hexMap
-    extern const std::array<int, 256> hexMap;
-    
-    
-    // Prepare a map of default settings
-    extern std::map<std::string, std::string> defaultThemeSettingsMap;
-    
-    bool isNumericCharacter(char c);
-    
-    bool isValidHexColor(const std::string& hexColor);
-    
-    
-    
-    float calculateAmplitude(float x, float peakDurationFactor = 0.25f);
+    inline constexpr std::array<int, 256> hexMap = [] {
+        std::array<int, 256> map = {0};
+        map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
+        map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
+        map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
+        map['a'] = 10; map['b'] = 11; map['c'] = 12; map['d'] = 13; map['e'] = 14; map['f'] = 15;
+        return map;
+    }();
             
     
-    
+    extern std::atomic<bool> refreshWallpaperNow;
     extern std::atomic<bool> refreshWallpaper;
+    extern std::atomic<bool> refreshCombos;
     extern std::vector<u8> wallpaperData;
     extern std::atomic<bool> inPlot;
     
@@ -436,39 +545,32 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
+    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize);
     void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
     void loadWallpaperFileWhenSafe();
 
     void reloadWallpaper();
     
-    // Global variables for FPS calculation
-    //extern double lastTimeCount;
-    //extern int frameCount;
-    //extern float fps;
-    //extern double elapsedTime;
     
-    
-    extern bool themeIsInitialized;
+    extern std::atomic<bool> themeIsInitialized;
 
     // Variables for touch commands
-    extern bool touchingBack;
-    extern bool touchingSelect;
-    extern bool touchingNextPage;
-    extern bool touchingMenu;
-    extern bool simulatedBack;
-    extern bool simulatedBackComplete;
-    extern bool simulatedSelect;
-    extern bool simulatedSelectComplete;
-    extern bool simulatedNextPage;
-    extern bool simulatedNextPageComplete;
-    extern bool simulatedMenu;
-    extern bool simulatedMenuComplete;
-    extern bool stillTouching;
-    extern bool interruptedTouch;
-    extern bool touchInBounds;
+    extern std::atomic<bool> touchingBack;
+    extern std::atomic<bool> touchingSelect;
+    extern std::atomic<bool> touchingNextPage;
+    extern std::atomic<bool> touchingMenu;
+    extern std::atomic<bool> shortTouchAndRelease;
+    extern std::atomic<bool> longTouchAndRelease;
+    extern std::atomic<bool> simulatedBack;
+    extern std::atomic<bool> simulatedSelect;
+    extern std::atomic<bool> simulatedNextPage;
+    extern std::atomic<bool> simulatedMenu;
+    extern std::atomic<bool> stillTouching;
+    extern std::atomic<bool> interruptedTouch;
+    extern std::atomic<bool> touchInBounds;
     
     
-    #if USING_WIDGET_DIRECTIVE
+#if USING_WIDGET_DIRECTIVE
     // Battery implementation
     extern bool powerInitialized;
     extern bool powerCacheInitialized;
@@ -476,25 +578,19 @@ namespace ult {
     extern bool powerCacheIsCharging;
     extern PsmSession powerSession;
     
-    // Define variables to store previous battery charge and time
-    extern uint32_t prevBatteryCharge;
-    extern s64 timeOut;
+    extern std::atomic<uint32_t> batteryCharge;
+    extern std::atomic<bool> isCharging;
     
-    
-    extern uint32_t batteryCharge;
-    extern bool isCharging;
-    
-    constexpr std::chrono::seconds min_delay = std::chrono::seconds(3); // Minimum delay between checks
-    
-    bool powerGetDetails(uint32_t *batteryCharge, bool *isCharging);
+    bool powerGetDetails(uint32_t *_batteryCharge, bool *_isCharging);
     
     void powerInit(void);
     
     void powerExit(void);
-    #endif
+#endif
     
     // Temperature Implementation
-    extern float PCB_temperature, SOC_temperature;
+    extern std::atomic<float> PCB_temperature;
+    extern std::atomic<float> SOC_temperature;
     
     /*
     I2cReadRegHandler was taken from Switch-OC-Suite source code made by KazushiMe
@@ -527,18 +623,56 @@ namespace ult {
     
     
     // Widget settings
-    //static std::string hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp;
-    
+    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    extern bool hideWidgetBackdrop, hideWidgetBorder, centerWidgetAlignment, extendedWidgetBackdrop;
+
     #if IS_LAUNCHER_DIRECTIVE
     void reinitializeWidgetVars();
     #endif
     
-    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions;
+    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
     
-    extern std::string loaderInfo;
+
+
+    // nx-ovlloader settings
+    enum class OverlayHeapSize : u64 {
+        Size_4MB = 0x400000,
+        Size_6MB = 0x600000,
+        Size_8MB = 0x800000
+    };
+    
+    // Static cache
+    struct HeapSizeCache {
+        bool initialized = false;
+        OverlayHeapSize cachedSize = OverlayHeapSize::Size_6MB;
+        u64 customSizeMB = 0;
+    };
+    extern HeapSizeCache heapSizeCache;
+    
+
+    // Helper function to convert MB to bytes
+    extern u64 mbToBytes(u32 mb);
+    
+    // Helper function to convert bytes to MB
+    extern u32 bytesToMB(u64 bytes);
+
+    // Implementation
+    OverlayHeapSize getCurrentHeapSize();
+    
+    extern OverlayHeapSize currentHeapSize;
+    
+    bool setOverlayHeapSize(OverlayHeapSize heapSize);
+    
+    // Implementation
+    bool requestOverlayExit();
+
+    bool requestOverlayReload();
+
+    extern const std::string loaderInfo;
     extern std::string loaderTitle;
     extern bool expandedMemory;
+    extern bool furtherExpandedMemory;
+    extern bool limitedMemory;
     
     extern std::string versionLabel;
     
@@ -549,15 +683,15 @@ namespace ult {
     
     // Number of renderer threads to use
     extern const unsigned numThreads;
-    extern std::vector<std::thread> threads;
-    extern s32 bmpChunkSize;
+    extern std::vector<std::thread> renderThreads;
+    extern const s32 bmpChunkSize;
     extern std::atomic<s32> currentRow;
     
     
-    
-    inline std::barrier inPlotBarrier(numThreads, [](){
-        inPlot.store(false, std::memory_order_release);
-    });
+    struct InPlotBarrierCompletion {
+        void operator()() noexcept;
+    };
+    extern std::barrier<InPlotBarrierCompletion> inPlotBarrier;
     
 
     void initializeThemeVars();
@@ -566,5 +700,3 @@ namespace ult {
 
 
 }
-
-#endif

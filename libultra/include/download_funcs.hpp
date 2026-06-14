@@ -3,7 +3,7 @@
  * Author: ppkantorski
  * Description:
  *   This header file contains functions for downloading and extracting files
- *   using libcurl and zlib. It includes functions for downloading files from URLs,
+ *   using libcurl and miniz. It includes functions for downloading files from URLs,
  *   writing received data to a file, and extracting files from ZIP archives.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
@@ -13,74 +13,50 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
-#ifndef DOWNLOAD_FUNCS_HPP
-#define DOWNLOAD_FUNCS_HPP
 
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
+#include <sys/stat.h>
+#include <switch.h>
 
+#include <sys/select.h>
+#define CURL_DISABLE_DEFLATE
 #include <curl/curl.h>
 #include <zlib.h>
-#include <zzip/zzip.h>
+#include <minizip/unzip.h>
+
 #include <atomic>
 #include <memory>
 #include <string>
+#include <mutex>
+#include <cstring>
+#include <algorithm>
+
 #include "global_vars.hpp"
 #include "string_funcs.hpp"
 #include "get_funcs.hpp"
 #include "path_funcs.hpp"
 #include "debug_funcs.hpp"
+#include "tsl_utils.hpp"
 
 namespace ult {
     // Constants for buffer sizes
-    extern size_t DOWNLOAD_BUFFER_SIZE;
-    extern size_t UNZIP_BUFFER_SIZE;
-
-    // Path to the CA certificate
-    extern const std::string cacertPath;
-    extern const std::string cacertURL;
-
-    // Atomic flags for download control
+    extern size_t DOWNLOAD_READ_BUFFER;
+    extern size_t DOWNLOAD_WRITE_BUFFER;
+    extern size_t UNZIP_READ_BUFFER;
+    extern size_t UNZIP_WRITE_BUFFER;
+    
+    // Thread-safe atomic flags for operation control
     extern std::atomic<bool> abortDownload;
     extern std::atomic<bool> abortUnzip;
     extern std::atomic<int> downloadPercentage;
     extern std::atomic<int> unzipPercentage;
-
-    // User agent string for curl requests
-    extern const std::string userAgent;
-
-    // Custom deleters for CURL and ZZIP handles
-    struct CurlDeleter {
-        void operator()(CURL* curl) const;
-    };
     
-    struct ZzipDirDeleter {
-        void operator()(ZZIP_DIR* dir) const;
-    };
-    
-    struct ZzipFileDeleter {
-        void operator()(ZZIP_FILE* file) const;
-    };
-    
-    // Callback function to write received data to a file. Handles both FILE* and std::ofstream based on NO_FSTREAM_DIRECTIVE
-    #if NO_FSTREAM_DIRECTIVE
-    size_t writeCallback(void* ptr, size_t size, size_t nmemb, FILE* stream);
-    #else
-    size_t writeCallback(void* ptr, size_t size, size_t nmemb, std::ostream* stream);
-    #endif
-
-    extern "C" int progressCallback(void* ptr, curl_off_t totalToDownload, curl_off_t nowDownloaded, curl_off_t totalToUpload, curl_off_t nowUploaded);
-    void initializeCurl();
-    void cleanupCurl();
-    bool downloadFile(const std::string& url, const std::string& toDestination);
+    // Main API functions - thread-safe and optimized
+    bool downloadFile(const std::string& url, const std::string& toDestination, bool noSocketInit=false, bool noPercentagePolling=false);
     bool unzipFile(const std::string& zipFilePath, const std::string& extractTo);
+    bool syncNtp(const std::string& ntpUrl);
 }
-
-#endif // DOWNLOAD_FUNCS_HPP

@@ -12,27 +12,21 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
-#ifndef DEBUG_FUNCS_HPP
-#define DEBUG_FUNCS_HPP
 
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
 #include <mutex>
 #include <string>
 #include <ctime>
 
 namespace ult {
-    #if USING_LOGGING_DIRECTIVE
+    //#if USING_LOGGING_DIRECTIVE
 
     // Specify the log file path
-    const std::string defaultLogFilePath;
+    extern const std::string defaultLogFilePath;
     
     extern std::string logFilePath;  // Declare logFilePath as extern
     extern bool disableLogging;        // Declare disableLogging as extern
@@ -45,8 +39,7 @@ namespace ult {
      *
      * @param message The message to be logged.
      */
+    void logMessage(const char* message);
     void logMessage(const std::string& message);
-    #endif
+    //#endif
 }
-
-#endif // DEBUG_FUNCS_HPP

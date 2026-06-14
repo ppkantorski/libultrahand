@@ -1,0 +1,145 @@
+/********************************************************************************
+ * File: audio.hpp
+ * Author: ppkantorski
+ * Description:
+ *   This header defines the Audio class and related structures used for
+ *   handling sound playback within the Ultrahand Overlay. It provides interfaces
+ *   for loading, caching, and playing WAV audio through libnx's audout service,
+ *   along with basic sound type management and synchronization support.
+ *
+ *   For the latest updates and contributions, visit the project's GitHub repository.
+ *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
+ *
+ *   Note: Please be aware that this notice cannot be altered or removed. It is a part
+ *   of the project's documentation and must remain intact.
+ *
+ *   Licensed under both GPLv2 and CC-BY-4.0
+ *   Copyright (c) 2025-2026 ppkantorski
+ ********************************************************************************/
+
+#pragma once
+#include <switch.h>
+#include <cstdio>
+#include <algorithm>
+#include <vector>
+#include <atomic>
+#include <cstring>
+#include <mutex>
+#include "tsl_utils.hpp"
+
+namespace ult {
+    class Audio {
+    public:
+        enum class SoundType : uint8_t {
+            Navigate,
+            Enter,
+            Exit,
+            Wall,
+            On,
+            Off,
+            Settings,
+            Move,
+            Notification,
+            Count
+        };
+
+        struct CachedSound {
+            // Compact raw PCM — native channel count, 16-bit, no volume applied.
+            // This is the only per-sound allocation. No pre-baked stereo copy is kept.
+            void*    rawBuf     = nullptr;
+            uint32_t rawSize    = 0;     // actual data bytes
+            uint32_t rawCap     = 0;     // allocated (aligned) bytes
+            uint32_t sampleRate = 48000; // native rate read from WAV header
+            bool     isMono     = false;
+        };
+
+        static bool initialize();
+        static void exit();
+
+        static inline bool allSoundsExist() {
+            for (const auto& path : m_soundPaths)
+                if (!isFile(path)) return false;
+            return true;
+        }
+
+        static void playSound(SoundType type);
+        // Mix up to 8 sounds into a single DMA submission (zero extra allocation).
+        // Output size = max of all input lengths — always fits in m_playBufCap.
+        static void playSounds(const SoundType* types, uint32_t count);
+
+        static inline void playNavigateSound()     { playSound(SoundType::Navigate);     }
+        static inline void playEnterSound()        { playSound(SoundType::Enter);        }
+        static inline void playExitSound()         { playSound(SoundType::Exit);         }
+        static inline void playWallSound()         { playSound(SoundType::Wall);         }
+        static inline void playOnSound()           { playSound(SoundType::On);           }
+        static inline void playOffSound()          { playSound(SoundType::Off);          }
+        static inline void playSettingsSound()     { playSound(SoundType::Settings);     }
+        static inline void playMoveSound()         { playSound(SoundType::Move);         }
+        static inline void playNotificationSound() { playSound(SoundType::Notification); }
+
+        static void setMasterVolume(float volume);
+        static void setEnabled(bool enabled);
+        static bool isEnabled();
+        static bool reloadIfDockedChanged();
+        static void reloadAllSounds();
+        static void unloadAllSounds(const std::initializer_list<SoundType>& excludeSounds = {});
+        static std::mutex m_audioMutex;
+
+        static bool                     m_initialized;
+        
+    private:
+        static std::atomic<bool>        m_enabled;
+        static std::atomic<int32_t>     m_masterVolumeFixed;  // volume as 0–256 fixed-point
+        static bool                     m_lastDockedState;
+        static std::vector<CachedSound> m_cachedSounds;
+
+        // Single shared DMA playback buffer — sized to the largest sound's
+        // 48 kHz stereo output. Reused on every playSound(); safe because audout
+        // is always drained before the buffer is written.
+        static void*          m_playBuf;
+        static uint32_t       m_playBufCap;
+        static AudioOutBuffer m_audoutBuf;
+
+        inline static constexpr const char* m_soundPaths[static_cast<size_t>(SoundType::Count)] = {
+            "sdmc:/config/ultrahand/sounds/tick.wav",
+            "sdmc:/config/ultrahand/sounds/enter.wav",
+            "sdmc:/config/ultrahand/sounds/exit.wav",
+            "sdmc:/config/ultrahand/sounds/wall.wav",
+            "sdmc:/config/ultrahand/sounds/on.wav",
+            "sdmc:/config/ultrahand/sounds/off.wav",
+            "sdmc:/config/ultrahand/sounds/settings.wav",
+            "sdmc:/config/ultrahand/sounds/move.wav",
+            "sdmc:/config/ultrahand/sounds/notification.wav"
+        };
+
+        // Loads WAV into rawBuf (16-bit, native channels, no volume applied).
+        // Must be called under m_audioMutex.
+        static bool loadSoundFromWav(SoundType type, const char* path);
+
+        // Ensures m_playBuf is large enough for the largest loaded sound's
+        // 48 kHz stereo output. Call after any load. Must hold m_audioMutex.
+        static void growPlayBuf();
+
+        // Unified render kernel: resamples s to 48 kHz, expands mono → stereo,
+        // applies vol (0–256 fixed-point).
+        //   mixMode=false : writes directly to dst (fresh render, first sound).
+        //   mixMode=true  : saturating-adds for frame i < primFrames (overlap),
+        //                   writes directly for i >= primFrames (zero-filled tail).
+        // Returns output byte count (outPerChan * 2 * sizeof(s16)).
+        // Must be called under m_audioMutex.
+        static uint32_t blendSound(const CachedSound& s, s16* dst, int32_t vol,
+                                   uint32_t primFrames, bool mixMode);
+
+        // Sets up m_audoutBuf from m_playBuf and calls audoutPlayBuffer.
+        // Must be called under m_audioMutex after a successful render.
+        static void submitPlayBuf(uint32_t outBytes);
+
+        // Shared body for playSound / playSounds.
+        // Iterates types[0..count-1], blending each loaded sound into m_playBuf.
+        // First valid sound: write mode. Every subsequent: saturating-add mode.
+        // Output = max of all rendered lengths — always fits in m_playBufCap.
+        // Return value from blendSound (0 = skip) is the only guard needed;
+        // growPlayBuf() already guarantees all loaded sounds fit.
+        static void playSoundImpl(const SoundType* types, uint32_t count);
+    };
+}

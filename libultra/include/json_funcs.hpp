@@ -3,7 +3,7 @@
  * Author: ppkantorski
  * Description:
  *   This header file provides functions for working with JSON files in C++ using
- *   the `jansson` library. It includes a function to read JSON data from a file.
+ *   the `cJSON` library. It includes a function to read JSON data from a file.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -12,30 +12,26 @@
  *   of the project's documentation and must remain intact.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
+
 #pragma once
 
-#ifndef JSON_FUNCS_HPP
-#define JSON_FUNCS_HPP
-
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <string>
-#include <jansson.h>
+#include <cJSON.h>
 #include "string_funcs.hpp"
-
+#include <switch.h>
 
 namespace ult {
+    // Define json_t as an opaque type to maintain API compatibility
+    typedef void json_t;
+    
     // Define a custom deleter for json_t*
     struct JsonDeleter {
         void operator()(json_t* json) const {
             if (json) {
-                json_decref(json);
+                cJSON_Delete(reinterpret_cast<cJSON*>(json));
             }
         }
     };
@@ -53,7 +49,7 @@ namespace ult {
     /**
      * @brief Parses a JSON string into a json_t object.
      *
-     * This function takes a JSON string as input and parses it into a json_t object using Jansson library's `json_loads` function.
+     * This function takes a JSON string as input and parses it into a json_t object using cJSON library's `cJSON_Parse` function.
      * If parsing fails, it logs the error and returns nullptr.
      *
      * @param input The input JSON string to parse.
@@ -77,6 +73,30 @@ namespace ult {
      * @return A string containing the value associated with the given key, or an empty string if the key is not found.
      */
     std::string getStringFromJsonFile(const std::string& filePath, const std::string& key);
-}
+    
+    
+    /**
+     * @brief Sets a value in a JSON file, creating the file if it doesn't exist.
+     *
+     * @param filePath The path to the JSON file.
+     * @param key The key to set.
+     * @param value The value to set (auto-detected type).
+     * @param createIfNotExists Whether to create the file if it doesn't exist.
+     * @return true if successful, false otherwise.
+     */
+    bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists = false);
 
-#endif
+
+    /**
+     * @brief Renames a key in a JSON file.
+     *
+     * @param filePath The path to the JSON file.
+     * @param oldKey The current key name.
+     * @param newKey The new key name.
+     * @return true if successful, false otherwise.
+     */
+    bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey);
+
+
+    void pushNotificationJson(const std::string& appID, const std::string& text, size_t fontSize=28);
+}

@@ -14,21 +14,13 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 
 #pragma once
 
-#ifndef LIST_FUNCS_HPP
-#define LIST_FUNCS_HPP
-
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <vector>
 #include <string>
 #include <unordered_set>
@@ -38,6 +30,14 @@
 
 
 namespace ult {
+
+    std::vector<std::string> splitIniList(const std::string& value);
+    
+    
+    std::string joinIniList(const std::vector<std::string>& list);
+
+
+
     /**
      * @brief Removes entries from a vector of strings that match a specified entry.
      *
@@ -62,7 +62,7 @@ namespace ult {
     
     
     // Function to read file into a vector of strings
-    std::vector<std::string> readListFromFile(const std::string& filePath);
+    std::vector<std::string> readListFromFile(const std::string& filePath, size_t maxLines=0, bool preserveNewlines = false);
 
     
     // Function to get an entry from the list based on the index
@@ -81,7 +81,7 @@ namespace ult {
     
     
     // Function to read file into a set of strings
-    std::unordered_set<std::string> readSetFromFile(const std::string& filePath);
+    std::unordered_set<std::string> readSetFromFile(const std::string& filePath, const std::string& packagePath = "");
 
     
     // Function to write a set to a file
@@ -92,11 +92,5 @@ namespace ult {
     void compareFilesLists(const std::string& txtFilePath1, const std::string& txtFilePath2, const std::string& outputTxtFilePath);
 
     
-    // Helper function to read a text file and process each line with a callback
-    void processFileLines(const std::string& filePath, const std::function<void(const std::string&)>& callback);
-
-    
     void compareWildcardFilesLists(const std::string& wildcardPatternFilePath, const std::string& txtFilePath, const std::string& outputTxtFilePath);
 }
-
-#endif

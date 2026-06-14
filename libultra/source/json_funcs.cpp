@@ -2,8 +2,8 @@
  * File: json_funcs.cpp
  * Author: ppkantorski
  * Description:
- * This source file provides functions for working with JSON files in C++ using
- *   the `jansson` library. It includes a function to read JSON data from a file.
+ *   This source file provides functions for working with JSON files in C++ using
+ *   the `cJSON` library. It includes a function to read JSON data from a file.
  *
  *   For the latest updates and contributions, visit the project's GitHub repository.
  *   (GitHub Repository: https://github.com/ppkantorski/Ultrahand-Overlay)
@@ -12,13 +12,15 @@
  *   of the project's documentation and must remain intact.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #include "json_funcs.hpp"
 
 
 namespace ult {
+
+    static std::mutex json_access_mutex;
 
     /**
      * @brief Reads JSON data from a file and returns it as a `json_t` object.
@@ -27,87 +29,81 @@ namespace ult {
      * @return A `json_t` object representing the parsed JSON data. Returns `nullptr` on error.
      */
     json_t* readJsonFromFile(const std::string& filePath) {
-    #if NO_FSTREAM_DIRECTIVE
-        FILE* file = fopen(filePath.c_str(), "rb");  // Open the file in binary mode
+        std::lock_guard<std::mutex> lock(json_access_mutex);
+        
+        FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
-            // Optionally log: Failed to open file
             return nullptr;
         }
     
-        // Move to the end of the file to determine its size
+        // Get file size
         fseek(file, 0, SEEK_END);
-        size_t fileSize = ftell(file);
-        fseek(file, 0, SEEK_SET);  // Move back to the start of the file
-    
-        std::string content;
-        content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
-    
-        // Read the file into the string's buffer
-        size_t bytesRead = fread(&content[0], 1, fileSize, file);
-        if (bytesRead != fileSize) {
-            // Optionally log: Failed to read file
-            fclose(file);  // Close the file before returning
+        const long fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        
+        // Check for reasonable file size
+        if (fileSize <= 0 || fileSize > 6 * 1024 * 1024) { // 6MB limit
+            fclose(file);
             return nullptr;
         }
     
-        fclose(file);  // Close the file after reading
-    #else
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file.is_open()) {
-            // Optionally log: Failed to open file
+        // Use vector<char> for better performance and explicit null termination
+        std::vector<char> buffer;
+        buffer.resize(static_cast<size_t>(fileSize) + 1); // +1 for null terminator
+    
+        // Read the file in one operation
+        const size_t bytesRead = fread(buffer.data(), 1, static_cast<size_t>(fileSize), file);
+        fclose(file);
+        
+        if (bytesRead != static_cast<size_t>(fileSize)) {
             return nullptr;
         }
-    
-        file.seekg(0, std::ios::end);
-        size_t fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
-    
-        std::string content;
-        content.resize(fileSize);  // Reserve space in the string to avoid multiple allocations
-    
-        file.read(&content[0], fileSize);  // Read directly into the string's buffer
-        if (file.fail() && !file.eof()) {
-            // Optionally log: Failed to read file
-            return nullptr;
-        }
-    
-        file.close();  // Close the file after reading
-    #endif
-    
-        // Parse the JSON content
-        json_error_t error;
-        json_t* root = json_loads(content.c_str(), 0, &error);
+        
+        // Ensure null termination for cJSON
+        buffer[bytesRead] = '\0';
+        
+        
+        // Parse the JSON content - pass buffer directly to avoid string copy
+        cJSON* root = cJSON_Parse(buffer.data());
         if (!root) {
-            // Optionally log: JSON parsing error at line `error.line`: `error.text`
+            #if USING_LOGGING_DIRECTIVE
+            const char* error_ptr = cJSON_GetErrorPtr();
+            if (error_ptr) {
+                if (!disableLogging)
+                    logMessage("JSON parsing error: " + std::string(error_ptr));
+            }
+            #endif
             return nullptr;
         }
-    
-        // Optionally log: JSON file successfully parsed
-        return root;
+        
+        return reinterpret_cast<json_t*>(root);
     }
-
+    
     
     /**
      * @brief Parses a JSON string into a json_t object.
      *
-     * This function takes a JSON string as input and parses it into a json_t object using Jansson library's `json_loads` function.
+     * This function takes a JSON string as input and parses it into a json_t object using cJSON library's `cJSON_Parse` function.
      * If parsing fails, it logs the error and returns nullptr.
      *
      * @param input The input JSON string to parse.
      * @return A json_t object representing the parsed JSON, or nullptr if parsing fails.
      */
     json_t* stringToJson(const std::string& input) {
-        json_error_t error;
-        json_t* jsonObj = json_loads(input.c_str(), 0, &error);
+        cJSON* jsonObj = cJSON_Parse(input.c_str());
     
         if (!jsonObj) {
             #if USING_LOGGING_DIRECTIVE
-            logMessage("Failed to parse JSON: " + std::string(error.text) + " at line " + std::to_string(error.line));
+            const char* error_ptr = cJSON_GetErrorPtr();
+            if (error_ptr != nullptr) {
+                if (!disableLogging)
+                    logMessage("Failed to parse JSON: " + std::string(error_ptr));
+            }
             #endif
             return nullptr; // Return nullptr to indicate failure clearly
         }
     
-        return jsonObj;
+        return reinterpret_cast<json_t*>(jsonObj);
     }
     
     
@@ -116,9 +112,10 @@ namespace ult {
     
     // Function to get a string from a JSON object
     std::string getStringFromJson(const json_t* root, const char* key) {
-        const json_t* value = json_object_get(root, key);
-        if (value && json_is_string(value)) {
-            return json_string_value(value);
+        const cJSON* croot = reinterpret_cast<const cJSON*>(root);
+        const cJSON* value = cJSON_GetObjectItemCaseSensitive(croot, key);
+        if (value && cJSON_IsString(value) && value->valuestring) {
+            return value->valuestring;
         } else {
             return ""; // Key not found or not a string, return empty string/char*
         }
@@ -137,7 +134,7 @@ namespace ult {
      */
     std::string getStringFromJsonFile(const std::string& filePath, const std::string& key) {
         // Load JSON from file using a smart pointer
-        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath), JsonDeleter());
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
         if (!root) {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to load JSON file from path: " + filePath);
@@ -146,8 +143,9 @@ namespace ult {
         }
     
         // Retrieve the string value associated with the key
-        json_t* jsonKey = json_object_get(root.get(), key.c_str());
-        const char* value = json_is_string(jsonKey) ? json_string_value(jsonKey) : nullptr;
+        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+        cJSON* jsonKey = cJSON_GetObjectItemCaseSensitive(croot, key.c_str());
+        const char* value = (cJSON_IsString(jsonKey) && jsonKey->valuestring) ? jsonKey->valuestring : nullptr;
     
         // Check if the value was found and return it
         if (value) {
@@ -158,5 +156,195 @@ namespace ult {
             #endif
             return "";
         }
+    }
+
+
+    /**
+     * @brief Sets a value in a JSON file, creating the file if it doesn't exist.
+     *
+     * @param filePath The path to the JSON file.
+     * @param key The key to set.
+     * @param value The value to set (auto-detected type).
+     * @param createIfNotExists Whether to create the file if it doesn't exist.
+     * @return true if successful, false otherwise.
+     */
+    bool setJsonValue(const std::string& filePath, const std::string& key, const std::string& value, bool createIfNotExists) {
+        // Try to load existing file
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
+        
+        cJSON* croot = nullptr;
+        
+        // If file doesn't exist, create new JSON object if allowed
+        if (!root) {
+            if (!createIfNotExists) {
+                return false;
+            }
+            croot = cJSON_CreateObject();
+            if (!croot) {
+                return false;
+            }
+            root.reset(reinterpret_cast<json_t*>(croot));
+        } else {
+            croot = reinterpret_cast<cJSON*>(root.get());
+        }
+    
+        // FIXED: Better value type detection
+        cJSON* jsonValue = nullptr;
+        
+        // Remove trimming to preserve leading/trailing spaces for all languages
+        // std::string trimmedValue = value;
+        // trimmedValue.erase(0, trimmedValue.find_first_not_of(" \t\n\r"));
+        // trimmedValue.erase(trimmedValue.find_last_not_of(" \t\n\r") + 1);
+    
+        if (value.empty()) {
+            jsonValue = cJSON_CreateString("");
+        } else if (value == "true") {
+            jsonValue = cJSON_CreateBool(1);
+        } else if (value == "false") {
+            jsonValue = cJSON_CreateBool(0);
+        } else if (value == "null") {
+            jsonValue = cJSON_CreateNull();
+        } else {
+            // Try parsing as number (integer or float)
+            char* endPtr = nullptr;
+            errno = 0;
+            
+            // Try as integer first
+            const long longValue = std::strtol(value.c_str(), &endPtr, 10);
+            if (endPtr == value.c_str() + value.length() && errno == 0) {
+                // Successfully parsed as integer
+                jsonValue = cJSON_CreateNumber(static_cast<double>(longValue));
+            } else {
+                // Try as float
+                endPtr = nullptr;
+                errno = 0;
+                const double doubleValue = std::strtod(value.c_str(), &endPtr);
+                if (endPtr == value.c_str() + value.length() && errno == 0) {
+                    // Successfully parsed as float
+                    jsonValue = cJSON_CreateNumber(doubleValue);
+                } else {
+                    // Treat as string
+                    jsonValue = cJSON_CreateString(value.c_str());
+                }
+            }
+        }
+    
+        if (!jsonValue) {
+            return false;
+        }
+    
+        // Delete existing item if it exists
+        cJSON_DeleteItemFromObject(croot, key.c_str());
+        
+        // Add the new value
+        cJSON_AddItemToObject(croot, key.c_str(), jsonValue);
+    
+        // Save to file with formatted output for better readability
+        char* jsonString = cJSON_Print(croot); // Use formatted output instead of PrintUnformatted
+        if (!jsonString) {
+            return false;
+        }
+        
+        bool success = false;
+        {
+            std::lock_guard<std::mutex> lock(json_access_mutex);
+            
+            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
+            if (file) {
+                const size_t jsonLength = std::strlen(jsonString);
+                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+                success = (bytesWritten == jsonLength);
+                fclose(file);
+            }
+        }
+    
+        cJSON_free(jsonString);
+        return success;
+    }
+
+    /**
+     * @brief Renames a key in a JSON file.
+     *
+     * @param filePath The path to the JSON file.
+     * @param oldKey The current key name.
+     * @param newKey The new key name.
+     * @return true if successful, false otherwise.
+     */
+    bool renameJsonKey(const std::string& filePath, const std::string& oldKey, const std::string& newKey) {
+        // Try to load existing file
+        std::unique_ptr<json_t, JsonDeleter> root(readJsonFromFile(filePath));
+        
+        if (!root) {
+            return false;
+        }
+        
+        cJSON* croot = reinterpret_cast<cJSON*>(root.get());
+    
+        // Check if old key exists
+        cJSON* value = cJSON_GetObjectItemCaseSensitive(croot, oldKey.c_str());
+        if (!value) {
+            return false;
+        }
+    
+        // Detach the value from the object
+        cJSON_DetachItemFromObject(croot, oldKey.c_str());
+        
+        // Add it back with the new key
+        cJSON_AddItemToObject(croot, newKey.c_str(), value);
+    
+        // Save to file
+        char* jsonString = cJSON_Print(croot); // Use formatted output
+        if (!jsonString) {
+            return false;
+        }
+    
+        bool success = false;
+
+        {
+            std::lock_guard<std::mutex> lock(json_access_mutex);
+            
+            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
+            if (file) {
+                const size_t jsonLength = std::strlen(jsonString);
+                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
+                success = (bytesWritten == jsonLength);
+                fclose(file);
+            }
+        }
+    
+        cJSON_free(jsonString);
+        return success;
+    }
+
+    void pushNotificationJson(const std::string& appID, const std::string& text, size_t fontSize) {
+        u64 tick = armGetSystemTick();
+        std::string filename = appID + "-" + std::to_string(tick) + ".notify"; // priority 20 default
+        
+        // Build full path
+        const std::string fullPath = NOTIFICATIONS_PATH + filename;
+        
+        // Create JSON object
+        cJSON* notif = cJSON_CreateObject();
+        if (!notif) return;
+        
+        cJSON_AddStringToObject(notif, "text", text.c_str());
+        cJSON_AddNumberToObject(notif, "font_size", static_cast<double>(fontSize));
+        
+        // Serialize JSON
+        char* rendered = cJSON_PrintUnformatted(notif);
+        if (!rendered) {
+            cJSON_Delete(notif);
+            return;
+        }
+        
+        // Write to file (C-style)
+        FILE* file = fopen(fullPath.c_str(), "wb");
+        if (file) {
+            fwrite(rendered, 1, strlen(rendered), file);
+            fclose(file);
+        }
+        
+        cJSON_free(rendered);
+        cJSON_Delete(notif);
     }
 }

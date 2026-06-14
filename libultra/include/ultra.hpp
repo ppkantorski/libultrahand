@@ -19,17 +19,36 @@
  *   altered or removed.
  *
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2024-2026 ppkantorski
  ********************************************************************************/
 #pragma once
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-#ifndef ULTRA_HPP
-#define ULTRA_HPP
+//#pragma GCC push_options
+//#pragma GCC optimize("Os")
+//
+
+// ── Ultra targeted optimizations ─────────────────────────────
+//#ifdef ULTRA_TARGETED_SPEED
+//    #define ULTRA_OPT_SPEED_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"O3\")")
+//    #define ULTRA_OPT_SPEED_POP  _Pragma("GCC pop_options")
+//#else
+//    #define ULTRA_OPT_SPEED_PUSH
+//    #define ULTRA_OPT_SPEED_POP
+//#endif
+
+#ifdef ULTRA_TARGETED_SIZE
+    #define ULTRA_OPT_SIZE_PUSH _Pragma("GCC push_options") _Pragma("GCC optimize(\"Os\")")
+    #define ULTRA_OPT_SIZE_POP  _Pragma("GCC pop_options")
+#else
+    #define ULTRA_OPT_SIZE_PUSH
+    #define ULTRA_OPT_SIZE_POP
+#endif
 
 // Include all functional headers used in the libUltra library
+ULTRA_OPT_SIZE_PUSH
 #include "global_vars.hpp"
 #include "debug_funcs.hpp"
 #include "string_funcs.hpp"
@@ -41,6 +60,11 @@
 #include "hex_funcs.hpp"
 #include "download_funcs.hpp"
 #include "mod_funcs.hpp"
+#include "audio.hpp"
+#include "haptics.hpp"
+ULTRA_OPT_SIZE_POP
+
 #include "tsl_utils.hpp"
 
-#endif // ULTRA_HPP
+//#pragma GCC pop_options
+//#pragma GCC diagnostic pop

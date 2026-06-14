@@ -2,182 +2,346 @@
 [![platform](https://img.shields.io/badge/platform-Switch-898c8c?logo=C++.svg)](https://gbatemp.net/forums/nintendo-switch.283/?prefix_id=44)
 [![language](https://img.shields.io/badge/language-C++-ba1632?logo=C++.svg)](https://github.com/topics/cpp)
 [![GPLv2 License](https://img.shields.io/badge/license-GPLv2-189c11.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Latest Version](https://img.shields.io/github/v/release/ppkantorski/libultrahand?label=latest%20version&color=blue)](https://github.com/ppkantorski/libultrahand/releases/latest)
+[![Latest Version](https://img.shields.io/github/v/release/ppkantorski/libultrahand?label=latest&color=blue)](https://github.com/ppkantorski/libultrahand/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ppkantorski/libultrahand/total?color=6f42c1)](https://github.com/ppkantorski/libultrahand/graphs/traffic)
 [![GitHub issues](https://img.shields.io/github/issues/ppkantorski/libultrahand?color=222222)](https://github.com/ppkantorski/libultrahand/issues)
 [![GitHub stars](https://img.shields.io/github/stars/ppkantorski/libultrahand)](https://github.com/ppkantorski/libultrahand/stargazers)
 
-
-Expanded [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) + **libultra** libraries for overlay development on the Nintendo Switch
+An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library — a comprehensive foundation for Nintendo Switch overlay development.
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
-## Usage
-### Overriding Themes and Wallpapers
+---
 
-To customize theme, wallpaper and / or allow direct language translations for your overlay, you can override the default settings by adding the following lines to your `Makefile`:
+## Features
 
-```
-# Enable appearance overriding
-UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
-CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
-```
+### Rendering & UI
+- Fully anti-aliased rendering — rounded rects, uniform rounded rects, bordered rounded rects, and circles
+- Global alpha limiter for smooth show/hide transitions and glyph rendering
+- Rewritten `List` class with `jumpToItem`, proper wall handling, and no pointer caching
+- `TrackBar` and `TrackBarV2` with touch support, click animations, and haptic feedback
+- `ToggleListItem`, `CategoryHeader` (with right-side value display), and other standard UI elements
+- `OverlayFrame` / `HeaderOverlayFrame` with auto-scrolling titles and subtitles
+- `swapTo` page navigation with crash-safe rapid input handling
+- Font Manager with universal glyph cache and full multi-language glyph support
+- Smooth list item text scrolling, shake-highlight at list boundaries
 
-Replace `<OVERLAY_NAME>` with the desired name of your overlay config directory.
+### Theming & Appearance
+- Full `theme.ini` system with extensive color variables covering every UI surface
+- Per-overlay theme overrides via `UI_OVERRIDE_PATH` — scoped to `/config/<OVERLAY_NAME>/`
+- Wallpaper support (`.rgba`, 448×720 px) with heap-aware loading and optimized rendering
+- Status bar widget — clock, temperature, battery, backdrop, and border (opt-in via `USING_WIDGET_DIRECTIVE`)
 
-Users can specify custom Ultrahand `theme.ini` and `wallpaper.rgba` files for the overlay to use located in your SD card's `/config/<OVERLAY_NAME>/` or `{UI_OVERRIDE_PATH}` directory.
+### Language & Localization
+- Automatic string translation at render time via `drawString`
+- Per-overlay language files (ISO 639-1 JSON) in `/config/<OVERLAY_NAME>/lang/`
+- All language font glyphs accessible regardless of the active system language
 
-#### **Troubleshooting**
-**Notice:** Makefile directives also must be added to `CXXFLAGS`.
-You can do this by adding the directives before `CXXFLAGS := $(CFLAGS)` gets defined, or include `CXXFLAGS += ...`.
+### Sound & Haptics
+- WAV sound effect playback (8–48 kHz, 16-bit PCM) via libnx `audout`, with volume control
+- Sound and haptics each run on dedicated background threads for reliability and performance
+- Haptic rumble patterns for click and double-click feedback
 
+### Notifications
+- Multi-slot toast notification system (up to 8 concurrent; 4 on 4MB heap)
+- JSON-based API notifications written to `/config/ultrahand/notifications/` by any app
+- Optional notification icons (50×50 RGBA), titles, timestamps, duration, alignment, and font size
+- Per-app notification filtering via flag files; API toggle hotkey for live enable/disable
+- `tsl::notification->show` and `tsl::notification->showNow` for queued and immediate display
 
-There are rare occurences where the theme and wallpaper are still not being loaded.  This may have to do with how the GUI class is used in some projects. For a work around, you can try adding the `INITIALIZE_IN_GUI_DIRECTIVE` directive. 
+### Input
+- Full touch support alongside controller input — tap, hold, swipe, and drag
+- Configurable per-item touch, hold, and release behavior on `ListItem`
+- `tsl::shiftItemFocus` for programmatic focus control
 
-```
-# For theme / wallpaper loading in GUI class method (add to project if theme does not appear)
-INITIALIZE_IN_GUI_DIRECTIVE := 1
-CFLAGS += -DINITIALIZE_IN_GUI_DIRECTIVE=$(INITIALIZE_IN_GUI_DIRECTIVE)
-```
+### Network & Downloads
+- curl-based file downloads with retry logic and NTP auto-sync for SSL reliability
+- Internet access verification before initiating downloads
+- Per-download socket init/exit to minimize memory pressure
 
-This fix will work for many projects, but other projects may not like this directive or may not need it at all so use with that in mind.
+### libultra Utilities
+- **File & path** — copy, move, delete, mkdir, wildcard matching, directory traversal, dot-clean
+- **INI** — full read/write, section and key management, pattern-matched bulk edits
+- **JSON** — read/write via cJSON (migrated from jansson)
+- **Hex** — binary file editing by offset, swap, string, decimal, reversed decimal, and custom pattern
+- **Strings** — trim, split, format, version parsing, placeholder resolution
+- **Lists** — file-backed list reading, set operations, filtering
+- **Mod conversion** — `.pchtxt` to `.ips` or Atmosphere cheat format (with `@disabled` flag support)
+- **Debug** — thread-safe timestamped logging via `USING_LOGGING_DIRECTIVE`
+
+### Compatibility & Integration
+- Full drop-in replacement for libtesla — all existing Tesla overlays work without modification
+- All overlays act as combo launchers for any overlay registered in Ultrahand's `overlays.ini`
+- Launch Recall — combo re-entry returns to the exact overlay/package previously launched
+- Ultrahand signature (`ULTR`) embedded at link time to enable first-class Ultrahand integration
+- Unsupported overlay warning when launching overlays compiled against incompatible AMS versions
 
 ---
 
-### Overriding Languages
-For language translation, `UI_OVERRIDE_PATH` must be defined.  Translations are performed direction on the rederer's `drawString` method. Direct strings can be added to a json located in `/config/<OVERLAY_NAME>/lang/` or `{UI_OVERRIDE_PATH}/lang/`.
+## Build Examples
 
-Jsons will need to be named ISO 639-1 format (en, de, fr, es, etc...) and will only be used in accordance with the current language set in the Ultrahand Overlay `/config/ultrahand/config.ini`.
+A growing ecosystem of libultrahand-based overlays, all launchable and manageable directly from [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay):
 
-The format for language jsons is as follows.
-```json
-{
-  "English String": "Translated String",
-  "Another String": "Another Translation",
-  ...
-}
-```
-
----
-
-### Ultrahand Overlay Widget
-
-To add the Ultrahand Overlay widget to your `OverlayFrame`'s, add the following directive to your `Makefile`:
-
-```
-# Enable Widget
-USING_WIDGET_DIRECTIVE := 1 
-CFLAGS += -DUSING_WIDGET_DIRECTIVE=$(USING_WIDGET_DIRECTIVE)
-```
+| Overlay | Description |
+|---|---|
+| [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay) | Fully scriptable overlay menu ecosystem — the primary libultrahand reference implementation |
+| [Status Monitor](https://github.com/ppkantorski/Status-Monitor-Overlay) | Real-time CPU/GPU/RAM, temps, battery, and frequency stats |
+| [sys-clk](https://github.com/ppkantorski/sys-clk) | Per-game CPU/GPU/memory overclocking and underclocking |
+| [FPSLocker](https://github.com/ppkantorski/FPSLocker) | Custom FPS targets and display refresh rates for retail games |
+| [Fizeau](https://github.com/ppkantorski/Fizeau) | Color temperature, saturation, gamma, and contrast adjustment |
+| [ovl-sysmodules](https://github.com/ppkantorski/ovl-sysmodules) | Toggle system modules and monitor memory usage on the fly |
+| [QuickNTP](https://github.com/ppkantorski/QuickNTP) | One-tap NTP time sync |
+| [NX-FanControl](https://github.com/ppkantorski/NX-FanControl) | Custom fan curve control |
+| [Tetris](https://github.com/ppkantorski/Tetris-Overlay) | Fully playable Tetris running as an overlay |
+| [UltraGB](https://github.com/ppkantorski/UltraGB-Overlay) | Game Boy / GBC emulator running on top of any game |
+| [ReverseNX-RT](https://github.com/ppkantorski/ReverseNX-RT) | Per-game handheld/docked mode switching |
+| [SysDVR](https://github.com/ppkantorski/sysdvr-overlay) | SysDVR stream control overlay |
+| [EdiZon](https://github.com/proferabg/EdiZon-Overlay) | In-game cheat and save editor |
+| [DNS-MITM Manager](https://github.com/ppkantorski/DNS-MITM_Manager) | DNS-based network filtering management |
 
 ---
-
-### Forcing use of `<stdio.h>` instead of `<fstream>`
-
-To compile without utilizing `fstream`, add the following directive to your `Makefile`:
-
-```
-# Disable fstream
-NO_FSTREAM_DIRECTIVE := 1 
-CFLAGS += -DNO_FSTREAM_DIRECTIVE=$(NO_FSTREAM_DIRECTIVE)
-```
-
----
-
-### Initializing Settings
-
-Ultrahand Overlay theme variables and settings for your overlay are read automatically upon initialization.  Themes loading implementation is currently set within `OverlayFrame` and `HeaderOverlayFrame`.  
-
-However if you are breaking your project up into individual parts that only import `tesla.hpp` and modify elements, you may need to declare `/libultrahand/libultra/include` at the start of your `INCLUDES` in your make file.
-
-If that still is not working, then you may need to add this line somewhere for the theme to be applied to that element.
-
-```cpp
-tsl::initializeThemeVars(); // Initialize variables for ultrahand themes
-```
-
-### Download Methods
-
-To utilize the `libultra` download methods in your project, you will need to add the following line to your `initServices` function:
-```cpp
-initializeCurl();
-```
-As well as the following line to your `exetServices` function:
-```cpp
-cleanupCurl();
-```
-
-These lines will ensure `curl` functions properly within the overlay.
 
 ## Compiling
-### Necessary Libraries
-Developers should include the following libararies in their `Makefile` if they want full `libultra` functionality in their projects.
 
-```
-LIBS := -lcurl -lz -lzzip -lmbedtls -lmbedx509 -lmbedcrypto -ljansson -lnx
+### Prerequisites
+
+- [devkitPro](https://devkitpro.org) with `devkitA64` and `libnx`
+- The following pacman packages:
+
+```sh
+(dkp-)pacman -S switch-curl switch-zlib switch-minizip switch-mbedtls
 ```
 
-### Active Services
-Service conflictions can occur, so if you are already using the following libnx services, you may want to remove them from your project.
+> `switch-minizip` is only required if your overlay uses download or unzip functionality.
+
+### MSYS2 Users
+
+MSYS2 will mangle compiler arguments that start with `/` (like devkitPro paths and flags), causing build failures. Prevent this by adding the following to your `~/.bashrc`:
+
+```sh
+if [[ -n "${DEVKITPRO:-}" ]]; then
+    export MSYS2_ARG_CONV_EXCL='*'
+fi
+```
+
+Then reload your shell:
+
+```sh
+source ~/.bashrc
+```
+
+This disables MSYS2's argument conversion entirely when building with devkitPro and avoids any path-mangling issues.
+
+### Adding libultrahand to Your Project
+
+The easiest way is to use `ultrahand.mk`. Add this after your `SOURCES` and `INCLUDES` definitions, adjusting the path to where you placed `libultrahand`:
+
+```makefile
+include $(TOPDIR)/lib/libultrahand/ultrahand.mk
+```
+
+Alternatively, add these manually:
+
+```makefile
+SOURCES  += lib/libultrahand/common lib/libultrahand/libultra/source lib/libultrahand/libtesla/source
+INCLUDES += lib/libultrahand/common lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+```
+
+### Required Libraries
+
+```makefile
+LIBS := -lcurl -lz -lminizip -lmbedtls -lmbedx509 -lmbedcrypto -lnx
+```
+
+`-lminizip` can be omitted for overlays that do not use download or unzip functionality.
+
+### Services
+
+libultrahand initializes the following libnx services. If your project already initializes any of these, remove the duplicates to avoid conflicts:
+
 ```cpp
-i2cInitialize();
 fsdevMountSdmc();
 splInitialize();
 spsmInitialize();
 ASSERT_FATAL(socketInitializeDefault());
 ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
-ASSERT_FATAL(smInitialize()); // needed to prevent issues with powering device into sleep
+ASSERT_FATAL(smInitialize());
 ```
-Service `i2cInitialize` however is only utilized in accordance with `USING_WIDGET_DIRECTIVE`.
 
-### Optional Compilation Flags
+`i2cInitialize()` is only used when `USING_WIDGET_DIRECTIVE` is enabled.
+
+For `libultra` download methods, also call these in your service init/exit:
+
+```cpp
+initializeCurl();   // in initServices()
+cleanupCurl();      // in exitServices()
 ```
--ffunction-sections -fdata-sections
+
+### Recommended Build Flags
+
+The following reflects the flag set used across official libultrahand projects. The target architecture is ARMv8-A on the Cortex-A57:
+
+```makefile
+ARCH := -march=armv8-a+simd+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
+
+CFLAGS := -Wall -Os \
+          -ffunction-sections -fdata-sections \
+          -fomit-frame-pointer -fuse-linker-plugin \
+          -finline-small-functions -fno-strict-aliasing \
+          -frename-registers -falign-functions=16 \
+          $(ARCH) $(DEFINES)
+
+CXXFLAGS := $(CFLAGS) -std=c++26 \
+            -fno-exceptions -fno-rtti \
+            -fno-unwind-tables -fno-asynchronous-unwind-tables \
+            -ffast-math -Wno-dangling-else
+
+LDFLAGS := -specs=$(DEVKITPRO)/libnx/switch.specs \
+           $(ARCH) -Wl,-Map,$(notdir $*.map) \
+           -Wl,--gc-sections -Wl,--as-needed
 ```
-These options are present in both CFLAGS and CXXFLAGS. They instruct the compiler to place each function and data item in its own section, which allows the linker to more easily identify and remove unused code.
 
+> `-fno-exceptions` and `-fno-rtti` are strongly recommended for overlay binaries. If `USE_EXCEPTION_WRAP` is enabled, `-fno-unwind-tables` and `-fno-asynchronous-unwind-tables` should be set as well.
+
+### Link-Time Optimization
+
+LTO is highly recommended and should use parallel LTRANS jobs for faster builds. The simplest approach is to auto-detect the available CPU count:
+
+```makefile
+NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)
+
+CXXFLAGS += -flto=$(NPROC)
+LDFLAGS  += -flto=$(NPROC) -fuse-linker-plugin
 ```
--Wl,--gc-sections
+
+Or specify a fixed thread count (e.g. for CI environments):
+
+```makefile
+CXXFLAGS += -flto=6
+LDFLAGS  += -flto=6 -fuse-linker-plugin
 ```
-Included in LDFLAGS. This linker flag instructs the linker to remove unused sections that were created by -ffunction-sections and -fdata-sections. This ensures that functions or data that are not used are removed from the final executable.
 
+### Ultrahand Signature
+
+All libultrahand overlays should append the `ULTR` four-byte signature to the final `.ovl` binary. This is how Ultrahand identifies libultrahand-compiled overlays in the overlay menu:
+
+```makefile
+$(OUTPUT).ovl: $(OUTPUT).elf $(OUTPUT).nacp
+	@elf2nro $< $@ $(NROFLAGS)
+	@printf 'ULTR' >> $@
 ```
--flto (Link Time Optimization)
+
+---
+
+## Makefile Directives
+
+All directives should be added to both `CFLAGS` and `CXXFLAGS` unless your `CXXFLAGS` is already defined as `$(CFLAGS)`, in which case adding to `CFLAGS` before that line is sufficient.
+
+### Theme & Wallpaper Override
+
+Scopes a `theme.ini` and `wallpaper.rgba` to your overlay at `/config/<OVERLAY_NAME>/`:
+
+```makefile
+UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
+CFLAGS   += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
+CXXFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 ```
-Present in CFLAGS, CXXFLAGS, and LDFLAGS. It enables link-time optimization, allowing the compiler to optimize across different translation units and remove any unused code during the linking phase. You also use -flto=6 to control the number of threads for parallel LTO, which helps speed up the process.
 
+If the theme still does not appear, add the `INITIALIZE_IN_GUI_DIRECTIVE` as a fallback:
+
+```makefile
+CFLAGS   += -DINITIALIZE_IN_GUI_DIRECTIVE=1
+CXXFLAGS += -DINITIALIZE_IN_GUI_DIRECTIVE=1
 ```
--fuse-linker-plugin
+
+### Language Translations
+
+Requires `UI_OVERRIDE_PATH`. Place ISO 639-1 named JSON files in `/config/<OVERLAY_NAME>/lang/`:
+
+```json
+{
+  "English String": "Translated String",
+  "Another String": "Another Translation"
+}
 ```
-This flag allows the compiler and linker to better collaborate when using LTO, which further helps in optimizing and eliminating unused code.
-Together, these flags (-ffunction-sections, -fdata-sections, -Wl,--gc-sections, and -flto) ensure that any unused functions or data are stripped out during the build process, leading to a smaller and more optimized final binary.
 
+Translation is applied automatically on every `drawString` call based on the active Ultrahand language setting.
 
-## Build Examples
-- [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
+### Status Bar Widget
 
-- [Tetris Overlay](https://github.com/ppkantorski/Tetris-Overlay)
+```makefile
+CFLAGS   += -DUSING_WIDGET_DIRECTIVE=1
+CXXFLAGS += -DUSING_WIDGET_DIRECTIVE=1
+```
 
-- [Edizon Overlay](https://github.com/ppkantorski/EdiZon-Overlay)
+Activates `i2cInitialize()` internally — remove it from your own service init if present.
 
-- [Sysmodules](https://github.com/ppkantorski/ovl-sysmodules)
+### Logging
 
-- [FPSLocker](https://github.com/ppkantorski/FPSLocker)
+Enables thread-safe file logging to `<packagePath>/log.txt` via `logMessage()`. Useful for debugging command execution and overlay behavior:
 
-- [QuickNTP](https://github.com/ppkantorski/QuickNTP)
+```makefile
+CFLAGS   += -DUSING_LOGGING_DIRECTIVE=1
+CXXFLAGS += -DUSING_LOGGING_DIRECTIVE=1
+```
 
-- [Fizeau](https://github.com/ppkantorski/Fizeau)
+### Back Button Override
 
-- [NX-FanControl](https://github.com/ppkantorski/NX-FanControl)
+Disables the default back-button (`KEY_B`) behavior, allowing your overlay to handle it independently. Useful for overlays that implement custom or full-screen navigation:
+
+```makefile
+CFLAGS   += -DNO_BACK_KEY_DIRECTIVE=1
+CXXFLAGS += -DNO_BACK_KEY_DIRECTIVE=1
+```
+
+### Targeted Optimizations
+
+```makefile
+# Apply -O3 to rendering components only (tesla.hpp)
+CFLAGS   += -DTESLA_TARGETED_SPEED
+CXXFLAGS += -DTESLA_TARGETED_SPEED
+
+# Apply -Os to libultra utility components only
+CFLAGS   += -DULTRA_TARGETED_SIZE
+CXXFLAGS += -DULTRA_TARGETED_SIZE
+```
+
+These can be used together — `TESLA_TARGETED_SPEED` optimizes the hot rendering path while `ULTRA_TARGETED_SIZE` keeps utility code compact.
+
+### Launcher Build
+
+Enables launcher-specific code paths used exclusively when building the Ultrahand Overlay launcher itself. Not intended for general overlay development:
+
+```makefile
+CFLAGS   += -DIS_LAUNCHER_DIRECTIVE=1
+CXXFLAGS += -DIS_LAUNCHER_DIRECTIVE=1
+```
+
+### Exception Wrap (~20KB size reduction)
+
+Intercepts C++ exception entry points at the linker level, eliminating unwind table overhead. Requires including `<exception_wrap.hpp>` at the top of your `main.cpp`:
+
+```makefile
+CFLAGS   += -DUSE_EXCEPTION_WRAP=1
+CXXFLAGS += -DUSE_EXCEPTION_WRAP=1
+CXXFLAGS += -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
+LDFLAGS  += -Wl,-wrap,__cxa_throw \
+            -Wl,-wrap,_Unwind_Resume \
+            -Wl,-wrap,__gxx_personality_v0
+```
+
+---
 
 ## Contributing
 
-Contributions are welcome! If you have any ideas, suggestions, or bug reports, please raise an [issue](https://github.com/ppkantorski/libultrahand/issues/new/choose), submit a [pull request](https://github.com/ppkantorski/libultrahand/compare) or reach out to me directly on [GBATemp](https://gbatemp.net/threads/ultrahand-overlay-the-fully-craft-able-overlay-executor.633560/).
+Contributions are welcome. Please open an [issue](https://github.com/ppkantorski/libultrahand/issues/new/choose), submit a [pull request](https://github.com/ppkantorski/libultrahand/compare), or reach out on [GBATemp](https://gbatemp.net/threads/ultrahand-overlay-the-fully-craft-able-overlay-executor.633560/).
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X3VR194)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X3VR194) [![sponsor](https://github.com/ppkantorski/ppkantorski/raw/refs/heads/main/.pics/sponsor-icon.png)](https://github.com/sponsors/ppkantorski)
+
+---
 
 ## License
 
-This project is licensed and distributed under [GPLv2](LICENSE) with a [custom library](libultra) utilizing [CC-BY-4.0](SUB_LICENSE).
+Licensed under [GPLv2](LICENSE) with a [custom library](libultra) under [CC-BY-4.0](SUB_LICENSE).
 
-Copyright (c) 2024 ppkantorski
+Copyright © 2023–2026 ppkantorski

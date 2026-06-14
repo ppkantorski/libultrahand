@@ -13,31 +13,32 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
 
-#ifndef INI_FUNCS_HPP
-#define INI_FUNCS_HPP
-
-#if NO_FSTREAM_DIRECTIVE // For not using fstream (needs implementing)
 #include <stdio.h>
-#else
-#include <fstream>
-#endif
-
 #include <cstring>  // For std::string, strlen(), etc.
 #include <string>   // For std::string
 #include <vector>   // For std::vector
 #include <map>      // For std::map
-//#include <sstream>  // For std::istringstream
 #include <algorithm> // For std::remove_if
-//#include <cctype>   // For ::isspace
+
+#include <shared_mutex>
+#include <unordered_map>
+#include <mutex>
+
 #include "get_funcs.hpp"
 #include "path_funcs.hpp"
 
 namespace ult {
+
+    extern void clearIniMutexCache();
+
+    extern size_t INI_BUFFER_SIZE;
+    extern size_t INI_BUFFER_LARGE;
+
     /**
      * @brief Represents a package header structure.
      *
@@ -46,19 +47,25 @@ namespace ult {
      */
     struct PackageHeader {
         std::string title;
+        std::string display_title;
         std::string version;
         std::string creator;
         std::string about;
         std::string credits;
         std::string color;
+        std::string show_version;
+        std::string show_widget;
         
         void clear() {
             title.clear();
+            display_title.clear();
             version.clear();
             creator.clear();
             about.clear();
             credits.clear();
             color.clear();
+            show_version.clear();
+            show_widget.clear();
         }
     };
     
@@ -133,6 +140,18 @@ namespace ult {
      */
     std::vector<std::string> parseSectionsFromIni(const std::string& filePath);
     
+
+    /**
+     * @brief Returns INI section names for ini_file_source (single path or wildcard merge).
+     *
+     * Single-file paths use parseSectionsFromIni unchanged. Wildcard paths enumerate matching
+     * files and merge section names (skips empty, deduplicates by first occurrence).
+     *
+     * The append overload writes into an existing vector, enabling chained ini_file_source
+     * declarations to accumulate sections with cross-call deduplication (first occurrence wins).
+     */
+    void parseSectionsFromIniPattern(const std::string& iniPathPattern, std::vector<std::string>& out, size_t maxItemsLimit = 0);
+    std::vector<std::string> parseSectionsFromIniPattern(const std::string& iniPathPattern, size_t maxItemsLimit = 0);
     
     
     /**
@@ -253,26 +272,7 @@ namespace ult {
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName);
     
     
-    //void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
-    //    std::ofstream file(filePath);
-    //    if (!file.is_open()) {
-    //        // Handle error: could not open file
-    //        return;
-    //    }
-    //
-    //    for (const auto& section : data) {
-    //        file << "[" << section.first << "]\n";
-    //        for (const auto& kv : section.second) {
-    //            file << kv.first << "=" << kv.second << "\n";
-    //        }
-    //        file << "\n"; // Separate sections with a newline
-    //    }
-    //
-    //    file.close();
-    //}
-    
-    
-    void updateIniData(const std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
+    bool syncIniValue(std::map<std::string, std::map<std::string, std::string>>& packageConfigData,
                        const std::string& packageConfigIniPath,
                        const std::string& optionName,
                        const std::string& key,
@@ -309,6 +309,46 @@ namespace ult {
      */
     std::vector<std::vector<std::string>> loadSpecificSectionFromIni(const std::string& packageIniPath, const std::string& sectionName);
     
-}
 
-#endif
+
+    /**
+     * @brief Saves INI data structure to a file.
+     *
+     * This function writes a complete INI data structure to the specified file path.
+     * The data structure should be organized as sections containing key-value pairs.
+     *
+     * @param filePath The path to the INI file to write.
+     * @param data The complete INI data structure to save.
+     */
+    void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data);
+
+
+
+    /**
+     * @brief Adds a key-value pair to all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key-value pair will be added to ALL sections.
+     * If patternKey is specified, only sections containing that key will be modified.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param newKey The new key to add.
+     * @param newValue The value for the new key.
+     */
+    void addKeyToMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                   const std::string& newKey, const std::string& newValue);
+
+    /**
+     * @brief Removes a key from all sections that contain a specified pattern key.
+     *
+     * If patternKey is empty, the key will be removed from ALL sections.
+     * If patternKey is specified, only sections containing that key will have keyToRemove deleted.
+     *
+     * @param filePath The path to the INI file.
+     * @param patternKey The key to search for (empty = all sections).
+     * @param keyToRemove The key to remove from matching sections.
+     */
+    void removeKeyFromMatchingSections(const std::string& filePath, const std::string& patternKey, 
+                                        const std::string& keyToRemove);
+
+}

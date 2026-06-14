@@ -14,25 +14,81 @@
  *   of the project's documentation and must remain intact.
  * 
  *  Licensed under both GPLv2 and CC-BY-4.0
- *  Copyright (c) 2024 ppkantorski
+ *  Copyright (c) 2023-2026 ppkantorski
  ********************************************************************************/
 
 #pragma once
 
-#ifndef STRING_FUNCS_HPP
-#define STRING_FUNCS_HPP
-
+#include <cstring>
 #include <string>
 #include <iterator> 
 #include <vector>
-//#include <jansson.h>
-#include <regex>
+
+#include <algorithm>
 #include <sys/stat.h>
 #include <dirent.h>
+#include "global_vars.hpp"
 #include "debug_funcs.hpp"
 
 namespace ult {
     
+    extern std::string to_string(int value);
+    extern int stoi(const std::string& str, std::size_t* pos = nullptr, int base = 10);
+    extern float stof(const std::string& str);
+
+    /**
+     * @brief A lightweight string stream class that mimics basic functionality of std::istringstream.
+     */
+    class StringStream {
+    public:
+        StringStream() : position(0), hexMode(false), validState(true) {}
+    
+    
+        // Add this constructor to accept a string
+        StringStream(const std::string& input) : data(input), position(0), hexMode(false) {}
+    
+        // Set hex mode
+        StringStream& hex() {
+            hexMode = true;
+            return *this;
+        }
+    
+        // Reset hex mode
+        StringStream& resetHex() {
+            hexMode = false;
+            return *this;
+        }
+    
+        // Mimics std::getline() with a delimiter
+        bool getline(std::string& output, char delimiter);
+    
+        // Mimics operator >> to split by whitespace
+        StringStream& operator>>(std::string& output);
+    
+        // Overload the << operator to insert strings and integers
+        StringStream& operator<<(const std::string& input);
+        StringStream& operator<<(const char* input);
+        StringStream& operator<<(char input);
+        StringStream& operator<<(int input);  // Handles int insertion with hex support
+        StringStream& operator<<(long long input); // for long long
+    
+        // Conversion to bool for checking stream state (success/failure)
+        explicit operator bool() const {
+            return validState;
+        }
+    
+        std::string str() const;
+        void clear() { data.clear(); position = 0; } // Add clear function
+    
+    private:
+        std::string data;
+        size_t position;
+        bool hexMode;
+        bool validState;  // Track if the stream is in a valid state
+    };
+    
+
+
     /**
      * @brief Trims leading and trailing whitespaces from a string.
      *
@@ -61,8 +117,6 @@ namespace ult {
      */
     std::string removeWhiteSpaces(const std::string& str);
     
-    
-    
     /**
      * @brief Removes quotes from a string.
      *
@@ -74,17 +128,7 @@ namespace ult {
     void removeQuotes(std::string& str);
     
     
-    /**
-     * @brief Replaces multiple consecutive slashes with a single slash in a string.
-     *
-     * This function replaces sequences of two or more consecutive slashes with a single slash in the input string.
-     *
-     * @param input The input string to process.
-     * @return The string with multiple slashes replaced.
-     */
-    std::string replaceMultipleSlashes(const std::string& input);
-    
-    
+    void resolveDirectoryTraversal(std::string& path);
     
     /**
      * @brief Preprocesses a path string by replacing multiple slashes and adding "sdmc:" prefix.
@@ -129,6 +173,9 @@ namespace ult {
     // Helper function to check if a string is a valid integer
     bool isValidNumber(const std::string& str);
     
+    // For properly handling placeholder replacements
+    std::string returnOrNull(const std::string& value);
+
     
     // Function to slice a string from start to end index
     std::string sliceString(const std::string& str, size_t start, size_t end);
@@ -145,6 +192,17 @@ namespace ult {
     
     std::string stringToLowercase(const std::string& str);
     
+
+    /**
+     * @brief Converts a string to uppercase.
+     *
+     * This function takes a string as input and returns an uppercase version of that string.
+     *
+     * @param str The input string to convert to uppercase.
+     * @return The uppercase version of the input string.
+     */
+    
+    std::string stringToUppercase(const std::string& str);
     
     /**
      * @brief Formats a priority string to a desired width.
@@ -193,5 +251,3 @@ namespace ult {
     std::string inputExists(const std::string& input);
     #endif
 }
-
-#endif
