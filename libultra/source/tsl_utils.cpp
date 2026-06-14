@@ -223,6 +223,7 @@ namespace ult {
     bool useStickNavigation = true;
     bool usePageSwap = false;
     bool useDynamicLogo = true;
+    bool useSwitch2Style = false;
     bool useSelectionBG = true;
     bool useSelectionText = true;
     bool useSelectionValue = false;
@@ -443,6 +444,7 @@ namespace ult {
 
     std::string THEME_SETTINGS;
     std::string DYNAMIC_LOGO;
+    std::string SWITCH2_STYLE;
     std::string SELECTION_BACKGROUND;
     std::string SELECTION_TEXT;
     std::string SELECTION_VALUE;
@@ -661,6 +663,7 @@ namespace ult {
         {&CLEAN_VERSIONS,             "CLEAN_VERSIONS",             "Clean Versions"},
         {&THEME_SETTINGS,             "THEME_SETTINGS",             "Theme Settings"},
         {&DYNAMIC_LOGO,               "DYNAMIC_LOGO",               "Dynamic Logo"},
+        {&SWITCH2_STYLE,              "SWITCH2_STYLE",              "Switch 2 Style"},
         {&SELECTION_BACKGROUND,       "SELECTION_BACKGROUND",       "Selection Background"},
         {&SELECTION_TEXT,             "SELECTION_TEXT",             "Selection Text"},
         {&SELECTION_VALUE,            "SELECTION_VALUE",            "Selection Value"},

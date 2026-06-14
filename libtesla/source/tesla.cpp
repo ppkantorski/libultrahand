@@ -715,6 +715,7 @@ namespace impl {
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
         ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
         ult::useDynamicLogo         = getBool("dynamic_logo",            true);
+        ult::useSwitch2Style        = getBool("switch2_style",           false);
         ult::useSelectionBG         = getBool("selection_bg",            true);
         ult::useSelectionText       = getBool("selection_text");
         ult::useSelectionValue      = getBool("selection_value");

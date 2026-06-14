@@ -443,10 +443,15 @@ namespace tsl {
     }
     
     inline Color lerpColor(const Color& c1, const Color& c2, float t) {
+        // Use signed float arithmetic throughout -- u8 subtraction wraps when c1 < c2,
+        // e.g. (u8)(0 - 15) = 241, producing completely wrong output on downward transitions.
+        const float fr1 = static_cast<float>(c1.r), fr2 = static_cast<float>(c2.r);
+        const float fg1 = static_cast<float>(c1.g), fg2 = static_cast<float>(c2.g);
+        const float fb1 = static_cast<float>(c1.b), fb2 = static_cast<float>(c2.b);
         return {
-            static_cast<u8>((c1.r - c2.r) * t + c2.r + 0.5f),
-            static_cast<u8>((c1.g - c2.g) * t + c2.g + 0.5f),
-            static_cast<u8>((c1.b - c2.b) * t + c2.b + 0.5f),
+            static_cast<u8>(std::max(0.0f, std::min(15.0f, fr2 + (fr1 - fr2) * t + 0.5f))),
+            static_cast<u8>(std::max(0.0f, std::min(15.0f, fg2 + (fg1 - fg2) * t + 0.5f))),
+            static_cast<u8>(std::max(0.0f, std::min(15.0f, fb2 + (fb1 - fb2) * t + 0.5f))),
             0xF
         };
     }
@@ -1716,7 +1721,28 @@ namespace tsl {
                     
             }
                         
-            inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color) {
+            // -- Switch2 rotating multicolor cursor ---------------------------------
+            // The Switch2 cursor projects a rotating 4-colour wheel radially outward
+            // from the cursor centre.  Each pixel's colour depends only on its ANGLE
+            // around the centre (not its diagonal position), so colours travel fast
+            // along the long horizontal segments, slowly on the verticals, and pass
+            // through 45deg at the corners - matching the hardware "flashlight" look.
+            //
+            // The four wheel anchor colours sit on the diagonals (screen coords, +y down):
+            //   315deg = upper-right,  45deg = lower-right,
+            //   135deg = lower-left,  225deg = upper-left.
+            // c[0]=UR, c[1]=LR, c[2]=LL, c[3]=UL  (clockwise from upper-right).
+            // The whole wheel is rotated by rotFrac (full turn every 6s); two of the
+            // anchors are pulsed between colours every 2s by the caller before the
+            // colours are handed in here.  The gradient between adjacent anchors is a
+            // straight per-channel interpolation, recomputed continuously as the
+            // pulsing anchors move.
+            struct Switch2Wheel {
+                Color c[4];      // [0]=UR, [1]=LR, [2]=LL, [3]=UL
+                float rotFrac;   // rotation offset in s-space [0,1), advances each 6s
+            };
+
+            inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color, const Switch2Wheel* wheel = nullptr) {
                 // Small-radius fast path: radius ∈ {0,1,2,3}.
                 if (radius <= 3) {
                     if (filled) {
@@ -1811,6 +1837,34 @@ namespace tsl {
                 const float outer_thresh = r2 + r_f;  // d² > this → definitely outside
 
                 if (filled) {
+                    if (wheel != nullptr) {
+                        // Switch2 colour wheel: per-pixel angle-sampled colour, no NEON span-fill.
+                        for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                            const float py    = static_cast<float>(yc - centerY) + 0.5f;
+                            const float py_sq = py * py;
+                            if (py_sq > outer_thresh) continue;
+                            const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                            for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                                const float px = static_cast<float>(xc - centerX) + 0.5f;
+                                const float d2 = px*px + py_sq;
+                                if (d2 <= inner_thresh) {
+                                    blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase),
+                                        switch2WheelColorAtCircle(*wheel, xc, yc, centerX, centerY), base_a);
+                                } else if (d2 <= outer_thresh) {
+                                    u32 cnt = 0;
+                                    for (u32 si = 0; si < 8; ++si) {
+                                        const float sx = px + kSamples[si][0], sy = py + kSamples[si][1];
+                                        if (sx*sx + sy*sy <= r2) ++cnt;
+                                    }
+                                    if (cnt)
+                                        blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase),
+                                            switch2WheelColorAtCircle(*wheel, xc, yc, centerX, centerY),
+                                            (u8)((base_a * cnt + 4) / 8));
+                                }
+                            }
+                        }
+                        return;
+                    }
                     // Per-pixel x-scan: accumulate consecutive "definitely inside" pixels
                     // into a span and flush via NEON; border pixels get 8-sample AA.
                     // No sqrtf — the span boundary emerges naturally from the d²<r²-r test.
@@ -1875,44 +1929,268 @@ namespace tsl {
                 }
             }
             
-            inline void drawBorderedRoundedRect(const s32 x, const s32 y, const s32 width, const s32 height, const s32 thickness, const s32 radius, const Color& highlightColor) {
-                const s32 startX = x + 4;
-                const s32 startY = y;
-                const s32 adjustedWidth = width - 12;
-                const s32 adjustedHeight = height + 1;
-                
-                // Pre-calculate corner positions
-                const s32 leftCornerX = startX;
-                const s32 rightCornerX = x + width - 9;
-                const s32 topCornerY = startY;
-                const s32 bottomCornerY = startY + height;
-                
-                // Draw borders
-                this->drawRect(startX, startY - thickness, adjustedWidth, thickness, highlightColor);
-                this->drawRect(startX, startY + adjustedHeight, adjustedWidth, thickness, highlightColor);
-                this->drawRect(startX - thickness, startY, thickness, adjustedHeight, highlightColor);
-                this->drawRect(startX + adjustedWidth, startY, thickness, adjustedHeight, highlightColor);
-                
-                // Pre-calculate AA colors once
-                const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
-                const Color aaColor2 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 2)};  // 25%
-                
-                // ── Arc spans: hoist blockLinearYPart out of pixel loops ──────────────
-                // The original code called setPixelBlendDst per pixel, which recomputed
-                // the blockLinear y-contribution and checked scissor on every iteration.
-                // hspan computes rowBase once per y-value and uses blendPixelDirect
-                // (tiny: ~4 instructions for opaque colours).  No fillRowSpanNEON here —
-                // arc spans are ≤radius pixels wide, so the NEON loop would never fire
-                // and the function setup would inflate code size without benefit.
-                // Without always_inline, -Os outlines hspan to one copy, called 8× per step.
-                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
-                const u32  owv  = offsetWidthVar;
-                const u8   ha   = highlightColor.a;
 
-                // Scissor clip bounds — default to full framebuffer when no scissor.
-                const s32 fbW = static_cast<s32>(cfg::FramebufferWidth);
-                const s32 fbH = static_cast<s32>(cfg::FramebufferHeight);
-                s32 sc_x = 0, sc_xe = fbW, sc_y = 0, sc_ye = fbH;
+            // Shared tail of both Switch2 wheel samplers: given a wheel position
+            // s in [0,1) (already rotated + wrapped), pick the two bracketing anchor
+            // colours and blend them with ordered (Bayer 4x4) dithering. Factored out
+            // so the dither/lerp/quantise maths lives in exactly one place.
+            // Plain in-class static (implicitly inline = a *hint*, not a force): an
+            // earlier ALWAYS_INLINE here copied this whole body into all 5 call sites
+            // and bloated .text; leaving the choice to the optimizer is smaller at -Os/-O2.
+            static Color switch2WheelColorFromS(const Switch2Wheel& w, float s, s32 px, s32 py) noexcept {
+                // --- Segment + blend fraction ----------------------------------------
+                float seg = s * 4.0f;
+                seg -= 4.0f * floorf(seg * 0.25f);  // keep in [0,4)
+                const int   i = static_cast<int>(seg) & 3;
+                const float f = seg - floorf(seg);
+
+                // Segment->anchor map {3,0,1,2} as arithmetic (no lookup table):
+                //   c0 = anchor[(i+3)&3],  c1 = anchor[i]  -- identical picks, no .rodata load.
+                const Color& c0 = w.c[(i + 3) & 3];
+                const Color& c1 = w.c[i];
+
+                // --- Ordered (Bayer 4x4) dither for smooth gradients -----------------
+                // RGBA4444 has only 16 levels per channel; without dithering, a 200px
+                // gradient produces a visible band every ~11px. The Bayer matrix shifts
+                // the quantization boundary by up to +/-0.5 counts per pixel, staggering
+                // color steps across a 4x4 block so the eye perceives ~3x more levels.
+                static const float bayer[4][4] = {
+                    { 0.f,  8.f,  2.f, 10.f},
+                    {12.f,  4.f, 14.f,  6.f},
+                    { 3.f, 11.f,  1.f,  9.f},
+                    {15.f,  7.f, 13.f,  5.f}
+                };
+                // Offset in [-0.5, +0.5] channel units, applied before rounding.
+                const float d = bayer[static_cast<u32>(py) & 3u][static_cast<u32>(px) & 3u] * (1.0f / 15.0f) - 0.5f;
+
+                // Signed float lerp with dither, clamped before quantising.
+                const float fr0 = static_cast<float>(c0.r), fr1 = static_cast<float>(c1.r);
+                const float fg0 = static_cast<float>(c0.g), fg1 = static_cast<float>(c1.g);
+                const float fb0 = static_cast<float>(c0.b), fb1 = static_cast<float>(c1.b);
+                const u8 r = static_cast<u8>(std::max(0.0f, std::min(15.0f, fr0 + (fr1 - fr0) * f + d + 0.5f)));
+                const u8 g = static_cast<u8>(std::max(0.0f, std::min(15.0f, fg0 + (fg1 - fg0) * f + d + 0.5f)));
+                const u8 b = static_cast<u8>(std::max(0.0f, std::min(15.0f, fb0 + (fb1 - fb0) * f + d + 0.5f)));
+                return Color(r, g, b, 0xF);
+            }
+
+            // Sample the wheel colour for a pixel at framebuffer (px,py), projecting it
+            // to the nearest point on the INNER boundary of the cursor border first.
+            //
+            // This gives "straight pass-through" colour projection:
+            //   - Top/bottom bar pixels:  colour determined by horizontal position only
+            //     (all pixels in the same column of a bar share one colour).
+            //   - Left/right bar pixels:  colour determined by vertical position only.
+            //   - Corner arc pixels:      colour follows the inner arc, blending smoothly.
+            //
+            // Without this, atan2(pixel - center) advances the angle slightly as you move
+            // outward through the stroke, producing diagonal colour bands across the bars.
+            //
+            // Geometry args (all in framebuffer pixel coordinates):
+            //   cxL, cxR   -- left/right corner-centre X
+            //   ccyT, ccyB -- top/bottom corner-centre Y
+            //   Ri         -- inner arc radius (= r - T)
+            //   wheel      -- colour wheel with rotation centre (cx,cy) and four anchor colours
+            static inline Color switch2WheelColorAt(
+                    const Switch2Wheel& w,
+                    s32 px, s32 py,
+                    s32 cxL, s32 cxR, s32 ccyT, s32 ccyB, s32 Ri) noexcept {
+
+                // --- Step 1: project (px,py) to inner boundary point (ix,iy) ----------
+                // All pixels in the same column of a top/bottom bar share one angle;
+                // all pixels in the same row of a side bar share one angle.
+                // Corner pixels follow the inner arc angle. No diagonal banding.
+                float ix, iy;
+
+                const bool left  = px < cxL;
+                const bool right = px > cxR;
+                const bool above = py < ccyT;
+                // For the top/bottom-BAR branch only: px==cxL or px==cxR with py==ccyT
+                // is the corner/bar seam pixel and belongs to the TOP bar, not the
+                // bottom -- include the boundary row on the top side here.
+                const bool aboveForBar = py <= ccyT;
+
+                if (!left && !right) {
+                    // Top or bottom bar zone: project straight up/down to inner edge.
+                    ix = static_cast<float>(px);
+                    iy = aboveForBar ? static_cast<float>(ccyT - Ri)
+                                     : static_cast<float>(ccyB + Ri);
+                } else if (!above && py <= ccyB) {
+                    // Left or right side bar zone: project straight left/right.
+                    ix = left  ? static_cast<float>(cxL - Ri)
+                               : static_cast<float>(cxR + Ri);
+                    iy = static_cast<float>(py);
+                } else {
+                    // Corner zone: project from corner centre to inner arc.
+                    const float ccxC = static_cast<float>(left ? cxL : cxR);
+                    const float ccyC = static_cast<float>(above ? ccyT : ccyB);
+                    const float dpx  = static_cast<float>(px) - ccxC;
+                    const float dpy  = static_cast<float>(py) - ccyC;
+                    const float phi  = atan2f(dpy, dpx);
+                    ix = ccxC + static_cast<float>(Ri) * cosf(phi);
+                    iy = ccyC + static_cast<float>(Ri) * sinf(phi);
+                }
+
+                // --- Step 2: PER-SIDE position around the inner boundary -------------
+                // Each of the 4 sides (top, right, bottom, left) gets an EQUAL 0.25
+                // share of s, regardless of its pixel length. Within a side, t in
+                // [0,1) maps linearly across that side's full straight span, so the
+                // gradient's halfway point always lands at the geometric midpoint of
+                // every side simultaneously -- a short side traverses the same
+                // fraction of the colour wheel as a long one, just compressed into
+                // fewer pixels (higher colour density on short sides, lower on long
+                // ones, matching the on-device look). Corner pixels (projected by
+                // Step 1 to (ix,iy) outside the straight span) are clamped to t in
+                // [0,1], so they smoothly inherit the nearest side's edge colour with
+                // no seam.
+                const float straight_W = static_cast<float>(cxR - cxL);
+                const float straight_H = static_cast<float>(ccyB - ccyT);
+
+                float side;  // which side: 0=top, 1=right, 2=bottom, 3=left
+                float t;     // position within the side, in [0,1], clamped
+
+                const bool onTop    = (iy < static_cast<float>(ccyT));
+                const bool onBottom = (iy > static_cast<float>(ccyB));
+                const bool onLeft   = (ix < static_cast<float>(cxL));
+                const bool onRight  = (ix > static_cast<float>(cxR));
+
+                if (!onLeft && !onRight) {
+                    // Top or bottom bar (or its corner extensions, since ix stayed
+                    // within [cxL,cxR]).
+                    if (onTop) {
+                        side = 0.0f;
+                        t = (ix - static_cast<float>(cxL)) / straight_W;
+                    } else {
+                        side = 2.0f;
+                        t = (static_cast<float>(cxR) - ix) / straight_W;
+                    }
+                } else if (!onTop && !onBottom) {
+                    // Left or right side bar (or its corner extensions).
+                    if (onRight) {
+                        side = 1.0f;
+                        t = (iy - static_cast<float>(ccyT)) / straight_H;
+                    } else {
+                        side = 3.0f;
+                        t = (static_cast<float>(ccyB) - iy) / straight_H;
+                    }
+                } else {
+                    // Corner pixel: (ix,iy) lies outside both straight spans. It's
+                    // the extension of the top bar (TL/TR corners) or bottom bar
+                    // (BL/BR corners); clamping t to [0,1] makes it inherit that
+                    // bar's nearest-edge colour, matching s=0/0.25/0.5/0.75 exactly
+                    // at the four corners (verified continuous with the adjacent
+                    // side/left bars above).
+                    if (onTop) { side = 0.0f; t = (ix - static_cast<float>(cxL)) / straight_W; }
+                    else       { side = 2.0f; t = (static_cast<float>(cxR) - ix) / straight_W; }
+                    t = std::max(0.0f, std::min(1.0f, t));
+                }
+
+                // s = side*0.25 + t*0.25, normalised to [0,1), rotated.
+                float s = side * 0.25f + t * 0.25f;
+                s = s - w.rotFrac;
+                s -= floorf(s);  // wrap to [0,1)
+
+                return switch2WheelColorFromS(w, s, px, py);
+            }
+
+            // Circle variant of the Switch2 wheel sampler.
+            // Uses the pixel's angle around the circle's own centre (cx,cy) to derive s,
+            // matching the same phase convention (s=0 at 225deg UL diagonal) as the rect
+            // sampler -- so the circle handle and the surrounding rounded-rect border
+            // share one Switch2Wheel and their colour crosshairs stay in sync.
+            static inline Color switch2WheelColorAtCircle(
+                    const Switch2Wheel& w, s32 px, s32 py, s32 cx, s32 cy) noexcept {
+                const float dx = static_cast<float>(px - cx);
+                const float dy = static_cast<float>(py - cy);
+                float phi = atan2f(dy, dx);
+                if (phi < 0.0f) phi += 6.28318530717958647692f;
+                float s = (phi - 3.92699081698724154807f) * (1.0f / 6.28318530717958647692f);
+                s = s - w.rotFrac;
+                s -= floorf(s);
+                return switch2WheelColorFromS(w, s, px, py);
+            }
+
+            inline void drawBorderedRoundedRect(const s32 x, const s32 y, const s32 width, const s32 height, const s32 thickness, const s32 radius, const Color& highlightColor, const Switch2Wheel* wheel = nullptr) {
+                // ── Coordinate conventions (preserved from original) ──────────────────
+                // Corner centres: cxL = x+4,  cxR = x+width-9
+                //                 cyT = y,     cyB = y+height
+                //
+                // Outer bounding box of the stroke:
+                //   left  = cxL - radius          right (excl) = cxR + radius + 1
+                //   top   = cyT - thickness        bottom(excl) = cyB + thickness + 1
+                //
+                // For the default Switch1 call (x=gX+4, width=gW+4, thickness=5, radius=5):
+                //   cxL=gX+8, cxR=gX+gW-1  →  left=gX+3, right(excl)=gX+gW+5
+                //   top=y-5, bottom(excl)=y+height+6  — identical to the original bars.
+                //
+                // For Switch2 (same x/width, radius=12):
+                //   same cxL/cxR  →  left=gX-4, right(excl)=gX+gW+12  (7px wider each side)
+                //   top/bottom rows unchanged.
+                //
+                // Four straight bars fill the non-corner portions:
+                //   Top    bar: rows [cyT-T, cyT),      cols [cxL, cxR+1)
+                //   Bottom bar: rows [cyB+1, cyB+T+1),  cols [cxL, cxR+1)
+                //   Left   bar: cols [cxL-r, cxL-r+T),  rows [cyT, cyB+1)
+                //   Right  bar: cols [cxR+r-T+1, cxR+r+1), rows [cyT, cyB+1)
+                //
+                // Corner arcs fill an annulus ring (outer radius r, inner radius r-T)
+                // centred on each of the four corner centres, in the corner quadrant zones.
+                // When radius==thickness (Switch1), Ri=0 so the full quarter-disc is drawn.
+                // When radius>thickness (Switch2), only the annulus ring is drawn, leaving
+                // the interior hollow — matching the rounded rectangle shape in the reference.
+
+                const s32 cyT = y;
+                const s32 cyB = y + height;
+                const s32 T   = thickness;
+                const s32 r   = radius;
+                const s32 Ri  = r - T;  // inner radius (0 for Switch1)
+
+                // Corner centre X coordinates differ between the two paths because the
+                // call conventions differ:
+                //   Switch1: caller passes the original x/width (unchanged).
+                //            cxL = x+4, cxR = x+width-9  (original hardcoded offsets).
+                //   Switch2: caller passes x-7 and width+14 to make the visual bounding
+                //            box explicit (outer left = x, outer right = x+width-1).
+                //            The +11/-16 offsets below compensate so that the corner
+                //            centres land on exactly the same pixels as they did before,
+                //            producing identical visual output.
+                //   Proof: cxL_S2 - r = (x+11)-12 = x-1 = (x_old+4)-5 = cxL_S1-r  ✓
+                //          Middle span width unchanged: (cxR-cxL-1) = width-28 in both cases.
+                //
+                // cyT/cyB are the same in both cases (y and height are not adjusted).
+
+                // Corner centres sit (r-T) pixels inward from the top/bottom bar edges,
+                // so the arc's outermost row lands exactly on the bar's outermost row.
+                //
+                //   Arc outer top  = ccyT - r  must equal  cyT - T
+                //   → ccyT = cyT - T + r = cyT + (r - T)
+                //
+                // For Switch1 (r=T=5): ccyT = cyT + 0 = cyT  (unchanged)
+                // For Switch2 (r=12, T=5): ccyT = cyT + 7
+                //
+                // The side bars cover only the straight portion between the two
+                // curved corners, i.e. rows [ccyT, ccyB+1):
+                //   Switch1: [cyT,  cyB+1)   (full height, same as before)
+                //   Switch2: [cyT+7, cyB-6)  (shorter by 2*(r-T) rows)
+                //
+                // The top/bottom bars are unchanged: rows [cyT-T, cyT) and [cyB+1, cyB+T+1).
+                // The arc covers the corner region and the transition rows between the
+                // bar ends and the corner centres — no separate rectangles needed there.
+
+                const s32 rT   = r - T;          // vertical inset of corner centre
+                const s32 ccyT = cyT + rT;       // top corner centre Y
+                const s32 ccyB = cyB - rT;       // bottom corner centre Y
+
+                u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                const u32  owv    = offsetWidthVar;
+                const u8   base_a = highlightColor.a;
+                const float r_f  = static_cast<float>(r);
+                const float ri_f = static_cast<float>(Ri);
+                const float r2   = r_f * r_f;
+                const float ri2  = ri_f * ri_f;
+
+                // Scissor bounds
+                s32 sc_x = 0, sc_xe = static_cast<s32>(cfg::FramebufferWidth);
+                s32 sc_y = 0, sc_ye = static_cast<s32>(cfg::FramebufferHeight);
                 if (this->m_scissorDepth != 0) [[unlikely]] {
                     const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
                     sc_x  = static_cast<s32>(sc.x);
@@ -1921,90 +2199,227 @@ namespace tsl {
                     sc_ye = static_cast<s32>(sc.y_max);
                 }
 
-                // Draw span [xs, xe) at row yr. xe is exclusive.
-                auto hspan = [&](s32 yr, s32 xs, s32 xe) {
-                    if (yr < sc_y || yr >= sc_ye) return;
-                    const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
-                    const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
-                    for (s32 i = x0c; i < x1c; ++i)
-                        blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
-                };
+                if (Ri == 0) {
+                    // ── Switch1 path (radius == thickness): original Bresenham implementation ──
+                    // Pixel-identical to the original drawBorderedRoundedRect.
+                    // Caller passes the original x/width; corner centres use the original offsets.
+                    const s32 cxL = x + 4;
+                    const s32 cxR = x + width - 9;
 
-                // Circle drawing with AA - optimized Bresenham
-                s32 cx = radius;
-                s32 cy = 0;
-                s32 radiusError = 0;
-                const s32 diameter = radius << 1;
-                s32 xChange = 1 - diameter;
-                s32 yChange = 0;
-                s32 lastCx = cx;
-                
-                while (cx >= cy) {
-                    // Pre-calculate Y coordinates (hoist invariants)
-                    const s32 topY1    = topCornerY    - cy;
-                    const s32 topY2    = topCornerY    - cx;
-                    const s32 bottomY1 = bottomCornerY + cy;
-                    const s32 bottomY2 = bottomCornerY + cx;
-                    
-                    // X span bounds. Left spans: [start, leftCornerX); right: [start, end+1).
-                    const s32 leftX1Start  = leftCornerX  - cx;
-                    const s32 leftX2Start  = leftCornerX  - cy;
-                    const s32 rightX1Start = rightCornerX + 1;
-                    const s32 rightX1End   = rightCornerX + cx;
-                    const s32 rightX2End   = rightCornerX + cy;
+                    const s32 startX        = cxL;
+                    const s32 startY        = cyT;
+                    const s32 adjustedWidth  = cxR - cxL + 1;   // = width - 12
+                    const s32 adjustedHeight = cyB - cyT + 1;   // = height + 1
 
-                    // Eight spans across four rows.  hspan computes rowBase once per call.
-                    hspan(topY1,    leftX1Start,  leftCornerX);
-                    hspan(topY1,    rightX1Start, rightX1End + 1);
-                    hspan(topY2,    leftX2Start,  leftCornerX);
-                    hspan(topY2,    rightX1Start, rightX2End + 1);
-                    hspan(bottomY1, leftX1Start,  leftCornerX);
-                    hspan(bottomY1, rightX1Start, rightX1End + 1);
-                    hspan(bottomY2, leftX2Start,  leftCornerX);
-                    hspan(bottomY2, rightX1Start, rightX2End + 1);
-                    
-                    // AA pixels at step transitions — rare single-pixel writes.
-                    if (__builtin_expect(cx != lastCx && cy > 0, 0)) {
-                        const s32 cxAA = cx + 1;
-                        
-                        // Upper-left AA
-                        this->setPixelBlendDst(leftCornerX - cxAA, topY1,     aaColor1);
-                        this->setPixelBlendDst(leftCornerX - cxAA, topY1 + 1, aaColor2);
-                        this->setPixelBlendDst(leftX2Start,         topY2 - 1, aaColor1);
-                        this->setPixelBlendDst(leftX2Start + 1,     topY2 - 1, aaColor2);
-                        
-                        // Upper-right AA
-                        this->setPixelBlendDst(rightCornerX + cxAA, topY1,         aaColor1);
-                        this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1,     aaColor2);
-                        this->setPixelBlendDst(rightX2End,           topY2 - 1,     aaColor1);
-                        this->setPixelBlendDst(rightX2End - 1,       topY2 - 1,     aaColor2);
-                        
-                        // Lower-left AA
-                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1,     aaColor1);
-                        this->setPixelBlendDst(leftCornerX - cxAA, bottomY1 - 1, aaColor2);
-                        this->setPixelBlendDst(leftX2Start,         bottomY2 + 1, aaColor1);
-                        this->setPixelBlendDst(leftX2Start + 1,     bottomY2 + 1, aaColor2);
-                        
-                        // Lower-right AA
-                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1,     aaColor1);
-                        this->setPixelBlendDst(rightCornerX + cxAA, bottomY1 - 1, aaColor2);
-                        this->setPixelBlendDst(rightX2End,           bottomY2 + 1, aaColor1);
-                        this->setPixelBlendDst(rightX2End - 1,       bottomY2 + 1, aaColor2);
+                    const s32 leftCornerX  = cxL;
+                    const s32 rightCornerX = cxR;
+                    const s32 topCornerY   = cyT;
+                    const s32 bottomCornerY= cyB;
+
+                    // Four straight bars (original layout)
+                    this->drawRect(startX,                    startY - T,              adjustedWidth, T,              highlightColor);
+                    this->drawRect(startX,                    startY + adjustedHeight, adjustedWidth, T,              highlightColor);
+                    this->drawRect(startX - T,                startY,                  T,             adjustedHeight, highlightColor);
+                    this->drawRect(startX + adjustedWidth,    startY,                  T,             adjustedHeight, highlightColor);
+
+                    // Pre-calculate AA colors once
+                    const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
+                    const Color aaColor2 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 2)};  // 25%
+
+                    const u8 ha = base_a;
+
+                    // Draw span [xs, xe) at row yr.
+                    auto hspan = [&](s32 yr, s32 xs, s32 xe) __attribute__((always_inline)) {
+                        if (yr < sc_y || yr >= sc_ye) return;
+                        const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
+                        const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
+                        for (s32 i = x0c; i < x1c; ++i)
+                            blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                    };
+
+                    // Bresenham circle arc spans
+                    s32 cx_b = r;
+                    s32 cy_b = 0;
+                    s32 radiusError = 0;
+                    const s32 diameter = r << 1;
+                    s32 xChange = 1 - diameter;
+                    s32 yChange = 0;
+                    s32 lastCx  = cx_b;
+
+                    while (cx_b >= cy_b) {
+                        const s32 topY1    = topCornerY    - cy_b;
+                        const s32 topY2    = topCornerY    - cx_b;
+                        const s32 bottomY1 = bottomCornerY + cy_b;
+                        const s32 bottomY2 = bottomCornerY + cx_b;
+
+                        const s32 leftX1Start  = leftCornerX  - cx_b;
+                        const s32 leftX2Start  = leftCornerX  - cy_b;
+                        const s32 rightX1Start = rightCornerX + 1;
+                        const s32 rightX1End   = rightCornerX + cx_b;
+                        const s32 rightX2End   = rightCornerX + cy_b;
+
+                        hspan(topY1,    leftX1Start,  leftCornerX);
+                        hspan(topY1,    rightX1Start, rightX1End + 1);
+                        hspan(topY2,    leftX2Start,  leftCornerX);
+                        hspan(topY2,    rightX1Start, rightX2End + 1);
+                        hspan(bottomY1, leftX1Start,  leftCornerX);
+                        hspan(bottomY1, rightX1Start, rightX1End + 1);
+                        hspan(bottomY2, leftX2Start,  leftCornerX);
+                        hspan(bottomY2, rightX1Start, rightX2End + 1);
+
+                        if (__builtin_expect(cx_b != lastCx && cy_b > 0, 0)) {
+                            const s32 cxAA = cx_b + 1;
+
+                            this->setPixelBlendDst(leftCornerX  - cxAA, topY1,         aaColor1);
+                            this->setPixelBlendDst(leftCornerX  - cxAA, topY1 + 1,     aaColor2);
+                            this->setPixelBlendDst(leftX2Start,          topY2 - 1,     aaColor1);
+                            this->setPixelBlendDst(leftX2Start  + 1,     topY2 - 1,     aaColor2);
+
+                            this->setPixelBlendDst(rightCornerX + cxAA, topY1,         aaColor1);
+                            this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1,     aaColor2);
+                            this->setPixelBlendDst(rightX2End,           topY2 - 1,     aaColor1);
+                            this->setPixelBlendDst(rightX2End  - 1,      topY2 - 1,     aaColor2);
+
+                            this->setPixelBlendDst(leftCornerX  - cxAA, bottomY1,      aaColor1);
+                            this->setPixelBlendDst(leftCornerX  - cxAA, bottomY1 - 1,  aaColor2);
+                            this->setPixelBlendDst(leftX2Start,          bottomY2 + 1,  aaColor1);
+                            this->setPixelBlendDst(leftX2Start  + 1,     bottomY2 + 1,  aaColor2);
+
+                            this->setPixelBlendDst(rightCornerX + cxAA, bottomY1,      aaColor1);
+                            this->setPixelBlendDst(rightCornerX + cxAA, bottomY1 - 1,  aaColor2);
+                            this->setPixelBlendDst(rightX2End,           bottomY2 + 1,  aaColor1);
+                            this->setPixelBlendDst(rightX2End  - 1,      bottomY2 + 1,  aaColor2);
+                        }
+
+                        lastCx = cx_b;
+
+                        cy_b++;
+                        radiusError += yChange;
+                        yChange += 2;
+
+                        if (__builtin_expect(((radiusError << 1) + xChange) > 0, 0)) {
+                            cx_b--;
+                            radiusError += xChange;
+                            xChange += 2;
+                        }
                     }
-                    
-                    lastCx = cx;
-                    
-                    // Bresenham iteration - optimized
-                    cy++;
-                    radiusError += yChange;
-                    yChange += 2;
-                    
-                    if (__builtin_expect(((radiusError << 1) + xChange) > 0, 0)) {
-                        cx--;
-                        radiusError += xChange;
-                        xChange += 2;
+
+                } else {
+                    // ── Switch2 path (radius > thickness): unified single-pass row scan ─
+                    //
+                    // Every row — including the straight side-bar rows — is rendered with
+                    // the same annulus formula.  For each row we compute:
+                    //
+                    //   dy = max(0, distance to nearest corner-centre row)
+                    //      = 0            for ccyT ≤ py ≤ ccyB   (side-bar zone)
+                    //      = ccyT - py    for py < ccyT           (top corner zone)
+                    //      = py - ccyB    for py > ccyB           (bottom corner zone)
+                    //
+                    // Then every pixel at horizontal offset dx from its corner-centre column
+                    // (cxL or cxR) has distance d = sqrt(dx²+dy²) and is drawn when it
+                    // falls within the annulus band [Ri, r].  The middle span between the
+                    // two arc columns uses dx=0 (d=dy), which gives the correct combined_mid
+                    // coverage that connects bars and arcs without any seam.
+                    //
+                    // Why this eliminates the seams:
+                    //  • Hard side-bar rectangles were solid 1.0; the arc at dy=1 gave 0.46
+                    //    at the outermost column — a visible jump.  With dy=0 in the side-bar
+                    //    zone the outermost column gets outer_t=0.5 every row, matching dy=1's
+                    //    0.46 to within one AA step: smooth.
+                    //  • The inner ring edge at the bar/arc junction similarly transitions
+                    //    from 0.5 (dy=0) to 0.57 (dy=1) instead of jumping from solid 1.0.
+                    //  • The top/bottom bars' left/right edges are no longer hard rectangles;
+                    //    they fade naturally as the circle boundary passes through them.
+                    //
+                    // Caller passes x-7 and width+14 (explicit visual bounding box).
+                    // The +11/-16 offsets below compensate so corner centres land on the
+                    // same pixels as the original implicit convention (cxL=x+4, cxR=x+width-9
+                    // with the old x/width).  Visual output is identical; the API is explicit.
+                    const s32 cxL = x + 11;
+                    const s32 cxR = x + width - 16;
+
+                    const s32 py_top = cyT - T;
+                    const s32 py_bot = cyB + T;
+
+                    for (s32 py = py_top; py <= py_bot; ++py) {
+                        if (py < sc_y || py >= sc_ye) continue;
+
+                        // dy = distance to nearest corner-centre row (0 in side-bar zone)
+                        const float dy_f = (py < ccyT) ? static_cast<float>(ccyT - py)
+                                         : (py > ccyB) ? static_cast<float>(py - ccyB)
+                                         : 0.0f;
+                        const float dy_sq = dy_f * dy_f;
+                        if (dy_sq >= r2 + r_f + 0.25f) continue;
+
+                        const u32 rowBase = blockLinearYPart(static_cast<u32>(py), owv);
+
+                        // Middle span: cols [cxL+1, cxR) — between the two arc columns.
+                        // Coverage = annulus formula at dx=0 (d = dy).
+                        // In the side-bar zone (dy=0): d=0 < Ri → inner reject → no draw.
+                        // In bar rows (dy > Ri): solid 1.0.  At inner/outer edges: AA fade.
+                        {
+                            const float d2_mid = dy_sq;   // dx=0
+                            if (d2_mid < r2 + r_f + 0.25f && d2_mid > ri2 - ri_f + 0.25f) {
+                                const float d_mid   = dy_f;
+                                const float outer_m = std::min(1.0f, r_f + 0.5f - d_mid);
+                                const float inner_m = std::min(1.0f, d_mid - ri_f + 0.5f);
+                                const float c_mid   = outer_m * inner_m;
+                                if (c_mid > 0.0f) {
+                                    const u8 alpha_mid = static_cast<u8>(base_a * c_mid + 0.5f);
+                                    if (alpha_mid > 0u) {
+                                        const s32 mx0 = std::max(cxL + 1, sc_x);
+                                        const s32 mx1 = std::min(cxR,     sc_xe);
+                                        if (wheel != nullptr) {
+                                            for (s32 px = mx0; px < mx1; ++px) {
+                                                const Color wc = switch2WheelColorAt(*wheel, px, py, cxL, cxR, ccyT, ccyB, Ri);
+                                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rowBase), wc, alpha_mid);
+                                            }
+                                        } else if (alpha_mid == base_a) {
+                                            fillRowSpanNEON(fb16, rowBase, mx0, mx1, highlightColor);
+                                        } else {
+                                            for (s32 px = mx0; px < mx1; ++px)
+                                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rowBase), highlightColor, alpha_mid);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Both corner arcs share identical coverage maths; only the column
+                        // direction differs (left: cxL - dx, right: cxR + dx). One body run
+                        // twice -- left pass first, then right -- which is the same write
+                        // order (and same pixels) as the original two separate loops, just
+                        // without the duplicated code. Reject thresholds are hoisted here
+                        // since they no longer need to appear in two places.
+                        const float arcOuterRej = r2 + r_f + 0.25f;
+                        const float arcInnerRej = ri2 - ri_f + 0.25f;
+                        const s32 arcCentre[2] = { cxL, cxR };
+                        const s32 arcDir[2]    = { -1,  1  };
+                        for (int side = 0; side < 2; ++side) {
+                            const s32 cc  = arcCentre[side];
+                            const s32 dir = arcDir[side];
+                            for (s32 dx = 0; dx <= r; ++dx) {
+                                const float dx_f = static_cast<float>(dx);
+                                const float d2 = dx_f * dx_f + dy_sq;
+                                if (d2 >= arcOuterRej) break;
+                                if (d2 <= arcInnerRej) continue;
+                                const s32 px = cc + dir * dx;
+                                if (px < sc_x || px >= sc_xe) continue;
+                                const float d       = sqrtf(d2);
+                                const float outer_t = std::min(1.0f, r_f + 0.5f - d);
+                                const float inner_t = std::min(1.0f, d - ri_f + 0.5f);
+                                const float cov     = outer_t * inner_t;
+                                if (cov <= 0.0f) continue;
+                                const u8 alpha = static_cast<u8>(base_a * cov + 0.5f);
+                                if (alpha > 0u) {
+                                    const Color pc = (wheel != nullptr) ? switch2WheelColorAt(*wheel, px, py, cxL, cxR, ccyT, ccyB, Ri) : highlightColor;
+                                    blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rowBase), pc, alpha);
+                                }
+                            }
+                        }
                     }
                 }
+
             }
             
             ALWAYS_INLINE static void blendPixelDirect(u16* fb16, u32 off, const Color& color, u8 a) noexcept {
@@ -4609,7 +5024,10 @@ namespace tsl {
                 if (!m_isItem)
                     return;
                 if (ult::useSelectionBG) {
-                    renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor));
+                    if (ult::useSwitch2Style)
+                        renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(selectionBGColor));
+                    else
+                        renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor));
                 }
             
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
@@ -4621,7 +5039,10 @@ namespace tsl {
                 } else {
                     animColor = {saturation, saturation, saturation, selectionBGColor.a};
                 }
-                renderer->drawRectAdaptive(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
+                if (ult::useSwitch2Style)
+                    renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(animColor));
+                else
+                    renderer->drawRectAdaptive(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
             
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
@@ -4679,9 +5100,45 @@ namespace tsl {
                     }
                 }
                 
-                renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(s_highlightColor));
+                if (ult::useSwitch2Style) {
+                    const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                } else {
+                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
+                }
             }
-            
+
+            // Build the rotating/pulsing Switch2 colour wheel for this element.
+            // Rotation: full turn every 6s.  Pulse: 2s cosine (1s each way).
+            // Anchors c[0]=UR(315deg), c[1]=LR(45deg), c[2]=LL(135deg), c[3]=UL(225deg).
+            // UL (pink) and LL (periwinkle) pulse toward Ice/Sky; UR (sky) and LR (ice)
+            // stay fixed.  Colours hard-coded for now as 0xRGBA hex (decoded into RGBA
+            // components since Color packs r in the low nibble):
+            //   Pink 0xFCCF, SkyBlue 0x07EF, Periwinkle 0x87FF, IceBlue 0xDFFF.
+            gfx::Renderer::Switch2Wheel makeSwitch2Wheel(s32 ox, s32 oy) {
+                auto fromHex = [](u16 raw) -> Color {
+                    return Color(static_cast<u8>((raw >> 12) & 0xF),
+                                 static_cast<u8>((raw >> 8)  & 0xF),
+                                 static_cast<u8>((raw >> 4)  & 0xF),
+                                 0xF);
+                };
+                const Color cPink = fromHex(0xFAAF);
+                const Color cSky  = fromHex(0x08FF);
+                const Color cPeri = fromHex(0x78FF);
+                const Color cIce  = fromHex(0xDFFF);
+
+                const double t_s  = ult::nowNs() * 0.000000001;
+                const float pulse = static_cast<float>((ult::cos(ult::_M_PI * std::fmod(t_s, 2.0)) + 1.0) * 0.5);
+
+                gfx::Renderer::Switch2Wheel w;
+                w.c[0] = cSky;                             // UR fixed
+                w.c[1] = cIce;                             // LR fixed
+                w.c[2] = lerpColor(cSky,  cPeri, pulse);   // LL: Peri <-> Sky
+                w.c[3] = lerpColor(cIce,  cPink, pulse);   // UL: Pink <-> Ice
+                w.rotFrac = static_cast<float>(std::fmod(t_s, 6.0) * (1.0 / 6.0));
+                return w;
+            }
+
             /**
              * @brief Draws the back background when a element is highlighted
              * @note Override this if you have a element that e.g requires a non-rectangular focus
@@ -4789,18 +5246,42 @@ namespace tsl {
                 
                 if (this->m_clickAnimationProgress == 0) {
                     if (ult::useSelectionBG) {
-                        renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor));
+                        if (ult::useSwitch2Style)
+                            renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(selectionBGColor));
+                        else
+                            renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 12 +4, this->getHeight(), aWithOpacity(selectionBGColor));
                     }
             
                     #if IS_LAUNCHER_DIRECTIVE
                     // Determine the active percentage to use
                     const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
-                        renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor));
+                        if (ult::useSwitch2Style) {
+                            // Switch2: the hold/download fill is the same rounded rect used
+                            // for selection/touch, revealed left-to-right by a scissor that
+                            // expands in width with the percentage (full shape at 100%).
+                            const s32 rrX = this->getX() + x - 3;
+                            const s32 rrY = this->getY() + y;
+                            const s32 rrW = this->getWidth() + 6;
+                            const s32 rrH = this->getHeight() + 1;
+                            const s32 fillW = static_cast<s32>(rrW * (activePercentage * 0.01f));
+                            if (fillW > 0) {
+                                renderer->enableScissoring(rrX, rrY, fillW, rrH);
+                                renderer->drawRoundedRect(rrX, rrY, rrW, rrH, 7, aWithOpacity(progressColor));
+                                renderer->disableScissoring();
+                            }
+                        } else {
+                            renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor));
+                        }
                     }
                     #endif
             
-                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() +4, this->getHeight(), 5, 5, a(s_highlightColor));
+                    if (ult::useSwitch2Style) {
+                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                        renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                    } else {
+                        renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
+                    }
                 }
                 
                 ult::onTrackBar.store(false, std::memory_order_release);
@@ -4868,7 +5349,9 @@ namespace tsl {
              * @return true if coordinates are in bounds, false otherwise
              */
             bool inBounds(s32 touchX, s32 touchY) {
-                return touchX >= this->getLeftBound() + int(ult::layerEdge) && touchX <= this->getRightBound() + int(ult::layerEdge) && touchY >= this->getTopBound() && touchY <= this->getBottomBound();
+                const s32 edge = int(ult::layerEdge);
+                const s32 ext  = ult::useSwitch2Style ? 7 : 0;
+                return touchX >= this->getLeftBound() + edge - ext && touchX <= this->getRightBound() + edge + ext && touchY >= this->getTopBound() && touchY <= this->getBottomBound();
             }
             
             /**
@@ -6024,7 +6507,10 @@ namespace tsl {
                 const s32 bottomBound = getBottomBound();
                 const s32 height = getHeight();
                 
-                renderer->enableScissoring(getLeftBound(), topBound-8, getWidth() + 8, height + 14);
+                if (ult::useSwitch2Style)
+                    renderer->enableScissoring(getLeftBound() - 5, topBound-8, getWidth() + 24, height + 14);
+                else
+                    renderer->enableScissoring(getLeftBound(), topBound-8, getWidth() + 8, height + 14);
             
                 // Manually set focus flag on the target item for the first frame
                 if (m_hasSetInitialFocusHack && !m_hasRenderedInitialFocus && !m_items.empty() && m_focusedIndex < m_items.size()) {
@@ -6569,9 +7055,9 @@ namespace tsl {
                 }
             
                 // Draw scrollbar with interpolated color
-                renderer->drawCircle(scrollbarX + 2, scrollbarY, 2, true, a(currentColor));
-                renderer->drawCircle(scrollbarX + 2, scrollbarY + scrollbarHeight, 2, true, a(currentColor));
-                renderer->drawRect(scrollbarX, scrollbarY, 5, scrollbarHeight, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 2, true, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY + scrollbarHeight, 2, true, a(currentColor));
+                renderer->drawRect(scrollbarX + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 5, scrollbarHeight, a(currentColor));
             }
 
             
@@ -7577,8 +8063,12 @@ namespace tsl {
             virtual void draw(gfx::Renderer *renderer) override {
                 const bool useClickTextColor = m_touched && Element::getInputMode() == InputMode::Touch && ult::touchInBounds;
                 
-                if (useClickTextColor && !m_flags.m_isTouchHolding) [[unlikely]]
-                    renderer->drawRectAdaptive(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
+                if (useClickTextColor && !m_flags.m_isTouchHolding) [[unlikely]] {
+                    if (ult::useSwitch2Style)
+                        renderer->drawRoundedRect(this->getX() - 3, this->getY(), this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(clickColor));
+                    else
+                        renderer->drawRectAdaptive(this->getX() + 4, this->getY(), this->getWidth() - 8, this->getHeight(), aWithOpacity(clickColor));
+                }
                 
                 #if IS_LAUNCHER_DIRECTIVE
 
@@ -7586,7 +8076,23 @@ namespace tsl {
                     // Determine the active percentage to use
                     const float activePercentage = ult::displayPercentage.load(std::memory_order_acquire);
                     if (activePercentage > 0){
-                        renderer->drawRectAdaptive(this->getX() + 4, this->getY(), (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                        if (ult::useSwitch2Style) {
+                            // Switch2: the hold fill is the same rounded rect used for the
+                            // touch highlight, revealed left-to-right by a scissor that
+                            // expands in width with the percentage (full shape at 100%).
+                            const s32 rrX = this->getX() - 3;
+                            const s32 rrY = this->getY();
+                            const s32 rrW = this->getWidth() + 6;
+                            const s32 rrH = this->getHeight() + 1;
+                            const s32 fillW = static_cast<s32>(rrW * (activePercentage * 0.01f));
+                            if (fillW > 0) {
+                                renderer->enableScissoring(rrX, rrY, fillW, rrH);
+                                renderer->drawRoundedRect(rrX, rrY, rrW, rrH, 7, aWithOpacity(progressColor));
+                                renderer->disableScissoring();
+                            }
+                        } else {
+                            renderer->drawRectAdaptive(this->getX() + 4, this->getY(), (this->getWidth()- 12 +4)*(activePercentage * 0.01f), this->getHeight(), aWithOpacity(progressColor)); // Direct percentage conversion
+                        }
                     }
                 }
                 #endif
@@ -7603,9 +8109,9 @@ namespace tsl {
                 static float lastBottomBound = 0.0f;
                 
                 if (lastBottomBound != topBound) [[unlikely]] {
-                    renderer->drawRect(this->getX() + 4, topBound, this->getWidth() + 10, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4, topBound, this->getWidth() - 8, 1, a(separatorColor));
                 }
-                renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() + 10, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() - 8, 1, a(separatorColor));
                 lastBottomBound = bottomBound;
             
             #if IS_LAUNCHER_DIRECTIVE
@@ -8479,12 +8985,12 @@ namespace tsl {
                 // Keep a fixed header area for separator and text (matches old 33px height)
                 const int headerTop = this->getBottomBound() - 33;
                 const int textY = this->getBottomBound() - 16;
-                const int textX = m_hasSeparator ? (this->getX() + 16) : this->getX();
+                const int textX = (m_hasSeparator ? (this->getX() + 16) : this->getX())+5;
             
                 // Draw the separator rectangle on the left (fixed 22px height, 4px wide)
                 if (m_hasSeparator) {
                     renderer->drawRect(
-                        this->getX() + 2,
+                        this->getX() + 2+5,
                         headerTop,
                         4,
                         22,
@@ -8519,7 +9025,11 @@ namespace tsl {
                 // Draw optional value, right-aligned
                 if (!m_value.empty()) {
                     const int valueWidth = renderer->getTextDimensions(m_value, false, fontHeight).first;
-                    const int valueX = this->getX() + 2 + this->getWidth() - valueWidth;
+                    // Match the main text's left inset, measured from the list-item
+                    // separator pixels (drawRect getX()+4 .. getX()+getWidth()+14).
+                    // Left text starts at getX()+21 -> inset 17; so value end must sit 17
+                    // from the right edge: end=getX()+getWidth()-3 -> valueX const is -5.
+                    const int valueX = this->getX() + 2 + this->getWidth() - valueWidth -5;
             
                     renderer->drawStringWithColoredSections(
                         m_value,
@@ -8600,7 +9110,9 @@ namespace tsl {
             float cachedScrollOffset = 0.0f;
         
             void calculateWidths(gfx::Renderer *renderer) {
-                m_maxWidth = getWidth() - (m_hasSeparator ? 17 : 4);
+                // -7 (was -9) puts the scroll-clip right edge at getX()+getWidth()-3,
+                // the same right edge as the right-aligned value (separator case).
+                m_maxWidth = (getWidth() - (m_hasSeparator ? 17 : 4)) -7;
         
                 const u32 width = renderer->getTextDimensions(m_text, false, 16).first;
                 m_truncated = width > m_maxWidth;
@@ -9080,8 +9592,13 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    if (ult::useSwitch2Style && isEffectivelyUnlocked) {
+                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor), &w2);
+                    } else {
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor));
+                    }
+                    renderer->drawCircle(xPos + x + handlePos, yPos + y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
             
                 // Draw icon (always if provided), then label + value (V2 style)
@@ -9121,8 +9638,8 @@ namespace tsl {
                 }
             
                 if (m_lastBottomBound != this->getTopBound())
-                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
-                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
                 m_lastBottomBound = this->getBottomBound();
             }
 
@@ -9194,12 +9711,28 @@ namespace tsl {
                 
                 if (!m_drawFrameless) {
                     if (ult::useSelectionBG) {
-                        renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
+                        if (ult::useSwitch2Style)
+                            renderer->drawRoundedRect(this->getX() + x + 16, this->getY() + y, this->getWidth() - 9, this->getHeight() + 1, 7, aWithOpacity(selectionBGColor));
+                        else
+                            renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(selectionBGColor));
                     }
-                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
+                    if (ult::useSwitch2Style) {
+                        const bool isUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
+                        if (isUnlocked) {
+                            const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                        } else {
+                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor));
+                        }
+                    } else {
+                        renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
+                    }
                 } else {
                     if (ult::useSelectionBG) {
-                        renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
+                        if (ult::useSwitch2Style)
+                            renderer->drawRoundedRect(this->getX() + x + 16, this->getY() + y, this->getWidth() - 9, this->getHeight() + 1, 7, aWithOpacity(clickColor));
+                        else
+                            renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(clickColor));
                     }
                 }
             
@@ -9724,8 +10257,13 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(s_highlightColor));
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    if (ult::useSwitch2Style && isEffectivelyUnlocked) {
+                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor), &w2);
+                    } else {
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor));
+                    }
+                    renderer->drawCircle(xPos + x + handlePos, yPos + y, 12, true, a(isEffectivelyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
             
                 if (m_useV2Style) {
@@ -9759,8 +10297,8 @@ namespace tsl {
             
                 // Draw separators
                 if (m_lastBottomBound != this->getTopBound())
-                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
-                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
                 m_lastBottomBound = this->getBottomBound();
             }
         
@@ -10260,9 +10798,14 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 16, true, a(highlightColor));
+                    if (ult::useSwitch2Style && !shouldAppearLocked) {
+                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(highlightColor), &w2);
+                    } else {
+                        renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(highlightColor));
+                    }
                     const bool focusedVisuallyUnlocked = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked;
-                    renderer->drawCircle(xPos + x + handlePos, yPos +y, 12, true, a(focusedVisuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
+                    renderer->drawCircle(xPos + x + handlePos, yPos + y, 12, true, a(focusedVisuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
                  
                 std::string labelPart = this->m_label;
@@ -10282,8 +10825,8 @@ namespace tsl {
                     (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
                 if (m_lastBottomBound != this->getTopBound())
-                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
-                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() + 6 + 10+20 +4, 1, a(separatorColor));
+                    renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
+                renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
                 m_lastBottomBound = this->getBottomBound();
             }
             
@@ -10370,10 +10913,26 @@ namespace tsl {
                 }
             
                 
-                if (ult::useSelectionBG)
-                    renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(m_drawFrameless ? clickColor : selectionBGColor));
-                if (!m_drawFrameless)
-                    renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                if (ult::useSelectionBG) {
+                    if (ult::useSwitch2Style)
+                        renderer->drawRoundedRect(this->getX() + x + 16, this->getY() + y, this->getWidth() - 9, this->getHeight() + 1, 7, aWithOpacity(m_drawFrameless ? clickColor : selectionBGColor));
+                    else
+                        renderer->drawRectAdaptive(this->getX() + x +19, this->getY() + y, this->getWidth()-11-4, this->getHeight(), aWithOpacity(m_drawFrameless ? clickColor : selectionBGColor));
+                }
+                if (!m_drawFrameless) {
+                    if (ult::useSwitch2Style) {
+                        const bool shouldAppearLocked_v2 = m_unlockedTrackbar && m_keyRHeld;
+                        const bool isUnlocked_v2 = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked_v2;
+                        if (isUnlocked_v2) {
+                            const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor), &w2);
+                        } else {
+                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor));
+                        }
+                    } else {
+                        renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                    }
+                }
                 
                 ult::onTrackBar.store(true, std::memory_order_release);
             

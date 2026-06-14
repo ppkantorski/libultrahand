@@ -124,6 +124,7 @@ namespace ult {
     extern std::atomic<bool> noClickableItems;
 
     extern bool useDynamicLogo;
+    extern bool useSwitch2Style;
     extern bool useSelectionBG;
     extern bool useSelectionText;
     extern bool useSelectionValue;
@@ -353,6 +354,7 @@ namespace ult {
 
     extern std::string THEME_SETTINGS;
     extern std::string DYNAMIC_LOGO;
+    extern std::string SWITCH2_STYLE;
     extern std::string SELECTION_BACKGROUND;
     extern std::string SELECTION_TEXT;
     extern std::string SELECTION_VALUE;
