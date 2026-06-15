@@ -2229,7 +2229,10 @@ namespace tsl {
                     const u8 ha = base_a;
 
                     // Draw span [xs, xe) at row yr.
-                    auto hspan = [&](s32 yr, s32 xs, s32 xe) __attribute__((always_inline)) {
+                    // NOTE: not always_inline. This lambda has 8 call sites below; forcing
+                    // inline copied its whole span-loop body 8x and bloated .text. Leaving
+                    // the choice to the optimizer emits one body + 8 calls (much smaller at -Os).
+                    auto hspan = [&](s32 yr, s32 xs, s32 xe) {
                         if (yr < sc_y || yr >= sc_ye) return;
                         const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
                         const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
@@ -2270,25 +2273,26 @@ namespace tsl {
                         if (__builtin_expect(cx_b != lastCx && cy_b > 0, 0)) {
                             const s32 cxAA = cx_b + 1;
 
-                            this->setPixelBlendDst(leftCornerX  - cxAA, topY1,         aaColor1);
-                            this->setPixelBlendDst(leftCornerX  - cxAA, topY1 + 1,     aaColor2);
-                            this->setPixelBlendDst(leftX2Start,          topY2 - 1,     aaColor1);
-                            this->setPixelBlendDst(leftX2Start  + 1,     topY2 - 1,     aaColor2);
-
-                            this->setPixelBlendDst(rightCornerX + cxAA, topY1,         aaColor1);
-                            this->setPixelBlendDst(rightCornerX + cxAA, topY1 + 1,     aaColor2);
-                            this->setPixelBlendDst(rightX2End,           topY2 - 1,     aaColor1);
-                            this->setPixelBlendDst(rightX2End  - 1,      topY2 - 1,     aaColor2);
-
-                            this->setPixelBlendDst(leftCornerX  - cxAA, bottomY1,      aaColor1);
-                            this->setPixelBlendDst(leftCornerX  - cxAA, bottomY1 - 1,  aaColor2);
-                            this->setPixelBlendDst(leftX2Start,          bottomY2 + 1,  aaColor1);
-                            this->setPixelBlendDst(leftX2Start  + 1,     bottomY2 + 1,  aaColor2);
-
-                            this->setPixelBlendDst(rightCornerX + cxAA, bottomY1,      aaColor1);
-                            this->setPixelBlendDst(rightCornerX + cxAA, bottomY1 - 1,  aaColor2);
-                            this->setPixelBlendDst(rightX2End,           bottomY2 + 1,  aaColor1);
-                            this->setPixelBlendDst(rightX2End  - 1,      bottomY2 + 1,  aaColor2);
+                            // The four corners write an identical 4-pixel AA pattern (an edge
+                            // pair + a diagonal pair); only the left/right and top/bottom signs
+                            // differ. One body run 4x replaces 16 inline setPixel call sites.
+                            // qc bit0 = right, bit1 = bottom. Order (TL,TR,BL,BR) and the per-
+                            // corner pixel order are preserved exactly; every target is a
+                            // distinct pixel, so the result is identical.
+                            for (int qc = 0; qc < 4; ++qc) {
+                                const bool rgt = qc & 1;
+                                const bool bot = qc & 2;
+                                const s32 edgeX  = rgt ? rightCornerX + cxAA : leftCornerX - cxAA;
+                                const s32 edgeY  = bot ? bottomY1            : topY1;
+                                const s32 edgeY2 = bot ? bottomY1 - 1        : topY1 + 1;
+                                const s32 diagX  = rgt ? rightX2End          : leftX2Start;
+                                const s32 diagX2 = rgt ? rightX2End - 1      : leftX2Start + 1;
+                                const s32 diagY  = bot ? bottomY2 + 1        : topY2 - 1;
+                                this->setPixelBlendDst(edgeX,  edgeY,  aaColor1);
+                                this->setPixelBlendDst(edgeX,  edgeY2, aaColor2);
+                                this->setPixelBlendDst(diagX,  diagY,  aaColor1);
+                                this->setPixelBlendDst(diagX2, diagY,  aaColor2);
+                            }
                         }
 
                         lastCx = cx_b;
@@ -2341,6 +2345,11 @@ namespace tsl {
                     const s32 py_top = cyT - T;
                     const s32 py_bot = cyB + T;
 
+                    // Loop-invariant reject thresholds, computed once for the whole scan
+                    // (row reject, middle-span test, and both arc passes all reuse them).
+                    const float outerRej = r2 + r_f + 0.25f;
+                    const float innerRej = ri2 - ri_f + 0.25f;
+
                     for (s32 py = py_top; py <= py_bot; ++py) {
                         if (py < sc_y || py >= sc_ye) continue;
 
@@ -2349,7 +2358,7 @@ namespace tsl {
                                          : (py > ccyB) ? static_cast<float>(py - ccyB)
                                          : 0.0f;
                         const float dy_sq = dy_f * dy_f;
-                        if (dy_sq >= r2 + r_f + 0.25f) continue;
+                        if (dy_sq >= outerRej) continue;
 
                         const u32 rowBase = blockLinearYPart(static_cast<u32>(py), owv);
 
@@ -2359,7 +2368,7 @@ namespace tsl {
                         // In bar rows (dy > Ri): solid 1.0.  At inner/outer edges: AA fade.
                         {
                             const float d2_mid = dy_sq;   // dx=0
-                            if (d2_mid < r2 + r_f + 0.25f && d2_mid > ri2 - ri_f + 0.25f) {
+                            if (d2_mid < outerRej && d2_mid > innerRej) {
                                 const float d_mid   = dy_f;
                                 const float outer_m = std::min(1.0f, r_f + 0.5f - d_mid);
                                 const float inner_m = std::min(1.0f, d_mid - ri_f + 0.5f);
@@ -2391,8 +2400,6 @@ namespace tsl {
                         // order (and same pixels) as the original two separate loops, just
                         // without the duplicated code. Reject thresholds are hoisted here
                         // since they no longer need to appear in two places.
-                        const float arcOuterRej = r2 + r_f + 0.25f;
-                        const float arcInnerRej = ri2 - ri_f + 0.25f;
                         const s32 arcCentre[2] = { cxL, cxR };
                         const s32 arcDir[2]    = { -1,  1  };
                         for (int side = 0; side < 2; ++side) {
@@ -2401,8 +2408,8 @@ namespace tsl {
                             for (s32 dx = 0; dx <= r; ++dx) {
                                 const float dx_f = static_cast<float>(dx);
                                 const float d2 = dx_f * dx_f + dy_sq;
-                                if (d2 >= arcOuterRej) break;
-                                if (d2 <= arcInnerRej) continue;
+                                if (d2 >= outerRej) break;
+                                if (d2 <= innerRej) continue;
                                 const s32 px = cc + dir * dx;
                                 if (px < sc_x || px >= sc_xe) continue;
                                 const float d       = sqrtf(d2);
