@@ -1733,13 +1733,23 @@ namespace tsl {
             //   135deg = lower-left,  225deg = upper-left.
             // c[0]=UR, c[1]=LR, c[2]=LL, c[3]=UL  (clockwise from upper-right).
             // The whole wheel is rotated by rotFrac (full turn every 6s); two of the
-            // anchors are pulsed between colours every 2s by the caller before the
-            // colours are handed in here.  The gradient between adjacent anchors is a
-            // straight per-channel interpolation, recomputed continuously as the
-            // pulsing anchors move.
+            // anchors pulse between two colours every 2s.  The pulse lerp is deferred
+            // to render time (switch2WheelColorFromS) so it combines with the spatial
+            // lerp and Bayer dither in a single float pass before quantising -- this
+            // eliminates the RGBA4444 quantisation step that coarsened the pulse when
+            // the lerped anchor was pre-baked into c[].
             struct Switch2Wheel {
-                Color c[4];      // [0]=UR, [1]=LR, [2]=LL, [3]=UL
-                float rotFrac;   // rotation offset in s-space [0,1), advances each 6s
+                Color c[4];         // [0]=UR, [1]=LR, [2]=LL, [3]=UL
+                float rotFrac;      // rotation offset in s-space [0,1), advances each 6s
+
+                // Deferred-pulse fields: when hasPulse[i] is true the renderer ignores
+                // c[i] and instead lerps cA[i]..cB[i] by pulseT at render time.
+                bool  hasPulse[4];  // which anchors carry a deferred pulse
+                Color cA[4];        // pulse start colour (pulse=0)
+                Color cB[4];        // pulse end colour   (pulse=1)
+                float pulseT;       // shared pulse fraction in [0,1], full float precision
+
+                Switch2Wheel() : rotFrac(0.f), hasPulse{false,false,false,false}, pulseT(0.f) {}
             };
 
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color, const Switch2Wheel* wheel = nullptr) {
@@ -1946,14 +1956,43 @@ namespace tsl {
 
                 // Segment->anchor map {3,0,1,2} as arithmetic (no lookup table):
                 //   c0 = anchor[(i+3)&3],  c1 = anchor[i]  -- identical picks, no .rodata load.
-                const Color& c0 = w.c[(i + 3) & 3];
-                const Color& c1 = w.c[i];
+                const int idx0 = (i + 3) & 3;
+                const int idx1 = i;
+
+                // Resolve deferred pulse anchors in float -- if hasPulse is set the
+                // stored c[] value is ignored and we lerp cA..cB by pulseT here,
+                // keeping the result as float so it fuses with the spatial lerp (f)
+                // and Bayer dither (d) below before the single final quantise.
+                // Fixed anchors just cast their integer channel values straight to float.
+                float fr0, fg0, fb0;
+                if (w.hasPulse[idx0]) {
+                    fr0 = static_cast<float>(w.cA[idx0].r) + (static_cast<float>(w.cB[idx0].r) - static_cast<float>(w.cA[idx0].r)) * w.pulseT;
+                    fg0 = static_cast<float>(w.cA[idx0].g) + (static_cast<float>(w.cB[idx0].g) - static_cast<float>(w.cA[idx0].g)) * w.pulseT;
+                    fb0 = static_cast<float>(w.cA[idx0].b) + (static_cast<float>(w.cB[idx0].b) - static_cast<float>(w.cA[idx0].b)) * w.pulseT;
+                } else {
+                    fr0 = static_cast<float>(w.c[idx0].r);
+                    fg0 = static_cast<float>(w.c[idx0].g);
+                    fb0 = static_cast<float>(w.c[idx0].b);
+                }
+                float fr1, fg1, fb1;
+                if (w.hasPulse[idx1]) {
+                    fr1 = static_cast<float>(w.cA[idx1].r) + (static_cast<float>(w.cB[idx1].r) - static_cast<float>(w.cA[idx1].r)) * w.pulseT;
+                    fg1 = static_cast<float>(w.cA[idx1].g) + (static_cast<float>(w.cB[idx1].g) - static_cast<float>(w.cA[idx1].g)) * w.pulseT;
+                    fb1 = static_cast<float>(w.cA[idx1].b) + (static_cast<float>(w.cB[idx1].b) - static_cast<float>(w.cA[idx1].b)) * w.pulseT;
+                } else {
+                    fr1 = static_cast<float>(w.c[idx1].r);
+                    fg1 = static_cast<float>(w.c[idx1].g);
+                    fb1 = static_cast<float>(w.c[idx1].b);
+                }
 
                 // --- Ordered (Bayer 4x4) dither for smooth gradients -----------------
                 // RGBA4444 has only 16 levels per channel; without dithering, a 200px
                 // gradient produces a visible band every ~11px. The Bayer matrix shifts
                 // the quantization boundary by up to +/-0.5 counts per pixel, staggering
                 // color steps across a 4x4 block so the eye perceives ~3x more levels.
+                // The same dither now also smooths the temporal pulse transitions:
+                // adjacent pixels land on different dither offsets, so the pulse colour
+                // steps stagger in time across the 4x4 block just as they do in space.
                 static const float bayer[4][4] = {
                     { 0.f,  8.f,  2.f, 10.f},
                     {12.f,  4.f, 14.f,  6.f},
@@ -1963,10 +2002,7 @@ namespace tsl {
                 // Offset in [-0.5, +0.5] channel units, applied before rounding.
                 const float d = bayer[static_cast<u32>(py) & 3u][static_cast<u32>(px) & 3u] * (1.0f / 15.0f) - 0.5f;
 
-                // Signed float lerp with dither, clamped before quantising.
-                const float fr0 = static_cast<float>(c0.r), fr1 = static_cast<float>(c1.r);
-                const float fg0 = static_cast<float>(c0.g), fg1 = static_cast<float>(c1.g);
-                const float fb0 = static_cast<float>(c0.b), fb1 = static_cast<float>(c1.b);
+                // Single fused float lerp (spatial f) + dither (d) + quantise.
                 const u8 r = static_cast<u8>(std::max(0.0f, std::min(15.0f, fr0 + (fr1 - fr0) * f + d + 0.5f)));
                 const u8 g = static_cast<u8>(std::max(0.0f, std::min(15.0f, fg0 + (fg1 - fg0) * f + d + 0.5f)));
                 const u8 b = static_cast<u8>(std::max(0.0f, std::min(15.0f, fb0 + (fb1 - fb0) * f + d + 0.5f)));
@@ -2738,33 +2774,29 @@ namespace tsl {
                     // ── Corner rows ────────────────────────────────────────────────────
                     const float dy      = (yc < corner_y_top) ? static_cast<float>(corner_y_top - yc)
                                                                : static_cast<float>(yc - corner_y_bot);
-                    const float dy_sq   = dy * dy;
+                    const float dy_sq = dy * dy;
                     if (dy_sq > aa_thresh) continue;
-
-                    const float dy_half    = dy - 0.5f;
-                    const float dy_half_sq = dy_half * dy_half;
 
                     const s32 span_start = std::max(x,   clip_left);
                     const s32 span_end   = std::min(x_end, clip_right);
                     s32 xc = span_start;
 
                     // Shared arc-pixel blender: blend one pixel at xc given its dx from arc centre.
+                    // Solid interior (d²≤r²), then analytical linear ramp over the 1-px AA band
+                    // (r < d ≤ r+1).  sqrtf is only called for the handful of AA-zone pixels
+                    // per corner row, so cost is negligible.  The ramp fills gaps that the old
+                    // 4-sample box missed (e.g. where the circle edge lands exactly on a pixel
+                    // boundary and all box samples fall outside despite partial coverage).
                     auto arcPixel = [&](s32 xc_, float dx) __attribute__((always_inline)) {
-                        const float dx_sq = dx * dx;
-                        const float d2    = dx_sq + dy_sq;
+                        const float d2  = dx * dx + dy_sq;
                         const u32 off = blockLinearOffset(static_cast<u32>(xc_), rowBase);
                         if (d2 <= r2) {
                             blendPixelDirect(fb16, off, color, base_a);
                         } else if (d2 <= aa_thresh) {
-                            const float dx_half    = dx - 0.5f;
-                            const float dx_half_sq = dx_half * dx_half;
-                            const u32 cov = (u32)(dx_sq      + dy_sq      <= r2)
-                                          + (u32)(dx_half_sq + dy_sq      <= r2)
-                                          + (u32)(dx_sq      + dy_half_sq <= r2)
-                                          + (u32)(dx_half_sq + dy_half_sq <= r2);
-                            if (cov)
+                            const float alpha = r_f + 1.0f - sqrtf(d2);  // 1.0→0.0 over [r, r+1]
+                            if (alpha > 0.0f)
                                 blendPixelDirect(fb16, off, color,
-                                    static_cast<u8>((base_a * cov + 2) >> 2));
+                                    static_cast<u8>(base_a * alpha + 0.5f));
                         }
                     };
 
@@ -2787,8 +2819,7 @@ namespace tsl {
             // Draws only the border ring of a uniform pill (radius = h/2), thickness T px.
             // Single-pass: each pixel is tested once against both the outer arc (radius R)
             // and the inner arc (radius R-T).  The fill interior is never touched.
-            // AA uses the same 4-sample box approximation as drawUniformRoundedRect,
-            // applied to both edges so the ring fades cleanly in and out.
+            // Uses analytical sqrtf AA on both edges so the ring fades cleanly in and out.
             inline void drawUniformRoundedRectBorder(const s32 x, const s32 y,
                                                       const s32 w, const s32 h,
                                                       const s32 T, const Color& color) {
@@ -5138,10 +5169,22 @@ namespace tsl {
                 const float pulse = static_cast<float>((ult::cos(ult::_M_PI * std::fmod(t_s, 2.0)) + 1.0) * 0.5);
 
                 gfx::Renderer::Switch2Wheel w;
-                w.c[0] = cSky;                             // UR fixed
-                w.c[1] = cIce;                             // LR fixed
-                w.c[2] = lerpColor(cSky,  cPeri, pulse);   // LL: Peri <-> Sky
-                w.c[3] = lerpColor(cIce,  cPink, pulse);   // UL: Pink <-> Ice
+
+                // UR and LR: fixed anchors, no pulse.
+                w.c[0] = cSky;   w.hasPulse[0] = false;
+                w.c[1] = cIce;   w.hasPulse[1] = false;
+
+                // LL: Peri <-> Sky — deferred so the lerp fuses with the spatial
+                // lerp and Bayer dither in switch2WheelColorFromS, avoiding an early
+                // RGBA4444 quantise that coarsens the visible pulse transition.
+                w.c[2] = cPeri;  w.hasPulse[2] = true;
+                w.cA[2] = cSky;  w.cB[2] = cPeri;
+
+                // UL: Pink <-> Ice — same deferral.
+                w.c[3] = cIce;   w.hasPulse[3] = true;
+                w.cA[3] = cIce;  w.cB[3] = cPink;
+
+                w.pulseT  = pulse;  // raw float, not pre-quantised
                 w.rotFrac = static_cast<float>(std::fmod(t_s, 6.0) * (1.0 / 6.0));
                 return w;
             }
@@ -8106,7 +8149,7 @@ namespace tsl {
 
                 const s16 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1) + 1;
         
-                if (!m_maxWidth) [[unlikely]] {
+                if (!m_maxWidth || valueReservedWidthChanged()) [[unlikely]] {
                     calculateWidths(renderer);
                 }
         
@@ -8115,7 +8158,11 @@ namespace tsl {
                 const float bottomBound = this->getBottomBound();
                 static float lastBottomBound = 0.0f;
                 
-                if (lastBottomBound != topBound) [[unlikely]] {
+                // The focused item's cursor border (drawHighlight) is drawn just before
+                // draw(), and its top edge can paint over this item's top separator row.
+                // Redraw it here so the separator stays visible under the cursor with no
+                // gap, even when the dedup cache below would normally skip it.
+                if (lastBottomBound != topBound || this->m_focused) [[unlikely]] {
                     renderer->drawRect(this->getX() + 4, topBound, this->getWidth() - 8, 1, a(separatorColor));
                 }
                 renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() - 8, 1, a(separatorColor));
@@ -8438,12 +8485,26 @@ namespace tsl {
                 }
             }
         
+        protected:
+            // Pixels reserved at the right edge of the row for the value region. Virtual so
+            // a subclass (e.g. a Switch2-style toggle) can reserve a fixed widget width
+            // instead of the value-text width, keeping the label truncation correct.
+            virtual s32 valueReservedWidth(gfx::Renderer* renderer) {
+                return m_value.empty() ? 62
+                                       : (static_cast<s32>(renderer->getTextDimensions(m_value, false, 20).first) + 66);
+            }
+
+            // Hook for subclasses whose valueReservedWidth() depends on external/global
+            // state (e.g. ult::useSwitch2Style) that can change without setValue() being
+            // called. Returning true forces calculateWidths() to rerun this frame, so
+            // m_maxWidth (and thus the value/switch position) stays correct immediately
+            // after such a change instead of only after the item is reconstructed.
+            virtual bool valueReservedWidthChanged() {
+                return false;
+            }
+        private:
             void calculateWidths(gfx::Renderer* renderer) {
-                if (m_value.empty()) {
-                    m_maxWidth = getWidth() - 62;
-                } else {
-                    m_maxWidth = getWidth() - renderer->getTextDimensions(m_value, false, 20).first - 66;
-                }
+                m_maxWidth = getWidth() - valueReservedWidth(renderer);
             
                 const u16 width = renderer->getTextDimensions(m_text_clean, false, 23).first;
                 m_flags.m_truncated = width > m_maxWidth + 20;
@@ -8556,7 +8617,8 @@ namespace tsl {
                 }
             }
                     
-            void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+        protected:
+            virtual void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 const s32 xPosition = getX() + m_maxWidth + 47;
                 const s32 yPosition = getY() + 45 - yOffset-1;
                 static constexpr s32 fontSize = 20;
@@ -8581,6 +8643,7 @@ namespace tsl {
             #endif
             }
         
+        private:
         #if IS_LAUNCHER_DIRECTIVE
             Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter = false) const {
         #else
@@ -8803,7 +8866,13 @@ namespace tsl {
              */
             ToggleListItem(const std::string& text, bool initialState, const std::string& onValue = ult::ON, const std::string& offValue = ult::OFF, bool isMini = false, bool delayedHandle=false)
                 : ListItem(text, "", isMini), m_state(initialState), m_onValue(onValue), m_offValue(offValue), m_delayedHandle(delayedHandle) {
-                this->setState(this->m_state);
+                // Set the ON/OFF display text without touching the animation state.
+                // m_switchInit stays false so the FIRST setState call (from the
+                // caller after construction) hits triggerSwitchAnim with
+                // m_switchInit=false and snaps instead of animating. If no external
+                // setState follows (createToggleListItem pattern), drawSwitch's own
+                // lazy snap reads m_state directly on first render.
+                this->setValue(initialState ? this->m_onValue : this->m_offValue, !initialState);
             }
             
             virtual ~ToggleListItem() {}
@@ -8871,12 +8940,8 @@ namespace tsl {
              * @param state State
              */
             virtual void setState(bool state) {
-                #if IS_LAUNCHER_DIRECTIVE
-                if (ult::runningInterpreter.load(std::memory_order_acquire))
-                    return;
-                #endif
-
                 this->m_state = state;
+                this->triggerSwitchAnim(state);
                 this->setValue(state ? this->m_onValue : this->m_offValue, !state);
             }
             
@@ -8898,6 +8963,108 @@ namespace tsl {
             
 
         protected:
+            // ---- Switch2-style animated toggle widget --------------------------------
+            // Reserve a fixed 70px slot for the switch so the label truncates correctly
+            // and the widget's right edge lands exactly where the ON/OFF text would end.
+            virtual s32 valueReservedWidth(gfx::Renderer* renderer) override {
+                m_widthsForSwitch2Style = ult::useSwitch2Style;
+                if (ult::useSwitch2Style) return 48 + 66;
+                return ListItem::valueReservedWidth(renderer);
+            }
+
+            // m_maxWidth (and the cached widths derived from it) were computed under
+            // whichever style ult::useSwitch2Style had at that time. If the global
+            // style toggles afterward, the reserved width for ON/OFF text vs. the
+            // sliding switch differs, so the value/switch would be drawn at a stale
+            // X position until the item is reconstructed. Detect the mismatch here so
+            // draw() recalculates this frame instead.
+            virtual bool valueReservedWidthChanged() override {
+                return m_widthsForSwitch2Style != ult::useSwitch2Style;
+            }
+
+            // In Switch2 style draw the sliding switch instead of the ON/OFF text.
+            virtual void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) override {
+                if (ult::useSwitch2Style)
+                    drawSwitch(renderer, yOffset);
+                else
+                    ListItem::drawValue(renderer, yOffset, useClickTextColor);
+            }
+
+            // Current eased slide parameter p in [0,1] (0 = off/left, 1 = on/right),
+            // derived from time elapsed since the last state change. Recomputed every
+            // frame so an interrupted slide resumes smoothly from wherever it was.
+            float currentSwitchP() const {
+                if (!m_switchInit) return m_switchTargetP;
+                const u64 elapsed = ult::nowNs() - m_switchAnimStartNs;
+                if (elapsed >= kSwitchSlideNs) return m_switchTargetP;
+                const float prog = static_cast<float>(elapsed) / static_cast<float>(kSwitchSlideNs);
+                const float e = prog * prog * (3.0f - 2.0f * prog);   // smoothstep (ease in-out)
+                return m_switchAnimFromP + (m_switchTargetP - m_switchAnimFromP) * e;
+            }
+
+            // Begin a slide toward the new state. The first call (construction) snaps with
+            // no animation; later calls slide from the current position, so a rapid re-
+            // toggle reverses smoothly mid-travel.
+            void triggerSwitchAnim(bool newState) {
+                const float target = newState ? 1.0f : 0.0f;
+                if (!m_switchInit) {
+                    m_switchInit = true;
+                    m_switchTargetP = m_switchAnimFromP = target;
+                    m_switchAnimStartNs = 0;
+                    return;
+                }
+                if (target == m_switchTargetP) return;   // already heading there
+                m_switchAnimFromP   = currentSwitchP();   // smooth interrupt from current pos
+                m_switchTargetP     = target;
+                m_switchAnimStartNs = ult::nowNs();
+            }
+
+            // 48x26 pill (0x06EF on / 0x555F off) with a 0xFFFF circle that slides between
+            // the two corner-centres; track colour and circle position share one eased p.
+            void drawSwitch(gfx::Renderer* renderer, s32 yOffset) {
+                (void)yOffset;
+                static constexpr s32 kTrackW  = 48;
+                static constexpr s32 kTrackH  = 26;
+                static constexpr s32 kRadius  = kTrackH / 2;     // 13 (uniform pill radius)
+                static constexpr s32 kGap     = 3;               // circle inset from track edge
+                static constexpr s32 kCircleR = kRadius - kGap;  // 10
+
+                if (!m_switchInit) {  // lazy snap if setState was skipped (e.g. interpreter active)
+                    m_switchInit = true;
+                    m_switchTargetP = m_switchAnimFromP = (m_state ? 1.0f : 0.0f);
+                    m_switchAnimStartNs = 0;
+                }
+
+                // Right edge aligns with where the ON/OFF text right edge would land
+                // (m_maxWidth already reserved kTrackW); vertically centred in the row.
+                const s32 trackX = this->getX() + m_maxWidth + 47;
+                const s32 trackY = this->getY() + (this->getHeight() - kTrackH + 1) / 2;
+
+                const float p = currentSwitchP();
+
+                // Colours given as 0xRGBA; decode nibbles (alpha forced opaque, faded by a()).
+                const Color onColor    (0x0, 0x6, 0xE, 0xF);   // 0x06EF
+                const Color offColor   (0x5, 0x5, 0x5, 0xF);   // 0x555F
+                const Color circleColor(0xF, 0xF, 0xF, 0xF);   // 0xFFFF
+                const Color trackColor = lerpColor(onColor, offColor, p);  // p=1 on, p=0 off
+
+                renderer->drawUniformRoundedRect(trackX, trackY, kTrackW, kTrackH, a(trackColor));
+
+                const s32 circleCX = trackX + kRadius
+                    + static_cast<s32>(p * static_cast<float>(kTrackW - 2 * kRadius) + 0.5f);
+                const s32 circleCY = trackY + kRadius;
+                renderer->drawCircle(circleCX, circleCY, static_cast<u16>(kCircleR), true, a(circleColor));
+            }
+
+            static constexpr u64 kSwitchSlideNs = 150000000ULL;  // 150 ms quick slide
+            bool  m_switchInit        = false;
+            float m_switchAnimFromP   = 0.0f;
+            float m_switchTargetP     = 0.0f;
+            u64   m_switchAnimStartNs = 0;
+
+            // Style under which m_maxWidth was last computed; see valueReservedWidthChanged().
+            bool m_widthsForSwitch2Style = ult::useSwitch2Style;
+
             bool m_state = true;
 
             std::string m_onValue, m_offValue;
