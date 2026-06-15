@@ -1732,8 +1732,11 @@ namespace tsl {
             //   315deg = upper-right,  45deg = lower-right,
             //   135deg = lower-left,  225deg = upper-left.
             // c[0]=UR, c[1]=LR, c[2]=LL, c[3]=UL  (clockwise from upper-right).
-            // The whole wheel is rotated by rotFrac (full turn every 6s); two of the
-            // anchors pulse between two colours every 2s.  The pulse lerp is deferred
+            // The whole wheel is rotated by rotFrac (full turn every 6s); the two
+            // opposite "hero" anchors (Cyan, Pink) pulse between a bright and a deep
+            // colour, locked to the rotation at 4 pulses per turn (1.5s each).  The
+            // other two opposite anchors (Periwinkle, Electric Blue) are fixed peak
+            // accents that the heroes gradient into.  The pulse lerp is deferred
             // to render time (switch2WheelColorFromS) so it combines with the spatial
             // lerp and Bayer dither in a single float pass before quantising -- this
             // eliminates the RGBA4444 quantisation step that coarsened the pulse when
@@ -1743,13 +1746,15 @@ namespace tsl {
                 float rotFrac;      // rotation offset in s-space [0,1), advances each 6s
 
                 // Deferred-pulse fields: when hasPulse[i] is true the renderer ignores
-                // c[i] and instead lerps cA[i]..cB[i] by pulseT at render time.
+                // c[i] and instead lerps cA[i]..cB[i] by pulseT[i] at render time.
                 bool  hasPulse[4];  // which anchors carry a deferred pulse
-                Color cA[4];        // pulse start colour (pulse=0)
-                Color cB[4];        // pulse end colour   (pulse=1)
-                float pulseT;       // shared pulse fraction in [0,1], full float precision
+                Color cA[4];        // pulse start colour (pulseT=0)
+                Color cB[4];        // pulse end colour   (pulseT=1)
+                float pulseT[4];    // per-anchor pulse fraction in [0,1], full float precision
+                                    // (per-anchor so the two opposite hero anchors can carry
+                                    //  independent pulse phases -- see makeSwitch2Wheel)
 
-                Switch2Wheel() : rotFrac(0.f), hasPulse{false,false,false,false}, pulseT(0.f) {}
+                Switch2Wheel() : rotFrac(0.f), hasPulse{false,false,false,false}, pulseT{0.f,0.f,0.f,0.f} {}
             };
 
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color, const Switch2Wheel* wheel = nullptr) {
@@ -1966,9 +1971,9 @@ namespace tsl {
                 // Fixed anchors just cast their integer channel values straight to float.
                 float fr0, fg0, fb0;
                 if (w.hasPulse[idx0]) {
-                    fr0 = static_cast<float>(w.cA[idx0].r) + (static_cast<float>(w.cB[idx0].r) - static_cast<float>(w.cA[idx0].r)) * w.pulseT;
-                    fg0 = static_cast<float>(w.cA[idx0].g) + (static_cast<float>(w.cB[idx0].g) - static_cast<float>(w.cA[idx0].g)) * w.pulseT;
-                    fb0 = static_cast<float>(w.cA[idx0].b) + (static_cast<float>(w.cB[idx0].b) - static_cast<float>(w.cA[idx0].b)) * w.pulseT;
+                    fr0 = static_cast<float>(w.cA[idx0].r) + (static_cast<float>(w.cB[idx0].r) - static_cast<float>(w.cA[idx0].r)) * w.pulseT[idx0];
+                    fg0 = static_cast<float>(w.cA[idx0].g) + (static_cast<float>(w.cB[idx0].g) - static_cast<float>(w.cA[idx0].g)) * w.pulseT[idx0];
+                    fb0 = static_cast<float>(w.cA[idx0].b) + (static_cast<float>(w.cB[idx0].b) - static_cast<float>(w.cA[idx0].b)) * w.pulseT[idx0];
                 } else {
                     fr0 = static_cast<float>(w.c[idx0].r);
                     fg0 = static_cast<float>(w.c[idx0].g);
@@ -1976,9 +1981,9 @@ namespace tsl {
                 }
                 float fr1, fg1, fb1;
                 if (w.hasPulse[idx1]) {
-                    fr1 = static_cast<float>(w.cA[idx1].r) + (static_cast<float>(w.cB[idx1].r) - static_cast<float>(w.cA[idx1].r)) * w.pulseT;
-                    fg1 = static_cast<float>(w.cA[idx1].g) + (static_cast<float>(w.cB[idx1].g) - static_cast<float>(w.cA[idx1].g)) * w.pulseT;
-                    fb1 = static_cast<float>(w.cA[idx1].b) + (static_cast<float>(w.cB[idx1].b) - static_cast<float>(w.cA[idx1].b)) * w.pulseT;
+                    fr1 = static_cast<float>(w.cA[idx1].r) + (static_cast<float>(w.cB[idx1].r) - static_cast<float>(w.cA[idx1].r)) * w.pulseT[idx1];
+                    fg1 = static_cast<float>(w.cA[idx1].g) + (static_cast<float>(w.cB[idx1].g) - static_cast<float>(w.cA[idx1].g)) * w.pulseT[idx1];
+                    fb1 = static_cast<float>(w.cA[idx1].b) + (static_cast<float>(w.cB[idx1].b) - static_cast<float>(w.cA[idx1].b)) * w.pulseT[idx1];
                 } else {
                     fr1 = static_cast<float>(w.c[idx1].r);
                     fg1 = static_cast<float>(w.c[idx1].g);
@@ -2407,7 +2412,7 @@ namespace tsl {
                             if (d2_mid < outerRej && d2_mid > innerRej) {
                                 const float d_mid   = dy_f;
                                 const float outer_m = std::min(1.0f, r_f + 0.5f - d_mid);
-                                const float inner_m = std::min(1.0f, d_mid - ri_f + 0.5f);
+                                const float inner_m = (T == 1) ? 1.0f : std::min(1.0f, d_mid - ri_f + 0.5f);
                                 const float c_mid   = outer_m * inner_m;
                                 if (c_mid > 0.0f) {
                                     const u8 alpha_mid = static_cast<u8>(base_a * c_mid + 0.5f);
@@ -2450,7 +2455,7 @@ namespace tsl {
                                 if (px < sc_x || px >= sc_xe) continue;
                                 const float d       = sqrtf(d2);
                                 const float outer_t = std::min(1.0f, r_f + 0.5f - d);
-                                const float inner_t = std::min(1.0f, d - ri_f + 0.5f);
+                                const float inner_t = (T == 1) ? 1.0f : std::min(1.0f, d - ri_f + 0.5f);
                                 const float cov     = outer_t * inner_t;
                                 if (cov <= 0.0f) continue;
                                 const u8 alpha = static_cast<u8>(base_a * cov + 0.5f);
@@ -3425,6 +3430,30 @@ namespace tsl {
             
             const stbtt_fontinfo& getStandardFont() const {
                 return m_stdFont;
+            }
+
+            // Returns the baseline Y position that vertically centres a glyph's
+            // cap-height box (as exemplified by 'A') within a row spanning
+            // [rowTop, rowTop + rowHeight). This replaces hardcoded baseline
+            // offsets (e.g. "+45") that were tuned for one specific font/size and
+            // drift when the font, font size, or row height changes.
+            //
+            // 'A' has no descender, so its glyph bounding box [y0, y1) (relative
+            // to the baseline, with y0 negative) represents the visual cap-height
+            // block that should be centred in the row. Centering that box and
+            // solving for the baseline gives:
+            //
+            //   baseline = rowTop + rowHeight/2 - (y0 + y1) / 2
+            //
+            inline s32 getVerticalCenterBaseline(s32 rowTop, s32 rowHeight, u32 fontSize) {
+                const auto glyph = FontManager::getOrCreateGlyph('A', false, fontSize);
+                if (!glyph) {
+                    // Fallback to the old approximate constant if metrics are unavailable.
+                    return rowTop + rowHeight / 2 + static_cast<s32>(fontSize) / 2 - 2;
+                }
+                const s32 y0 = glyph->bounds[1];
+                const s32 y1 = glyph->bounds[3];
+                return rowTop + rowHeight / 2 - (y0 + y1) / 2;
             }
                     
             
@@ -4997,6 +5026,10 @@ namespace tsl {
              */
             void inline frame(gfx::Renderer *renderer) {
                 
+                // Separators are drawn first, at the lowest z priority, so the focused
+                // item's cursor background/highlight (and everything else) paints over them.
+                this->drawSeparators(renderer);
+                
                 if (this->m_focused) {
                     renderer->enableScissoring(0, ult::activeHeaderHeight, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight-73-ult::activeHeaderHeight);
                     this->drawFocusBackground(renderer);
@@ -5147,48 +5180,88 @@ namespace tsl {
             }
 
             // Build the rotating/pulsing Switch2 colour wheel for this element.
-            // Rotation: full turn every 6s.  Pulse: 2s cosine (1s each way).
-            // Anchors c[0]=UR(315deg), c[1]=LR(45deg), c[2]=LL(135deg), c[3]=UL(225deg).
-            // UL (pink) and LL (periwinkle) pulse toward Ice/Sky; UR (sky) and LR (ice)
-            // stay fixed.  Colours hard-coded for now as 0xRGBA hex (decoded into RGBA
-            // components since Color packs r in the low nibble):
-            //   Pink 0xFCCF, SkyBlue 0x07EF, Periwinkle 0x87FF, IceBlue 0xDFFF.
+            // Rotation: one full clockwise turn every 6s.
+            //
+            // Four anchors spaced 90deg apart, in cyclic (clockwise) order:
+            //   Pink -- Electric Blue -- Cyan -- Periwinkle.
+            // The two pulsing "hero" anchors sit opposite one another:
+            //   Cyan (anchor 1) <-> Pink (anchor 3).
+            // The two fixed "peak accent" anchors also sit opposite one another,
+            // each tucked between Pink and Cyan:
+            //   Electric Blue (anchor 0) <-> Periwinkle (anchor 2).
+            //
+            // Pulse is LOCKED to rotation at 4 pulses/turn (1.5s full cycle, 0.75s
+            // each way), not free-running.  Cyan reaches its bright Ice value as its
+            // anchor sweeps through a 90deg cardinal and its deep Aqua value on the
+            // 45deg diagonals.  Pink pulses on the same cadence, lagging cyan very
+            // slightly (see kPinkLag) so the two peaks read as near-simultaneous.
+            //
+            // Colours are native RGBA4444 hex.  Color packs r in the low nibble, so
+            // these literals pass straight through Color(u16) with no decode step:
+            //   Cyan          0xFFFE bright Ice  <-> 0xFFEA deep Aqua
+            //   Pink          0xFDDF bright Soft <-> 0xFBBF deep Rose
+            //   Periwinkle    0xFF78 (fixed peak)
+            //   Electric Blue 0xFF60 (fixed peak)
             gfx::Renderer::Switch2Wheel makeSwitch2Wheel(s32 ox, s32 oy) {
-                auto fromHex = [](u16 raw) -> Color {
-                    return Color(static_cast<u8>((raw >> 12) & 0xF),
-                                 static_cast<u8>((raw >> 8)  & 0xF),
-                                 static_cast<u8>((raw >> 4)  & 0xF),
-                                 0xF);
-                };
-                const Color cPink = fromHex(0xFAAF);
-                const Color cSky  = fromHex(0x08FF);
-                const Color cPeri = fromHex(0x78FF);
-                const Color cIce  = fromHex(0xDFFF);
+                // Hero pulse colours (bright <-> deep).
+                const Color cCyanBright = Color(static_cast<u16>(0xFFFE)); // Ice Cyan
+                const Color cCyanDeep   = Color(static_cast<u16>(0xFFEA)); // Aqua Cyan
+                const Color cPinkBright = Color(static_cast<u16>(0xFDDF)); // Soft Pink
+                const Color cPinkDeep   = Color(static_cast<u16>(0xFBBF)); // Rose Pink
+                // Fixed peak accents.
+                const Color cPeri       = Color(static_cast<u16>(0xFF78)); // Periwinkle
+                const Color cEBlue      = Color(static_cast<u16>(0xFF60)); // Electric Blue
 
-                const double t_s  = ult::nowNs() * 0.000000001;
-                const float pulse = static_cast<float>((ult::cos(ult::_M_PI * std::fmod(t_s, 2.0)) + 1.0) * 0.5);
+                const double t_s     = ult::nowNs() * 0.000000001;
+                const float  rotFrac = static_cast<float>(std::fmod(t_s, 6.0) * (1.0 / 6.0));
+
+                // Pulse locked to rotation: 4 pulses per 6s turn.  Driving the cosine
+                // off 4*rotFrac yields lerp=0 (bright) at the 90deg cardinals and
+                // lerp=1 (deep) at the 45deg diagonals for cyan.
+                const float cyanLerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac)) + 1.0) * 0.5);
+
+                // Pink shares cyan's cadence but lags by kPinkLag of one pulse cycle.
+                // Measured from the reference recording at ~0.2 cycle (~0.3s).  Tunable:
+                //   0.0 = in-phase with cyan (bright at the cardinals)
+                //   0.5 = antiphase         (bright at the diagonals)
+                const double kPinkLag = 0.2;
+                const float pinkLerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac - kPinkLag)) + 1.0) * 0.5);
 
                 gfx::Renderer::Switch2Wheel w;
 
-                // UR and LR: fixed anchors, no pulse.
-                w.c[0] = cSky;   w.hasPulse[0] = false;
-                w.c[1] = cIce;   w.hasPulse[1] = false;
+                // anchor[0] Electric Blue, anchor[2] Periwinkle: fixed peak accents.
+                w.c[0] = cEBlue;  w.hasPulse[0] = false;
+                w.c[2] = cPeri;   w.hasPulse[2] = false;
 
-                // LL: Peri <-> Sky — deferred so the lerp fuses with the spatial
-                // lerp and Bayer dither in switch2WheelColorFromS, avoiding an early
-                // RGBA4444 quantise that coarsens the visible pulse transition.
-                w.c[2] = cPeri;  w.hasPulse[2] = true;
-                w.cA[2] = cSky;  w.cB[2] = cPeri;
+                // anchor[1] Cyan, anchor[3] Pink: pulsing heroes, deferred so the
+                // bright<->deep lerp fuses with the spatial lerp and Bayer dither in
+                // switch2WheelColorFromS, avoiding an early RGBA4444 quantise that
+                // would coarsen the visible transition.  cA = bright (pulseT 0),
+                // cB = deep (pulseT 1).
+                w.c[1] = cCyanBright;  w.hasPulse[1] = true;
+                w.cA[1] = cCyanBright; w.cB[1] = cCyanDeep;
+                w.c[3] = cPinkBright;  w.hasPulse[3] = true;
+                w.cA[3] = cPinkBright; w.cB[3] = cPinkDeep;
 
-                // UL: Pink <-> Ice — same deferral.
-                w.c[3] = cIce;   w.hasPulse[3] = true;
-                w.cA[3] = cIce;  w.cB[3] = cPink;
-
-                w.pulseT  = pulse;  // raw float, not pre-quantised
-                w.rotFrac = static_cast<float>(std::fmod(t_s, 6.0) * (1.0 / 6.0));
+                w.pulseT[0] = 0.f;        // fixed anchor, unused
+                w.pulseT[1] = cyanLerp;   // raw float, not pre-quantised
+                w.pulseT[2] = 0.f;        // fixed anchor, unused
+                w.pulseT[3] = pinkLerp;
+                w.rotFrac = rotFrac;
                 return w;
             }
 
+            /**
+             * @brief Draws this element's horizontal list separators (the thin top/bottom
+             *        divider rows between list items / trackbars).
+             * @note Called by \ref Element::frame() BEFORE the focus background and highlight
+             *       so the cursor background paints on top of the separator (separators sit at
+             *       the lowest z priority).  Default is a no-op; list/trackbar items override it.
+             *
+             * @param renderer Renderer
+             */
+            virtual void drawSeparators(gfx::Renderer *renderer) {}
+            
             /**
              * @brief Draws the back background when a element is highlighted
              * @note Override this if you have a element that e.g requires a non-rectangular focus
@@ -5516,8 +5589,11 @@ namespace tsl {
 
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
-                if (!hideTableBackground)
+                if (!hideTableBackground) {
                     renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2 + 1, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
+                    const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+1, this->getY()-4, this->getWidth() +2 + 3, this->getHeight() + 20 - endGap+2-3, 1, 12, a(widgetBorderColor), &w2);
+                }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
                 
@@ -8148,26 +8224,12 @@ namespace tsl {
                 #endif
 
                 const s16 yOffset = ((tsl::style::ListItemDefaultHeight - m_listItemHeight) >> 1) + 1;
+                const s32 textBaselineY = renderer->getVerticalCenterBaseline(this->getY(), m_listItemHeight, 23);
         
                 if (!m_maxWidth || valueReservedWidthChanged()) [[unlikely]] {
                     calculateWidths(renderer);
                 }
         
-                // Optimized separator drawing
-                const float topBound = this->getTopBound();
-                const float bottomBound = this->getBottomBound();
-                static float lastBottomBound = 0.0f;
-                
-                // The focused item's cursor border (drawHighlight) is drawn just before
-                // draw(), and its top edge can paint over this item's top separator row.
-                // Redraw it here so the separator stays visible under the cursor with no
-                // gap, even when the dedup cache below would normally skip it.
-                if (lastBottomBound != topBound || this->m_focused) [[unlikely]] {
-                    renderer->drawRect(this->getX() + 4, topBound, this->getWidth() - 8, 1, a(separatorColor));
-                }
-                renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() - 8, 1, a(separatorColor));
-                lastBottomBound = bottomBound;
-            
             #if IS_LAUNCHER_DIRECTIVE
                 static const std::vector<std::string> specialChars = {ult::STAR_SYMBOL};
             #else
@@ -8187,19 +8249,37 @@ namespace tsl {
                                 ? clickTextColor
                                 : defaultTextColor));
                 #if IS_LAUNCHER_DIRECTIVE
-                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, textBaselineY, 23,
                         textColor, m_focused ? starColor : selectionStarColor);
                 #else
-                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, this->getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, textBaselineY, 23,
                         textColor, textSeparatorColor);
                 #endif
                 } else {
-                    drawTruncatedText(renderer, yOffset, useClickTextColor, specialChars);
+                    drawTruncatedText(renderer, textBaselineY, useClickTextColor, specialChars);
                 }
         
                 if (!m_value.empty()) [[likely]] {
                     drawValue(renderer, yOffset, useClickTextColor);
                 }
+            }
+        
+            // Horizontal list separators, drawn at the lowest z priority (before the
+            // cursor background/highlight in Element::frame), so the focused item's
+            // cursor background paints over them.
+            virtual void drawSeparators(gfx::Renderer *renderer) override {
+                const float topBound = this->getTopBound();
+                const float bottomBound = this->getBottomBound();
+                static float lastBottomBound = 0.0f;
+                
+                // Dedup: an item's top separator coincides with the previous item's
+                // bottom separator, so skip it unless this row doesn't follow the last
+                // one (or this item is focused, which always redraws its own top row).
+                if (lastBottomBound != topBound || this->m_focused) [[unlikely]] {
+                    renderer->drawRect(this->getX() + 4, topBound, this->getWidth() - 8, 1, a(separatorColor));
+                }
+                renderer->drawRect(this->getX() + 4, bottomBound, this->getWidth() - 8, 1, a(separatorColor));
+                lastBottomBound = bottomBound;
             }
         
             virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
@@ -8523,24 +8603,24 @@ namespace tsl {
                 }
             }
         
-            void drawTruncatedText(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
+            void drawTruncatedText(gfx::Renderer* renderer, s32 baselineY, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
                 if (m_focused) {
                     renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
                 #if IS_LAUNCHER_DIRECTIVE
-                    renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
                         !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
                 #else
-                    renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
                         !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
                 #endif
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
                 #if IS_LAUNCHER_DIRECTIVE
-                    renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
                         m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), starColor);
                 #else
-                    renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, getY() + 45 - yOffset, 23,
+                    renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
                         m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), textSeparatorColor);
                 #endif
                 }
@@ -8619,9 +8699,10 @@ namespace tsl {
                     
         protected:
             virtual void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
+                (void)yOffset;
                 const s32 xPosition = getX() + m_maxWidth + 47;
-                const s32 yPosition = getY() + 45 - yOffset-1;
                 static constexpr s32 fontSize = 20;
+                const s32 yPosition = renderer->getVerticalCenterBaseline(getY(), m_listItemHeight, fontSize);
             
             #if IS_LAUNCHER_DIRECTIVE
                 static bool lastRunningInterpreter = false;
@@ -9038,7 +9119,7 @@ namespace tsl {
                 // Right edge aligns with where the ON/OFF text right edge would land
                 // (m_maxWidth already reserved kTrackW); vertically centred in the row.
                 const s32 trackX = this->getX() + m_maxWidth + 47;
-                const s32 trackY = this->getY() + (this->getHeight() - kTrackH + 1) / 2;
+                const s32 trackY = this->getY() + (this->getHeight() - kTrackH + 2) / 2;
 
                 const float p = currentSwitchP();
 
@@ -9163,12 +9244,22 @@ namespace tsl {
             
                 // Draw the separator rectangle on the left (fixed 22px height, 4px wide)
                 if (m_hasSeparator) {
-                    renderer->drawRect(
-                        this->getX() + 2+5,
-                        headerTop,
-                        4,
-                        22,
-                        aWithOpacity(headerSeparatorColor));
+                    if (!ult::useSwitch2Style) {
+                        renderer->drawRect(
+                            this->getX() + 2+5,
+                            headerTop,
+                            4,
+                            22,
+                            aWithOpacity(headerSeparatorColor));
+                    } else {
+                        renderer->drawRoundedRect(
+                            this->getX() + 2+5,
+                            headerTop,
+                            4,
+                            22,
+                            1,
+                            aWithOpacity(headerSeparatorColor));
+                    }
                 }
             
                 // Draw header text
@@ -9811,6 +9902,10 @@ namespace tsl {
                         renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 }
             
+            }
+
+            // Horizontal list separators at lowest z priority (see Element::frame).
+            virtual void drawSeparators(gfx::Renderer *renderer) override {
                 if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
@@ -10469,7 +10564,10 @@ namespace tsl {
                         renderer->drawString(this->m_icon, false, this->getX()+42, this->getY() + 50+2+2, 30, ((!this->m_focused || !ult::useSelectionText) ? defaultTextColor : selectedTextColor));
                 }
             
-                // Draw separators
+            }
+
+            // Horizontal list separators at lowest z priority (see Element::frame).
+            virtual void drawSeparators(gfx::Renderer *renderer) override {
                 if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
@@ -10998,6 +11096,10 @@ namespace tsl {
                 renderer->drawString(m_valuePart, false, this->getWidth() -17 - valueWidth, this->getY() + 14 + 16, 16, 
                     (this->m_focused && ult::useSelectionValue) ? selectedValueTextColor : onTextColor);
             
+            }
+            
+            // Horizontal list separators at lowest z priority (see Element::frame).
+            virtual void drawSeparators(gfx::Renderer *renderer) override {
                 if (m_lastBottomBound != this->getTopBound())
                     renderer->drawRect(this->getX() + 4+20-1, this->getTopBound(), this->getWidth() - 23, 1, a(separatorColor));
                 renderer->drawRect(this->getX() + 4+20-1, this->getBottomBound(), this->getWidth() - 23, 1, a(separatorColor));
