@@ -456,6 +456,358 @@ namespace tsl {
         };
     }
 
+    // -- Switch 2 rotating multicolor cursor ---------------------------------
+    // The Switch 2 cursor projects a rotating 4-colour wheel radially outward
+    // from the cursor centre.  Each pixel's colour depends only on its ANGLE
+    // around the centre (not its diagonal position), so colours travel fast
+    // along the long horizontal segments, slowly on the verticals, and pass
+    // through 45deg at the corners - matching the hardware "flashlight" look.
+    //
+    // The four wheel anchor colours sit on the diagonals (screen coords, +y down):
+    //   315deg = upper-right,  45deg = lower-right,
+    //   135deg = lower-left,  225deg = upper-left.
+    // c[0]=UR, c[1]=LR, c[2]=LL, c[3]=UL  (clockwise from upper-right).
+    // The whole wheel is rotated by rotFrac (full turn every 6s); the two
+    // opposite "hero" anchors (Cyan, Pink) pulse between a bright and a deep
+    // colour, locked to the rotation at 4 pulses per turn (1.5s each).  The
+    // other two opposite anchors (Periwinkle, Electric Blue) are fixed peak
+    // accents that the heroes gradient into.  The pulse lerp is deferred
+    // to render time (switch2WheelColorFromS) so it combines with the spatial
+    // lerp and Bayer dither in a single float pass before quantising -- this
+    // eliminates the RGBA4444 quantisation step that coarsened the pulse when
+    // the lerped anchor was pre-baked into c[].
+    struct Switch2Wheel {
+        Color c[4];         // [0]=UR, [1]=LR, [2]=LL, [3]=UL
+        float rotFrac;      // rotation offset in s-space (-1,1), advances/recedes each rotationDuration
+
+        // Deferred-pulse fields: when hasPulse[i] is true the renderer ignores
+        // c[i] and instead lerps cA[i]..cB[i] by pulseT[i] at render time.
+        bool  hasPulse[4];  // which anchors carry a deferred pulse
+        Color cA[4];        // pulse start colour (pulseT=0)
+        Color cB[4];        // pulse end colour   (pulseT=1)
+        float pulseT[4];    // per-anchor pulse fraction in [0,1], full float precision
+                            // (per-anchor so the two opposite hero anchors can carry
+                            //  independent pulse phases -- see makeSwitch2Wheel)
+
+        Switch2Wheel() : rotFrac(0.f), hasPulse{false,false,false,false}, pulseT{0.f,0.f,0.f,0.f} {}
+    };
+
+
+    // Shared tail of both Switch 2 wheel samplers: given a wheel position
+    // s in [0,1) (already rotated + wrapped), pick the two bracketing anchor
+    // colours and blend them with ordered (Bayer 4x4) dithering. Factored out
+    // so the dither/lerp/quantise maths lives in exactly one place.
+    // Plain in-class static (implicitly inline = a *hint*, not a force): an
+    // earlier ALWAYS_INLINE here copied this whole body into all 5 call sites
+    // and bloated .text; leaving the choice to the optimizer is smaller at -Os/-O2.
+    static Color switch2WheelColorFromS(const Switch2Wheel& w, float s, s32 px, s32 py) noexcept {
+        // --- Segment + blend fraction ----------------------------------------
+        float seg = s * 4.0f;
+        seg -= 4.0f * floorf(seg * 0.25f);  // keep in [0,4)
+        const int   i = static_cast<int>(seg) & 3;
+        const float f = seg - floorf(seg);
+
+        // Segment->anchor map {3,0,1,2} as arithmetic (no lookup table):
+        //   c0 = anchor[(i+3)&3],  c1 = anchor[i]  -- identical picks, no .rodata load.
+        const int idx0 = (i + 3) & 3;
+        const int idx1 = i;
+
+        // Resolve deferred pulse anchors in float -- if hasPulse is set the
+        // stored c[] value is ignored and we lerp cA..cB by pulseT here,
+        // keeping the result as float so it fuses with the spatial lerp (f)
+        // and Bayer dither (d) below before the single final quantise.
+        // Fixed anchors just cast their integer channel values straight to float.
+        float fr0, fg0, fb0;
+        if (w.hasPulse[idx0]) {
+            fr0 = static_cast<float>(w.cA[idx0].r) + (static_cast<float>(w.cB[idx0].r) - static_cast<float>(w.cA[idx0].r)) * w.pulseT[idx0];
+            fg0 = static_cast<float>(w.cA[idx0].g) + (static_cast<float>(w.cB[idx0].g) - static_cast<float>(w.cA[idx0].g)) * w.pulseT[idx0];
+            fb0 = static_cast<float>(w.cA[idx0].b) + (static_cast<float>(w.cB[idx0].b) - static_cast<float>(w.cA[idx0].b)) * w.pulseT[idx0];
+        } else {
+            fr0 = static_cast<float>(w.c[idx0].r);
+            fg0 = static_cast<float>(w.c[idx0].g);
+            fb0 = static_cast<float>(w.c[idx0].b);
+        }
+        float fr1, fg1, fb1;
+        if (w.hasPulse[idx1]) {
+            fr1 = static_cast<float>(w.cA[idx1].r) + (static_cast<float>(w.cB[idx1].r) - static_cast<float>(w.cA[idx1].r)) * w.pulseT[idx1];
+            fg1 = static_cast<float>(w.cA[idx1].g) + (static_cast<float>(w.cB[idx1].g) - static_cast<float>(w.cA[idx1].g)) * w.pulseT[idx1];
+            fb1 = static_cast<float>(w.cA[idx1].b) + (static_cast<float>(w.cB[idx1].b) - static_cast<float>(w.cA[idx1].b)) * w.pulseT[idx1];
+        } else {
+            fr1 = static_cast<float>(w.c[idx1].r);
+            fg1 = static_cast<float>(w.c[idx1].g);
+            fb1 = static_cast<float>(w.c[idx1].b);
+        }
+
+        // --- Ordered (Bayer 4x4) dither for smooth gradients -----------------
+        // RGBA4444 has only 16 levels per channel; without dithering, a 200px
+        // gradient produces a visible band every ~11px. The Bayer matrix shifts
+        // the quantization boundary by up to +/-0.5 counts per pixel, staggering
+        // color steps across a 4x4 block so the eye perceives ~3x more levels.
+        // The same dither now also smooths the temporal pulse transitions:
+        // adjacent pixels land on different dither offsets, so the pulse colour
+        // steps stagger in time across the 4x4 block just as they do in space.
+        static constexpr float bayer[4][4] = {
+            { 0.f,  8.f,  2.f, 10.f},
+            {12.f,  4.f, 14.f,  6.f},
+            { 3.f, 11.f,  1.f,  9.f},
+            {15.f,  7.f, 13.f,  5.f}
+        };
+        // Offset in [-0.5, +0.5] channel units, applied before rounding.
+        const float d = bayer[static_cast<u32>(py) & 3u][static_cast<u32>(px) & 3u] * (1.0f / 15.0f) - 0.5f;
+
+        // Single fused float lerp (spatial f) + dither (d) + quantise.
+        const u8 r = static_cast<u8>(std::max(0.0f, std::min(15.0f, fr0 + (fr1 - fr0) * f + d + 0.5f)));
+        const u8 g = static_cast<u8>(std::max(0.0f, std::min(15.0f, fg0 + (fg1 - fg0) * f + d + 0.5f)));
+        const u8 b = static_cast<u8>(std::max(0.0f, std::min(15.0f, fb0 + (fb1 - fb0) * f + d + 0.5f)));
+        return Color(r, g, b, 0xF);
+    }
+
+    // Sample the wheel colour for a pixel at framebuffer (px,py), projecting it
+    // to the nearest point on the INNER boundary of the cursor border first.
+    //
+    // This gives "straight pass-through" colour projection:
+    //   - Top/bottom bar pixels:  colour determined by horizontal position only
+    //     (all pixels in the same column of a bar share one colour).
+    //   - Left/right bar pixels:  colour determined by vertical position only.
+    //   - Corner arc pixels:      colour follows the inner arc, blending smoothly.
+    //
+    // Without this, atan2(pixel - center) advances the angle slightly as you move
+    // outward through the stroke, producing diagonal colour bands across the bars.
+    //
+    // Geometry args (all in framebuffer pixel coordinates):
+    //   cxL, cxR   -- left/right corner-centre X
+    //   ccyT, ccyB -- top/bottom corner-centre Y
+    //   Ri         -- inner arc radius (= r - T)
+    //   wheel      -- colour wheel with rotation centre (cx,cy) and four anchor colours
+    static inline Color switch2WheelColorAt(
+            const Switch2Wheel& w,
+            s32 px, s32 py,
+            s32 cxL, s32 cxR, s32 ccyT, s32 ccyB, s32 Ri) noexcept {
+
+        // --- Step 1: project (px,py) to inner boundary point (ix,iy) ----------
+        // All pixels in the same column of a top/bottom bar share one angle;
+        // all pixels in the same row of a side bar share one angle.
+        // Corner pixels follow the inner arc angle. No diagonal banding.
+        float ix, iy;
+
+        const bool left  = px < cxL;
+        const bool right = px > cxR;
+        const bool above = py < ccyT;
+        // For the top/bottom-BAR branch only: px==cxL or px==cxR with py==ccyT
+        // is the corner/bar seam pixel and belongs to the TOP bar, not the
+        // bottom -- include the boundary row on the top side here.
+        const bool aboveForBar = py <= ccyT;
+
+        if (!left && !right) {
+            // Top or bottom bar zone: project straight up/down to inner edge.
+            ix = static_cast<float>(px);
+            iy = aboveForBar ? static_cast<float>(ccyT - Ri)
+                             : static_cast<float>(ccyB + Ri);
+        } else if (!above && py <= ccyB) {
+            // Left or right side bar zone: project straight left/right.
+            ix = left  ? static_cast<float>(cxL - Ri)
+                       : static_cast<float>(cxR + Ri);
+            iy = static_cast<float>(py);
+        } else {
+            // Corner zone: project from corner centre to inner arc.
+            const float ccxC = static_cast<float>(left ? cxL : cxR);
+            const float ccyC = static_cast<float>(above ? ccyT : ccyB);
+            const float dpx  = static_cast<float>(px) - ccxC;
+            const float dpy  = static_cast<float>(py) - ccyC;
+            const float phi  = atan2f(dpy, dpx);
+            ix = ccxC + static_cast<float>(Ri) * cosf(phi);
+            iy = ccyC + static_cast<float>(Ri) * sinf(phi);
+        }
+
+        // --- Step 2: PER-SIDE position around the inner boundary -------------
+        // Each of the 4 sides (top, right, bottom, left) gets an EQUAL 0.25
+        // share of s, regardless of its pixel length. Within a side, t in
+        // [0,1) maps linearly across that side's full straight span, so the
+        // gradient's halfway point always lands at the geometric midpoint of
+        // every side simultaneously -- a short side traverses the same
+        // fraction of the colour wheel as a long one, just compressed into
+        // fewer pixels (higher colour density on short sides, lower on long
+        // ones, matching the on-device look). Corner pixels (projected by
+        // Step 1 to (ix,iy) outside the straight span) are clamped to t in
+        // [0,1], so they smoothly inherit the nearest side's edge colour with
+        // no seam.
+        const float straight_W = static_cast<float>(cxR - cxL);
+        const float straight_H = static_cast<float>(ccyB - ccyT);
+
+        float side;  // which side: 0=top, 1=right, 2=bottom, 3=left
+        float t;     // position within the side, in [0,1], clamped
+
+        const bool onTop    = (iy < static_cast<float>(ccyT));
+        const bool onBottom = (iy > static_cast<float>(ccyB));
+        const bool onLeft   = (ix < static_cast<float>(cxL));
+        const bool onRight  = (ix > static_cast<float>(cxR));
+
+        if (!onLeft && !onRight) {
+            // Top or bottom bar (or its corner extensions, since ix stayed
+            // within [cxL,cxR]).
+            if (onTop) {
+                side = 0.0f;
+                t = (ix - static_cast<float>(cxL)) / straight_W;
+            } else {
+                side = 2.0f;
+                t = (static_cast<float>(cxR) - ix) / straight_W;
+            }
+        } else if (!onTop && !onBottom) {
+            // Left or right side bar (or its corner extensions).
+            if (onRight) {
+                side = 1.0f;
+                t = (iy - static_cast<float>(ccyT)) / straight_H;
+            } else {
+                side = 3.0f;
+                t = (static_cast<float>(ccyB) - iy) / straight_H;
+            }
+        } else {
+            // Corner pixel: (ix,iy) lies outside both straight spans. It's
+            // the extension of the top bar (TL/TR corners) or bottom bar
+            // (BL/BR corners); clamping t to [0,1] makes it inherit that
+            // bar's nearest-edge colour, matching s=0/0.25/0.5/0.75 exactly
+            // at the four corners (verified continuous with the adjacent
+            // side/left bars above).
+            if (onTop) { side = 0.0f; t = (ix - static_cast<float>(cxL)) / straight_W; }
+            else       { side = 2.0f; t = (static_cast<float>(cxR) - ix) / straight_W; }
+            t = std::max(0.0f, std::min(1.0f, t));
+        }
+
+        // s = side*0.25 + t*0.25, normalised to [0,1), rotated.
+        float s = side * 0.25f + t * 0.25f;
+        s = s - w.rotFrac;
+        s -= floorf(s);  // wrap to [0,1)
+
+        return switch2WheelColorFromS(w, s, px, py);
+    }
+
+    // Circle variant of the Switch 2 wheel sampler.
+    // Uses the pixel's angle around the circle's own centre (cx,cy) to derive s,
+    // matching the same phase convention (s=0 at 225deg UL diagonal) as the rect
+    // sampler -- so the circle handle and the surrounding rounded-rect border
+    // share one Switch2Wheel and their colour crosshairs stay in sync.
+    static inline Color switch2WheelColorAtCircle(
+            const Switch2Wheel& w, s32 px, s32 py, s32 cx, s32 cy) noexcept {
+        const float dx = static_cast<float>(px - cx);
+        const float dy = static_cast<float>(py - cy);
+        float phi = atan2f(dy, dx);
+        if (phi < 0.0f) phi += 6.28318530717958647692f;
+        float s = (phi - 3.92699081698724154807f) * (1.0f / 6.28318530717958647692f);
+        s = s - w.rotFrac;
+        s -= floorf(s);
+        return switch2WheelColorFromS(w, s, px, py);
+    }
+
+    // Build the rotating/pulsing Switch 2 colour wheel used by drawBorderedRoundedRect
+    // and drawCircle's wheel-sampling paths.
+    // Rotation: one full clockwise turn every 6s.
+    //
+    // Four anchors spaced 90deg apart, in cyclic (clockwise) order:
+    //   Pink -- Electric Blue -- Cyan -- Periwinkle.
+    // The two pulsing "hero" anchors sit opposite one another:
+    //   Cyan (anchor 1) <-> Pink (anchor 3).
+    // The two fixed "peak accent" anchors also sit opposite one another,
+    // each tucked between Pink and Cyan:
+    //   Electric Blue (anchor 0) <-> Periwinkle (anchor 2).
+    //
+    // Pulse is LOCKED to rotation at 4 pulses/turn (1.5s full cycle, 0.75s
+    // each way), not free-running.  Cyan reaches its bright Ice value as its
+    // anchor sweeps through a 90deg cardinal and its deep Aqua value on the
+    // 45deg diagonals.  Pink pulses on the same cadence, lagging cyan very
+    // slightly (see kPinkLag) so the two peaks read as near-simultaneous.
+    //
+    // Colours are native RGBA4444 hex.  Color packs r in the low nibble, so
+    // these literals pass straight through Color(u16) with no decode step:
+    //   Cyan          0xFFFE bright Ice  <-> 0xFFEA deep Aqua
+    //   Pink          0xFDDF bright Soft <-> 0xFBBF deep Rose
+    //   Periwinkle    0xFF78 (fixed peak)
+    //   Electric Blue 0xFF60 (fixed peak)
+    static Switch2Wheel makeSwitch2Wheel(
+        Color anchor0 = 0xFF60, // Electric Blue
+        Color anchor2 = 0xFF78, // Periwinkle
+        Color anchor1Bright = 0xFFFE, // Ice Cyan
+        Color anchor1Deep = 0xFFEA, // Aqua Cyan
+        Color anchor3Bright = 0xFDDF, // Soft Pink
+        Color anchor3Deep = 0xFBBF, // Rose Pink
+        float rotationDuration = 6.0, // rotation duration in seconds
+        bool reverseFlow = false
+        ) {
+
+        // Hero pulse colours (bright <-> deep).
+        //const Color anchor1Bright = Color(static_cast<u16>(0xFFFE)); // Ice Cyan
+        //const Color anchor1Deep   = Color(static_cast<u16>(0xFFEA)); // Aqua Cyan
+        //const Color anchor3Bright = Color(static_cast<u16>(0xFDDF)); // Soft Pink
+        //const Color anchor3Deep   = Color(static_cast<u16>(0xFBBF)); // Rose Pink
+        //// Fixed peak accents.
+        //const Color anchor0 = Color(static_cast<u16>(0xFF60)); // Electric Blue
+        //const Color anchor2 = Color(static_cast<u16>(0xFF78)); // Periwinkle
+
+        const double t_s     = ult::nowNs() * 0.000000001;
+        const float  rotFrac = static_cast<float>((!reverseFlow ? 1.: -1.)*std::fmod(t_s, rotationDuration) * (1.0 / rotationDuration));
+
+        // Pulse locked to rotation: 4 pulses per 6s turn.  Driving the cosine
+        // off 4*rotFrac yields lerp=0 (bright) at the 90deg cardinals and
+        // lerp=1 (deep) at the 45deg diagonals for cyan.
+        const float anchor1Lerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac)) + 1.0) * 0.5);
+
+        // Pink shares cyan's cadence but lags by kPinkLag of one pulse cycle.
+        // Measured from the reference recording at ~0.2 cycle (~0.3s).  Tunable:
+        //   0.0 = in-phase with cyan (bright at the cardinals)
+        //   0.5 = antiphase         (bright at the diagonals)
+        const double kPinkLag = 0.2;
+        const float anchor3Lerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac - kPinkLag)) + 1.0) * 0.5);
+
+        Switch2Wheel w;
+
+        // anchor[0] Electric Blue, anchor[2] Periwinkle: fixed peak accents.
+        w.c[0] = anchor0;  w.hasPulse[0] = false;
+        w.c[2] = anchor2;  w.hasPulse[2] = false;
+
+        // anchor[1] Cyan, anchor[3] Pink: pulsing heroes, deferred so the
+        // bright<->deep lerp fuses with the spatial lerp and Bayer dither in
+        // switch2WheelColorFromS, avoiding an early RGBA4444 quantise that
+        // would coarsen the visible transition.  cA = bright (pulseT 0),
+        // cB = deep (pulseT 1).
+        w.c[1] = anchor1Bright;  w.hasPulse[1] = true;
+        w.cA[1] = anchor1Bright; w.cB[1] = anchor1Deep;
+        w.c[3] = anchor3Bright;  w.hasPulse[3] = true;
+        w.cA[3] = anchor3Bright; w.cB[3] = anchor3Deep;
+
+        w.pulseT[0] = 0.f;        // fixed anchor, unused
+        w.pulseT[1] = anchor1Lerp;   // raw float, not pre-quantised
+        w.pulseT[2] = 0.f;        // fixed anchor, unused
+        w.pulseT[3] = anchor3Lerp;
+        w.rotFrac = rotFrac;
+        return w;
+    }
+
+    // The alternate Switch 2 wheel palette: a warm sunset/lava wheel used for the
+    // "command in progress" and "locked trackbar" states, distinct from the default
+    // cool wheel.  Centralised here so it can be retuned in exactly one place.
+    static Switch2Wheel makeSwitch2WheelAlt() {
+        return makeSwitch2Wheel(0xF1AF, 0x60FF, 0xF80F, 0xC01F, 0xFD2F, 0xE23F, 6.0, false);
+    }
+
+    // Cross-fade two Switch 2 wheels by t in [0,1]:  t=0 -> 'from',  t=1 -> 'to'.
+    // Both wheels are sampled at the same instant via makeSwitch2Wheel, so their
+    // rotation phase (rotFrac) and per-anchor pulse fractions (pulseT) are identical
+    // -- only the anchor COLOURS differ between palettes.  We therefore copy the
+    // phase/pulse structure wholesale from 'to' and lerp just the colour fields.
+    // cA/cB are only meaningful (and only initialised) for pulsing anchors, so those
+    // are blended exclusively where hasPulse is set.
+    // (lerpColor(c1,c2,t) returns t=0->c2, t=1->c1, hence the (to,from) arg order.)
+    static Switch2Wheel blendSwitch2Wheels(const Switch2Wheel& from, const Switch2Wheel& to, float t) {
+        Switch2Wheel w = to;
+        for (int i = 0; i < 4; ++i) {
+            w.c[i] = lerpColor(to.c[i], from.c[i], t);
+            if (w.hasPulse[i]) {
+                w.cA[i] = lerpColor(to.cA[i], from.cA[i], t);
+                w.cB[i] = lerpColor(to.cB[i], from.cB[i], t);
+            }
+        }
+        return w;
+    }
+
     
     namespace style {
         constexpr u32 ListItemDefaultHeight         = 70;       ///< Standard list item height
@@ -1720,42 +2072,6 @@ namespace tsl {
                 } 
                     
             }
-                        
-            // -- Switch2 rotating multicolor cursor ---------------------------------
-            // The Switch2 cursor projects a rotating 4-colour wheel radially outward
-            // from the cursor centre.  Each pixel's colour depends only on its ANGLE
-            // around the centre (not its diagonal position), so colours travel fast
-            // along the long horizontal segments, slowly on the verticals, and pass
-            // through 45deg at the corners - matching the hardware "flashlight" look.
-            //
-            // The four wheel anchor colours sit on the diagonals (screen coords, +y down):
-            //   315deg = upper-right,  45deg = lower-right,
-            //   135deg = lower-left,  225deg = upper-left.
-            // c[0]=UR, c[1]=LR, c[2]=LL, c[3]=UL  (clockwise from upper-right).
-            // The whole wheel is rotated by rotFrac (full turn every 6s); the two
-            // opposite "hero" anchors (Cyan, Pink) pulse between a bright and a deep
-            // colour, locked to the rotation at 4 pulses per turn (1.5s each).  The
-            // other two opposite anchors (Periwinkle, Electric Blue) are fixed peak
-            // accents that the heroes gradient into.  The pulse lerp is deferred
-            // to render time (switch2WheelColorFromS) so it combines with the spatial
-            // lerp and Bayer dither in a single float pass before quantising -- this
-            // eliminates the RGBA4444 quantisation step that coarsened the pulse when
-            // the lerped anchor was pre-baked into c[].
-            struct Switch2Wheel {
-                Color c[4];         // [0]=UR, [1]=LR, [2]=LL, [3]=UL
-                float rotFrac;      // rotation offset in s-space [0,1), advances each 6s
-
-                // Deferred-pulse fields: when hasPulse[i] is true the renderer ignores
-                // c[i] and instead lerps cA[i]..cB[i] by pulseT[i] at render time.
-                bool  hasPulse[4];  // which anchors carry a deferred pulse
-                Color cA[4];        // pulse start colour (pulseT=0)
-                Color cB[4];        // pulse end colour   (pulseT=1)
-                float pulseT[4];    // per-anchor pulse fraction in [0,1], full float precision
-                                    // (per-anchor so the two opposite hero anchors can carry
-                                    //  independent pulse phases -- see makeSwitch2Wheel)
-
-                Switch2Wheel() : rotFrac(0.f), hasPulse{false,false,false,false}, pulseT{0.f,0.f,0.f,0.f} {}
-            };
 
             inline void drawCircle(const s32 centerX, const s32 centerY, const u16 radius, const bool filled, const Color& color, const Switch2Wheel* wheel = nullptr) {
                 // Small-radius fast path: radius ∈ {0,1,2,3}.
@@ -1942,212 +2258,6 @@ namespace tsl {
                         }
                     }
                 }
-            }
-            
-
-            // Shared tail of both Switch2 wheel samplers: given a wheel position
-            // s in [0,1) (already rotated + wrapped), pick the two bracketing anchor
-            // colours and blend them with ordered (Bayer 4x4) dithering. Factored out
-            // so the dither/lerp/quantise maths lives in exactly one place.
-            // Plain in-class static (implicitly inline = a *hint*, not a force): an
-            // earlier ALWAYS_INLINE here copied this whole body into all 5 call sites
-            // and bloated .text; leaving the choice to the optimizer is smaller at -Os/-O2.
-            static Color switch2WheelColorFromS(const Switch2Wheel& w, float s, s32 px, s32 py) noexcept {
-                // --- Segment + blend fraction ----------------------------------------
-                float seg = s * 4.0f;
-                seg -= 4.0f * floorf(seg * 0.25f);  // keep in [0,4)
-                const int   i = static_cast<int>(seg) & 3;
-                const float f = seg - floorf(seg);
-
-                // Segment->anchor map {3,0,1,2} as arithmetic (no lookup table):
-                //   c0 = anchor[(i+3)&3],  c1 = anchor[i]  -- identical picks, no .rodata load.
-                const int idx0 = (i + 3) & 3;
-                const int idx1 = i;
-
-                // Resolve deferred pulse anchors in float -- if hasPulse is set the
-                // stored c[] value is ignored and we lerp cA..cB by pulseT here,
-                // keeping the result as float so it fuses with the spatial lerp (f)
-                // and Bayer dither (d) below before the single final quantise.
-                // Fixed anchors just cast their integer channel values straight to float.
-                float fr0, fg0, fb0;
-                if (w.hasPulse[idx0]) {
-                    fr0 = static_cast<float>(w.cA[idx0].r) + (static_cast<float>(w.cB[idx0].r) - static_cast<float>(w.cA[idx0].r)) * w.pulseT[idx0];
-                    fg0 = static_cast<float>(w.cA[idx0].g) + (static_cast<float>(w.cB[idx0].g) - static_cast<float>(w.cA[idx0].g)) * w.pulseT[idx0];
-                    fb0 = static_cast<float>(w.cA[idx0].b) + (static_cast<float>(w.cB[idx0].b) - static_cast<float>(w.cA[idx0].b)) * w.pulseT[idx0];
-                } else {
-                    fr0 = static_cast<float>(w.c[idx0].r);
-                    fg0 = static_cast<float>(w.c[idx0].g);
-                    fb0 = static_cast<float>(w.c[idx0].b);
-                }
-                float fr1, fg1, fb1;
-                if (w.hasPulse[idx1]) {
-                    fr1 = static_cast<float>(w.cA[idx1].r) + (static_cast<float>(w.cB[idx1].r) - static_cast<float>(w.cA[idx1].r)) * w.pulseT[idx1];
-                    fg1 = static_cast<float>(w.cA[idx1].g) + (static_cast<float>(w.cB[idx1].g) - static_cast<float>(w.cA[idx1].g)) * w.pulseT[idx1];
-                    fb1 = static_cast<float>(w.cA[idx1].b) + (static_cast<float>(w.cB[idx1].b) - static_cast<float>(w.cA[idx1].b)) * w.pulseT[idx1];
-                } else {
-                    fr1 = static_cast<float>(w.c[idx1].r);
-                    fg1 = static_cast<float>(w.c[idx1].g);
-                    fb1 = static_cast<float>(w.c[idx1].b);
-                }
-
-                // --- Ordered (Bayer 4x4) dither for smooth gradients -----------------
-                // RGBA4444 has only 16 levels per channel; without dithering, a 200px
-                // gradient produces a visible band every ~11px. The Bayer matrix shifts
-                // the quantization boundary by up to +/-0.5 counts per pixel, staggering
-                // color steps across a 4x4 block so the eye perceives ~3x more levels.
-                // The same dither now also smooths the temporal pulse transitions:
-                // adjacent pixels land on different dither offsets, so the pulse colour
-                // steps stagger in time across the 4x4 block just as they do in space.
-                static const float bayer[4][4] = {
-                    { 0.f,  8.f,  2.f, 10.f},
-                    {12.f,  4.f, 14.f,  6.f},
-                    { 3.f, 11.f,  1.f,  9.f},
-                    {15.f,  7.f, 13.f,  5.f}
-                };
-                // Offset in [-0.5, +0.5] channel units, applied before rounding.
-                const float d = bayer[static_cast<u32>(py) & 3u][static_cast<u32>(px) & 3u] * (1.0f / 15.0f) - 0.5f;
-
-                // Single fused float lerp (spatial f) + dither (d) + quantise.
-                const u8 r = static_cast<u8>(std::max(0.0f, std::min(15.0f, fr0 + (fr1 - fr0) * f + d + 0.5f)));
-                const u8 g = static_cast<u8>(std::max(0.0f, std::min(15.0f, fg0 + (fg1 - fg0) * f + d + 0.5f)));
-                const u8 b = static_cast<u8>(std::max(0.0f, std::min(15.0f, fb0 + (fb1 - fb0) * f + d + 0.5f)));
-                return Color(r, g, b, 0xF);
-            }
-
-            // Sample the wheel colour for a pixel at framebuffer (px,py), projecting it
-            // to the nearest point on the INNER boundary of the cursor border first.
-            //
-            // This gives "straight pass-through" colour projection:
-            //   - Top/bottom bar pixels:  colour determined by horizontal position only
-            //     (all pixels in the same column of a bar share one colour).
-            //   - Left/right bar pixels:  colour determined by vertical position only.
-            //   - Corner arc pixels:      colour follows the inner arc, blending smoothly.
-            //
-            // Without this, atan2(pixel - center) advances the angle slightly as you move
-            // outward through the stroke, producing diagonal colour bands across the bars.
-            //
-            // Geometry args (all in framebuffer pixel coordinates):
-            //   cxL, cxR   -- left/right corner-centre X
-            //   ccyT, ccyB -- top/bottom corner-centre Y
-            //   Ri         -- inner arc radius (= r - T)
-            //   wheel      -- colour wheel with rotation centre (cx,cy) and four anchor colours
-            static inline Color switch2WheelColorAt(
-                    const Switch2Wheel& w,
-                    s32 px, s32 py,
-                    s32 cxL, s32 cxR, s32 ccyT, s32 ccyB, s32 Ri) noexcept {
-
-                // --- Step 1: project (px,py) to inner boundary point (ix,iy) ----------
-                // All pixels in the same column of a top/bottom bar share one angle;
-                // all pixels in the same row of a side bar share one angle.
-                // Corner pixels follow the inner arc angle. No diagonal banding.
-                float ix, iy;
-
-                const bool left  = px < cxL;
-                const bool right = px > cxR;
-                const bool above = py < ccyT;
-                // For the top/bottom-BAR branch only: px==cxL or px==cxR with py==ccyT
-                // is the corner/bar seam pixel and belongs to the TOP bar, not the
-                // bottom -- include the boundary row on the top side here.
-                const bool aboveForBar = py <= ccyT;
-
-                if (!left && !right) {
-                    // Top or bottom bar zone: project straight up/down to inner edge.
-                    ix = static_cast<float>(px);
-                    iy = aboveForBar ? static_cast<float>(ccyT - Ri)
-                                     : static_cast<float>(ccyB + Ri);
-                } else if (!above && py <= ccyB) {
-                    // Left or right side bar zone: project straight left/right.
-                    ix = left  ? static_cast<float>(cxL - Ri)
-                               : static_cast<float>(cxR + Ri);
-                    iy = static_cast<float>(py);
-                } else {
-                    // Corner zone: project from corner centre to inner arc.
-                    const float ccxC = static_cast<float>(left ? cxL : cxR);
-                    const float ccyC = static_cast<float>(above ? ccyT : ccyB);
-                    const float dpx  = static_cast<float>(px) - ccxC;
-                    const float dpy  = static_cast<float>(py) - ccyC;
-                    const float phi  = atan2f(dpy, dpx);
-                    ix = ccxC + static_cast<float>(Ri) * cosf(phi);
-                    iy = ccyC + static_cast<float>(Ri) * sinf(phi);
-                }
-
-                // --- Step 2: PER-SIDE position around the inner boundary -------------
-                // Each of the 4 sides (top, right, bottom, left) gets an EQUAL 0.25
-                // share of s, regardless of its pixel length. Within a side, t in
-                // [0,1) maps linearly across that side's full straight span, so the
-                // gradient's halfway point always lands at the geometric midpoint of
-                // every side simultaneously -- a short side traverses the same
-                // fraction of the colour wheel as a long one, just compressed into
-                // fewer pixels (higher colour density on short sides, lower on long
-                // ones, matching the on-device look). Corner pixels (projected by
-                // Step 1 to (ix,iy) outside the straight span) are clamped to t in
-                // [0,1], so they smoothly inherit the nearest side's edge colour with
-                // no seam.
-                const float straight_W = static_cast<float>(cxR - cxL);
-                const float straight_H = static_cast<float>(ccyB - ccyT);
-
-                float side;  // which side: 0=top, 1=right, 2=bottom, 3=left
-                float t;     // position within the side, in [0,1], clamped
-
-                const bool onTop    = (iy < static_cast<float>(ccyT));
-                const bool onBottom = (iy > static_cast<float>(ccyB));
-                const bool onLeft   = (ix < static_cast<float>(cxL));
-                const bool onRight  = (ix > static_cast<float>(cxR));
-
-                if (!onLeft && !onRight) {
-                    // Top or bottom bar (or its corner extensions, since ix stayed
-                    // within [cxL,cxR]).
-                    if (onTop) {
-                        side = 0.0f;
-                        t = (ix - static_cast<float>(cxL)) / straight_W;
-                    } else {
-                        side = 2.0f;
-                        t = (static_cast<float>(cxR) - ix) / straight_W;
-                    }
-                } else if (!onTop && !onBottom) {
-                    // Left or right side bar (or its corner extensions).
-                    if (onRight) {
-                        side = 1.0f;
-                        t = (iy - static_cast<float>(ccyT)) / straight_H;
-                    } else {
-                        side = 3.0f;
-                        t = (static_cast<float>(ccyB) - iy) / straight_H;
-                    }
-                } else {
-                    // Corner pixel: (ix,iy) lies outside both straight spans. It's
-                    // the extension of the top bar (TL/TR corners) or bottom bar
-                    // (BL/BR corners); clamping t to [0,1] makes it inherit that
-                    // bar's nearest-edge colour, matching s=0/0.25/0.5/0.75 exactly
-                    // at the four corners (verified continuous with the adjacent
-                    // side/left bars above).
-                    if (onTop) { side = 0.0f; t = (ix - static_cast<float>(cxL)) / straight_W; }
-                    else       { side = 2.0f; t = (static_cast<float>(cxR) - ix) / straight_W; }
-                    t = std::max(0.0f, std::min(1.0f, t));
-                }
-
-                // s = side*0.25 + t*0.25, normalised to [0,1), rotated.
-                float s = side * 0.25f + t * 0.25f;
-                s = s - w.rotFrac;
-                s -= floorf(s);  // wrap to [0,1)
-
-                return switch2WheelColorFromS(w, s, px, py);
-            }
-
-            // Circle variant of the Switch2 wheel sampler.
-            // Uses the pixel's angle around the circle's own centre (cx,cy) to derive s,
-            // matching the same phase convention (s=0 at 225deg UL diagonal) as the rect
-            // sampler -- so the circle handle and the surrounding rounded-rect border
-            // share one Switch2Wheel and their colour crosshairs stay in sync.
-            static inline Color switch2WheelColorAtCircle(
-                    const Switch2Wheel& w, s32 px, s32 py, s32 cx, s32 cy) noexcept {
-                const float dx = static_cast<float>(px - cx);
-                const float dy = static_cast<float>(py - cy);
-                float phi = atan2f(dy, dx);
-                if (phi < 0.0f) phi += 6.28318530717958647692f;
-                float s = (phi - 3.92699081698724154807f) * (1.0f / 6.28318530717958647692f);
-                s = s - w.rotFrac;
-                s -= floorf(s);
-                return switch2WheelColorFromS(w, s, px, py);
             }
 
             inline void drawBorderedRoundedRect(const s32 x, const s32 y, const s32 width, const s32 height, const s32 thickness, const s32 radius, const Color& highlightColor, const Switch2Wheel* wheel = nullptr) {
@@ -4937,7 +5047,27 @@ namespace tsl {
             s32 x, y;
             s32 amplitude;
             u64 m_animationStartTime; // Changed from chrono::time_point to nanoseconds
+
+            // --- Switch 2 wheel palette cross-fade state ----------------------
+            // Eases between the default wheel and the alternate (in-progress /
+            // locked) wheel when the triggering state flips, instead of snapping.
+            // Driven by buildSwitch2Wheel(); see that method for the easing.
+            // Independent slots: a trackbar's handle ring, its highlight border,
+            // and its inner fill puck are drawn from separate call sites that can
+            // legitimately disagree on "locked" for a frame or two (they're each
+            // computed from different member booleans), so each gets its own blend
+            // state. Sharing a slot between two such call sites would let one
+            // call's target flip stomp the other's, resetting the fade's start
+            // time every frame and freezing the blend before it ever reaches the
+            // alternate palette.
+            static constexpr int S2_WHEEL_SLOT_HANDLE = 0;
+            static constexpr int S2_WHEEL_SLOT_BORDER = 1;
+            bool  m_s2WheelAltActive[2] = { false, false }; // last target per slot: false=default, true=alt
+            float m_s2WheelBlend[2] = { 0.0f, 0.0f };       // current eased blend per slot [0,1] (0=default, 1=alt)
+            float m_s2WheelBlendStart[2] = { 0.0f, 0.0f };  // blend captured when that slot's target last flipped
+            u64   m_s2WheelBlendChangeNs[2] = { 0, 0 };     // ult::nowNs() when that slot's target last flipped
             
+
             virtual bool isTable() const {
                 return m_isTable;
             }
@@ -5100,9 +5230,9 @@ namespace tsl {
                     else
                         renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor));
                 }
-            
+                
                 saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
-            
+                
                 Color animColor = {0xF,0xF,0xF,0xF};
                 if (invertBGClickColor) {
                     const u8 inverted = 15-saturation;
@@ -5114,7 +5244,7 @@ namespace tsl {
                     renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(animColor));
                 else
                     renderer->drawRectAdaptive(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
-            
+                
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
                 static double cachedProgress = 0.0;
@@ -5172,83 +5302,47 @@ namespace tsl {
                 }
                 
                 if (ult::useSwitch2Style) {
-                    const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    // Click pulse: over the click timeframe, pulse every wheel colour
+                    // across to the alternate palette and ease back.  m_clickAnimationProgress
+                    // runs ListItemHighlightLength -> 0 over the same ~500ms window the
+                    // Switch 1 flash uses, so normalising it gives blend = 1 (alt) at the
+                    // click instant, easing to 0 (default) as the animation completes.
+                    const float clickBlend = std::max(0.0f, std::min(1.0f,
+                        static_cast<float>(this->m_clickAnimationProgress) / static_cast<float>(tsl::style::ListItemHighlightLength)));
+                    const Switch2Wheel w2 = blendSwitch2Wheels(makeSwitch2Wheel(), makeSwitch2WheelAlt(), clickBlend);
                     renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
                 } else {
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
                 }
             }
 
-            // Build the rotating/pulsing Switch2 colour wheel for this element.
-            // Rotation: one full clockwise turn every 6s.
-            //
-            // Four anchors spaced 90deg apart, in cyclic (clockwise) order:
-            //   Pink -- Electric Blue -- Cyan -- Periwinkle.
-            // The two pulsing "hero" anchors sit opposite one another:
-            //   Cyan (anchor 1) <-> Pink (anchor 3).
-            // The two fixed "peak accent" anchors also sit opposite one another,
-            // each tucked between Pink and Cyan:
-            //   Electric Blue (anchor 0) <-> Periwinkle (anchor 2).
-            //
-            // Pulse is LOCKED to rotation at 4 pulses/turn (1.5s full cycle, 0.75s
-            // each way), not free-running.  Cyan reaches its bright Ice value as its
-            // anchor sweeps through a 90deg cardinal and its deep Aqua value on the
-            // 45deg diagonals.  Pink pulses on the same cadence, lagging cyan very
-            // slightly (see kPinkLag) so the two peaks read as near-simultaneous.
-            //
-            // Colours are native RGBA4444 hex.  Color packs r in the low nibble, so
-            // these literals pass straight through Color(u16) with no decode step:
-            //   Cyan          0xFFFE bright Ice  <-> 0xFFEA deep Aqua
-            //   Pink          0xFDDF bright Soft <-> 0xFBBF deep Rose
-            //   Periwinkle    0xFF78 (fixed peak)
-            //   Electric Blue 0xFF60 (fixed peak)
-            gfx::Renderer::Switch2Wheel makeSwitch2Wheel(s32 ox, s32 oy) {
-                // Hero pulse colours (bright <-> deep).
-                const Color cCyanBright = Color(static_cast<u16>(0xFFFE)); // Ice Cyan
-                const Color cCyanDeep   = Color(static_cast<u16>(0xFFEA)); // Aqua Cyan
-                const Color cPinkBright = Color(static_cast<u16>(0xFDDF)); // Soft Pink
-                const Color cPinkDeep   = Color(static_cast<u16>(0xFBBF)); // Rose Pink
-                // Fixed peak accents.
-                const Color cPeri       = Color(static_cast<u16>(0xFF78)); // Periwinkle
-                const Color cEBlue      = Color(static_cast<u16>(0xFF60)); // Electric Blue
-
-                const double t_s     = ult::nowNs() * 0.000000001;
-                const float  rotFrac = static_cast<float>(std::fmod(t_s, 6.0) * (1.0 / 6.0));
-
-                // Pulse locked to rotation: 4 pulses per 6s turn.  Driving the cosine
-                // off 4*rotFrac yields lerp=0 (bright) at the 90deg cardinals and
-                // lerp=1 (deep) at the 45deg diagonals for cyan.
-                const float cyanLerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac)) + 1.0) * 0.5);
-
-                // Pink shares cyan's cadence but lags by kPinkLag of one pulse cycle.
-                // Measured from the reference recording at ~0.2 cycle (~0.3s).  Tunable:
-                //   0.0 = in-phase with cyan (bright at the cardinals)
-                //   0.5 = antiphase         (bright at the diagonals)
-                const double kPinkLag = 0.2;
-                const float pinkLerp = static_cast<float>((ult::cos(2.0 * ult::_M_PI * (4.0 * rotFrac - kPinkLag)) + 1.0) * 0.5);
-
-                gfx::Renderer::Switch2Wheel w;
-
-                // anchor[0] Electric Blue, anchor[2] Periwinkle: fixed peak accents.
-                w.c[0] = cEBlue;  w.hasPulse[0] = false;
-                w.c[2] = cPeri;   w.hasPulse[2] = false;
-
-                // anchor[1] Cyan, anchor[3] Pink: pulsing heroes, deferred so the
-                // bright<->deep lerp fuses with the spatial lerp and Bayer dither in
-                // switch2WheelColorFromS, avoiding an early RGBA4444 quantise that
-                // would coarsen the visible transition.  cA = bright (pulseT 0),
-                // cB = deep (pulseT 1).
-                w.c[1] = cCyanBright;  w.hasPulse[1] = true;
-                w.cA[1] = cCyanBright; w.cB[1] = cCyanDeep;
-                w.c[3] = cPinkBright;  w.hasPulse[3] = true;
-                w.cA[3] = cPinkBright; w.cB[3] = cPinkDeep;
-
-                w.pulseT[0] = 0.f;        // fixed anchor, unused
-                w.pulseT[1] = cyanLerp;   // raw float, not pre-quantised
-                w.pulseT[2] = 0.f;        // fixed anchor, unused
-                w.pulseT[3] = pinkLerp;
-                w.rotFrac = rotFrac;
-                return w;
+            // Build this element's Switch 2 cursor wheel for the current frame, easing a
+            // ~300ms cross-fade between the default and alternate palettes as 'altActive'
+            // flips. 'slot' selects which independent blend state to drive — pass
+            // S2_WHEEL_SLOT_HANDLE for a trackbar's slider handle and S2_WHEEL_SLOT_BORDER
+            // for its highlight border (or S2_WHEEL_SLOT_HANDLE for any element that only
+            // draws one wheel). The two slots must stay independent: handle and border are
+            // drawn from separate call sites that compute "locked" from different member
+            // booleans and can briefly disagree, so giving them separate state lets each
+            // ease to its own target instead of one call's flip resetting the other's fade.
+            // Within a single slot, the eased blend is a pure function of elapsed time
+            // since that slot's target last changed, so calling it more than once per frame
+            // with the same slot and altActive (e.g. re-rendering) never double-steps.
+            // Interrupted fades reverse smoothly from wherever that slot's blend sits.
+            Switch2Wheel buildSwitch2Wheel(bool altActive, int slot = S2_WHEEL_SLOT_HANDLE) {
+                static constexpr double S2_BLEND_DURATION_NS = 300.0 * 1000000.0; // 300ms cross-fade
+                const u64 now = ult::nowNs();
+                if (altActive != m_s2WheelAltActive[slot]) {
+                    m_s2WheelAltActive[slot] = altActive;
+                    m_s2WheelBlendStart[slot] = m_s2WheelBlend[slot]; // capture current so an interrupted fade reverses smoothly
+                    m_s2WheelBlendChangeNs[slot] = now;
+                }
+                const float target = altActive ? 1.0f : 0.0f;
+                float p = static_cast<float>(std::min(1.0,
+                    static_cast<double>(now - m_s2WheelBlendChangeNs[slot]) / S2_BLEND_DURATION_NS));
+                p = p * p * (3.0f - 2.0f * p); // smoothstep ease
+                m_s2WheelBlend[slot] = m_s2WheelBlendStart[slot] + (target - m_s2WheelBlendStart[slot]) * p;
+                return blendSwitch2Wheels(makeSwitch2Wheel(), makeSwitch2WheelAlt(), m_s2WheelBlend[slot]);
             }
 
             /**
@@ -5400,7 +5494,9 @@ namespace tsl {
                     #endif
             
                     if (ult::useSwitch2Style) {
-                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                        // Command in progress (interpreter running) cross-fades to the
+                        // alternate wheel palette; the normal cursor uses the default.
+                        const Switch2Wheel w2 = buildSwitch2Wheel(lastInterpreterState, S2_WHEEL_SLOT_HANDLE);
                         renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
                     } else {
                         renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
@@ -5591,7 +5687,7 @@ namespace tsl {
                 
                 if (!hideTableBackground) {
                     renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2 + 1, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
-                    const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    const Switch2Wheel w2 = makeSwitch2Wheel();
                     renderer->drawBorderedRoundedRect(this->getX() + 4+2+1, this->getY()-4, this->getWidth() +2 + 3, this->getHeight() + 20 - endGap+2-3, 1, 12, a(widgetBorderColor), &w2);
                 }
                 
@@ -8582,6 +8678,14 @@ namespace tsl {
             virtual bool valueReservedWidthChanged() {
                 return false;
             }
+
+            // In Switch2 style the focused-item scissor is extended 7px on the left
+            // and (by default) 7px on the right so the color-wheel border isn't clipped.
+            // ToggleListItem overrides this to false because its right edge is occupied
+            // by the sliding switch widget and must not be extended.
+            virtual bool switch2ExtendsRight() {
+                return true;
+            }
         private:
             void calculateWidths(gfx::Renderer* renderer) {
                 m_maxWidth = getWidth() - valueReservedWidth(renderer);
@@ -8605,7 +8709,14 @@ namespace tsl {
         
             void drawTruncatedText(gfx::Renderer* renderer, s32 baselineY, bool useClickTextColor, const std::vector<std::string>& specialSymbols = {}) {
                 if (m_focused) {
-                    renderer->enableScissoring(getX() + 6, 97, m_maxWidth + (m_value.empty() ? 49 : 27), tsl::cfg::FramebufferHeight - 170);
+                    {
+                        const s32 s2Ext = ult::useSwitch2Style ? 7 : 0;
+                        const s32 scissorX = getX() + 6 - s2Ext;
+                        const s32 scissorW = m_maxWidth + (m_value.empty() ? 49 : 27)
+                                             + s2Ext                                    // compensate for left shift
+                                             + (switch2ExtendsRight() ? s2Ext : 0);    // extend right only for non-toggles
+                        renderer->enableScissoring(scissorX, 97, scissorW, tsl::cfg::FramebufferHeight - 170);
+                    }
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
                         !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
@@ -9063,6 +9174,12 @@ namespace tsl {
                 return m_widthsForSwitch2Style != ult::useSwitch2Style;
             }
 
+            // The sliding switch widget occupies the right side of the item, so the
+            // Switch2-style scissor must NOT be extended rightward for toggles.
+            virtual bool switch2ExtendsRight() override {
+                return false;
+            }
+
             // In Switch2 style draw the sliding switch instead of the ON/OFF text.
             virtual void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) override {
                 if (ult::useSwitch2Style)
@@ -9252,12 +9369,12 @@ namespace tsl {
                             22,
                             aWithOpacity(headerSeparatorColor));
                     } else {
-                        renderer->drawRoundedRect(
+                        renderer->drawRoundedRectSingleThreaded(
                             this->getX() + 2+5,
                             headerTop,
                             4,
                             22,
-                            1,
+                            2,
                             aWithOpacity(headerSeparatorColor));
                     }
                 }
@@ -9512,7 +9629,11 @@ namespace tsl {
 
             virtual ~TrackBar() {}
 
+            inline void disableClickAnimation() { m_useClickAnimation = false; }
+            inline void enableClickAnimation()  { m_useClickAnimation = true;  }
+
             virtual void triggerClickAnimation() {
+                if (!m_useClickAnimation) return;
                 Element::triggerClickAnimation();
 
                 // Activate the click animation
@@ -9562,9 +9683,14 @@ namespace tsl {
                             triggerOffFeedback();
                         }
                     } else {
-                        // Always-unlocked trackbar: full click animation + enter feedback
-                        this->triggerClickAnimation();
-                        triggerEnterFeedback();
+                        if (m_useClickAnimation) {
+                            // Always-unlocked trackbar: full click animation + enter feedback
+                            this->triggerClickAnimation();
+                            triggerEnterFeedback();
+                        } else {
+                            // Animation disabled: wall effect instead of click feedback
+                            this->shakeHighlight(FocusDirection::Right);
+                        }
                     }
                     return true;
                 }
@@ -9857,8 +9983,9 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    if (ult::useSwitch2Style && isEffectivelyUnlocked) {
-                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    if (ult::useSwitch2Style) {
+                        // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
+                        const Switch2Wheel w2 = buildSwitch2Wheel(!isEffectivelyUnlocked, S2_WHEEL_SLOT_HANDLE);
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor), &w2);
                     } else {
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor));
@@ -9987,12 +10114,17 @@ namespace tsl {
                     }
                     if (ult::useSwitch2Style) {
                         const bool isUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
-                        if (isUnlocked) {
-                            const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
-                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                        // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
+                        Switch2Wheel w2;
+                        if (m_clickAnimationActive) {
+                            const u64 elapsedClick_ns = currentTime_ns - this->m_clickAnimationStartTime;
+                            const float clickBlend = std::max(0.0f, std::min(1.0f,
+                                1.0f - static_cast<float>(elapsedClick_ns) / 500000000.0f));
+                            w2 = blendSwitch2Wheels(makeSwitch2Wheel(), makeSwitch2WheelAlt(), clickBlend);
                         } else {
-                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor));
+                            w2 = buildSwitch2Wheel(!isUnlocked, S2_WHEEL_SLOT_BORDER);
                         }
+                        renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
                     } else {
                         renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
                     }
@@ -10117,6 +10249,7 @@ namespace tsl {
             
             u64 m_clickAnimationStartTime = 0;
             bool m_clickAnimationActive = false;
+            bool m_useClickAnimation = true;
 
             u8 m_numSteps = 101;
             // V2 Style properties
@@ -10203,9 +10336,14 @@ namespace tsl {
                             triggerOffFeedback();
                         }
                     } else {
-                        // Always-unlocked trackbar: full click animation + enter feedback
-                        this->triggerClickAnimation();
-                        triggerEnterFeedback();
+                        if (m_useClickAnimation) {
+                            // Always-unlocked trackbar: full click animation + enter feedback
+                            this->triggerClickAnimation();
+                            triggerEnterFeedback();
+                        } else {
+                            // Animation disabled: wall effect instead of click feedback
+                            this->shakeHighlight(FocusDirection::Right);
+                        }
                     }
                     return true;
                 }
@@ -10526,8 +10664,9 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, false);
-                    if (ult::useSwitch2Style && isEffectivelyUnlocked) {
-                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    if (ult::useSwitch2Style) {
+                        // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
+                        const Switch2Wheel w2 = buildSwitch2Wheel(!isEffectivelyUnlocked, S2_WHEEL_SLOT_HANDLE);
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor), &w2);
                     } else {
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(s_highlightColor));
@@ -10770,8 +10909,13 @@ namespace tsl {
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         // Only trigger click animation when unlocked
                         if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerClick = true;
-                            triggerEnterFeedback();
+                            if (m_useClickAnimation) {
+                                triggerClick = true;
+                                triggerEnterFeedback();
+                            } else {
+                                // Animation disabled: wall effect instead of click feedback
+                                this->shakeHighlight(FocusDirection::Right);
+                            }
                         } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
                             triggerOffFeedback();
                         }
@@ -11070,13 +11214,14 @@ namespace tsl {
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
                     drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
-                    if (ult::useSwitch2Style && !shouldAppearLocked) {
-                        const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
+                    const bool focusedVisuallyUnlocked = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked;
+                    if (ult::useSwitch2Style) {
+                        // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
+                        const Switch2Wheel w2 = buildSwitch2Wheel(!focusedVisuallyUnlocked, S2_WHEEL_SLOT_HANDLE);
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(highlightColor), &w2);
                     } else {
                         renderer->drawCircle(xPos + x + handlePos, yPos + y, 16, true, a(highlightColor));
                     }
-                    const bool focusedVisuallyUnlocked = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked;
                     renderer->drawCircle(xPos + x + handlePos, yPos + y, 12, true, a(focusedVisuallyUnlocked ? trackBarSliderMalleableColor : trackBarSliderColor));
                 }
                  
@@ -11199,12 +11344,17 @@ namespace tsl {
                     if (ult::useSwitch2Style) {
                         const bool shouldAppearLocked_v2 = m_unlockedTrackbar && m_keyRHeld;
                         const bool isUnlocked_v2 = (ult::allowSlide.load(std::memory_order_acquire) || m_unlockedTrackbar) && !shouldAppearLocked_v2;
-                        if (isUnlocked_v2) {
-                            const gfx::Renderer::Switch2Wheel w2 = makeSwitch2Wheel(x, y);
-                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor), &w2);
+                        // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
+                        Switch2Wheel w2;
+                        if (m_clickActive && m_useClickAnimation) {
+                            const u64 elapsedClick_ns = currentTime_ns - m_clickStartTime_ns;
+                            const float clickBlend = std::max(0.0f, std::min(1.0f,
+                                1.0f - static_cast<float>(elapsedClick_ns) / 500000000.0f));
+                            w2 = blendSwitch2Wheels(makeSwitch2Wheel(), makeSwitch2WheelAlt(), clickBlend);
                         } else {
-                            renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor));
+                            w2 = buildSwitch2Wheel(!isUnlocked_v2, S2_WHEEL_SLOT_BORDER);
                         }
+                        renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor), &w2);
                     } else {
                         renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
                     }
@@ -11385,8 +11535,13 @@ namespace tsl {
                     if (m_unlockedTrackbar || (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire))) {
                         // Only trigger click animation when unlocked
                         if (m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire)) {
-                            triggerClick = true;
-                            triggerEnterFeedback();
+                            if (m_useClickAnimation) {
+                                triggerClick = true;
+                                triggerEnterFeedback();
+                            } else {
+                                // Animation disabled: wall effect instead of click feedback
+                                this->shakeHighlight(FocusDirection::Right);
+                            }
                         } else if (!m_unlockedTrackbar && !ult::allowSlide.load(std::memory_order_acquire)) {
                             triggerOffFeedback();
                         }
