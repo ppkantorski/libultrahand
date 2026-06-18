@@ -122,9 +122,9 @@ namespace ult {
     extern bool useStickNavigation;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
-
-    extern bool useDynamicLogo;
+    
     extern bool useSwitch2Style;
+    extern bool useDynamicLogo;
     extern bool useSelectionBG;
     extern bool useSelectionText;
     extern bool useSelectionValue;

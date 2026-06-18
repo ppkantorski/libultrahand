@@ -222,8 +222,8 @@ namespace ult {
     bool useAutoNTPSync = true;
     bool useStickNavigation = true;
     bool usePageSwap = false;
-    bool useDynamicLogo = true;
     bool useSwitch2Style = true;
+    bool useDynamicLogo = true;
     bool useSelectionBG = true;
     bool useSelectionText = true;
     bool useSelectionValue = false;
