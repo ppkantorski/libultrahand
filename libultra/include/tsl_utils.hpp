@@ -353,8 +353,8 @@ namespace ult {
     extern std::string CLEAN_VERSIONS;
 
     extern std::string THEME_SETTINGS;
+    extern std::string SWITCH_2_STYLE;
     extern std::string DYNAMIC_LOGO;
-    extern std::string SWITCH2_STYLE;
     extern std::string SELECTION_BACKGROUND;
     extern std::string SELECTION_TEXT;
     extern std::string SELECTION_VALUE;
