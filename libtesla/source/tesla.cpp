@@ -221,6 +221,13 @@ Color s2TableBorderColor3Deep;
 Color s2TableBorderColor4;
 Color s2TableBorderColor4Deep;
 
+Color s2WidgetBorderColor1;
+Color s2WidgetBorderColor2;
+Color s2WidgetBorderColor3;
+Color s2WidgetBorderColor3Deep;
+Color s2WidgetBorderColor4;
+Color s2WidgetBorderColor4Deep;
+
 Color s2RadioRingColor;
 Color s2RadioSelectedColor;
 Color s2RadioInprogressColor;
@@ -303,6 +310,12 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"s2_toggle_circle_color",          "FFFFFF"},
     {"s2_toggle_off_color",             "555555"},
     {"s2_toggle_on_color",              "0066EE"},
+    {"s2_widget_border_color_1",        "7755FF"},
+    {"s2_widget_border_color_2",        "6644FF"},
+    {"s2_widget_border_color_3",        "779999"},
+    {"s2_widget_border_color_3_deep",   "665577"},
+    {"s2_widget_border_color_4",        "AA9988"},
+    {"s2_widget_border_color_4_deep",   "775555"},
     {"scrollbar_color",                 "555555"},
     {"scrollbar_wall_color",            "AAAAAA"},
     {"selection_bg_alpha",              "11"},
@@ -484,6 +497,12 @@ void initializeThemeVars() {
     s2TableBorderColor3Deep      = getColor("s2_table_border_color_3_deep");
     s2TableBorderColor4          = getColor("s2_table_border_color_4");
     s2TableBorderColor4Deep      = getColor("s2_table_border_color_4_deep");
+    s2WidgetBorderColor1         = getColor("s2_widget_border_color_1");
+    s2WidgetBorderColor2         = getColor("s2_widget_border_color_2");
+    s2WidgetBorderColor3         = getColor("s2_widget_border_color_3");
+    s2WidgetBorderColor3Deep     = getColor("s2_widget_border_color_3_deep");
+    s2WidgetBorderColor4         = getColor("s2_widget_border_color_4");
+    s2WidgetBorderColor4Deep     = getColor("s2_widget_border_color_4_deep");
     s2RadioRingColor             = getColor("s2_radio_ring_color");
     s2RadioSelectedColor         = getColor("s2_radio_selected_color");
     s2RadioInprogressColor       = getColor("s2_radio_inprogress_color");
@@ -795,6 +814,7 @@ namespace impl {
         ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
         ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
         ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
+        ult::dynamicWidgetBorder    = getBool("dynamic_widget_border",   true);
         ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
         ult::hideWidgetBorder       = getBool("hide_widget_border");
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);

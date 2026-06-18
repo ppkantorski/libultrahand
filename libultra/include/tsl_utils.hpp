@@ -325,7 +325,8 @@ namespace ult {
     extern std::string PCB_TEMPERATURE;
     extern std::string BACKDROP;
     extern std::string BORDER;
-    extern std::string DYNAMIC_COLORS;
+    extern std::string DYNAMIC_BORDER;
+    extern std::string DYNAMIC_TEMPS;
     extern std::string CENTER_ALIGNMENT;
     extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
@@ -628,7 +629,7 @@ namespace ult {
     
     
     // Widget settings
-    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors, dynamicWidgetBorder;
     extern bool hideWidgetBackdrop, hideWidgetBorder, centerWidgetAlignment, extendedWidgetBackdrop;
 
     #if IS_LAUNCHER_DIRECTIVE

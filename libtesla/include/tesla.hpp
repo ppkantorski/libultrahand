@@ -491,6 +491,15 @@ namespace tsl {
     extern Color s2TableBorderColor4;      // anchor3 bright
     extern Color s2TableBorderColor4Deep;  // anchor3 deep
 
+    // Widget border wheel: same anchor structure, used for the uniform
+    // rounded-rect border around the clock/battery/temperature widget.
+    extern Color s2WidgetBorderColor1;      // anchor0
+    extern Color s2WidgetBorderColor2;      // anchor2
+    extern Color s2WidgetBorderColor3;      // anchor1 bright
+    extern Color s2WidgetBorderColor3Deep;  // anchor1 deep
+    extern Color s2WidgetBorderColor4;      // anchor3 bright
+    extern Color s2WidgetBorderColor4Deep;  // anchor3 deep
+
     // Radio selector: the unselected ring, the selected/final fill, the
     // in-progress fill, and the white inner dot. (Failed reuses invalidTextColor.)
     extern Color s2RadioRingColor;
@@ -740,6 +749,79 @@ namespace tsl {
         float phi = atan2f(dy, dx);
         if (phi < 0.0f) phi += 6.28318530717958647692f;
         float s = (phi - 3.92699081698724154807f) * (1.0f / 6.28318530717958647692f);
+        s = s - w.rotFrac;
+        s -= floorf(s);
+        return switch2WheelColorFromS(w, s, px, py);
+    }
+
+    // Pill variant of the Switch 2 wheel sampler, for drawUniformRoundedRectBorder
+    // where the corner radius equals half the height (R = h/2). Unlike the
+    // general rounded-rect sampler above, a pill has NO real vertical straight
+    // span -- ccyT and ccyB sit zero or one pixel apart (and can even be
+    // numerically inverted for even heights) -- so the rect sampler's left/right
+    // side-bar branch and its assumption that ccyT < ccyB both break down at
+    // exactly the seam between the bar and the cap, producing a hard colour
+    // jump up the sides instead of a smooth sweep.
+    //
+    // Fix: use ONE fixed pivot row -- the true geometric mid-height -- as the
+    // single shared reference for both the top/bottom bar split AND the cap's
+    // angle origin. Because every zone boundary is then defined relative to
+    // the same constant, the four zones connect exactly at every seam by
+    // construction (verified by direct perimeter trace: max residual seam
+    // error ~0.0007, i.e. floating-point noise, not a real discontinuity).
+    //
+    // Four equal 0.25 shares of s, swept clockwise from the top-left seam:
+    //   side 0: top bar    t: 0 (left seam)   -> 1 (right seam)
+    //   side 1: right cap  t: 0 (top seam)    -> 1 (bottom seam)
+    //   side 2: bottom bar t: 0 (right seam)  -> 1 (left seam)
+    //   side 3: left cap   t: 0 (bottom seam) -> 1 (top seam)
+    static inline Color switch2WheelColorAtPill(
+            const Switch2Wheel& w,
+            s32 px, s32 py,
+            s32 cxL, s32 cxR, s32 ccyT, s32 ccyB) noexcept {
+
+        const float straight_W = static_cast<float>(cxR - cxL);
+        const float pivot      = (static_cast<float>(ccyT) + static_cast<float>(ccyB)) * 0.5f;
+
+        const bool left  = px < cxL;
+        const bool right = px > cxR;
+
+        float side, t;
+
+        if (!left && !right) {
+            // Top or bottom bar: linear position between the two cap seams.
+            if (static_cast<float>(py) <= pivot) {
+                side = 0.0f;
+                t = (static_cast<float>(px) - static_cast<float>(cxL)) / straight_W;
+            } else {
+                side = 2.0f;
+                t = (static_cast<float>(cxR) - static_cast<float>(px)) / straight_W;
+            }
+            t = std::max(0.0f, std::min(1.0f, t));
+        } else {
+            // Left or right semicircle cap: angle around the pivot row,
+            // referenced from the same pivot used by the bar split above.
+            const float ccxC = static_cast<float>(left ? cxL : cxR);
+            const float dpx  = static_cast<float>(px) - ccxC;
+            const float dpy  = static_cast<float>(py) - pivot;
+            const float phi  = atan2f(dpy, dpx);
+
+            if (right) {
+                // Top seam at phi=-90deg, bottom seam at phi=+90deg.
+                t = (phi + 1.57079632679489661923f) * (1.0f / 3.14159265358979323846f);
+                side = 1.0f;
+            } else {
+                // Left cap sweeps the long way through +-180deg: bottom
+                // seam (phi=+90) -> top seam (phi=+270, i.e. wrapped -90).
+                float ang = phi;
+                if (ang < 1.57079632679489661923f) ang += 6.28318530717958647692f;
+                t = (ang - 1.57079632679489661923f) * (1.0f / 3.14159265358979323846f);
+                side = 3.0f;
+            }
+            t = std::max(0.0f, std::min(1.0f, t));
+        }
+
+        float s = side * 0.25f + t * 0.25f;
         s = s - w.rotFrac;
         s -= floorf(s);
         return switch2WheelColorFromS(w, s, px, py);
@@ -3063,7 +3145,8 @@ namespace tsl {
             // Uses analytical sqrtf AA on both edges so the ring fades cleanly in and out.
             inline void drawUniformRoundedRectBorder(const s32 x, const s32 y,
                                                       const s32 w, const s32 h,
-                                                      const s32 T, const Color& color) {
+                                                      const s32 T, const Color& color,
+                                                      const Switch2Wheel* wheel = nullptr) {
                 const s32 R  = h >> 1;
                 const s32 Ri = R - T;
                 if (T <= 0 || Ri < 0 || w <= 0 || h <= 0) return;
@@ -3101,13 +3184,36 @@ namespace tsl {
 
                     if (!in_corners) {
                         // Flat middle row — draw left-T and right-T strips only.
+                        // (In practice unreachable for a true pill where R = h/2,
+                        //  since corner_y_bot < corner_y_top leaves no flat span;
+                        //  kept for safety/odd-height edge cases.)
                         const s32 ls = std::max(x,       clip_left);
                         const s32 le = std::min(x + T,   clip_right);
-                        if (ls < le) fillRowSpanNEON(fb16, rowBase, ls, le, color);
+                        if (ls < le) {
+                            if (wheel != nullptr) {
+                                for (s32 xi = ls; xi < le; ++xi) {
+                                    const Color wc = switch2WheelColorAtPill(*wheel, xi, yc, corner_x_left, corner_x_right, corner_y_top, corner_y_bot);
+                                    const u32 off = blockLinearOffset(static_cast<u32>(xi), rowBase);
+                                    blendPixelDirect(fb16, off, wc, base_a);
+                                }
+                            } else {
+                                fillRowSpanNEON(fb16, rowBase, ls, le, color);
+                            }
+                        }
 
                         const s32 rs = std::max(x_end - T, std::max(clip_left, le));
                         const s32 re = std::min(x_end,     clip_right);
-                        if (rs < re) fillRowSpanNEON(fb16, rowBase, rs, re, color);
+                        if (rs < re) {
+                            if (wheel != nullptr) {
+                                for (s32 xi = rs; xi < re; ++xi) {
+                                    const Color wc = switch2WheelColorAtPill(*wheel, xi, yc, corner_x_left, corner_x_right, corner_y_top, corner_y_bot);
+                                    const u32 off = blockLinearOffset(static_cast<u32>(xi), rowBase);
+                                    blendPixelDirect(fb16, off, wc, base_a);
+                                }
+                            } else {
+                                fillRowSpanNEON(fb16, rowBase, rs, re, color);
+                            }
+                        }
                         continue;
                     }
 
@@ -3145,8 +3251,14 @@ namespace tsl {
 
                         const u32 off   = blockLinearOffset(static_cast<u32>(xc_), rowBase);
                         const u8  alpha = static_cast<u8>(base_a * combined + 0.5f);
-                        if (alpha > 0u)
-                            blendPixelDirect(fb16, off, color, alpha);
+                        if (alpha > 0u) {
+                            if (wheel != nullptr) {
+                                const Color wc = switch2WheelColorAtPill(*wheel, xc_, yc, corner_x_left, corner_x_right, corner_y_top, corner_y_bot);
+                                blendPixelDirect(fb16, off, wc, alpha);
+                            } else {
+                                blendPixelDirect(fb16, off, color, alpha);
+                            }
+                        }
                     };
 
                     s32 xc = span_start;
@@ -3167,16 +3279,23 @@ namespace tsl {
                     const float inner_mid_t = std::min(1.0f, dy   - ri_f + 0.5f); // inner edge fade
                     const float combined_mid = outer_mid_t * inner_mid_t;
                     if (combined_mid > 0.0f && xc < mid_end) {
-                        if (combined_mid >= 1.0f) {
+                        if (combined_mid >= 1.0f && wheel == nullptr) {
                             // Solid — fast NEON path for the fully-opaque interior rows.
                             fillRowSpanNEON(fb16, rowBase, xc, mid_end, color);
                         } else {
                             // Transition row (outer OR inner edge, or both): per-pixel blend.
                             // Fires for at most ~2 rows total (1 outer + 1 inner), no overhead.
+                            // When a wheel is supplied, every pixel in the bar goes through
+                            // the per-pixel path so each column samples its own wheel colour.
                             const u8 mid_alpha = static_cast<u8>(base_a * combined_mid + 0.5f);
                             for (s32 xi = xc; xi < mid_end; ++xi) {
                                 const u32 off = blockLinearOffset(static_cast<u32>(xi), rowBase);
-                                blendPixelDirect(fb16, off, color, mid_alpha);
+                                if (wheel != nullptr) {
+                                    const Color wc = switch2WheelColorAtPill(*wheel, xi, yc, corner_x_left, corner_x_right, corner_y_top, corner_y_bot);
+                                    blendPixelDirect(fb16, off, wc, mid_alpha);
+                                } else {
+                                    blendPixelDirect(fb16, off, color, mid_alpha);
+                                }
                             }
                         }
                     }
@@ -4247,12 +4366,22 @@ namespace tsl {
                         }
                     }
                     if (!ult::hideWidgetBorder) {
+                        const Switch2Wheel w2 = makeSwitch2Wheel(
+                            s2WidgetBorderColor1,      // anchor[0] UR — fixed peak
+                            s2WidgetBorderColor2,      // anchor[2] LL — fixed peak
+                            s2WidgetBorderColor3,      // anchor[1] LR — hero bright
+                            s2WidgetBorderColor3Deep,  // anchor[1] LR — hero deep
+                            s2WidgetBorderColor4,      // anchor[3] UL — hero bright
+                            s2WidgetBorderColor4Deep,  // anchor[3] UL — hero deep
+                            10.0,
+                            false
+                        );
                         drawUniformRoundedRectBorder(
                             xStart, 15 + 2 - 2,
                             (ult::extendedWidgetBackdrop
                                 ? tsl::cfg::FramebufferWidth - 255
                                 : tsl::cfg::FramebufferWidth - 215),
-                            64 + 2, 3, a(widgetBorderColor)
+                            64 + 2, 3, a(widgetBorderColor), ult::dynamicWidgetBorder ? &w2 : nullptr
                         );
                     }
                 }

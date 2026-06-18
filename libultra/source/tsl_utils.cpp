@@ -415,7 +415,8 @@ namespace ult {
     std::string PCB_TEMPERATURE;
     std::string BACKDROP;
     std::string BORDER;
-    std::string DYNAMIC_COLORS;
+    std::string DYNAMIC_BORDER;
+    std::string DYNAMIC_TEMPS;
     std::string CENTER_ALIGNMENT;
     std::string EXTENDED_BACKDROP;
     std::string MISCELLANEOUS;
@@ -640,7 +641,8 @@ namespace ult {
         {&PCB_TEMPERATURE,            "PCB_TEMPERATURE",            "PCB Temperature"},
         {&BACKDROP,                   "BACKDROP",                   "Backdrop"},
         {&BORDER,                     "BORDER",                     "Border"},
-        {&DYNAMIC_COLORS,             "DYNAMIC_COLORS",             "Dynamic Colors"},
+        {&DYNAMIC_BORDER,             "DYNAMIC_BORDER",             "Dynamic Border"},
+        {&DYNAMIC_TEMPS,              "DYNAMIC_TEMPS",              "Dynamic Temps"},
         {&CENTER_ALIGNMENT,           "CENTER_ALIGNMENT",           "Center Alignment"},
         {&EXTENDED_BACKDROP,          "EXTENDED_BACKDROP",          "Extended Backdrop"},
         {&MISCELLANEOUS,              "MISCELLANEOUS",              "Miscellaneous"},
@@ -1200,7 +1202,7 @@ namespace ult {
     
     
     // Widget settings
-    bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors, dynamicWidgetBorder;
     bool hideWidgetBackdrop, hideWidgetBorder, centerWidgetAlignment, extendedWidgetBackdrop;
 
     // Shared helper: single hash lookup instead of count() + at()
@@ -1220,6 +1222,7 @@ namespace ult {
         hideSOCTemp           = getBoolFromSection(ultrahandSection, "hide_soc_temp",            true);
         hidePCBTemp           = getBoolFromSection(ultrahandSection, "hide_pcb_temp",            true);
         dynamicWidgetColors   = getBoolFromSection(ultrahandSection, "dynamic_widget_colors",    true);
+        dynamicWidgetBorder   = getBoolFromSection(ultrahandSection, "dynamic_widget_border",    true);
         hideWidgetBackdrop    = getBoolFromSection(ultrahandSection, "hide_widget_backdrop",     false);
         hideWidgetBorder      = getBoolFromSection(ultrahandSection, "hide_widget_border",       false);
         centerWidgetAlignment = getBoolFromSection(ultrahandSection, "center_widget_alignment",  true);
