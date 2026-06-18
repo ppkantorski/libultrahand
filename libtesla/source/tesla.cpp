@@ -182,6 +182,7 @@ Color inprogressTextColor;
 Color invalidTextColor;
 Color clickTextColor;
 
+Color  tableBorderColor;
 size_t tableBGAlpha = 0;
 Color  tableBGColor;
 Color  sectionTextColor;
@@ -197,6 +198,37 @@ Color trackBarSliderBorderColor;
 Color trackBarSliderMalleableColor;
 Color trackBarFullColor;
 Color trackBarEmptyColor;
+
+// Switch 2 style colours -- formerly hard-coded RGBA4444 literals, now theme-driven.
+Color s2HighlightColor1;
+Color s2HighlightColor2;
+Color s2HighlightColor3;
+Color s2HighlightColor3Deep;
+Color s2HighlightColor4;
+Color s2HighlightColor4Deep;
+
+Color s2AltHighlightColor1;
+Color s2AltHighlightColor2;
+Color s2AltHighlightColor3;
+Color s2AltHighlightColor3Deep;
+Color s2AltHighlightColor4;
+Color s2AltHighlightColor4Deep;
+
+Color s2TableBorderColor1;
+Color s2TableBorderColor2;
+Color s2TableBorderColor3;
+Color s2TableBorderColor3Deep;
+Color s2TableBorderColor4;
+Color s2TableBorderColor4Deep;
+
+Color s2RadioRingColor;
+Color s2RadioSelectedColor;
+Color s2RadioInprogressColor;
+Color s2RadioInnerColor;
+
+Color s2ToggleOnColor;
+Color s2ToggleOffColor;
+Color s2ToggleCircleColor;
 
 
 // Prepare a map of default settings
@@ -237,7 +269,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"neutral_ram_text_color",          "FFAA00"},
     {"notification_text_color",         "FFFFFF"},
     {"notification_title_color",        "FFFFFF"},
-    {"notification_time_color",        "AAAAAA"},
+    {"notification_time_color",         "AAAAAA"},
     {"off_text_color",                  "AAAAAA"},
     {"on_text_color",                   "00FFDD"},
     {"overlay_text_color",              "FFFFFF"},
@@ -246,6 +278,31 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"package_version_text_color",      "AAAAAA"},
     {"progress_alpha",                  "7"},
     {"progress_color",                  "253EF7"},
+    {"s2_alt_highlight_color_1",        "FFAA11"},
+    {"s2_alt_highlight_color_2",        "FFFF00"},
+    {"s2_alt_highlight_color_3",        "FF0088"},
+    {"s2_alt_highlight_color_3_deep",   "FF1100"},
+    {"s2_alt_highlight_color_4",        "FF22DD"},
+    {"s2_alt_highlight_color_4_deep",   "FF3322"},
+    {"s2_highlight_color_1",            "0066FF"},
+    {"s2_highlight_color_2",            "8877FF"},
+    {"s2_highlight_color_3",            "EEFFFF"},
+    {"s2_highlight_color_3_deep",       "AAEEFF"},
+    {"s2_highlight_color_4",            "FFDDDD"},
+    {"s2_highlight_color_4_deep",       "FFBBBB"},
+    {"s2_radio_inner_color",            "FFFFFF"},
+    {"s2_radio_inprogress_color",       "9933EE"},
+    {"s2_radio_ring_color",             "666666"},
+    {"s2_radio_selected_color",         "0066EE"},
+    {"s2_table_border_color_1",         "7755FF"},
+    {"s2_table_border_color_2",         "6644FF"},
+    {"s2_table_border_color_3",         "779999"},
+    {"s2_table_border_color_3_deep",    "665577"},
+    {"s2_table_border_color_4",         "AA9988"},
+    {"s2_table_border_color_4_deep",    "775555"},
+    {"s2_toggle_circle_color",          "FFFFFF"},
+    {"s2_toggle_off_color",             "555555"},
+    {"s2_toggle_on_color",              "0066EE"},
     {"scrollbar_color",                 "555555"},
     {"scrollbar_wall_color",            "AAAAAA"},
     {"selection_bg_alpha",              "11"},
@@ -258,6 +315,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"star_color",                      "FFFFFF"},
     {"table_bg_alpha",                  "14"},
     {"table_bg_color",                  "2C2C2C"},
+    {"table_border_color",              "555555"},
     {"table_info_text_color",           "9ED0FF"},
     {"table_section_text_color",        "FFFFFF"},
     {"temperature_color",               "FFFFFF"},
@@ -393,6 +451,7 @@ void initializeThemeVars() {
     inprogressTextColor          = getColor("inprogress_text_color");
     invalidTextColor             = getColor("invalid_text_color");
     clickTextColor               = getColor("click_text_color");
+    tableBorderColor             = getColor("table_border_color");
     tableBGAlpha                 = getAlpha("table_bg_alpha");
     tableBGColor                 = getColor("table_bg_color", tableBGAlpha);
     sectionTextColor             = getColor("table_section_text_color");
@@ -406,6 +465,32 @@ void initializeThemeVars() {
     trackBarSliderMalleableColor = getColor("trackbar_slider_malleable_color");
     trackBarFullColor            = getColor("trackbar_full_color");
     trackBarEmptyColor           = getColor("trackbar_empty_color");
+
+    s2HighlightColor1            = getColor("s2_highlight_color_1");
+    s2HighlightColor2            = getColor("s2_highlight_color_2");
+    s2HighlightColor3            = getColor("s2_highlight_color_3");
+    s2HighlightColor3Deep        = getColor("s2_highlight_color_3_deep");
+    s2HighlightColor4            = getColor("s2_highlight_color_4");
+    s2HighlightColor4Deep        = getColor("s2_highlight_color_4_deep");
+    s2AltHighlightColor1         = getColor("s2_alt_highlight_color_1");
+    s2AltHighlightColor2         = getColor("s2_alt_highlight_color_2");
+    s2AltHighlightColor3         = getColor("s2_alt_highlight_color_3");
+    s2AltHighlightColor3Deep     = getColor("s2_alt_highlight_color_3_deep");
+    s2AltHighlightColor4         = getColor("s2_alt_highlight_color_4");
+    s2AltHighlightColor4Deep     = getColor("s2_alt_highlight_color_4_deep");
+    s2TableBorderColor1          = getColor("s2_table_border_color_1");
+    s2TableBorderColor2          = getColor("s2_table_border_color_2");
+    s2TableBorderColor3          = getColor("s2_table_border_color_3");
+    s2TableBorderColor3Deep      = getColor("s2_table_border_color_3_deep");
+    s2TableBorderColor4          = getColor("s2_table_border_color_4");
+    s2TableBorderColor4Deep      = getColor("s2_table_border_color_4_deep");
+    s2RadioRingColor             = getColor("s2_radio_ring_color");
+    s2RadioSelectedColor         = getColor("s2_radio_selected_color");
+    s2RadioInprogressColor       = getColor("s2_radio_inprogress_color");
+    s2RadioInnerColor            = getColor("s2_radio_inner_color");
+    s2ToggleOnColor              = getColor("s2_toggle_on_color");
+    s2ToggleOffColor             = getColor("s2_toggle_off_color");
+    s2ToggleCircleColor          = getColor("s2_toggle_circle_color");
 }
 
 
@@ -716,6 +801,7 @@ namespace impl {
         ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
         ult::useDynamicLogo         = getBool("dynamic_logo",            true);
         ult::useSwitch2Style        = getBool("switch_2_style",          true);
+        ult::useDynamicTableColors  = getBool("dynamic_tables",          true);
         ult::useSelectionBG         = getBool("selection_bg",            true);
         ult::useSelectionText       = getBool("selection_text");
         ult::useSelectionValue      = getBool("selection_value");

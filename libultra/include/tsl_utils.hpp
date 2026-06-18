@@ -125,6 +125,7 @@ namespace ult {
     
     extern bool useSwitch2Style;
     extern bool useDynamicLogo;
+    extern bool useDynamicTableColors;
     extern bool useSelectionBG;
     extern bool useSelectionText;
     extern bool useSelectionValue;
@@ -355,6 +356,7 @@ namespace ult {
     extern std::string THEME_SETTINGS;
     extern std::string SWITCH_2_STYLE;
     extern std::string DYNAMIC_LOGO;
+    extern std::string DYNAMIC_TABLES;
     extern std::string SELECTION_BACKGROUND;
     extern std::string SELECTION_TEXT;
     extern std::string SELECTION_VALUE;

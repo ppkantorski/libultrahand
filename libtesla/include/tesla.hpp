@@ -456,6 +456,53 @@ namespace tsl {
         };
     }
 
+    // -- Switch 2 theme colours ----------------------------------------------
+    // Every colour that used to be a hard-coded RGBA4444 literal in the Switch 2
+    // rendering paths now lives in the theme. Stored in the theme INI as RGBA8888
+    // (RRGGBB) and converted back to RGBA4444 by RGB888() in initializeThemeVars,
+    // so the on-screen result is identical to the former literals. Declared here
+    // (before makeSwitch2Wheel) so the wheel makers can use them as default args.
+    // Defined once in tesla.cpp; defaults populated via defaultThemeSettings[].
+    //
+    // Cursor highlight wheel (default): two fixed-peak anchors (1,2) and two
+    // pulsing heroes (3,4) that each ease between a bright and a _deep colour.
+    extern Color s2HighlightColor1;        // anchor0 (fixed peak)
+    extern Color s2HighlightColor2;        // anchor2 (fixed peak)
+    extern Color s2HighlightColor3;        // anchor1 bright (pulsing hero)
+    extern Color s2HighlightColor3Deep;    // anchor1 deep
+    extern Color s2HighlightColor4;        // anchor3 bright (pulsing hero)
+    extern Color s2HighlightColor4Deep;    // anchor3 deep
+
+    // Alternate highlight wheel: the warm "command in progress" / "locked
+    // trackbar" palette, same anchor structure as the default wheel.
+    extern Color s2AltHighlightColor1;     // anchor0
+    extern Color s2AltHighlightColor2;     // anchor2
+    extern Color s2AltHighlightColor3;     // anchor1 bright
+    extern Color s2AltHighlightColor3Deep; // anchor1 deep
+    extern Color s2AltHighlightColor4;     // anchor3 bright
+    extern Color s2AltHighlightColor4Deep; // anchor3 deep
+
+    // Table border wheel: the muted steel/slate palette for the table's bordered
+    // rounded-rect outline, same anchor structure as the default wheel.
+    extern Color s2TableBorderColor1;      // anchor0
+    extern Color s2TableBorderColor2;      // anchor2
+    extern Color s2TableBorderColor3;      // anchor1 bright
+    extern Color s2TableBorderColor3Deep;  // anchor1 deep
+    extern Color s2TableBorderColor4;      // anchor3 bright
+    extern Color s2TableBorderColor4Deep;  // anchor3 deep
+
+    // Radio selector: the unselected ring, the selected/final fill, the
+    // in-progress fill, and the white inner dot. (Failed reuses invalidTextColor.)
+    extern Color s2RadioRingColor;
+    extern Color s2RadioSelectedColor;
+    extern Color s2RadioInprogressColor;
+    extern Color s2RadioInnerColor;
+
+    // Toggle switch: the on/off pill track colours and the sliding circle.
+    extern Color s2ToggleOnColor;
+    extern Color s2ToggleOffColor;
+    extern Color s2ToggleCircleColor;
+
     // -- Switch 2 rotating multicolor cursor ---------------------------------
     // The Switch 2 cursor projects a rotating 4-colour wheel radially outward
     // from the cursor centre.  Each pixel's colour depends only on its ANGLE
@@ -723,12 +770,12 @@ namespace tsl {
     //   Periwinkle    0xFF78 (fixed peak)
     //   Electric Blue 0xFF60 (fixed peak)
     static Switch2Wheel makeSwitch2Wheel(
-        Color anchor0 = 0xFF60, // Electric Blue
-        Color anchor2 = 0xFF78, // Periwinkle
-        Color anchor1Bright = 0xFFFE, // Ice Cyan
-        Color anchor1Deep = 0xFFEA, // Aqua Cyan
-        Color anchor3Bright = 0xFDDF, // Soft Pink
-        Color anchor3Deep = 0xFBBF, // Rose Pink
+        Color anchor0 = s2HighlightColor1, // Electric Blue
+        Color anchor2 = s2HighlightColor2, // Periwinkle
+        Color anchor1Bright = s2HighlightColor3, // Ice Cyan
+        Color anchor1Deep = s2HighlightColor3Deep, // Aqua Cyan
+        Color anchor3Bright = s2HighlightColor4, // Soft Pink
+        Color anchor3Deep = s2HighlightColor4Deep, // Rose Pink
         float rotationDuration = 6.0, // rotation duration in seconds
         bool reverseFlow = false
         ) {
@@ -785,7 +832,7 @@ namespace tsl {
     // "command in progress" and "locked trackbar" states, distinct from the default
     // cool wheel.  Centralised here so it can be retuned in exactly one place.
     static Switch2Wheel makeSwitch2WheelAlt() {
-        return makeSwitch2Wheel(0xF1AF, 0x60FF, 0xF80F, 0xC01F, 0xFD2F, 0xE23F, 6.0, false);
+        return makeSwitch2Wheel(s2AltHighlightColor1, s2AltHighlightColor2, s2AltHighlightColor3, s2AltHighlightColor3Deep, s2AltHighlightColor4, s2AltHighlightColor4Deep, 6.0, false);
     }
 
     // Cross-fade two Switch 2 wheels by t in [0,1]:  t=0 -> 'from',  t=1 -> 'to'.
@@ -924,6 +971,7 @@ namespace tsl {
     extern Color invalidTextColor;
     extern Color clickTextColor;
 
+    extern Color tableBorderColor;
     extern size_t tableBGAlpha;
     extern Color tableBGColor;
     extern Color sectionTextColor;
@@ -5795,16 +5843,16 @@ namespace tsl {
                 if (!hideTableBackground) {
                     renderer->drawRoundedRect(this->getX() + 4+2+1, this->getY()-4-1, this->getWidth() +2 + 1-2, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
                     const Switch2Wheel w2 = makeSwitch2Wheel(
-                        0xFF57,   // anchor[0] UR — fixed peak: Muted Violet-Steel  (r=7, g=5, b=F, a=F)
-                        0xFF46,   // anchor[2] LL — fixed peak: Deep Slate           (r=6, g=4, b=F, a=F)
-                        0xF997,   // anchor[1] LR — hero bright: dim Warm Steel      (r=7, g=9, b=9, a=F)
-                        0xF756,   // anchor[1] LR — hero deep:   dark Slate Navy     (r=6, g=5, b=7, a=F)
-                        0xF89A,   // anchor[3] UL — hero bright: dim Periwinkle      (r=A, g=9, b=8, a=F)
-                        0xF557,   // anchor[3] UL — hero deep:   dark Indigo Gray    (r=7, g=5, b=5, a=F)
+                        s2TableBorderColor1,      // anchor[0] UR — fixed peak: Muted Violet-Steel  (r=7, g=5, b=F, a=F)
+                        s2TableBorderColor2,      // anchor[2] LL — fixed peak: Deep Slate           (r=6, g=4, b=F, a=F)
+                        s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel      (r=7, g=9, b=9, a=F)
+                        s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy     (r=6, g=5, b=7, a=F)
+                        s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle      (r=A, g=9, b=8, a=F)
+                        s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray    (r=7, g=5, b=5, a=F)
                         12.0,
                         true
                     );
-                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+2-1, this->getY()-4+1-1, this->getWidth() +2 + 1+2, this->getHeight() + 20 - endGap+2-3-2+2, 1, 12, a(widgetBorderColor), &w2);
+                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+2-1, this->getY()-4+1-1-1, this->getWidth() +2 + 1+2, this->getHeight() + 20 - endGap+2-3-2+2+2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -7401,7 +7449,7 @@ namespace tsl {
                     scrollbarX + (ult::useSwitch2Style ? 7 : 0),
                     static_cast<s32>(scrollbarY) - 2,
                     5,
-                    static_cast<s32>(scrollbarHeight) + 4,
+                    static_cast<s32>(scrollbarHeight) + 4 +1,
                     2,
                     a(currentColor)
                 );
@@ -9160,14 +9208,14 @@ namespace tsl {
                     // In-progress and the two final states (success/failed) each have
                     // a raw (un-faded) colour; a() is applied once at the very end so
                     // fade/opacity logic isn't disturbed by the blend below.
-                    static constexpr Color kInprogressColor = 0xFE39;
+                    const Color kInprogressColor = s2RadioInprogressColor;
                     static constexpr u64 kColorTransitionNs = 300000000ULL; // 0.3s ease into the result
 
                     Color rawOuter;
                     if (isInprogress) {
                         rawOuter = kInprogressColor;
                     } else {
-                        const Color finalColor = isFailed ? invalidTextColor : Color(0xFE60);
+                        const Color finalColor = isFailed ? invalidTextColor : s2RadioSelectedColor;
                         if (m_radioColorTransitioning) {
                             const u64 elapsed = ult::nowNs() - m_radioColorTransitionStartNs;
                             if (elapsed >= kColorTransitionNs) {
@@ -9182,12 +9230,12 @@ namespace tsl {
                         }
                     }
                     renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, a(rawOuter));
-                    renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(0xFFFF));
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(s2RadioInnerColor));
                 } else {
                     m_radioColorTransitioning = false; // nothing filled to ease toward once deselected
                     // Solid, smooth 3px grey ring (opaque core + edge AA).
                     static constexpr u16 kRingThickness = 2;
-                    renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(0xF666));
+                    renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(s2RadioRingColor));
                 }
             }
 
@@ -9628,9 +9676,9 @@ namespace tsl {
                 const float p = currentSwitchP();
 
                 // Colours given as 0xRGBA; decode nibbles (alpha forced opaque, faded by a()).
-                const Color onColor    (0x0, 0x6, 0xE, 0xF);   // 0x06EF
-                const Color offColor   (0x5, 0x5, 0x5, 0xF);   // 0x555F
-                const Color circleColor(0xF, 0xF, 0xF, 0xF);   // 0xFFFF
+                const Color onColor     = s2ToggleOnColor;     // 0x06EF
+                const Color offColor    = s2ToggleOffColor;    // 0x555F
+                const Color circleColor = s2ToggleCircleColor; // 0xFFFF
                 const Color trackColor = lerpColor(onColor, offColor, p);  // p=1 on, p=0 off
 
                 renderer->drawUniformRoundedRect(trackX, trackY, kTrackW, kTrackH, a(trackColor));
