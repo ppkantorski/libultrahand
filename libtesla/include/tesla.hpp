@@ -9067,6 +9067,18 @@ namespace tsl {
                 s32 circleLeft = groupLeft;
                 bool selected;
 
+                // Detect transient states: in-progress and failed. Both show the
+                // filled circle immediately (no vanishing ring) so there is zero
+                // visual stutter when clicking the same item or any other item.
+                // The outer fill colour signals the state; the white inner dot is
+                // always present so the circle reads as "occupied".
+                const bool isInprogress = (m_value == ult::INPROGRESS_SYMBOL);
+                const bool isFailed     = (m_value == ult::CROSSMARK_SYMBOL);
+                // Treat either transient state as "selected" for geometry purposes
+                // so the label branch draws the footer and circleLeft is computed
+                // identically regardless of state.
+                const bool filledState  = isInprogress || isFailed;
+
                 if (m_flags.m_radioLabelSelector) {
                     // Draw the label (e.g. "en", or a package option's footer)
                     // right up against a gap before the circle, using the same
@@ -9077,7 +9089,16 @@ namespace tsl {
                     // margin. The circle's own position only depends on this
                     // label's width, not on which item it is, so every circle in
                     // the menu still lands on the same right edge.
-                    const std::string label = radioSelectorLabel(&selected);
+                    std::string label;
+                    if (filledState) {
+                        // Value is a transient symbol, not "footer CHECKMARK" —
+                        // use the stored footer directly so the label stays visible
+                        // and circleLeft is stable while the command runs.
+                        label = m_radioSelectorFooter;
+                        selected = true;   // keep filled geometry
+                    } else {
+                        label = radioSelectorLabel(&selected);
+                    }
                     static constexpr s32 fontSize = 20;
                     if (!label.empty()) {
                         const s32 labelWidth = static_cast<s32>(renderer->getTextDimensions(label, false, fontSize).first);
@@ -9088,19 +9109,26 @@ namespace tsl {
                         renderer->drawString(label, false, groupLeft, labelY, fontSize, determineValueTextColor(useClickTextColor));
                     }
                 } else {
-                    selected = (m_value == ult::CHECKMARK_SYMBOL);
+                    selected = filledState || (m_value == ult::CHECKMARK_SYMBOL);
                 }
 
                 const s32 cx = circleLeft + kOuterR;                      // centre x
                 const s32 cy = this->getY() + (this->getHeight() >> 1) +1;   // row centre y
 
                 if (selected) {
-                    renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, a(Color(static_cast<u16>(0xFE60))));
-                    renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(Color(static_cast<u16>(0xFFFF))));
+                    // Choose outer colour based on state:
+                    //   normal selected  → accent blue  (0xFE60)
+                    //   in-progress      → inprogressTextColor (orange/yellow theme colour)
+                    //   failed           → invalidTextColor    (red theme colour)
+                    const Color outerColor = isInprogress ? a(0xFE48)
+                                           : isFailed     ? a(invalidTextColor)
+                                           :                a(0xFE60);
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, outerColor);
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(0xFFFF));
                 } else {
                     // Solid, smooth 3px grey ring (opaque core + edge AA).
                     static constexpr u16 kRingThickness = 2;
-                    renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(Color(static_cast<u16>(0xF666))));
+                    renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(0xF666));
                 }
             }
 
