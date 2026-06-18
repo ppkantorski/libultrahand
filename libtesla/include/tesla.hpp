@@ -7393,9 +7393,18 @@ namespace tsl {
                 }
             
                 // Draw scrollbar with interpolated color
-                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 2, true, a(currentColor));
-                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY + scrollbarHeight, 2, true, a(currentColor));
-                renderer->drawRect(scrollbarX + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 5, scrollbarHeight, a(currentColor));
+                //renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 2, true, a(currentColor));
+                //renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY + scrollbarHeight, 2, true, a(currentColor));
+                //renderer->drawRect(scrollbarX + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 5, scrollbarHeight, a(currentColor));
+
+                renderer->drawRoundedRectSingleThreaded(
+                    scrollbarX + (ult::useSwitch2Style ? 7 : 0),
+                    static_cast<s32>(scrollbarY) - 2,
+                    5,
+                    static_cast<s32>(scrollbarHeight) + 4,
+                    2,
+                    a(currentColor)
+                );
             }
 
             
