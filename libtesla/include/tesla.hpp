@@ -815,6 +815,11 @@ namespace tsl {
         constexpr u32 TrackBarDefaultHeight         = 83;       ///< Standard track bar height
         constexpr u8  ListItemHighlightSaturation   = 7;        ///< Maximum saturation of Listitem highlights
         constexpr u8  ListItemHighlightLength       = 22;       ///< Maximum length of Listitem highlights
+
+        // Switch-style click flash: shown at a single constant tone for this long,
+        // then disappears instantly (no fade-out), matching the brief solid-color
+        // flash the Switch UI itself uses on selection instead of a long fade.
+        constexpr u64 ClickFlashDurationNs          = 55000000ULL; ///< ~55ms flash window
         
         namespace color {
             constexpr Color ColorFrameBackground  = { 0x0, 0x0, 0x0, 0xD };   ///< Overlay frame background color
@@ -826,6 +831,8 @@ namespace tsl {
             constexpr Color ColorDescription      = { 0xA, 0xA, 0xA, 0xF };   ///< Description text color
             constexpr Color ColorHeaderBar        = { 0xC, 0xC, 0xC, 0xF };   ///< Category header rectangle color
             constexpr Color ColorClickAnimation   = { 0x0, 0x2, 0x2, 0xF };   ///< Element click animation color
+            constexpr Color ColorClickFlash       = { 0x1, 0xD, 0xB, 0x4 };   ///< Switch-style bluish-green click flash tone (translucent, doesn't flood)
+            constexpr Color ColorClickFlashInv    = { 0x0, 0x6, 0x5, 0x4 };   ///< Darker variant of the click flash tone, used when invertBGClickColor is set
         }
     }
 
@@ -2254,6 +2261,77 @@ namespace tsl {
                                 }
                                 if (cnt) blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase),
                                                           color, (u8)((base_a * cnt + 4) / 8));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Solid anti-aliased ring (annulus) of the given outer radius and stroke
+            // thickness. Unlike drawCircle(filled=false) -- a 1px outline whose pixels
+            // are almost entirely partial-coverage AA (and therefore look faint/
+            // transparent at larger radii) -- this fills the whole
+            // [rOuter-thickness, rOuter] band at full opacity, applying 8-sample AA
+            // only at the inner and outer edges so the stroke stays smooth but solid.
+            inline void drawRing(const s32 centerX, const s32 centerY, const u16 rOuter,
+                                 const u16 thickness, const Color& color) {
+                const float ro     = static_cast<float>(rOuter);
+                const float ri     = static_cast<float>(rOuter > thickness ? rOuter - thickness : 0);
+                const u8    base_a = color.a;
+
+                const s32 bound = static_cast<s32>(rOuter) + 2;
+                s32 clip_left   = std::max(0, centerX - bound);
+                s32 clip_right  = std::min(static_cast<s32>(cfg::FramebufferWidth),  centerX + bound);
+                s32 clip_top    = std::max(0, centerY - bound);
+                s32 clip_bottom = std::min(static_cast<s32>(cfg::FramebufferHeight), centerY + bound);
+                if (this->m_scissorDepth != 0) [[unlikely]] {
+                    const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                    clip_left   = std::max(clip_left,   static_cast<s32>(sc.x));
+                    clip_right  = std::min(clip_right,  static_cast<s32>(sc.x_max));
+                    clip_top    = std::max(clip_top,    static_cast<s32>(sc.y));
+                    clip_bottom = std::min(clip_bottom, static_cast<s32>(sc.y_max));
+                    if (clip_left >= clip_right || clip_top >= clip_bottom) return;
+                }
+
+                u16* fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+
+                // Analytic edge AA: pixels well inside the band are fully opaque; pixels
+                // within kFeather of either edge fade with continuous (not 8-step)
+                // coverage derived from the radial distance, so the stroke reads as a
+                // smooth, solid ring rather than a hard-quantised one. kFeather is the
+                // AA half-width in pixels -- larger is softer, smaller is crisper.
+                static constexpr float kFeather = 0.75f;
+                const float ro_o = ro + kFeather, ro_i = ro - kFeather;   // outer-edge feather band
+                const float ri_o = ri + kFeather, ri_i = ri - kFeather;   // inner-edge feather band
+                const float out_aa    = ro_o * ro_o;   // d2 >  this -> fully outside
+                const float out_solid = ro_i * ro_i;   // d2 <= this -> past the outer feather
+                const float in_solid  = ri_o * ri_o;   // d2 >= this -> past the inner feather
+                const float in_aa     = ri_i * ri_i;   // d2 <  this -> fully inside the hole
+                const float invFeather = 1.0f / (2.0f * kFeather);
+                const bool  hasHole    = ri > 0.0f;
+
+                for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                    const float py    = static_cast<float>(yc - centerY) + 0.5f;
+                    const float py_sq = py * py;
+                    if (py_sq > out_aa) continue;
+                    const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                    for (s32 xc = clip_left; xc < clip_right; ++xc) {
+                        const float px = static_cast<float>(xc - centerX) + 0.5f;
+                        const float d2 = px * px + py_sq;
+                        if (d2 > out_aa || (hasHole && d2 < in_aa)) continue;   // outside the ring
+                        if (d2 <= out_solid && (!hasHole || d2 >= in_solid)) {
+                            blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase), color, base_a);
+                        } else {
+                            const float d = sqrtf(d2);
+                            float cov = (ro_o - d) * invFeather;                 // outer feather: 1 -> 0
+                            if (hasHole) {
+                                const float covIn = (d - ri_i) * invFeather;     // inner feather: 0 -> 1
+                                if (covIn < cov) cov = covIn;
+                            }
+                            if (cov > 1.0f) cov = 1.0f;
+                            if (cov > 0.0f) {
+                                const u8 aa = static_cast<u8>(base_a * cov + 0.5f);
+                                if (aa) blendPixelDirect(fb16, blockLinearOffset((u32)xc, rowBase), color, aa);
                             }
                         }
                     }
@@ -5041,7 +5119,6 @@ namespace tsl {
             
 
             u64 t_ns;  // Changed from chrono::duration to nanoseconds
-            u8 saturation;
             float progress;
             
             s32 x, y;
@@ -5168,6 +5245,12 @@ namespace tsl {
                 }
                 
                 this->draw(renderer);
+                
+                // Click flash is drawn last, on top of the freshly-drawn content (see
+                // drawClickFlash's note for why).
+                if (this->m_focused) {
+                    this->drawClickFlash(renderer);
+                }
             }
             
             /**
@@ -5230,20 +5313,6 @@ namespace tsl {
                     else
                         renderer->drawRectAdaptive(this->getX() + x + 4, this->getY() + y, this->getWidth() - 8, this->getHeight(), aWithOpacity(selectionBGColor));
                 }
-                
-                saturation = tsl::style::ListItemHighlightSaturation * (float(this->m_clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
-                
-                Color animColor = {0xF,0xF,0xF,0xF};
-                if (invertBGClickColor) {
-                    const u8 inverted = 15-saturation;
-                    animColor = {inverted, inverted, inverted, selectionBGColor.a};
-                } else {
-                    animColor = {saturation, saturation, saturation, selectionBGColor.a};
-                }
-                if (ult::useSwitch2Style)
-                    renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(animColor));
-                else
-                    renderer->drawRectAdaptive(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
                 
                 // Cache time calculation - only compute once
                 static u64 lastTimeUpdate = 0;
@@ -5314,6 +5383,34 @@ namespace tsl {
                 } else {
                     renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
                 }
+            }
+
+            /**
+             * @brief Draws the brief Switch-style click flash tone.
+             * @note Called by \ref Element::frame() AFTER the element's own content
+             *       (icon/text) has been drawn, not before — so the tone reads as a
+             *       single uniform veil painted on top of everything, the same way the
+             *       Switch's own selection flash looks. Drawing it earlier (underneath
+             *       the content, as the old implementation did) let any translucency in
+             *       the content blend into the flash colour, which read as the content's
+             *       own opacity dipping rather than a clean overlay.
+             * @note Override this if you have a element that e.g requires a non-rectangular flash
+             *
+             * @param renderer Renderer
+             */
+            virtual void drawClickFlash(gfx::Renderer *renderer) {
+                if (!m_isItem)
+                    return;
+                const u64 flashElapsed_ns = ult::nowNs() - this->m_animationStartTime;
+                if (flashElapsed_ns >= tsl::style::ClickFlashDurationNs)
+                    return;
+                const Color animColor = invertBGClickColor
+                    ? tsl::style::color::ColorClickFlashInv
+                    : tsl::style::color::ColorClickFlash;
+                if (ult::useSwitch2Style)
+                    renderer->drawRoundedRect(this->getX() - 3, this->getY(), this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(animColor));
+                else
+                    renderer->drawRectAdaptive(ELEMENT_BOUNDS(this), aWithOpacity(animColor));
             }
 
             // Build this element's Switch 2 cursor wheel for the current frame, easing a
@@ -5686,9 +5783,18 @@ namespace tsl {
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground) {
-                    renderer->drawRoundedRect(this->getX() + 4+2, this->getY()-4-1, this->getWidth() +2 + 1, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
-                    const Switch2Wheel w2 = makeSwitch2Wheel();
-                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+1, this->getY()-4, this->getWidth() +2 + 3, this->getHeight() + 20 - endGap+2-3, 1, 12, a(widgetBorderColor), &w2);
+                    renderer->drawRoundedRect(this->getX() + 4+2+1, this->getY()-4-1, this->getWidth() +2 + 1-2, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
+                    const Switch2Wheel w2 = makeSwitch2Wheel(
+                        0xFF57,   // anchor[0] UR — fixed peak: Muted Violet-Steel  (r=7, g=5, b=F, a=F)
+                        0xFF46,   // anchor[2] LL — fixed peak: Deep Slate           (r=6, g=4, b=F, a=F)
+                        0xF997,   // anchor[1] LR — hero bright: dim Warm Steel      (r=7, g=9, b=9, a=F)
+                        0xF756,   // anchor[1] LR — hero deep:   dark Slate Navy     (r=6, g=5, b=7, a=F)
+                        0xF89A,   // anchor[3] UL — hero bright: dim Periwinkle      (r=A, g=9, b=8, a=F)
+                        0xF557,   // anchor[3] UL — hero deep:   dark Indigo Gray    (r=7, g=5, b=5, a=F)
+                        12.0,
+                        true
+                    );
+                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+2-1, this->getY()-4+1-1, this->getWidth() +2 + 1+2, this->getHeight() + 20 - endGap+2-3-2+2, 1, 12, a(widgetBorderColor), &w2);
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -8355,7 +8461,9 @@ namespace tsl {
                     drawTruncatedText(renderer, textBaselineY, useClickTextColor, specialChars);
                 }
         
-                if (!m_value.empty()) [[likely]] {
+                if (m_flags.m_radioSelector && ult::useSwitch2Style) [[unlikely]] {
+                    drawRadioSelector(renderer, useClickTextColor);
+                } else if (!m_value.empty()) [[likely]] {
                     drawValue(renderer, yOffset, useClickTextColor);
                 }
             }
@@ -8511,6 +8619,50 @@ namespace tsl {
                 m_flags.m_hasCustomValueColor = false;
             }
 
+            // Mark this item as a Switch2-style radio selector. When enabled AND
+            // ult::useSwitch2Style is active, the value slot draws a circular radio
+            // mark instead of value text: a ~2px grey ring when unselected, or a
+            // filled accent circle with a pure-white center when selected (i.e. when
+            // m_value == ult::CHECKMARK_SYMBOL). When Switch2 style is off this flag
+            // has no effect, so the classic checkmark/value rendering is preserved.
+            inline void setRadioSelector(bool enable = true) {
+                if (m_flags.m_radioSelector != enable) {
+                    m_flags.m_radioSelector = enable;
+                    m_maxWidth = 0;   // force width recalculation on next draw
+                }
+            }
+
+            // Variant of setRadioSelector() for items whose value text must stay
+            // visible alongside the radio mark (e.g. language codes "en"/"es"/"fr").
+            // In Switch2 style, the label (m_value minus a trailing " "+CHECKMARK_SYMBOL,
+            // which is stripped to detect/show selection) is drawn one space to the
+            // left of the circle, using the same selection-aware colour ordinary value
+            // text uses, so it looks identical to Switch1 style aside from the added mark.
+            inline void setRadioLabelSelector(bool enable = true) {
+                if (m_flags.m_radioSelector != enable || m_flags.m_radioLabelSelector != enable) {
+                    m_flags.m_radioSelector = enable;
+                    m_flags.m_radioLabelSelector = enable;
+                    m_maxWidth = 0;   // force width recalculation on next draw
+                }
+            }
+
+            // Overload of setRadioLabelSelector() for items whose value text
+            // collapses to a bare CHECKMARK_SYMBOL when selected, discarding their
+            // footer text entirely (e.g. ultrahand package ;mode=option items,
+            // whose footer is instead stashed elsewhere for restoration on
+            // deselect). footer is stored independently here and always shown
+            // beside the circle in both states; selection is still read straight
+            // from m_value via exact equality, exactly like the plain (non-label)
+            // radio selector.
+            inline void setRadioLabelSelector(const std::string& footer) {
+                setRadioLabelSelector(true);
+                if (!m_flags.m_hasRadioSelectorFooter || m_radioSelectorFooter != footer) {
+                    m_radioSelectorFooter = footer;
+                    m_flags.m_hasRadioSelectorFooter = true;
+                    m_maxWidth = 0;
+                }
+            }
+
             inline void disableClickAnimation() {
                 m_flags.m_useClickAnimation = false;
             }
@@ -8591,6 +8743,8 @@ namespace tsl {
             std::string m_value;
             std::string m_scrollText;
             std::string m_ellipsisText;
+            std::string m_radioSelectorFooter; // independent label for radio-label selectors whose
+                                                // m_value collapses to a bare checkmark when selected
             u16 m_listItemHeight;  // Changed from u32 to u16
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
@@ -8608,6 +8762,10 @@ namespace tsl {
                 bool m_isTouchHolding: 1;
                 bool m_shortThresholdCrossed : 1;
                 bool m_longThresholdCrossed : 1;
+                bool m_radioSelector : 1;   // draw a Switch2-style radio mark in the value slot
+                bool m_radioWidthsS2 : 1;   // style under which the radio reserved width was computed
+                bool m_radioLabelSelector : 1; // also draw m_value (label text) left of the radio mark
+                bool m_hasRadioSelectorFooter : 1; // m_radioSelectorFooter holds an explicit label override
             } m_flags = {};
         
             Color m_customTextColor;
@@ -8666,6 +8824,33 @@ namespace tsl {
             // a subclass (e.g. a Switch2-style toggle) can reserve a fixed widget width
             // instead of the value-text width, keeping the label truncation correct.
             virtual s32 valueReservedWidth(gfx::Renderer* renderer) {
+                if (m_flags.m_radioSelector) {
+                    m_flags.m_radioWidthsS2 = ult::useSwitch2Style;
+                    // The circle occupies the value slot (left edge at m_maxWidth+47,
+                    // same anchor as value text); +66 mirrors the value-text padding so
+                    // the circle's right edge lands where value text would end. Diameter
+                    // is scaled to row height -- see radioSelectorDiameter().
+                    if (ult::useSwitch2Style) {
+                        const s32 diameter = radioSelectorDiameter();
+                        if (!m_flags.m_radioLabelSelector) return diameter + 66;
+                        // Label + gap + circle, reserved together so the circle's
+                        // right edge still lands exactly where value text would end,
+                        // regardless of the label's own width (the label itself ends
+                        // up right-aligned just before the gap). An empty label (e.g.
+                        // a package option with no footer) reserves no gap either, so
+                        // the circle alone sits flush against the right margin. The
+                        // gap text here MUST match drawRadioSelector()'s exactly --
+                        // any mismatch shifts the drawn circle by the difference,
+                        // since this reservation is the only thing keeping the
+                        // circle's position independent of the label's presence.
+                        const std::string label = radioSelectorLabel();
+                        const s32 labelWidth = label.empty() ? 0
+                            : static_cast<s32>(renderer->getTextDimensions(label, false, 20).first);
+                        const s32 gapWidth = label.empty() ? 0
+                            : static_cast<s32>(renderer->getTextDimensions("  ", false, 20).first);
+                        return labelWidth + gapWidth + diameter + 66;
+                    }
+                }
                 return m_value.empty() ? 62
                                        : (static_cast<s32>(renderer->getTextDimensions(m_value, false, 20).first) + 66);
             }
@@ -8676,7 +8861,7 @@ namespace tsl {
             // m_maxWidth (and thus the value/switch position) stays correct immediately
             // after such a change instead of only after the item is reconstructed.
             virtual bool valueReservedWidthChanged() {
-                return false;
+                return m_flags.m_radioSelector && (m_flags.m_radioWidthsS2 != ult::useSwitch2Style);
             }
 
             // In Switch2 style the focused-item scissor is extended 7px on the left
@@ -8809,6 +8994,116 @@ namespace tsl {
             }
                     
         protected:
+            // Outer-circle diameter for the Switch2 radio mark, scaled to this item's
+            // row height. 36px (the existing, unscaled size) is kept exactly as-is at
+            // the standard 70px row. Rows shrink that proportionally as height drops,
+            // down to a floor of 20px -- the diameter of the knob circle inside
+            // ToggleListItem::drawSwitch() (kCircleR = kRadius-kGap = 13-3 = 10) -- so
+            // a mini list item's radio mark (40px row) never looks smaller than the
+            // matching mini toggle's own knob, and is in fact sized to match it
+            // exactly. Anything below the mini height also clamps at that floor
+            // rather than continuing to shrink. Shared by valueReservedWidth() and
+            // drawRadioSelector() so the reserved width and the drawn circle agree.
+            s32 radioSelectorDiameter() const {
+                static constexpr s32 kBaseDiameter  = 36;  // unchanged, standard 70px row
+                static constexpr s32 kFloorDiameter = 20;  // matches the Switch2 toggle knob (2*kCircleR)
+                static constexpr s32 kBaseHeight    = static_cast<s32>(tsl::style::ListItemDefaultHeight);     // 70
+                static constexpr s32 kFloorHeight   = static_cast<s32>(tsl::style::MiniListItemDefaultHeight); // 40
+
+                const s32 h = static_cast<s32>(m_listItemHeight);
+                if (h >= kBaseHeight)  return kBaseDiameter;   // common case, unchanged
+                if (h <= kFloorHeight) return kFloorDiameter;  // mini rows: exactly matches the toggle knob
+
+                // Linear interpolation for any height strictly between the two anchors.
+                return kFloorDiameter
+                       + ((kBaseDiameter - kFloorDiameter) * (h - kFloorHeight) + (kBaseHeight - kFloorHeight) / 2)
+                         / (kBaseHeight - kFloorHeight);
+            }
+
+            // Shared by valueReservedWidth() and drawRadioSelector(): derives the
+            // label text to show beside the circle and, via outSelected, whether
+            // this item is the selected one. Two cases:
+            //  - m_hasRadioSelectorFooter set (e.g. ultrahand package ;mode=option
+            //    items): the label is the independently-stored footer, and
+            //    selection is read straight from m_value via exact equality
+            //    (m_value collapses to a bare CHECKMARK_SYMBOL when selected).
+            //  - otherwise (e.g. the language menu): the label is m_value minus a
+            //    trailing " "+CHECKMARK_SYMBOL, whose presence signals selection.
+            // Centralising this keeps the reserved width and the actual draw
+            // always in agreement.
+            std::string radioSelectorLabel(bool* outSelected = nullptr) const {
+                if (m_flags.m_hasRadioSelectorFooter) {
+                    if (outSelected) *outSelected = (m_value == ult::CHECKMARK_SYMBOL);
+                    return m_radioSelectorFooter;
+                }
+                static const std::string checkSuffix = std::string(" ") + std::string(ult::CHECKMARK_SYMBOL);
+                if (m_value.size() >= checkSuffix.size() &&
+                    m_value.compare(m_value.size() - checkSuffix.size(), checkSuffix.size(), checkSuffix) == 0) {
+                    if (outSelected) *outSelected = true;
+                    return m_value.substr(0, m_value.size() - checkSuffix.size());
+                }
+                if (outSelected) *outSelected = false;
+                return m_value;
+            }
+
+            // Switch2-style radio mark, drawn in the value slot. Geometry mirrors
+            // drawSwitch(): the circle's right edge lands where value text would end
+            // (m_maxWidth already reserves radioSelectorDiameter() px via
+            // valueReservedWidth, scaled down on mini list items), centred vertically
+            // in the row. Selected (m_value == CHECKMARK_SYMBOL) -> filled accent
+            // circle with a white inner circle; unselected -> a ~2px grey ring.
+            // Colours are native RGBA4444 packed literals (r in the low nibble),
+            // matching drawCircle/drawSwitch.
+            //
+            // When m_radioLabelSelector is also set (e.g. the language menu), the
+            // label text (m_value, minus a trailing " "+CHECKMARK_SYMBOL used to
+            // detect selection) is drawn one space to the left of the circle, in
+            // the same selection-aware colour Switch1 style uses for value text.
+            void drawRadioSelector(gfx::Renderer* renderer, bool useClickTextColor) {
+                const s32 kOuterR = radioSelectorDiameter() / 2;      // scaled to row height (18 on a standard 70px row)
+                const s32 kInnerR = kOuterR / 3 + 1;                  // same ratio as full size at any scale
+
+                const s32 groupLeft = this->getX() + m_maxWidth + 47;  // value-text left anchor
+                s32 circleLeft = groupLeft;
+                bool selected;
+
+                if (m_flags.m_radioLabelSelector) {
+                    // Draw the label (e.g. "en", or a package option's footer)
+                    // right up against a gap before the circle, using the same
+                    // selection-aware colour Switch1 style uses for value text, so
+                    // it looks identical aside from the added mark. An empty label
+                    // (e.g. a package option with no footer) reserves no gap
+                    // either, so the circle alone sits flush against the right
+                    // margin. The circle's own position only depends on this
+                    // label's width, not on which item it is, so every circle in
+                    // the menu still lands on the same right edge.
+                    const std::string label = radioSelectorLabel(&selected);
+                    static constexpr s32 fontSize = 20;
+                    if (!label.empty()) {
+                        const s32 labelWidth = static_cast<s32>(renderer->getTextDimensions(label, false, fontSize).first);
+                        const s32 gapWidth   = static_cast<s32>(renderer->getTextDimensions("  ", false, fontSize).first);
+                        circleLeft = groupLeft + labelWidth + gapWidth;
+
+                        const s32 labelY = renderer->getVerticalCenterBaseline(getY(), m_listItemHeight, fontSize);
+                        renderer->drawString(label, false, groupLeft, labelY, fontSize, determineValueTextColor(useClickTextColor));
+                    }
+                } else {
+                    selected = (m_value == ult::CHECKMARK_SYMBOL);
+                }
+
+                const s32 cx = circleLeft + kOuterR;                      // centre x
+                const s32 cy = this->getY() + (this->getHeight() >> 1) +1;   // row centre y
+
+                if (selected) {
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, a(Color(static_cast<u16>(0xFE60))));
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(Color(static_cast<u16>(0xFFFF))));
+                } else {
+                    // Solid, smooth 3px grey ring (opaque core + edge AA).
+                    static constexpr u16 kRingThickness = 2;
+                    renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(Color(static_cast<u16>(0xF666))));
+                }
+            }
+
             virtual void drawValue(gfx::Renderer* renderer, s32 yOffset, bool useClickTextColor) {
                 (void)yOffset;
                 const s32 xPosition = getX() + m_maxWidth + 47;
@@ -9374,7 +9669,7 @@ namespace tsl {
                             headerTop,
                             4,
                             22,
-                            2,
+                            1,
                             aWithOpacity(headerSeparatorColor));
                     }
                 }
@@ -9919,6 +10214,7 @@ namespace tsl {
                 if (touchInSliderBounds) {
                     m_drawFrameless = true;
                     drawHighlight(renderer);
+                    drawClickFlash(renderer);
                 } else {
                     m_drawFrameless = false;
                 }
@@ -10138,34 +10434,29 @@ namespace tsl {
                 }
             
                 ult::onTrackBar.exchange(true, std::memory_order_acq_rel);
-                
-                if (this->m_clickAnimationActive) {
-                    const u64 elapsedTime_ns = currentTime_ns - this->m_clickAnimationStartTime;
-            
-                    auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (static_cast<float>(elapsedTime_ns) / 500000000.0f));
-                    
-                    if (clickAnimationProgress < 0.0f) {
-                        clickAnimationProgress = 0.0f;
-                        this->m_clickAnimationActive = false;
-                    }
-                
-                    if (clickAnimationProgress > 0.0f) {
-                        const u8 saturation = tsl::style::ListItemHighlightSaturation * (float(clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
-                
-                        Color animColor = {0xF, 0xF, 0xF, 0xF};
-                        if (invertBGClickColor) {
-                            animColor.r = 15 - saturation;
-                            animColor.g = 15 - saturation;
-                            animColor.b = 15 - saturation;
-                        } else {
-                            animColor.r = saturation;
-                            animColor.g = saturation;
-                            animColor.b = saturation;
-                        }
-                        animColor.a = selectionBGColor.a;
-                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
-                    }
-                }
+            }
+
+            /**
+             * @brief Draws the brief Switch-style click flash tone.
+             * @note Called by \ref Element::frame() AFTER the trackbar's own content has
+             *       been drawn, so the tone reads as a clean overlay rather than bleeding
+             *       underneath into the content's own translucency.
+             *
+             * @param renderer Renderer
+             */
+            virtual void drawClickFlash(gfx::Renderer *renderer) override {
+                if (!this->m_clickAnimationActive)
+                    return;
+                const u64 elapsedTime_ns = ult::nowNs() - this->m_clickAnimationStartTime;
+                if (elapsedTime_ns >= tsl::style::ClickFlashDurationNs)
+                    return;
+                const Color animColor = invertBGClickColor
+                    ? tsl::style::color::ColorClickFlashInv
+                    : tsl::style::color::ColorClickFlash;
+                if (ult::useSwitch2Style)
+                    renderer->drawRoundedRect(this->getX() + 16, this->getY(), this->getWidth() - 9, this->getHeight() + 1, 7, aWithOpacity(animColor));
+                else
+                    renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
             }
 
             /**
@@ -10608,6 +10899,7 @@ namespace tsl {
                 if (touchInSliderBounds) {
                     m_drawFrameless = true;
                     drawHighlight(renderer);
+                    drawClickFlash(renderer);
                 } else {
                     m_drawFrameless = false;
                 }
@@ -11198,6 +11490,7 @@ namespace tsl {
                 if (visuallyUnlocked && touchInSliderBounds) {
                     m_drawFrameless = true;
                     drawHighlight(renderer);
+                    drawClickFlash(renderer);
                 } else {
                     m_drawFrameless = false;
                 }
@@ -11361,33 +11654,29 @@ namespace tsl {
                 }
                 
                 ult::onTrackBar.store(true, std::memory_order_release);
-            
-                if (m_clickActive && m_useClickAnimation) {
-                    const u64 elapsedTime_ns = currentTime_ns - m_clickStartTime_ns;
-            
-                    auto clickAnimationProgress = tsl::style::ListItemHighlightLength * (1.0f - (static_cast<float>(elapsedTime_ns) / 500000000.0f));
-                    
-                    if (clickAnimationProgress < 0.0f) {
-                        clickAnimationProgress = 0.0f;
-                    }
-                
-                    if (clickAnimationProgress > 0.0f) {
-                        const u8 saturation = tsl::style::ListItemHighlightSaturation * (float(clickAnimationProgress) / float(tsl::style::ListItemHighlightLength));
-                
-                        Color animColor = {0xF, 0xF, 0xF, 0xF};
-                        if (invertBGClickColor) {
-                            animColor.r = 15 - saturation;
-                            animColor.g = 15 - saturation;
-                            animColor.b = 15 - saturation;
-                        } else {
-                            animColor.r = saturation;
-                            animColor.g = saturation;
-                            animColor.b = saturation;
-                        }
-                        animColor.a = selectionBGColor.a;
-                        renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
-                    }
-                }
+            }
+
+            /**
+             * @brief Draws the brief Switch-style click flash tone.
+             * @note Called by \ref Element::frame() AFTER the trackbar's own content has
+             *       been drawn, so the tone reads as a clean overlay rather than bleeding
+             *       underneath into the content's own translucency.
+             *
+             * @param renderer Renderer
+             */
+            virtual void drawClickFlash(gfx::Renderer *renderer) override {
+                if (!(m_clickActive && m_useClickAnimation))
+                    return;
+                const u64 elapsedTime_ns = ult::nowNs() - m_clickStartTime_ns;
+                if (elapsedTime_ns >= tsl::style::ClickFlashDurationNs)
+                    return;
+                const Color animColor = invertBGClickColor
+                    ? tsl::style::color::ColorClickFlashInv
+                    : tsl::style::color::ColorClickFlash;
+                if (ult::useSwitch2Style)
+                    renderer->drawRoundedRect(this->getX() + 16, this->getY(), this->getWidth() - 9, this->getHeight() + 1, 7, aWithOpacity(animColor));
+                else
+                    renderer->drawRect(this->getX() +22, this->getY(), this->getWidth() -22, this->getHeight(), aWithOpacity(animColor));
             }
             
             virtual u8 getIndex() {

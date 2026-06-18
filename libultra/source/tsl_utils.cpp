@@ -527,6 +527,7 @@ namespace ult {
     std::string REBOOT;
     std::string SHUTDOWN;
     std::string BOOT_ENTRY;
+    std::string INI_ENTRY;
     #endif
 
     std::string INCOMPATIBLE_WARNING;
@@ -742,6 +743,7 @@ namespace ult {
         {&REBOOT,                     "REBOOT",                     "Reboot"},
         {&SHUTDOWN,                   "SHUTDOWN",                   "Shutdown"},
         {&BOOT_ENTRY,                 "BOOT_ENTRY",                 "Boot Entry"},
+        {&INI_ENTRY,                  "INI_ENTRY",                  "INI Entry"},
         #endif
 
         {&INCOMPATIBLE_WARNING,       "INCOMPATIBLE_WARNING",       "Incompatible on AMS v1.10+"},
@@ -862,16 +864,25 @@ namespace ult {
             if (text.length() == 2 && text[0] == 'O' && text[1] == 'n') { text = ON; return; }
             if (text.length() == 3 && text[0] == 'O' && text[1] == 'f' && text[2] == 'f') { text = OFF; return; }
         }
-        #if IS_LAUNCHER_DIRECTIVE
+    #if IS_LAUNCHER_DIRECTIVE
         else {
             switch (text.length()) {
-                case 6:  if (text == "Reboot")    { text = REBOOT;    } break;
-                case 8:  if (text == "Shutdown")  { text = SHUTDOWN;  } break;
-                case 9:  if (text == "Reboot To") { text = REBOOT_TO; } break;
-                case 10: if (text == "Boot Entry"){ text = BOOT_ENTRY;} break;
+                case 6:
+                    if (text == "Reboot") { text = REBOOT; }
+                    break;
+                case 8:
+                    if (text == "Shutdown") { text = SHUTDOWN; }
+                    break;
+                case 9:
+                    if (text == "Reboot To") { text = REBOOT_TO; }
+                    else if (text == "INI Entry") { text = INI_ENTRY; }
+                    break;
+                case 10:
+                    if (text == "Boot Entry") { text = BOOT_ENTRY; }
+                    break;
             }
         }
-        #endif
+    #endif
     }
     
     

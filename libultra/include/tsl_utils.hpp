@@ -445,6 +445,7 @@ namespace ult {
     extern std::string REBOOT;
     extern std::string SHUTDOWN;
     extern std::string BOOT_ENTRY;
+    extern std::string INI_ENTRY;
     #endif
 
     extern std::string INCOMPATIBLE_WARNING;
