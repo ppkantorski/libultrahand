@@ -5470,6 +5470,13 @@ namespace tsl {
                     if (this->m_clickAnimationProgress < 0) {
                         this->m_clickAnimationProgress = 0;
                     }
+                    // The click pulse owned this frame's highlight draw -- even though
+                    // the decay above may have just clamped progress to exactly 0,
+                    // drawHighlight() (called right after, same frame) must not ALSO
+                    // draw the steady highlight on top of it this frame.
+                    this->m_clickAnimationDrewThisFrame = true;
+                } else {
+                    this->m_clickAnimationDrewThisFrame = false;
                 }
             }
             
@@ -5558,7 +5565,7 @@ namespace tsl {
                     }
                 }
                 
-                if (this->m_clickAnimationProgress == 0) {
+                if (this->m_clickAnimationProgress == 0 && !this->m_clickAnimationDrewThisFrame) {
                     if (ult::useSelectionBG) {
                         if (ult::useSwitch2Style)
                             renderer->drawRoundedRect(this->getX() + x - 3, this->getY() + y, this->getWidth() + 6, this->getHeight() + 1, 7, aWithOpacity(selectionBGColor));
@@ -5718,6 +5725,9 @@ namespace tsl {
             constexpr static inline auto aWithOpacity = &gfx::Renderer::aWithOpacity;
             bool m_focused = false;
             u8 m_clickAnimationProgress = 0;
+            // True for exactly the frame in which drawFocusBackground() drew the
+            // click-pulse animation (see drawHighlight() for why this matters).
+            bool m_clickAnimationDrewThisFrame = false;
             
             // Highlight shake animation
             bool m_highlightShaking = false;
@@ -8746,6 +8756,11 @@ namespace tsl {
             std::string m_radioSelectorFooter; // independent label for radio-label selectors whose
                                                 // m_value collapses to a bare checkmark when selected
             u16 m_listItemHeight;  // Changed from u32 to u16
+
+            // Radio selector in-progress -> final colour blend (see drawRadioSelector()).
+            bool m_radioWasInprogress = false;        // previous frame's in-progress state, edge-detects resolution
+            bool m_radioColorTransitioning = false;   // true while easing from the in-progress colour to the final one
+            u64  m_radioColorTransitionStartNs = 0;   // ult::nowNs() timestamp marking when that ease began
             
             // Bitfield for boolean flags - saves ~7 bytes per instance
             struct {
@@ -9079,6 +9094,19 @@ namespace tsl {
                 // identically regardless of state.
                 const bool filledState  = isInprogress || isFailed;
 
+                // Edge-detect the moment in-progress resolves into a final state
+                // (success or failure) and arm a brief colour ease from the
+                // in-progress colour into the final one, so the circle settles
+                // into its result instead of snapping. Re-entering in-progress
+                // (e.g. a retry) cancels any ease still in flight.
+                if (isInprogress) {
+                    m_radioColorTransitioning = false;
+                } else if (m_radioWasInprogress) {
+                    m_radioColorTransitioning = true;
+                    m_radioColorTransitionStartNs = ult::nowNs();
+                }
+                m_radioWasInprogress = isInprogress;
+
                 if (m_flags.m_radioLabelSelector) {
                     // Draw the label (e.g. "en", or a package option's footer)
                     // right up against a gap before the circle, using the same
@@ -9106,7 +9134,11 @@ namespace tsl {
                         circleLeft = groupLeft + labelWidth + gapWidth;
 
                         const s32 labelY = renderer->getVerticalCenterBaseline(getY(), m_listItemHeight, fontSize);
-                        renderer->drawString(label, false, groupLeft, labelY, fontSize, determineValueTextColor(useClickTextColor));
+                    #if IS_LAUNCHER_DIRECTIVE
+                        renderer->drawString(label, false, groupLeft, labelY, fontSize, determineValueTextColor(useClickTextColor, false, true));
+                    #else
+                        renderer->drawString(label, false, groupLeft, labelY, fontSize, determineValueTextColor(useClickTextColor, true));
+                    #endif
                     }
                 } else {
                     selected = filledState || (m_value == ult::CHECKMARK_SYMBOL);
@@ -9116,16 +9148,34 @@ namespace tsl {
                 const s32 cy = this->getY() + (this->getHeight() >> 1) +1;   // row centre y
 
                 if (selected) {
-                    // Choose outer colour based on state:
-                    //   normal selected  → accent blue  (0xFE60)
-                    //   in-progress      → inprogressTextColor (orange/yellow theme colour)
-                    //   failed           → invalidTextColor    (red theme colour)
-                    const Color outerColor = isInprogress ? a(0xFE48)
-                                           : isFailed     ? a(invalidTextColor)
-                                           :                a(0xFE60);
-                    renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, outerColor);
+                    // In-progress and the two final states (success/failed) each have
+                    // a raw (un-faded) colour; a() is applied once at the very end so
+                    // fade/opacity logic isn't disturbed by the blend below.
+                    static constexpr Color kInprogressColor = 0xFE39;
+                    static constexpr u64 kColorTransitionNs = 300000000ULL; // 0.3s ease into the result
+
+                    Color rawOuter;
+                    if (isInprogress) {
+                        rawOuter = kInprogressColor;
+                    } else {
+                        const Color finalColor = isFailed ? invalidTextColor : Color(0xFE60);
+                        if (m_radioColorTransitioning) {
+                            const u64 elapsed = ult::nowNs() - m_radioColorTransitionStartNs;
+                            if (elapsed >= kColorTransitionNs) {
+                                m_radioColorTransitioning = false;
+                                rawOuter = finalColor;
+                            } else {
+                                const float progress = static_cast<float>(elapsed) / static_cast<float>(kColorTransitionNs);
+                                rawOuter = lerpColor(finalColor, kInprogressColor, progress); // 0->inprogress, 1->final
+                            }
+                        } else {
+                            rawOuter = finalColor;
+                        }
+                    }
+                    renderer->drawCircle(cx, cy, static_cast<u16>(kOuterR), true, a(rawOuter));
                     renderer->drawCircle(cx, cy, static_cast<u16>(kInnerR), true, a(0xFFFF));
                 } else {
+                    m_radioColorTransitioning = false; // nothing filled to ease toward once deselected
                     // Solid, smooth 3px grey ring (opaque core + edge AA).
                     static constexpr u16 kRingThickness = 2;
                     renderer->drawRing(cx, cy, static_cast<u16>(kOuterR), kRingThickness, a(0xF666));
@@ -9160,9 +9210,9 @@ namespace tsl {
         
         private:
         #if IS_LAUNCHER_DIRECTIVE
-            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter = false) const {
+            Color determineValueTextColor(bool useClickTextColor, bool lastRunningInterpreter = false, bool skipTransientColor = false) const {
         #else
-            Color determineValueTextColor(bool useClickTextColor) const {
+            Color determineValueTextColor(bool useClickTextColor, bool skipTransientColor = false) const {
         #endif
                 if (m_focused && ult::useSelectionValue) {
                     if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
@@ -9178,16 +9228,21 @@ namespace tsl {
                     }
                 }
         
-                // shared logic — only reached once per path
-            #if IS_LAUNCHER_DIRECTIVE
-                const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
-                if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
-                                 m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
-                                 m_value.find(ult::COPY_SYMBOL) != std::string::npos))
-                    return m_flags.m_faint ? offTextColor : inprogressTextColor;
-            #endif
-                if (m_value == ult::INPROGRESS_SYMBOL) return m_flags.m_faint ? offTextColor : inprogressTextColor;
-                if (m_value == ult::CROSSMARK_SYMBOL)  return m_flags.m_faint ? offTextColor : invalidTextColor;
+                // shared logic — only reached once per path. Skipped entirely when
+                // skipTransientColor is set (e.g. the radio-label-selector's adjacent
+                // label text, which should never recolour for an in-progress/failed
+                // m_value -- only the circle itself reflects that state).
+                if (!skipTransientColor) {
+                #if IS_LAUNCHER_DIRECTIVE
+                    const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
+                    if (isRunning && (m_value.find(ult::DOWNLOAD_SYMBOL) != std::string::npos ||
+                                     m_value.find(ult::UNZIP_SYMBOL) != std::string::npos ||
+                                     m_value.find(ult::COPY_SYMBOL) != std::string::npos))
+                        return m_flags.m_faint ? offTextColor : inprogressTextColor;
+                #endif
+                    if (m_value == ult::INPROGRESS_SYMBOL) return m_flags.m_faint ? offTextColor : inprogressTextColor;
+                    if (m_value == ult::CROSSMARK_SYMBOL)  return m_flags.m_faint ? offTextColor : invalidTextColor;
+                }
         
                 return (m_focused && ult::useSelectionValue)
                     ? (useClickTextColor ? clickTextColor : selectedValueTextColor)
