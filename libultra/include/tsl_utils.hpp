@@ -122,8 +122,10 @@ namespace ult {
     extern bool useStickNavigation;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
-
+    
+    extern bool useSwitch2Style;
     extern bool useDynamicLogo;
+    extern bool useDynamicTableColors;
     extern bool useSelectionBG;
     extern bool useSelectionText;
     extern bool useSelectionValue;
@@ -323,7 +325,8 @@ namespace ult {
     extern std::string PCB_TEMPERATURE;
     extern std::string BACKDROP;
     extern std::string BORDER;
-    extern std::string DYNAMIC_COLORS;
+    extern std::string DYNAMIC_BORDER;
+    extern std::string DYNAMIC_TEMPS;
     extern std::string CENTER_ALIGNMENT;
     extern std::string EXTENDED_BACKDROP;
     extern std::string MISCELLANEOUS;
@@ -352,7 +355,9 @@ namespace ult {
     extern std::string CLEAN_VERSIONS;
 
     extern std::string THEME_SETTINGS;
+    extern std::string SWITCH_2_STYLE;
     extern std::string DYNAMIC_LOGO;
+    extern std::string DYNAMIC_TABLES;
     extern std::string SELECTION_BACKGROUND;
     extern std::string SELECTION_TEXT;
     extern std::string SELECTION_VALUE;
@@ -443,6 +448,7 @@ namespace ult {
     extern std::string REBOOT;
     extern std::string SHUTDOWN;
     extern std::string BOOT_ENTRY;
+    extern std::string INI_ENTRY;
     #endif
 
     extern std::string INCOMPATIBLE_WARNING;
@@ -523,8 +529,8 @@ namespace ult {
     
     
     // Predefined hexMap
-    inline constexpr std::array<int, 256> hexMap = [] {
-        std::array<int, 256> map = {0};
+    inline constexpr std::array<u8, 256> hexMap = [] {
+        std::array<u8, 256> map = {0};
         map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
         map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
         map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;
@@ -623,7 +629,7 @@ namespace ult {
     
     
     // Widget settings
-    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors;
+    extern bool hideClock, hideBattery, hidePCBTemp, hideSOCTemp, dynamicWidgetColors, dynamicWidgetBorder;
     extern bool hideWidgetBackdrop, hideWidgetBorder, centerWidgetAlignment, extendedWidgetBackdrop;
 
     #if IS_LAUNCHER_DIRECTIVE
