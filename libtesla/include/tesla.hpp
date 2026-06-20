@@ -2469,21 +2469,22 @@ namespace tsl {
             }
 
             inline void drawBorderedRoundedRect(const s32 x, const s32 y, const s32 width, const s32 height, const s32 thickness, const s32 radius, const Color& highlightColor, const Switch2Wheel* wheel = nullptr) {
-                // ── Coordinate conventions (preserved from original) ──────────────────
-                // Corner centres: cxL = x+4,  cxR = x+width-9
-                //                 cyT = y,     cyB = y+height
+                // ── Coordinate convention ───────────────────────────────────────────
+                // (x, y, width, height) is the exact painted bounding box — the same
+                // convention as drawRoundedRect. The shape (bars + corner arcs together)
+                // fills precisely cols [x, x+width) and rows [y, y+height), and never
+                // more, never less, regardless of radius or thickness. There is no
+                // protrusion past the box and no implicit shrinking inside it.
                 //
-                // Outer bounding box of the stroke:
-                //   left  = cxL - radius          right (excl) = cxR + radius + 1
-                //   top   = cyT - thickness        bottom(excl) = cyB + thickness + 1
+                // Corner centres (matches drawRoundedRect's own corner formula exactly):
+                //   cxL = x + radius,            cxR = x + width  - radius - 1
+                //   cyT = y + thickness,         cyB = y + height - thickness - 1
                 //
-                // For the default Switch1 call (x=gX+4, width=gW+4, thickness=5, radius=5):
-                //   cxL=gX+8, cxR=gX+gW-1  →  left=gX+3, right(excl)=gX+gW+5
-                //   top=y-5, bottom(excl)=y+height+6  — identical to the original bars.
-                //
-                // For Switch2 (same x/width, radius=12):
-                //   same cxL/cxR  →  left=gX-4, right(excl)=gX+gW+12  (7px wider each side)
-                //   top/bottom rows unchanged.
+                // Proof the painted shape stays flush with the box at any radius/thickness:
+                //   leftmost col   (left arc reaches  cxL - radius)        = x
+                //   rightmost col  (right arc reaches  cxR + radius)       = x + width  - 1
+                //   topmost row    (top bar starts at  cyT - thickness)    = y
+                //   bottommost row (bottom bar ends at cyB + thickness)    = y + height - 1
                 //
                 // Four straight bars fill the non-corner portions:
                 //   Top    bar: rows [cyT-T, cyT),      cols [cxL, cxR+1)
@@ -2497,25 +2498,14 @@ namespace tsl {
                 // When radius>thickness (Switch2), only the annulus ring is drawn, leaving
                 // the interior hollow — matching the rounded rectangle shape in the reference.
 
-                const s32 cyT = y;
-                const s32 cyB = y + height;
                 const s32 T   = thickness;
                 const s32 r   = radius;
                 const s32 Ri  = r - T;  // inner radius (0 for Switch1)
 
-                // Corner centre X coordinates differ between the two paths because the
-                // call conventions differ:
-                //   Switch1: caller passes the original x/width (unchanged).
-                //            cxL = x+4, cxR = x+width-9  (original hardcoded offsets).
-                //   Switch2: caller passes x-7 and width+14 to make the visual bounding
-                //            box explicit (outer left = x, outer right = x+width-1).
-                //            The +11/-16 offsets below compensate so that the corner
-                //            centres land on exactly the same pixels as they did before,
-                //            producing identical visual output.
-                //   Proof: cxL_S2 - r = (x+11)-12 = x-1 = (x_old+4)-5 = cxL_S1-r  ✓
-                //          Middle span width unchanged: (cxR-cxL-1) = width-28 in both cases.
-                //
-                // cyT/cyB are the same in both cases (y and height are not adjusted).
+                const s32 cxL = x + r;
+                const s32 cxR = x + width  - r - 1;
+                const s32 cyT = y + T;
+                const s32 cyB = y + height - T - 1;
 
                 // Corner centres sit (r-T) pixels inward from the top/bottom bar edges,
                 // so the arc's outermost row lands exactly on the bar's outermost row.
@@ -2523,14 +2513,11 @@ namespace tsl {
                 //   Arc outer top  = ccyT - r  must equal  cyT - T
                 //   → ccyT = cyT - T + r = cyT + (r - T)
                 //
-                // For Switch1 (r=T=5): ccyT = cyT + 0 = cyT  (unchanged)
-                // For Switch2 (r=12, T=5): ccyT = cyT + 7
+                // For Switch1 (r==T): ccyT = cyT + 0 = cyT  (unchanged)
+                // For Switch2 (r>T):  ccyT = cyT + (r - T)
                 //
                 // The side bars cover only the straight portion between the two
-                // curved corners, i.e. rows [ccyT, ccyB+1):
-                //   Switch1: [cyT,  cyB+1)   (full height, same as before)
-                //   Switch2: [cyT+7, cyB-6)  (shorter by 2*(r-T) rows)
-                //
+                // curved corners, i.e. rows [ccyT, ccyB+1).
                 // The top/bottom bars are unchanged: rows [cyT-T, cyT) and [cyB+1, cyB+T+1).
                 // The arc covers the corner region and the transition rows between the
                 // bar ends and the corner centres — no separate rectangles needed there.
@@ -2560,15 +2547,11 @@ namespace tsl {
 
                 if (Ri == 0) {
                     // ── Switch1 path (radius == thickness): original Bresenham implementation ──
-                    // Pixel-identical to the original drawBorderedRoundedRect.
-                    // Caller passes the original x/width; corner centres use the original offsets.
-                    const s32 cxL = x + 4;
-                    const s32 cxR = x + width - 9;
-
+                    // cxL/cxR/cyT/cyB already computed above (shared with the Switch2 path).
                     const s32 startX        = cxL;
                     const s32 startY        = cyT;
-                    const s32 adjustedWidth  = cxR - cxL + 1;   // = width - 12
-                    const s32 adjustedHeight = cyB - cyT + 1;   // = height + 1
+                    const s32 adjustedWidth  = cxR - cxL + 1;   // = width - 2*radius
+                    const s32 adjustedHeight = cyB - cyT + 1;   // = height - 2*thickness
 
                     const s32 leftCornerX  = cxL;
                     const s32 rightCornerX = cxR;
@@ -2694,13 +2677,7 @@ namespace tsl {
                     //  • The top/bottom bars' left/right edges are no longer hard rectangles;
                     //    they fade naturally as the circle boundary passes through them.
                     //
-                    // Caller passes x-7 and width+14 (explicit visual bounding box).
-                    // The +11/-16 offsets below compensate so corner centres land on the
-                    // same pixels as the original implicit convention (cxL=x+4, cxR=x+width-9
-                    // with the old x/width).  Visual output is identical; the API is explicit.
-                    const s32 cxL = x + 11;
-                    const s32 cxR = x + width - 16;
-
+                    // cxL/cxR/cyT/cyB already computed above (shared with the Switch1 path).
                     const s32 py_top = cyT - T;
                     const s32 py_bot = cyB + T;
 
@@ -2822,7 +2799,12 @@ namespace tsl {
                 blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(xp), rowBase), color, a);
             }
 
-            ALWAYS_INLINE static void fillRowSpanNEON(u16* fb16, const u32 rowBase,
+            // [[gnu::noinline]]: ~13 call sites stamp this whole NEON body (plus its
+            // inlined blockLinearOffset expansions) into the caller when forced inline.
+            // It runs its own per-span pixel loops, so the saved call is amortised over
+            // the entire span -- out-of-lining collapses 13 copies to one for negligible
+            // runtime cost. Behavior is identical; this is a pure code-gen (size) change.
+            [[gnu::noinline]] static void fillRowSpanNEON(u16* fb16, const u32 rowBase,
                                                       const s32 xs, const s32 xe,
                                                       const Color& color) {
                 const s32 span = xe - xs;
@@ -5556,9 +5538,9 @@ namespace tsl {
                     const float clickBlend = std::max(0.0f, std::min(1.0f,
                         static_cast<float>(this->m_clickAnimationProgress) / static_cast<float>(tsl::style::ListItemHighlightLength)));
                     const Switch2Wheel w2 = blendSwitch2Wheels(makeSwitch2Wheel(), makeSwitch2WheelAlt(), clickBlend);
-                    renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                    renderer->drawBorderedRoundedRect(this->getX() + x - 8, this->getY() + y - 5, this->getWidth() + 16, this->getHeight() + 11, 5, 12, a(s_highlightColor), &w2);
                 } else {
-                    renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
+                    renderer->drawBorderedRoundedRect(this->getX() + x - 1, this->getY() + y - 5, this->getWidth() + 2, this->getHeight() + 11, 5, 5, a(s_highlightColor));
                 }
             }
 
@@ -5778,9 +5760,9 @@ namespace tsl {
                         // Command in progress (interpreter running) cross-fades to the
                         // alternate wheel palette; the normal cursor uses the default.
                         const Switch2Wheel w2 = buildSwitch2Wheel(lastInterpreterState, S2_WHEEL_SLOT_HANDLE);
-                        renderer->drawBorderedRoundedRect(this->getX() + x - 7, this->getY() + y, this->getWidth() + 4 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                        renderer->drawBorderedRoundedRect(this->getX() + x - 8, this->getY() + y - 5, this->getWidth() + 16, this->getHeight() + 11, 5, 12, a(s_highlightColor), &w2);
                     } else {
-                        renderer->drawBorderedRoundedRect(this->getX() + x, this->getY() + y, this->getWidth() + 4, this->getHeight(), 5, 5, a(s_highlightColor));
+                        renderer->drawBorderedRoundedRect(this->getX() + x - 1, this->getY() + y - 5, this->getWidth() + 2, this->getHeight() + 11, 5, 5, a(s_highlightColor));
                     }
                 }
                 
@@ -5970,7 +5952,7 @@ namespace tsl {
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground) {
-                    renderer->drawRoundedRect(this->getX() + 4+2+1, this->getY()-4-1, this->getWidth() +2 + 1-2, this->getHeight() + 20 - endGap+2, 12.0, aWithOpacity(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 4+2+1+1, this->getY()-4-1+1, this->getWidth() +2 + 1-2-2, this->getHeight() + 20 - endGap+2-2, 12.0, aWithOpacity(tableBGColor));
                     const Switch2Wheel w2 = makeSwitch2Wheel(
                         s2TableBorderColor1,      // anchor[0] UR — fixed peak: Muted Violet-Steel  (r=7, g=5, b=F, a=F)
                         s2TableBorderColor2,      // anchor[2] LL — fixed peak: Deep Slate           (r=6, g=4, b=F, a=F)
@@ -5981,7 +5963,7 @@ namespace tsl {
                         12.0,
                         true
                     );
-                    renderer->drawBorderedRoundedRect(this->getX() + 4+2+2-1, this->getY()-4+1-1-1, this->getWidth() +2 + 1+2, this->getHeight() + 20 - endGap+2-3-2+2+2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    renderer->drawBorderedRoundedRect(this->getX() + 6+1, this->getY() - 5, this->getWidth() + 1, this->getHeight() + 22 - endGap, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -9678,7 +9660,12 @@ namespace tsl {
                     return ListItem::onClick(keys);
                 }
                 #endif
-                return false;
+                // Any other key (e.g. KEY_X/KEY_Y for caller-defined reordering) falls
+                // through to ListItem::onClick, which forwards it to m_clickListener --
+                // the same path the SCRIPT_KEY branch above already uses. Without this,
+                // a click listener set via setClickListener() never fires for non-toggle
+                // keys, since this override would otherwise swallow them with `return false`.
+                return ListItem::onClick(keys);
             }
             
             /**
@@ -10689,9 +10676,9 @@ namespace tsl {
                         } else {
                             w2 = buildSwitch2Wheel(!isUnlocked, S2_WHEEL_SLOT_BORDER);
                         }
-                        renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(s_highlightColor), &w2);
+                        renderer->drawBorderedRoundedRect(this->getX() + x + 11, this->getY() + y - 5, this->getWidth() + 1, this->getHeight() + 11, 5, 12, a(s_highlightColor), &w2);
                     } else {
-                        renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(s_highlightColor));
+                        renderer->drawBorderedRoundedRect(this->getX() + x + 18, this->getY() + y - 5, this->getWidth() - 13, this->getHeight() + 11, 5, 5, a(s_highlightColor));
                     }
                 } else {
                     if (ult::useSelectionBG) {
@@ -11916,9 +11903,9 @@ namespace tsl {
                         } else {
                             w2 = buildSwitch2Wheel(!isUnlocked_v2, S2_WHEEL_SLOT_BORDER);
                         }
-                        renderer->drawBorderedRoundedRect(this->getX() + x +19 - 7, this->getY() + y, this->getWidth()-11 + 14, this->getHeight(), 5, 12, a(highlightColor), &w2);
+                        renderer->drawBorderedRoundedRect(this->getX() + x + 11, this->getY() + y - 5, this->getWidth() + 1, this->getHeight() + 11, 5, 12, a(highlightColor), &w2);
                     } else {
-                        renderer->drawBorderedRoundedRect(this->getX() + x +19, this->getY() + y, this->getWidth()-11, this->getHeight(), 5, 5, a(highlightColor));
+                        renderer->drawBorderedRoundedRect(this->getX() + x + 18, this->getY() + y - 5, this->getWidth() - 13, this->getHeight() + 11, 5, 5, a(highlightColor));
                     }
                 }
                 

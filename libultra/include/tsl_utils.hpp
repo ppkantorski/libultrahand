@@ -529,8 +529,8 @@ namespace ult {
     
     
     // Predefined hexMap
-    inline constexpr std::array<int, 256> hexMap = [] {
-        std::array<int, 256> map = {0};
+    inline constexpr std::array<u8, 256> hexMap = [] {
+        std::array<u8, 256> map = {0};
         map['0'] = 0; map['1'] = 1; map['2'] = 2; map['3'] = 3; map['4'] = 4;
         map['5'] = 5; map['6'] = 6; map['7'] = 7; map['8'] = 8; map['9'] = 9;
         map['A'] = 10; map['B'] = 11; map['C'] = 12; map['D'] = 13; map['E'] = 14; map['F'] = 15;

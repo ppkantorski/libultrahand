@@ -71,8 +71,10 @@ namespace ult {
         char* buffer = bufferPtr.get();
         std::string line;
     
-        // Create field map once outside the loop
-        const std::map<std::string_view, std::string*> fieldMap = {
+        // Field prefixes paired with their target members. A plain array avoids
+        // instantiating std::map<std::string_view, std::string*> (smaller code, no
+        // per-call heap nodes); each line matches at most one prefix so order is moot.
+        const std::pair<std::string_view, std::string*> fieldMap[] = {
             {";title=", &packageHeader.title},
             {";display_title=", &packageHeader.display_title},
             {";version=", &packageHeader.version},
@@ -85,7 +87,7 @@ namespace ult {
         };
         
         int fieldsFound = 0;
-        const int totalFields = fieldMap.size();
+        const int totalFields = static_cast<int>(sizeof(fieldMap) / sizeof(fieldMap[0]));
         
         size_t startPos, endPos, first, last;
         std::string value;
