@@ -5952,18 +5952,18 @@ namespace tsl {
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground) {
-                    renderer->drawRoundedRect(this->getX() + 4+2+1+1, this->getY()-4-1+1, this->getWidth() +2 + 1-2-2, this->getHeight() + 20 - endGap+2-2, 12.0, aWithOpacity(tableBGColor));
+                    renderer->drawRoundedRect(this->getX() + 8, this->getY()-4, this->getWidth() - 1, this->getHeight() + 22 - endGap-2, 12.0, aWithOpacity(tableBGColor));
                     const Switch2Wheel w2 = makeSwitch2Wheel(
-                        s2TableBorderColor1,      // anchor[0] UR — fixed peak: Muted Violet-Steel  (r=7, g=5, b=F, a=F)
-                        s2TableBorderColor2,      // anchor[2] LL — fixed peak: Deep Slate           (r=6, g=4, b=F, a=F)
-                        s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel      (r=7, g=9, b=9, a=F)
-                        s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy     (r=6, g=5, b=7, a=F)
-                        s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle      (r=A, g=9, b=8, a=F)
-                        s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray    (r=7, g=5, b=5, a=F)
+                        s2TableBorderColor1,      // anchor[0] UR — fixed peak:  Muted Violet-Steel (default)  (r=7, g=5, b=F, a=F)
+                        s2TableBorderColor2,      // anchor[2] LL — fixed peak:  Deep Slate (default)          (r=6, g=4, b=F, a=F)
+                        s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel (default)      (r=7, g=9, b=9, a=F)
+                        s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy (default)     (r=6, g=5, b=7, a=F)
+                        s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle (default)      (r=A, g=9, b=8, a=F)
+                        s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray (default)    (r=7, g=5, b=5, a=F)
                         12.0,
                         true
                     );
-                    renderer->drawBorderedRoundedRect(this->getX() + 6+1, this->getY() - 5, this->getWidth() + 1, this->getHeight() + 22 - endGap, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    renderer->drawBorderedRoundedRect(this->getX() +8-1, this->getY() - 4-1, this->getWidth() - 1 + 2, this->getHeight() + 22 - endGap - 2 + 2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -7552,18 +7552,18 @@ namespace tsl {
                 }
             
                 // Draw scrollbar with interpolated color
-                //renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 2, true, a(currentColor));
-                //renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY + scrollbarHeight, 2, true, a(currentColor));
-                //renderer->drawRect(scrollbarX + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 5, scrollbarHeight, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 2, true, a(currentColor));
+                renderer->drawCircle(scrollbarX + 2 + (ult::useSwitch2Style ? 7 : 0), scrollbarY + scrollbarHeight, 2, true, a(currentColor));
+                renderer->drawRect(scrollbarX + (ult::useSwitch2Style ? 7 : 0), scrollbarY, 5, scrollbarHeight, a(currentColor));
 
-                renderer->drawRoundedRectSingleThreaded(
-                    scrollbarX + (ult::useSwitch2Style ? 7 : 0),
-                    static_cast<s32>(scrollbarY) - 2,
-                    5,
-                    static_cast<s32>(scrollbarHeight) + 4 +1,
-                    2,
-                    a(currentColor)
-                );
+                //renderer->drawRoundedRectSingleThreaded(
+                //    scrollbarX + (ult::useSwitch2Style ? 7 : 0),
+                //    static_cast<s32>(scrollbarY) - 2,
+                //    5,
+                //    static_cast<s32>(scrollbarHeight) + 4 +1,
+                //    2,
+                //    a(currentColor)
+                //);
             }
 
             
