@@ -9925,7 +9925,7 @@ namespace tsl {
                             headerTop,
                             4,
                             22,
-                            1,
+                            2,
                             aWithOpacity(headerSeparatorColor));
                     }
                 }
