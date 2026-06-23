@@ -2275,7 +2275,7 @@ namespace tsl {
                 // Original supersampling algorithm for larger radii
                 const float r_f = static_cast<float>(radius);
                 const float r2 = r_f * r_f;
-                const u8 base_a = color.a;
+                const u8 base_a = (!wheel ? color.a : 0xF);
                 
                 const s32 bound = radius + 2;
                 s32 clip_left   = std::max(0, centerX - bound);
@@ -2500,6 +2500,110 @@ namespace tsl {
 
                 const s32 T   = thickness;
                 const s32 r   = radius;
+
+                // radius == 0: degenerate to a plain rectangular border (four rect sides).
+                // When a wheel is present we must sample per-pixel so the gradient flows
+                // continuously around all four sides.  The switch2WheelColorAt classifier
+                // uses cxL/cxR to decide "left-of / right-of" and ccyT/ccyB to decide
+                // "above / below" the straight side zones.  For a zero-radius border the
+                // inner corners sit at (x+T, y+T) / (x+w-T-1, y+h-T-1), so we use those
+                // as the anchors.  That makes every pixel in the left band satisfy px < cxL,
+                // every pixel in the right band satisfy px > cxR, and top/bottom band pixels
+                // fall between them — exactly matching the side classification the sampler
+                // expects.  Ri=0 because there is no inner arc.
+                if (r <= 0) {
+                    if (wheel == nullptr) {
+                        this->drawRect(x,             y,              width,     T,            highlightColor); // top
+                        this->drawRect(x,             y + height - T, width,     T,            highlightColor); // bottom
+                        this->drawRect(x,             y + T,          T,         height - 2*T, highlightColor); // left
+                        this->drawRect(x + width - T, y + T,          T,         height - 2*T, highlightColor); // right
+                    } else {
+                        // switch2WheelColorAt is designed for Ri > 0: it projects each pixel
+                        // to a point on the INNER boundary ring (radius Ri) before classifying
+                        // which side it belongs to.  When Ri == 0 the projection collapses —
+                        // every projected point lands exactly ON the boundary line (not strictly
+                        // inside it), and the strict < / > comparisons in Step 2 of that
+                        // function then misclassify all pixels as "bottom", producing two
+                        // identical bottom-side gradients instead of a clockwise four-sided flow.
+                        //
+                        // For r == 0 the border is a plain rectangle with no inner arc, so we
+                        // skip the projection entirely.  Instead we compute the clockwise
+                        // perimeter position s directly from each pixel's position relative to
+                        // the bounding box, then pass s straight to switch2WheelColorFromS.
+                        //
+                        // Clockwise from top-left:
+                        //   top    band: s in [0.00, 0.25)  — left → right
+                        //   right  band: s in [0.25, 0.50)  — top  → bottom
+                        //   bottom band: s in [0.50, 0.75)  — right → left
+                        //   left   band: s in [0.75, 1.00)  — bottom → top
+                        //
+                        // Corner pixels (where two bands meet) are assigned by the
+                        // "minimum distance to edge" rule, with top/bottom winning ties
+                        // over left/right — this matches the winding of a clockwise traversal.
+                        //
+                        // W and H are the max t-denominator (pixel span − 1), giving t=1 at
+                        // the far corner of each side so the gradient reaches the corner value
+                        // exactly and the adjacent side picks up from there without a gap.
+
+                        u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                        const u8   ba   = highlightColor.a;
+
+                        s32 sc_x0 = 0, sc_xe0 = static_cast<s32>(cfg::FramebufferWidth);
+                        s32 sc_y0 = 0, sc_ye0 = static_cast<s32>(cfg::FramebufferHeight);
+                        if (this->m_scissorDepth != 0) [[unlikely]] {
+                            const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                            sc_x0  = static_cast<s32>(sc.x);
+                            sc_xe0 = static_cast<s32>(sc.x_max);
+                            sc_y0  = static_cast<s32>(sc.y);
+                            sc_ye0 = static_cast<s32>(sc.y_max);
+                        }
+
+                        const float W_f = static_cast<float>(width  - 1);
+                        const float H_f = static_cast<float>(height - 1);
+                        const s32   rx  = x + width  - 1;   // rightmost column
+                        const s32   by  = y + height - 1;   // bottom-most row
+
+                        // perimeterS: clockwise s for a pixel on a rectangular border.
+                        // Caller guarantees the pixel is actually in one of the four bands.
+                        // top/bottom bands claim corner pixels (dist_top or dist_bottom
+                        // is strictly <= dist_left/dist_right at corner positions).
+                        auto perimeterS = [&](s32 px, s32 py) -> float {
+                            const s32 dt = py - y;           // dist to top edge
+                            const s32 db = by - py;          // dist to bottom edge
+                            const s32 dl = px - x;           // dist to left edge
+                            const s32 dr = rx - px;          // dist to right edge
+                            const s32 m  = std::min({dt, db, dl, dr});
+                            float s;
+                            if (dt == m)          { s = 0.00f + (static_cast<float>(px - x)  / W_f) * 0.25f; }
+                            else if (dr == m)     { s = 0.25f + (static_cast<float>(py - y)  / H_f) * 0.25f; }
+                            else if (db == m)     { s = 0.50f + (static_cast<float>(rx - px) / W_f) * 0.25f; }
+                            else                  { s = 0.75f + (static_cast<float>(by - py) / H_f) * 0.25f; }
+                            s -= wheel->rotFrac;
+                            s -= floorf(s);
+                            return s;
+                        };
+
+                        auto paintSpan = [&](s32 py, s32 px0, s32 px1) {
+                            if (py < sc_y0 || py >= sc_ye0) return;
+                            const s32 ax0 = std::max(px0, sc_x0);
+                            const s32 ax1 = std::min(px1, sc_xe0);
+                            if (ax0 >= ax1) return;
+                            const u32 rb = blockLinearYPart(static_cast<u32>(py), offsetWidthVar);
+                            for (s32 px = ax0; px < ax1; ++px) {
+                                const float s  = perimeterS(px, py);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, px, py);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rb), wc, ba);
+                            }
+                        };
+
+                        for (s32 py = y;              py < y + T;          ++py) paintSpan(py, x, x + width);             // top
+                        for (s32 py = y + height - T; py < y + height;     ++py) paintSpan(py, x, x + width);             // bottom
+                        for (s32 py = y + T;          py < y + height - T; ++py) paintSpan(py, x, x + T);                 // left
+                        for (s32 py = y + T;          py < y + height - T; ++py) paintSpan(py, x + width - T, x + width); // right
+                    }
+                    return;
+                }
+
                 const s32 Ri  = r - T;  // inner radius (0 for Switch1)
 
                 const s32 cxL = x + r;
@@ -2528,7 +2632,7 @@ namespace tsl {
 
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
                 const u32  owv    = offsetWidthVar;
-                const u8   base_a = highlightColor.a;
+                const u8   base_a = (!wheel ? highlightColor.a : 0xF);
                 const float r_f  = static_cast<float>(r);
                 const float ri_f = static_cast<float>(Ri);
                 const float r2   = r_f * r_f;
@@ -2558,11 +2662,60 @@ namespace tsl {
                     const s32 topCornerY   = cyT;
                     const s32 bottomCornerY= cyB;
 
-                    // Four straight bars (original layout)
-                    this->drawRect(startX,                    startY - T,              adjustedWidth, T,              highlightColor);
-                    this->drawRect(startX,                    startY + adjustedHeight, adjustedWidth, T,              highlightColor);
-                    this->drawRect(startX - T,                startY,                  T,             adjustedHeight, highlightColor);
-                    this->drawRect(startX + adjustedWidth,    startY,                  T,             adjustedHeight, highlightColor);
+                    // Four straight bars.
+                    // When a wheel is present, paint per-pixel with the wheel sampler.
+                    // ccyT/ccyB for Switch1 equal cyT/cyB (rT==0), so we pass those directly.
+                    // Ri==0 is correct here too (full quarter-disc corners, no inner arc).
+                    if (wheel == nullptr) {
+                        this->drawRect(startX,                 startY - T,              adjustedWidth, T,              highlightColor);
+                        this->drawRect(startX,                 startY + adjustedHeight, adjustedWidth, T,              highlightColor);
+                        this->drawRect(startX - T,             startY,                  T,             adjustedHeight, highlightColor);
+                        this->drawRect(startX + adjustedWidth, startY,                  T,             adjustedHeight, highlightColor);
+                    } else {
+                        // Switch1 straight bars: switch2WheelColorAt fails with Ri=0
+                        // for the same reason as the r=0 path above — the projection
+                        // lands exactly on the boundary, and the strict < / > checks
+                        // misclassify everything.  Use the same direct perimeter-s
+                        // approach: classify by which edge the pixel is closest to,
+                        // compute t linearly within that side, then call
+                        // switch2WheelColorFromS directly.
+                        const float s1_W_f = static_cast<float>(width  - 1);
+                        const float s1_H_f = static_cast<float>(height - 1);
+                        const s32   s1_rx  = x + width  - 1;
+                        const s32   s1_by  = y + height - 1;
+
+                        auto s1_perimeterS = [&](s32 px, s32 py) -> float {
+                            const s32 dt = py - y;
+                            const s32 db = s1_by - py;
+                            const s32 dl = px - x;
+                            const s32 dr = s1_rx - px;
+                            const s32 m  = std::min({dt, db, dl, dr});
+                            float s;
+                            if (dt == m)      { s = 0.00f + (static_cast<float>(px - x)    / s1_W_f) * 0.25f; }
+                            else if (dr == m) { s = 0.25f + (static_cast<float>(py - y)    / s1_H_f) * 0.25f; }
+                            else if (db == m) { s = 0.50f + (static_cast<float>(s1_rx - px) / s1_W_f) * 0.25f; }
+                            else              { s = 0.75f + (static_cast<float>(s1_by - py) / s1_H_f) * 0.25f; }
+                            s -= wheel->rotFrac;
+                            s -= floorf(s);
+                            return s;
+                        };
+
+                        auto paintBarSpan = [&](s32 py, s32 px0, s32 px1) {
+                            if (py < sc_y || py >= sc_ye) return;
+                            const s32 ax0 = std::max(px0, sc_x), ax1 = std::min(px1, sc_xe);
+                            if (ax0 >= ax1) return;
+                            const u32 rb = blockLinearYPart(static_cast<u32>(py), owv);
+                            for (s32 px = ax0; px < ax1; ++px) {
+                                const float s  = s1_perimeterS(px, py);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, px, py);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rb), wc, base_a);
+                            }
+                        };
+                        for (s32 py = startY - T;             py < startY;                  ++py) paintBarSpan(py, startX,                 startX + adjustedWidth); // top
+                        for (s32 py = startY + adjustedHeight; py < startY+adjustedHeight+T; ++py) paintBarSpan(py, startX,                 startX + adjustedWidth); // bottom
+                        for (s32 py = startY;                 py < startY + adjustedHeight; ++py) paintBarSpan(py, startX - T,             startX);                 // left
+                        for (s32 py = startY;                 py < startY + adjustedHeight; ++py) paintBarSpan(py, startX + adjustedWidth, startX+adjustedWidth+T); // right
+                    }
 
                     // Pre-calculate AA colors once
                     const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
@@ -2570,16 +2723,47 @@ namespace tsl {
 
                     const u8 ha = base_a;
 
-                    // Draw span [xs, xe) at row yr.
-                    // NOTE: not always_inline. This lambda has 8 call sites below; forcing
-                    // inline copied its whole span-loop body 8x and bloated .text. Leaving
-                    // the choice to the optimizer emits one body + 8 calls (much smaller at -Os).
+                    // Draw span [xs, xe) at row yr — used for Bresenham corner arcs.
+                    // When wheel is present, sample per-pixel; otherwise paint flat.
+                    // NOTE: not always_inline — see original comment above.
+                    //
+                    // Corner arc pixels also misclassify under switch2WheelColorAt with
+                    // Ri=0: the corner branch projects (px,py) to (cxL + 0*cos, ccyT + 0*sin)
+                    // = (cxL, ccyT) — exactly on the boundary — so they fall into the same
+                    // broken bottom-bar bucket as the straight-bar pixels.  We use the same
+                    // direct perimeter-s approach as the bar block above (classify by nearest
+                    // edge, compute t linearly), calling switch2WheelColorFromS directly.
+                    //
+                    // W_f / H_f / rx / by are the same shape as in the r=0 block; they are
+                    // recomputed here because s1_perimeterS (defined in the bars else-block)
+                    // is out of scope at this point in the Switch1 path.
+                    const float hs_W_f = static_cast<float>(width  - 1);
+                    const float hs_H_f = static_cast<float>(height - 1);
+                    const s32   hs_rx  = x + width  - 1;
+                    const s32   hs_by  = y + height - 1;
                     auto hspan = [&](s32 yr, s32 xs, s32 xe) {
                         if (yr < sc_y || yr >= sc_ye) return;
                         const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
                         const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
-                        for (s32 i = x0c; i < x1c; ++i)
-                            blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                        if (wheel == nullptr) {
+                            for (s32 i = x0c; i < x1c; ++i)
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                        } else {
+                            for (s32 i = x0c; i < x1c; ++i) {
+                                const s32 dt = yr - y,   db = hs_by - yr;
+                                const s32 dl = i  - x,   dr = hs_rx - i;
+                                const s32 m  = std::min({dt, db, dl, dr});
+                                float s;
+                                if (dt == m)      { s = 0.00f + (static_cast<float>(i - x)      / hs_W_f) * 0.25f; }
+                                else if (dr == m) { s = 0.25f + (static_cast<float>(yr - y)     / hs_H_f) * 0.25f; }
+                                else if (db == m) { s = 0.50f + (static_cast<float>(hs_rx - i)  / hs_W_f) * 0.25f; }
+                                else              { s = 0.75f + (static_cast<float>(hs_by - yr) / hs_H_f) * 0.25f; }
+                                s -= wheel->rotFrac;
+                                s -= floorf(s);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, i, yr);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), wc, ha);
+                            }
+                        }
                     };
 
                     // Bresenham circle arc spans
@@ -2875,10 +3059,23 @@ namespace tsl {
                                                 const Color& color,
                                                 const s32 startRow, const s32 endRow)
             {
-                if (radius <= 0) return;
-        
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
+
+                // radius == 0: degenerate to a plain filled rectangle
+                if (radius <= 0) {
+                    const s32 clip_x     = std::max({0, x, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].x     : 0)});
+                    const s32 clip_x_end = std::min({(s32)cfg::FramebufferWidth,  x_end, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].x_max : (s32)cfg::FramebufferWidth)});
+                    const s32 clip_y     = std::max({0, y, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].y     : 0)});
+                    const s32 clip_y_end = std::min({(s32)cfg::FramebufferHeight, y_end, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].y_max : (s32)cfg::FramebufferHeight)});
+                    if (clip_x >= clip_x_end || clip_y >= clip_y_end) return;
+                    u16* fb16 = reinterpret_cast<u16*>(self->m_currentFramebuffer);
+                    for (s32 yc = std::max(startRow, clip_y); yc < std::min(endRow, clip_y_end); ++yc) {
+                        const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                        fillRowSpanNEON(fb16, rowBase, clip_x, clip_x_end, color);
+                    }
+                    return;
+                }
         
                 // Clamp x/y extents to both framebuffer AND active scissor rectangle
                 s32 clip_x     = std::max(0, x);
@@ -3156,7 +3353,7 @@ namespace tsl {
                 const float ri_f           = static_cast<float>(Ri);
                 const float r2             = r_f  * r_f;
                 const float ri2            = ri_f * ri_f;
-                const u8    base_a         = color.a;
+                const u8    base_a         = (!wheel ? color.a : 0xF);
 
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
 
