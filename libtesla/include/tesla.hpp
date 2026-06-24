@@ -2275,7 +2275,7 @@ namespace tsl {
                 // Original supersampling algorithm for larger radii
                 const float r_f = static_cast<float>(radius);
                 const float r2 = r_f * r_f;
-                const u8 base_a = (!wheel ? color.a : 0xF);
+                const u8 base_a = color.a;
                 
                 const s32 bound = radius + 2;
                 s32 clip_left   = std::max(0, centerX - bound);
@@ -2632,7 +2632,7 @@ namespace tsl {
 
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
                 const u32  owv    = offsetWidthVar;
-                const u8   base_a = (!wheel ? highlightColor.a : 0xF);
+                const u8   base_a = highlightColor.a;
                 const float r_f  = static_cast<float>(r);
                 const float ri_f = static_cast<float>(Ri);
                 const float r2   = r_f * r_f;
@@ -3353,7 +3353,7 @@ namespace tsl {
                 const float ri_f           = static_cast<float>(Ri);
                 const float r2             = r_f  * r_f;
                 const float ri2            = ri_f * ri_f;
-                const u8    base_a         = (!wheel ? color.a : 0xF);
+                const u8    base_a         = color.a;
 
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
 
