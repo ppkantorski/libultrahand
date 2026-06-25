@@ -5627,11 +5627,11 @@ namespace tsl {
              *
              * @param direction Direction to shake highlight in
              */
-            void inline shakeHighlight(FocusDirection direction) {
+            void inline shakeHighlight(FocusDirection direction, const bool skipFeedback = false) {
                 this->m_highlightShaking = true;
                 this->m_highlightShakingDirection = direction;
                 this->m_highlightShakingStartTime = ult::nowNs(); // Changed
-                if (direction != FocusDirection::None && m_isItem) {
+                if (direction != FocusDirection::None && m_isItem && !skipFeedback) {
                     triggerWallFeedback();
                 }
             }
