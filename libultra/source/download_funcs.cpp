@@ -407,7 +407,7 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     }
 
     curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, userAgent);
-    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1); // Enable HTTP/2
+    curl_easy_setopt(curl.get(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1); // Force HTTP/1.1 (HTTP/2 unreliable on Switch)
     curl_easy_setopt(curl.get(), CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); // Force TLS 1.2
 
@@ -418,6 +418,9 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
     curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 4L);   // 10 seconds to connect
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1L);   // 1 byte/s (virtually any progress)
     curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);  // 1 minutes of no progress
+
+    curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYHOST, 0L);
 
     //curl_easy_setopt(curl.get(), CURLOPT_DNS_USE_GLOBAL_CACHE, 0L);
     //curl_easy_setopt(curl.get(), CURLOPT_FORBID_REUSE, 1L);
