@@ -10559,7 +10559,7 @@ namespace tsl {
             }
                         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                s32 trackBarLeft = this->getX() + 59;
+                s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 s32 width        = this->getWidth() - 95;
 
                 if (m_icon[0] != '\0') {
@@ -11186,7 +11186,7 @@ namespace tsl {
                 const int stepSize = 100 / (this->m_numSteps - 1);
                 const int maxValue = stepSize * (this->m_numSteps - 1);
             
-                s32 trackBarLeft = this->getX() + 59;
+                s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 s32 width        = this->getWidth() - 95;
             
                 if (m_icon[0] != '\0') {
@@ -11816,7 +11816,7 @@ namespace tsl {
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
-                const s32 circleCenterX = this->getX() + 59 + handlePos;
+                const s32 circleCenterX = this->getX() + 59 + int(ult::layerEdge) + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
@@ -11827,7 +11827,7 @@ namespace tsl {
                 
                 // CRITICAL FIX: Check if current touch is within valid horizontal bounds
                 // Allow vertical drift (top/bottom), only care about left/right bounds
-                const s32 trackBarLeft = this->getX() + 59;
+                const s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 const s32 trackBarRight = trackBarLeft + trackBarWidth;
                 const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
                 
