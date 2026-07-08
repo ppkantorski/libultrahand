@@ -347,7 +347,7 @@ namespace tsl {
 
     // Shared static specialChars vectors — avoids duplicate static init at each call site
     inline const std::vector<std::string> s_dividerSpecialChars = {ult::DIVIDER_SYMBOL};
-    inline const std::vector<std::string> s_footerSpecialChars  = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
+    inline const std::vector<std::string> s_footerSpecialChars  = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5","\uE0E2"};
 
     // Windowed-mode notification Y offset in touch space.
     // Set to (g_win_pos_y * 2/3) by windowed overlay; 0 in normal mode.
@@ -6445,7 +6445,7 @@ namespace tsl {
             
             #if IS_LAUNCHER_DIRECTIVE
                 updateFooterButtonWidths(renderer,
-                    "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK   : ult::HIDE),
+                    (!interpreterIsRunningNow ? "\uE0E1" + ult::GAP_2 + ult::BACK : "\uE0E2" + ult::GAP_2 + ult::HIDE),
                     "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK     : ult::CANCEL),
                     m_noClickableItems);
             #else
@@ -6506,8 +6506,7 @@ namespace tsl {
     
             #if IS_LAUNCHER_DIRECTIVE
                 const std::string currentBottomLine =
-                    "\uE0E1" + ult::GAP_2 +
-                    (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
+                    (interpreterIsRunningNow ? "\uE0E2" + ult::GAP_2 + ult::HIDE : "\uE0E1" + ult::GAP_2 + ult::BACK) + ult::GAP_1 +
                     (!m_noClickableItems && !interpreterIsRunningNow ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
                     (interpreterIsRunningNow ? "\uE0E5" + ult::GAP_2 + ult::CANCEL + ult::GAP_1 : "") +
                     (!interpreterIsRunningNow
@@ -13430,6 +13429,9 @@ namespace tsl {
                     {KEY_DOWN,  FocusDirection::Down},
                     {KEY_LEFT,  FocusDirection::Left},
                     {KEY_RIGHT, FocusDirection::Right},
+                    // A can't select while a command is running: bounce the highlight
+                    // to the right with wall feedback instead of firing the click flash.
+                    {KEY_A,     FocusDirection::Right},
                 };
                 for (auto& s : shakes) {
                     if (keysDown & s.key && !(keysHeld & ~s.key & ALL_KEYS_MASK)) {
