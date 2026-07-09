@@ -364,6 +364,7 @@ namespace ult {
     extern std::string LIBULTRAHAND_TITLES;
     extern std::string LIBULTRAHAND_VERSIONS;
     extern std::string PACKAGE_TITLES;
+    extern std::string IN_PACKAGE_TITLES;
 
     extern std::string KEY_COMBO;
     extern std::string MODE;
@@ -636,7 +637,7 @@ namespace ult {
     void reinitializeWidgetVars();
     #endif
     
-    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
+    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions, useInPackageTitles;
     
 
 

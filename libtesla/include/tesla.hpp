@@ -6136,8 +6136,10 @@ namespace tsl {
          */
         class TableDrawer : public Element {
         public:
-            TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
-                : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable) {
+            TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false,
+                        bool _drawTableBorder = true, bool _hasCustomBGColor = false, Color _customBGColor = Color(0,0,0,0))
+                : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable),
+                  drawTableBorder(_drawTableBorder), hasCustomBGColor(_hasCustomBGColor), customBGColor(_customBGColor) {
                     m_isTable = isScrollable;  // Mark this element as a table
                     m_isItem = false;
                 }
@@ -6149,18 +6151,26 @@ namespace tsl {
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground) {
-                    renderer->drawRoundedRect(this->getX() + 8, this->getY()-4, this->getWidth() - 1, this->getHeight() + 22 - endGap-2, 12.0, aWithOpacity(tableBGColor));
-                    const Switch2Wheel w2 = makeSwitch2Wheel(
-                        s2TableBorderColor1,      // anchor[0] UR — fixed peak:  Muted Violet-Steel (default)  (r=7, g=5, b=F, a=F)
-                        s2TableBorderColor2,      // anchor[2] LL — fixed peak:  Deep Slate (default)          (r=6, g=4, b=F, a=F)
-                        s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel (default)      (r=7, g=9, b=9, a=F)
-                        s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy (default)     (r=6, g=5, b=7, a=F)
-                        s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle (default)      (r=A, g=9, b=8, a=F)
-                        s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray (default)    (r=7, g=5, b=5, a=F)
-                        12.0,
-                        true
-                    );
-                    renderer->drawBorderedRoundedRect(this->getX() +8-1, this->getY() - 4-1, this->getWidth() - 1 + 2, this->getHeight() + 22 - endGap - 2 + 2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    // ;bg_color= override: use the custom RGB channels but keep the
+                    // theme's live alpha/translucency so fade and opacity settings
+                    // still behave normally and theme switches still apply.
+                    const Color bgColorToUse = hasCustomBGColor
+                        ? Color(customBGColor.r, customBGColor.g, customBGColor.b, tableBGColor.a)
+                        : tableBGColor;
+                    renderer->drawRoundedRect(this->getX() + 8, this->getY()-4, this->getWidth() - 1, this->getHeight() + 22 - endGap-2, 12.0, aWithOpacity(bgColorToUse));
+                    if (drawTableBorder) {
+                        const Switch2Wheel w2 = makeSwitch2Wheel(
+                            s2TableBorderColor1,      // anchor[0] UR — fixed peak:  Muted Violet-Steel (default)  (r=7, g=5, b=F, a=F)
+                            s2TableBorderColor2,      // anchor[2] LL — fixed peak:  Deep Slate (default)          (r=6, g=4, b=F, a=F)
+                            s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel (default)      (r=7, g=9, b=9, a=F)
+                            s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy (default)     (r=6, g=5, b=7, a=F)
+                            s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle (default)      (r=A, g=9, b=8, a=F)
+                            s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray (default)    (r=7, g=5, b=5, a=F)
+                            12.0,
+                            true
+                        );
+                        renderer->drawBorderedRoundedRect(this->getX() +8-1, this->getY() - 4-1, this->getWidth() - 1 + 2, this->getHeight() + 22 - endGap - 2 + 2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    }
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -6184,6 +6194,9 @@ namespace tsl {
             bool hideTableBackground = false;
             size_t endGap = 3;
             bool isScrollable = false;
+            bool drawTableBorder = true;
+            bool hasCustomBGColor = false;
+            Color customBGColor = Color(0,0,0,0);
         };
 
 
@@ -6191,7 +6204,7 @@ namespace tsl {
         // Simple utility function to draw the dynamic "Ultra" part of the logo
         static s32 drawDynamicUltraText(gfx::Renderer* renderer, s32 startX, s32 y, u32 fontSize, 
                                        const tsl::Color& staticColor, bool useNotificationMethod = false) {
-            static constexpr double cycleDuration = 1.6;
+            static constexpr double cycleDuration = 2.0;
             s32 currentX = startX;
             
             if (ult::useDynamicLogo) {
@@ -6651,6 +6664,13 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
             // Get package color based on m_colorSelection
             tsl::Color getPackageColor() const {
+                // "In-Package Titles" theme toggle: when OFF, forces every in-package
+                // title to use the theme's default package color, overriding whatever
+                // color the package dev requested via the package header (e.g.
+                // ;color=). When ON (default), the package dev's color choice is
+                // respected, same as before this toggle existed.
+                if (!ult::useInPackageTitles) return defaultPackageColor;
+
                 if (m_colorSelection.empty()) return defaultPackageColor;
                 
                 const char c = m_colorSelection[0];
@@ -8813,17 +8833,13 @@ namespace tsl {
             #endif
                 // Fast path for non-truncated text
                 if (!m_flags.m_truncated) [[likely]] {
-                    const Color textColor = m_focused
-                        ? (!ult::useSelectionText
-                            ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor)
-                            : (useClickTextColor
-                                ? clickTextColor
-                                : selectedTextColor))
-                        : (m_flags.m_hasCustomTextColor
-                            ? m_customTextColor
-                            : (useClickTextColor
-                                ? clickTextColor
-                                : defaultTextColor));
+                    const Color textColor = m_flags.m_hasCustomTextColor
+                        ? m_customTextColor
+                        : (m_focused
+                            ? (!ult::useSelectionText
+                                ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)
+                                : (useClickTextColor ? clickTextColor : selectedTextColor))
+                            : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)));
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, textBaselineY, 23,
                         textColor, m_focused ? starColor : selectionStarColor);
@@ -8993,6 +9009,31 @@ namespace tsl {
                 m_flags.m_hasCustomValueColor = false;
             }
 
+            // setBaseTextColor/setBaseValueColor establish the item's theme-driven
+            // "default" color (e.g. overlayTextColor, packageVersionTextColor, etc.)
+            // without hard-overriding the Selection Text/Value theme colors on focus,
+            // unlike setTextColor()/setValueColor() which are meant for explicit
+            // per-item overrides (e.g. ;text_color=/;footer_color=) and always win
+            // regardless of focus state. Use these for default/listing colors that
+            // should still switch to the selection color when focused.
+            inline void setBaseTextColor(Color color) {
+                m_baseTextColor = color;
+                m_flags.m_hasBaseTextColor = true;
+            }
+
+            inline void setBaseValueColor(Color color) {
+                m_baseValueColor = color;
+                m_flags.m_hasBaseValueColor = true;
+            }
+
+            inline void clearBaseTextColor() {
+                m_flags.m_hasBaseTextColor = false;
+            }
+
+            inline void clearBaseValueColor() {
+                m_flags.m_hasBaseValueColor = false;
+            }
+
             // Mark this item as a Switch2-style radio selector. When enabled AND
             // ult::useSwitch2Style is active, the value slot draws a circular radio
             // mark instead of value text: a ~2px grey ring when unselected, or a
@@ -9134,6 +9175,8 @@ namespace tsl {
                 bool m_faint : 1;
                 bool m_hasCustomTextColor : 1;
                 bool m_hasCustomValueColor : 1;
+                bool m_hasBaseTextColor : 1;
+                bool m_hasBaseValueColor : 1;
                 bool m_useClickAnimation : 1;
                 bool m_useShortThreshold : 1;
                 bool m_useLongThreshold : 1;
@@ -9149,6 +9192,8 @@ namespace tsl {
         
             Color m_customTextColor;
             Color m_customValueColor;
+            Color m_baseTextColor;
+            Color m_baseValueColor;
         
             float m_scrollOffset = 0.0f;
             u16 m_maxWidth = 0;     // Changed from u32 to u16
@@ -9283,20 +9328,20 @@ namespace tsl {
                     }
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
-                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (!ult::useSelectionText ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor) : (useClickTextColor ? clickTextColor : selectedTextColor)), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
-                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (!ult::useSelectionText ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor) : (useClickTextColor ? clickTextColor : selectedTextColor)), textSeparatorColor);
                 #endif
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), starColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), textSeparatorColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)), textSeparatorColor);
                 #endif
                 }
             }
@@ -9578,24 +9623,14 @@ namespace tsl {
         #else
             Color determineValueTextColor(bool useClickTextColor, bool skipTransientColor = false) const {
         #endif
-                if (m_focused && ult::useSelectionValue) {
-                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? clickTextColor :
-                               (m_flags.m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor));
-                    }
-                    // unique to focused: falls through to shared block below, but returns selectedValueTextColor at end
-                } else {
-                    if (m_flags.m_hasCustomValueColor) return m_customValueColor;
-                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? clickTextColor :
-                               (m_flags.m_faint ? offTextColor : (m_focused ? (ult::useSelectionText ? selectedTextColor : defaultTextColor) : defaultTextColor));
-                    }
-                }
-        
-                // shared logic — only reached once per path. Skipped entirely when
-                // skipTransientColor is set (e.g. the radio-label-selector's adjacent
-                // label text, which should never recolour for an in-progress/failed
-                // m_value -- only the circle itself reflects that state).
+                // Transient run-state feedback (spinner / checkmark / crossmark /
+                // download-in-progress) always takes priority over any custom or
+                // theme color -- these are momentary status indicators and must
+                // stay visually correct regardless of ;footer_color=. Skipped
+                // entirely when skipTransientColor is set (e.g. the radio-label-
+                // selector's adjacent label text, which should never recolour for
+                // an in-progress/failed m_value -- only the circle itself reflects
+                // that state).
                 if (!skipTransientColor) {
                 #if IS_LAUNCHER_DIRECTIVE
                     const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
@@ -9607,10 +9642,21 @@ namespace tsl {
                     if (m_value == ult::INPROGRESS_SYMBOL) return m_flags.m_faint ? offTextColor : inprogressTextColor;
                     if (m_value == ult::CROSSMARK_SYMBOL)  return m_flags.m_faint ? offTextColor : invalidTextColor;
                 }
-        
+
+                // ;footer_color= override: takes priority over ;footer_highlight=
+                // (faint) dimming and over the "Selection Value" theme color when
+                // focused, since the user explicitly requested this color.
+                if (m_flags.m_hasCustomValueColor) return m_customValueColor;
+
+                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
+                    return useClickTextColor ? clickTextColor :
+                           (m_flags.m_faint ? offTextColor :
+                               ((m_focused && ult::useSelectionText) ? selectedTextColor : defaultTextColor));
+                }
+
                 return (m_focused && ult::useSelectionValue)
                     ? (useClickTextColor ? clickTextColor : selectedValueTextColor)
-                    : (m_flags.m_faint ? offTextColor : onTextColor);
+                    : (m_flags.m_hasBaseValueColor ? m_baseValueColor : (m_flags.m_faint ? offTextColor : onTextColor));
             }
 
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {

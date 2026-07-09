@@ -253,14 +253,14 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"bottom_text_color",               "FFFFFF"},
     {"unfocused_color",                 "666666"},
     {"click_alpha",                     "7"},
-    {"click_color",                     "3E25F7"},
+    {"click_color",                     "7777CC"},
     {"click_text_color",                "FFFFFF"},
     {"clock_color",                     "FFFFFF"},
     {"default_overlay_color",           "FFFFFF"},
     {"default_package_color",           "FFFFFF"},
     {"default_script_color",            "FF33FF"},
-    {"dynamic_logo_color_1",            "00E669"},
-    {"dynamic_logo_color_2",            "8080EA"},
+    {"dynamic_logo_color_1",            "EEEE77"},
+    {"dynamic_logo_color_2",            "EE7777"},
     {"header_separator_color",          "FFFFFF"},
     {"header_text_color",               "FFFFFF"},
     {"healthy_ram_text_color",          "00FF00"},
@@ -272,7 +272,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"invalid_text_color",              "FF0000"},
     {"invert_bg_click_color",           "false"},
     {"logo_color_1",                    "FFFFFF"},
-    {"logo_color_2",                    "FF0000"},
+    {"logo_color_2",                    "8888CC"},
     {"neutral_ram_text_color",          "FFAA00"},
     {"notification_text_color",         "FFFFFF"},
     {"notification_title_color",        "FFFFFF"},
@@ -327,7 +327,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"separator_color",                 "404040"},
     {"star_color",                      "FFFFFF"},
     {"table_bg_alpha",                  "14"},
-    {"table_bg_color",                  "2C2C2C"},
+    {"table_bg_color",                  "111111"},
     {"table_border_color",              "555555"},
     {"table_info_text_color",           "9ED0FF"},
     {"table_section_text_color",        "FFFFFF"},
@@ -819,7 +819,7 @@ namespace impl {
         ult::hideWidgetBorder       = getBool("hide_widget_border");
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
         ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
-        ult::useDynamicLogo         = getBool("dynamic_logo",            true);
+        ult::useDynamicLogo         = getBool("dynamic_logo",            false);
         ult::useSwitch2Style        = getBool("switch_2_style",          false);
         ult::useDynamicTableColors  = getBool("dynamic_tables",          true);
         ult::useSelectionBG         = getBool("selection_bg",            true);
