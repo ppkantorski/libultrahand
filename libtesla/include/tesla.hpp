@@ -1083,6 +1083,9 @@ namespace tsl {
 
     void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
 
+    // wrappingMode: "none", "char", "word", or "auto" — "auto" resolves per
+    // string to "char" when the text contains a word-per-character script
+    // (CJK ideographs, kana, Hangul, etc.) and to "word" otherwise.
     extern std::vector<std::string> wrapText(
         const std::string& text,
         float maxWidth,
@@ -12570,7 +12573,7 @@ namespace tsl {
         };
 
         enum class Alignment : u8 { Center = 0, Left = 1, Right = 2 };
-        enum class SplitType : u8 { Word   = 0, Char = 1 };
+        enum class SplitType : u8 { Word   = 0, Char = 1, Auto = 2 };
 
         struct NotifEntry {
             std::string text;
@@ -12588,7 +12591,7 @@ namespace tsl {
             bool hasIcon             = false;
             bool iconPending         = false;
             Alignment alignment      = Alignment::Center;
-            SplitType splitType      = SplitType::Word;
+            SplitType splitType      = SplitType::Auto;
         };
 
         struct NotifCompare {
@@ -12611,6 +12614,12 @@ namespace tsl {
         static constexpr int    MAX_VISIBLE      = 8;
         static constexpr s32    NOTIF_WIDTH      = 448;
         static constexpr s32    NOTIF_HEIGHT     = 88;
+        // Safety buffer subtracted from the wrap width so wrapped text breaks
+        // a little BEFORE reaching the timestamp's right edge / panel edge.
+        // Without it the wrap boundary sits exactly flush with the timestamp
+        // column, and CJK glyphs (which fill their full advance box) visually
+        // touch or spill past the edge before wrapping kicks in.
+        static constexpr s32    NOTIF_WRAP_MARGIN = 10;
 
         // ── Public API ───────────────────────────────────────────────────────────
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
@@ -12627,6 +12636,20 @@ namespace tsl {
             NotifEntry data;
             data.text         = msg;
             data.title        = title;
+            // Translate the full strings HERE, before any wrapping happens.
+            // Wrapping splits the text into sub-lines that are drawn
+            // individually, so a full-string translation key could never
+            // match at draw time.  This covers both .notify file
+            // notifications and direct show()/showNow() callers.
+            {
+                std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                auto it = ult::translationCache.find(data.text);
+                if (it != ult::translationCache.end()) data.text = it->second;
+                if (!data.title.empty()) {
+                    it = ult::translationCache.find(data.title);
+                    if (it != ult::translationCache.end()) data.title = it->second;
+                }
+            }
             data.fileName     = fileName;
             data.fontSize     = static_cast<u8>(std::clamp(fontSize, size_t(8), size_t(48)));
             data.durationMs   = (durationMs == 0) ? 0
@@ -12634,7 +12657,11 @@ namespace tsl {
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
             data.alignment    = parseAlignment(alignment, !title.empty());
-            data.splitType    = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
+            // "char" / "word" explicit; anything else (including unset) = auto
+            data.splitType    = splitType.empty()     ? SplitType::Auto
+                              : (splitType[0] == 'c') ? SplitType::Char
+                              : (splitType[0] == 'w') ? SplitType::Word
+                                                      : SplitType::Auto;
             data.arrivalNs    = ult::nowNs();
             if (!timestamp.empty()) {
                 const size_t n = std::min(timestamp.size(), sizeof(data.timestamp) - 1);
@@ -12815,7 +12842,7 @@ namespace tsl {
         [[gnu::noinline]]
         Lines getWrappedLines(const std::string& text, float pixelWidth,
                               size_t fontSize, u8 maxLines,
-                              SplitType splitType = SplitType::Word) const;
+                              SplitType splitType = SplitType::Auto) const;
 
         [[gnu::noinline]]
         s32 getEffectiveHeight(const Slot& slot) const;
@@ -14541,7 +14568,7 @@ namespace tsl {
                                             int duration = 0;
                                             bool showTime;
                                             std::string alignment;
-                                            bool splitChar  = false;
+                                            std::string splitTypeStr; // "char"/"word" explicit, empty = auto
                                             char timestamp[10] = {}; 
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
@@ -14645,8 +14672,9 @@ namespace tsl {
                                             const bool alignmentExplicit = cJSON_IsString(alignmentObj) && alignmentObj->valuestring && alignmentObj->valuestring[0];
                                             nd.alignment = alignmentExplicit ? alignmentObj->valuestring
                                                                              : (nd.title.empty() ? "" : ult::LEFT_STR);
-                                            nd.splitChar = cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring
-                                                           && strcmp(splitTypeObj->valuestring, ult::CHAR_STR.c_str()) == 0;
+                                            // Pass the explicit split_type through; unset = auto
+                                            nd.splitTypeStr = (cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring)
+                                                              ? splitTypeObj->valuestring : "";
 
                                             int pos = topCount;
                                             while (pos > 0 && isBetter(nd, topSlots[pos - 1])) --pos;
@@ -14676,7 +14704,7 @@ namespace tsl {
                                                                    nd.fname, nd.title, duration,
                                                                    false, firstPoll, nd.showTime,
                                                                    nd.alignment,
-                                                                   nd.splitChar ? ult::CHAR_STR : ult::WORD_STR,
+                                                                   nd.splitTypeStr,
                                                                    nd.timestamp);
                                             }
                                         }
@@ -14732,11 +14760,16 @@ namespace tsl {
                         const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
                         if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
                             if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
-                                if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
+                                // "swipe_offset" (config.ini) shifts the whole swipe zone
+                                // inward from the screen edge for deadzone calibration:
+                                // rightward when opening from the left edge, leftward when
+                                // opening from the right edge. Default 0 = original bounds.
+                                const s32 swipeOff = ult::swipeOffset;
+                                if (ult::layerEdge == 0 && static_cast<s32>(currentTouch.x) > SWIPE_RIGHT_BOUND + 84 + swipeOff && static_cast<s32>(lastTouchX) <= SWIPE_RIGHT_BOUND + swipeOff) {
                                     eventFire(&shData->comboEvent);
                                     mainComboHasTriggered.store(true, std::memory_order_release);
                                 }
-                                else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
+                                else if (ult::layerEdge > 0 && static_cast<s32>(currentTouch.x) < SWIPE_LEFT_BOUND - 84 - swipeOff && static_cast<s32>(lastTouchX) >= SWIPE_LEFT_BOUND - swipeOff) {
                                     eventFire(&shData->comboEvent);
                                     mainComboHasTriggered.store(true, std::memory_order_release);
                                 }

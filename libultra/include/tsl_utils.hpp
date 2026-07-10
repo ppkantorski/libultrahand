@@ -132,6 +132,11 @@ namespace ult {
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
+    // Optional deadzone calibration for swipe-to-open ("swipe_offset" in
+    // config.ini). Shifts the swipe start zone this many pixels inward from
+    // the screen edge (leftward when opening from the right edge). Read-only
+    // — never written back to config.ini. Default 0.
+    extern s32 swipeOffset;
     extern bool useLaunchCombos;
     //extern bool useLaunchRecall;
     //extern bool usePageRecall;

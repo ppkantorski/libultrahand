@@ -840,6 +840,16 @@ namespace impl {
             const int cap = tsl::NotificationPrompt::MAX_VISIBLE;
             tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
         }
+
+        // swipe_offset — optional deadzone calibration for swipe-to-open.
+        // Shifts the swipe start zone this many pixels inward from the screen
+        // edge (leftward when opening from the right edge).  Read-only: it is
+        // only honored if the user added it to config.ini themselves and is
+        // never written back.  Default 0; clamped to half the screen width.
+        {
+            const std::string offStr = getStr("swipe_offset", "0");
+            ult::swipeOffset = std::max(0, std::min(ult::stoi(offStr), 640));
+        }
     
         // Widget / display flags — shared
         ult::hideClock              = getBool("hide_clock");
@@ -933,7 +943,27 @@ std::vector<std::string> wrapText(
     float indentWidth,
     size_t fontSize
 ) {
-    if (wrappingMode == "none" || (wrappingMode != "char" && wrappingMode != ult::WORD_STR))
+    // "auto" — resolve to "char" when the text contains any word-per-character
+    // script (CJK ideographs, kana, Hangul, etc.), otherwise "word".  Detection
+    // is per-string, so in the same table a translated Asian line wraps per
+    // character while an untranslated Latin line still wraps per word.
+    std::string resolvedMode = wrappingMode;
+    if (wrappingMode == ult::AUTO_STR) {
+        resolvedMode = ult::WORD_STR;
+        u32 cp;
+        auto itAuto = text.cbegin();
+        while (itAuto != text.cend()) {
+            const ssize_t w = decode_utf8(&cp, reinterpret_cast<const u8*>(&(*itAuto)));
+            if (w <= 0) break;
+            if (isWordPerCharScript(cp)) {
+                resolvedMode = ult::CHAR_STR;
+                break;
+            }
+            itAuto += w;
+        }
+    }
+
+    if (resolvedMode == ult::NONE_STR || (resolvedMode != ult::CHAR_STR && resolvedMode != ult::WORD_STR))
         return { text };
 
     std::vector<std::string> wrappedLines;
@@ -995,7 +1025,7 @@ std::vector<std::string> wrapText(
         }
     };
 
-    if (wrappingMode == "char") {
+    if (resolvedMode == ult::CHAR_STR) {
         static constexpr char hyphen = '-';
         u32 prevCharacter     = 0;
         u32 prevPrevCharacter = 0;
@@ -1323,7 +1353,9 @@ NotificationPrompt::Lines
 NotificationPrompt::getWrappedLines(const std::string& text, float pixelWidth,
                                     size_t fontSize, u8 maxLines,
                                     SplitType splitType) const {
-    const std::string& stStr = (splitType == SplitType::Char) ? ult::CHAR_STR : ult::WORD_STR;
+    const std::string& stStr = (splitType == SplitType::Char) ? ult::CHAR_STR
+                             : (splitType == SplitType::Auto) ? ult::AUTO_STR
+                                                              : ult::WORD_STR;
 
     Lines split;
     {
@@ -1363,11 +1395,11 @@ s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
     u8    wrapMax;
     if (hasTitleLayout) {
         const s32 taw = g.hasIconCol ? g.textAreaW : (NOTIF_WIDTH - 2 * (g.baseIconPad + 2));
-        wrapW   = g.hasIconCol ? static_cast<float>(taw - g.baseIconPad - 2)
-                               : static_cast<float>(taw);
+        wrapW   = g.hasIconCol ? static_cast<float>(taw - g.baseIconPad - 2 - NOTIF_WRAP_MARGIN)
+                               : static_cast<float>(taw - NOTIF_WRAP_MARGIN);
         wrapMax = 4;
     } else {
-        wrapW   = static_cast<float>(g.textAreaW - 4);
+        wrapW   = static_cast<float>(g.textAreaW - 4 - NOTIF_WRAP_MARGIN);
         wrapMax = 9;
     }
 
@@ -1489,16 +1521,19 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     s32   effectiveHeight = NOTIF_HEIGHT;
 
     if (hasTitleIconLayout) {
-        lines = getWrappedLines(slot.data.text, titleInnerWf, fontSize, 5, slot.data.splitType);
-        applyEllipsis(lines, 4, titleInnerWf, fontSize, renderer);
+        // Wrap a small margin short of the timestamp's right edge; the
+        // alignment box (titleInnerWf) itself is left untouched.
+        const float titleWrapWf = titleInnerWf - NOTIF_WRAP_MARGIN;
+        lines = getWrappedLines(slot.data.text, titleWrapWf, fontSize, 5, slot.data.splitType);
+        applyEllipsis(lines, 4, titleWrapWf, fontSize, renderer);
         if (lines.count > 1) {
             const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
             effectiveHeight += extraLinesHeight(static_cast<s32>(lines.count - 1), fm.lineHeight);
         }
     } else if (!slot.data.text.empty() && g.textAreaW > 0) {
-        lines = getWrappedLines(slot.data.text, static_cast<float>(g.textAreaW - 4),
-                                fontSize, 9, slot.data.splitType);
-        applyEllipsis(lines, 8, static_cast<float>(g.textAreaW - 4), fontSize, renderer);
+        const float bodyWrapWf = static_cast<float>(g.textAreaW - 4 - NOTIF_WRAP_MARGIN);
+        lines = getWrappedLines(slot.data.text, bodyWrapWf, fontSize, 9, slot.data.splitType);
+        applyEllipsis(lines, 8, bodyWrapWf, fontSize, renderer);
         if (lines.count > 1) {
             const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
             effectiveHeight += extraLinesHeight(static_cast<s32>(lines.count - 1), fm.lineHeight);

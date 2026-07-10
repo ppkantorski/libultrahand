@@ -211,6 +211,8 @@ namespace ult {
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
+    s32 swipeOffset = 0; // "swipe_offset" — swipe-to-open deadzone calibration
+
     bool useLaunchCombos = true;
     //bool useLaunchRecall = true;
     //bool usePageRecall = true;
