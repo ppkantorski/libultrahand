@@ -14453,12 +14453,24 @@ namespace tsl {
                             } else if (armTicksToNs(nowTick - lastForegroundReassertTick) >= FOREGROUND_REASSERT_INTERVAL_NS) {
                                 lastForegroundReassertTick = nowTick;
                                 if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
-                                    #if IS_STATUS_MONITOR_DIRECTIVE
-                                    if (!isValidOverlayMode())
+                                    // Precision gate: the clobber this burst exists
+                                    // to fix (am re-arming a resumed title's input)
+                                    // can only occur while an application process
+                                    // exists — a suspended game still has one.  With
+                                    // no game open there is nothing to fight over,
+                                    // so re-asserting would be pure side effects;
+                                    // skip the tick (1 IPC call) but keep the window
+                                    // alive in case an application appears mid-burst.
+                                    u64 appAruid = 0;
+                                    pmdmntGetApplicationProcessId(&appAruid);
+                                    if (appAruid != 0) {
+                                        #if IS_STATUS_MONITOR_DIRECTIVE
+                                        if (!isValidOverlayMode())
+                                            hlp::requestForeground(true, false);
+                                        #else
                                         hlp::requestForeground(true, false);
-                                    #else
-                                    hlp::requestForeground(true, false);
-                                    #endif
+                                        #endif
+                                    }
                                 } else {
                                     // Overlay hidden/closed or foreground released —
                                     // cancel the burst.

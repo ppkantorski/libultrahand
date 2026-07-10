@@ -642,18 +642,30 @@ namespace hlp {
         }
 
         u64 applicationAruid = 0, appletAruid = 0;
-        
+
         for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
+            // Reset each iteration: pmdmnt leaves the out-param untouched on
+            // failure, so a stale aruid from a previous hit would otherwise
+            // trigger ~30 redundant hidsys IPC calls per invocation.
+            appletAruid = 0;
             pmdmntGetProcessId(&appletAruid, programId);
-            
+
             if (appletAruid != 0)
                 hidsysEnableAppletToGetInput(!enabled, appletAruid);
         }
-        
+
 
         pmdmntGetApplicationProcessId(&applicationAruid);
-        hidsysEnableAppletToGetInput(!enabled, applicationAruid);
-        
+        // Only touch the application's input permission when an application
+        // actually exists.  With no game running applicationAruid stays 0,
+        // and the unguarded call would momentarily DISABLE input for aruid 0
+        // — the overlay's own input context — until the final call below
+        // re-enables it.  Harmless-looking as a one-shot, but any repeated
+        // caller (foreground re-assert burst) turns it into constant input
+        // strobing that visibly halts overlay navigation.
+        if (applicationAruid != 0)
+            hidsysEnableAppletToGetInput(!enabled, applicationAruid);
+
         hidsysEnableAppletToGetInput(true, 0);
     }
 
