@@ -964,11 +964,20 @@ std::vector<std::string> wrapText(
             std::vector<std::string> lines = wrapText(text.substr(0, nlPos), maxWidth,
                                                       wrappingMode, useIndent, indent,
                                                       indentWidth, fontSize);
-            if (lines.empty()) lines.emplace_back();  // preserve blank lines
+            if (lines.empty()) lines.emplace_back();  // preserve blank lines (e.g. leading "\nfoo")
+            // Note: deliberately no symmetric "if (rest.empty()) rest.emplace_back()"
+            // here. wrapText() only ever returns {} for a literally empty string, and
+            // the remainder substring is empty only when this newline is a trailing
+            // terminator (nothing after it — end of text). A genuine blank line in the
+            // middle of the text (e.g. "foo\n\nbar") always has a non-empty remainder
+            // that recurses and contributes its own placeholder via the check above,
+            // so it's still preserved correctly. Synthesizing a placeholder here too
+            // used to turn every trailing '\n' (e.g. from readListFromFile(...,
+            // preserveNewlines=true), which leaves fgets' line terminator on each
+            // entry) into a phantom blank row after every single line.
             std::vector<std::string> rest = wrapText(text.substr(nlPos + skip), maxWidth,
                                                      wrappingMode, useIndent, indent,
                                                      indentWidth, fontSize);
-            if (rest.empty()) rest.emplace_back();
             lines.insert(lines.end(), std::make_move_iterator(rest.begin()),
                                       std::make_move_iterator(rest.end()));
             return lines;
