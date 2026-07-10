@@ -103,6 +103,29 @@ namespace ult {
     extern std::string lastTitleID;
     extern std::atomic<bool> resetForegroundCheck;
 
+    /**
+     * Foreground re-assert burst anchor (system tick; 0 = inactive).
+     *
+     * Armed whenever the overlay intentionally acquires foreground
+     * (hlp::requestForeground(true) with updateGlobalFlag) and on HOME
+     * button presses while the overlay is open and holding foreground.
+     *
+     * Rationale: when a suspended title is resumed from the HOME menu
+     * (HOME pressed again, or the game re-selected), am re-arms the
+     * application's input focus as part of the resume transition. If the
+     * overlay was shown via combo right around that transition, its
+     * hidsysEnableAppletToGetInput(false, app) claim is clobbered a
+     * moment later and input flows into BOTH the game and the overlay.
+     * The title-ID poll (resetForegroundCheck) never fires here because
+     * resuming the same game does not change the title ID.
+     *
+     * While armed, the background poller re-asserts the foreground claim
+     * every FOREGROUND_REASSERT_INTERVAL_NS for
+     * FOREGROUND_REASSERT_WINDOW_NS, so the overlay reclaims exclusive
+     * input at most one interval after the system re-arms the game.
+     */
+    extern std::atomic<u64> foregroundReassertStartTick;
+
 
     //extern bool isLauncher;
     extern std::atomic<bool> internalTouchReleased;

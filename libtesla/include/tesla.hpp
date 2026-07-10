@@ -14355,6 +14355,14 @@ namespace tsl {
             std::string currentTitleID;
         
             u64 lastPollTick = 0;
+            u64 lastForegroundReassertTick = 0;
+            // Re-assert cadence/window for the foreground burst (see
+            // ult::foregroundReassertStartTick).  6s comfortably covers the
+            // slowest observed HOME→game resume re-arm (the title-launch case
+            // already needs ~3.5s); 150ms bounds worst-case dual-input time
+            // after am re-arms the game to one interval.
+            constexpr u64 FOREGROUND_REASSERT_WINDOW_NS   = 6'000'000'000ULL;
+            constexpr u64 FOREGROUND_REASSERT_INTERVAL_NS = 150'000'000ULL;
             u64 resetStartTick = armGetSystemTick();
             const u64 startNs = armTicksToNs(resetStartTick);
 
@@ -14410,7 +14418,52 @@ namespace tsl {
                             ult::resetForegroundCheck.store(false, std::memory_order_release);
                         }
                     }
-                    
+
+                    // Foreground re-assert burst (HOME↔game transitions).
+                    //
+                    // Armed by hlp::requestForeground(true) (overlay shown or
+                    // unhidden) and by the HOME handler below.  Covers the case
+                    // the title-ID poll above cannot see: resuming the SAME
+                    // suspended title from HOME (title ID unchanged) while the
+                    // overlay is opened via combo mid-transition.  am re-arms
+                    // the game's input focus as the resume completes, clobbering
+                    // the overlay's exclusive-input claim; without this burst,
+                    // input keeps flowing into the game underneath the overlay.
+                    //
+                    // Re-asserts every FOREGROUND_REASSERT_INTERVAL_NS until the
+                    // window expires or the overlay releases foreground —
+                    // requestForeground(false, updateGlobalFlag=true) also
+                    // clears the anchor directly, so a burst can never re-steal
+                    // input after hide/close.
+                    {
+                        const u64 burstStartTick = ult::foregroundReassertStartTick.load(std::memory_order_acquire);
+                        if (burstStartTick != 0) {
+                            if (armTicksToNs(nowTick - burstStartTick) >= FOREGROUND_REASSERT_WINDOW_NS) {
+                                // Window expired — clear only if still our anchor
+                                // (a newer arm must not be wiped).
+                                u64 expected = burstStartTick;
+                                ult::foregroundReassertStartTick.compare_exchange_strong(
+                                    expected, 0, std::memory_order_acq_rel);
+                            } else if (armTicksToNs(nowTick - lastForegroundReassertTick) >= FOREGROUND_REASSERT_INTERVAL_NS) {
+                                lastForegroundReassertTick = nowTick;
+                                if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                    #if IS_STATUS_MONITOR_DIRECTIVE
+                                    if (!isValidOverlayMode())
+                                        hlp::requestForeground(true, false);
+                                    #else
+                                    hlp::requestForeground(true, false);
+                                    #endif
+                                } else {
+                                    // Overlay hidden/closed or foreground released —
+                                    // cancel the burst.
+                                    u64 expected = burstStartTick;
+                                    ult::foregroundReassertStartTick.compare_exchange_strong(
+                                        expected, 0, std::memory_order_acq_rel);
+                                }
+                            }
+                        }
+                    }
+
                     if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
                         currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
                     
@@ -15122,6 +15175,18 @@ namespace tsl {
                                     fprintf(f, "%016llX", (unsigned long long)svcGetSystemTick());
                                     fclose(f);
                                 }
+                            }
+                            // If the overlay stays open across this HOME transition
+                            // (disableHiding game sessions), am will re-arm the newly
+                            // focused applet's input (qlaunch on game→HOME, the game on
+                            // HOME→game resume) AFTER this event, clobbering the
+                            // overlay's exclusive-input claim.  Re-arm the re-assert
+                            // burst so the poller reclaims input once the transition
+                            // settles.  (When hiding is enabled the overlay released
+                            // foreground above, and the next unhide re-arms the burst
+                            // via requestForeground(true) instead.)
+                            if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                ult::foregroundReassertStartTick.store(armGetSystemTick(), std::memory_order_release);
                             }
                             break;
                         case WaiterObject_PowerButton:

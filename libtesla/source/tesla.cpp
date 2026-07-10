@@ -617,8 +617,29 @@ namespace hlp {
      * @param enabled Focus Tesla?
      */
     void requestForeground(bool enabled, bool updateGlobalFlag) {
-        if (updateGlobalFlag)
+        if (updateGlobalFlag) {
             ult::currentForeground.store(enabled, std::memory_order_release);
+
+            /* Intentional foreground transitions arm/cancel the re-assert
+             * burst consumed by the background poller.
+             *
+             * Acquire (enabled): if the overlay is shown while a suspended
+             * title is being resumed from HOME (HOME pressed again, or the
+             * game re-selected), am re-arms the game's input focus AFTER
+             * this call, clobbering the hidsysEnableAppletToGetInput(false)
+             * claim below — input then reaches both the game and the
+             * overlay. The burst re-asserts the claim for a short window so
+             * the overlay always ends up with exclusive input.
+             *
+             * Release (!enabled): cancel any active burst immediately so a
+             * queued re-assert can never re-steal input after the overlay
+             * hides/closes.
+             *
+             * Internal re-asserts pass updateGlobalFlag=false and therefore
+             * never re-arm the window (no self-perpetuation). */
+            ult::foregroundReassertStartTick.store(
+                enabled ? armGetSystemTick() : 0, std::memory_order_release);
+        }
 
         u64 applicationAruid = 0, appletAruid = 0;
         

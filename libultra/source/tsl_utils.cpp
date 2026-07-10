@@ -205,6 +205,7 @@ namespace ult {
     
     std::string lastTitleID;
     std::atomic<bool> resetForegroundCheck(false); // initialize as true
+    std::atomic<u64> foregroundReassertStartTick(0); // 0 = burst inactive
     std::atomic<bool> internalTouchReleased(true);
 
     u32 layerEdge = 0;
