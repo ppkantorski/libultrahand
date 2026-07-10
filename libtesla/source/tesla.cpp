@@ -943,6 +943,38 @@ std::vector<std::string> wrapText(
     float indentWidth,
     size_t fontSize
 ) {
+    // Hard line breaks: wrap each '\n' / "\\n"-separated segment independently
+    // and emit its lines back-to-back.  Without this, char/word wrapping
+    // carries the current line straight across an embedded newline —
+    // calculateStringWidth() resets its running width at '\n', so the line
+    // never overflows at the break and the returned "wrapped line" still
+    // contains the newline.  Callers position rows one line-height apart while
+    // drawString() renders that embedded newline as an extra visual row,
+    // making the tail of an auto-wrapped line overlap the first characters of
+    // the following '\n'-broken line (reported with wrapping_mode=char + zh).
+    {
+        size_t nlPos        = text.find('\n');
+        const size_t escPos = text.find("\\n");
+        size_t skip         = 1;
+        if (escPos != std::string::npos && (nlPos == std::string::npos || escPos < nlPos)) {
+            nlPos = escPos;
+            skip  = 2;
+        }
+        if (nlPos != std::string::npos) {
+            std::vector<std::string> lines = wrapText(text.substr(0, nlPos), maxWidth,
+                                                      wrappingMode, useIndent, indent,
+                                                      indentWidth, fontSize);
+            if (lines.empty()) lines.emplace_back();  // preserve blank lines
+            std::vector<std::string> rest = wrapText(text.substr(nlPos + skip), maxWidth,
+                                                     wrappingMode, useIndent, indent,
+                                                     indentWidth, fontSize);
+            if (rest.empty()) rest.emplace_back();
+            lines.insert(lines.end(), std::make_move_iterator(rest.begin()),
+                                      std::make_move_iterator(rest.end()));
+            return lines;
+        }
+    }
+
     // "auto" — resolve to "char" when the text contains any word-per-character
     // script (CJK ideographs, kana, Hangul, etc.), otherwise "word".  Detection
     // is per-string, so in the same table a translated Asian line wraps per
