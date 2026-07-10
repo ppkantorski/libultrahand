@@ -5495,6 +5495,7 @@ namespace tsl {
             // alternate palette.
             static constexpr int S2_WHEEL_SLOT_HANDLE = 0;
             static constexpr int S2_WHEEL_SLOT_BORDER = 1;
+            bool  m_s2WheelInitialized[2] = { false, false }; // has this slot been seeded by a first buildSwitch2Wheel() call yet?
             bool  m_s2WheelAltActive[2] = { false, false }; // last target per slot: false=default, true=alt
             float m_s2WheelBlend[2] = { 0.0f, 0.0f };       // current eased blend per slot [0,1] (0=default, 1=alt)
             float m_s2WheelBlendStart[2] = { 0.0f, 0.0f };  // blend captured when that slot's target last flipped
@@ -5785,7 +5786,19 @@ namespace tsl {
             Switch2Wheel buildSwitch2Wheel(bool altActive, int slot = S2_WHEEL_SLOT_HANDLE) {
                 static constexpr double S2_BLEND_DURATION_NS = 300.0 * 1000000.0; // 300ms cross-fade
                 const u64 now = ult::nowNs();
-                if (altActive != m_s2WheelAltActive[slot]) {
+                if (!m_s2WheelInitialized[slot]) {
+                    // First time this slot is driven for this element: seed it directly at
+                    // whatever palette it actually starts in, rather than always starting from
+                    // "default" and letting the block below see that as a flip. Without this,
+                    // an element that's already in its alt state the first time it's drawn
+                    // (e.g. a trackbar that's locked from the moment the page opens) would
+                    // visibly cross-fade in from the default palette on its very first frame.
+                    m_s2WheelInitialized[slot] = true;
+                    m_s2WheelAltActive[slot] = altActive;
+                    m_s2WheelBlend[slot] = altActive ? 1.0f : 0.0f;
+                    m_s2WheelBlendStart[slot] = m_s2WheelBlend[slot];
+                    m_s2WheelBlendChangeNs[slot] = now;
+                } else if (altActive != m_s2WheelAltActive[slot]) {
                     m_s2WheelAltActive[slot] = altActive;
                     m_s2WheelBlendStart[slot] = m_s2WheelBlend[slot]; // capture current so an interrupted fade reverses smoothly
                     m_s2WheelBlendChangeNs[slot] = now;
