@@ -1466,9 +1466,88 @@ namespace tsl {
 
         // Forward declarations
         class Renderer;
-        
+
         inline static std::shared_mutex s_translationCacheMutex;
-        
+
+        // ── Per-segment translation ───────────────────────────────────────────
+        // Translates the pieces of `s` that sit between any of `symbols`
+        // (divider glyphs etc.), leaving the symbols themselves untouched.
+        // For each segment the raw form (spaces included, e.g. " Unsafe") is
+        // tried first, then the space-trimmed core with the original spacing
+        // re-attached.  Identity cache entries (inserted when negative lookups
+        // are cached) do not count as translations.  Returns true and replaces
+        // `s` only when a segment really changed.
+        // Intended to run at STRING-SET time (not draw time) so that width
+        // measurement, truncation and rendering all see the same string.
+        // Takes the cache lock itself — callers must NOT hold
+        // s_translationCacheMutex.
+        inline bool translateStringSegments(std::string& s, const std::vector<std::string>& symbols) {
+            if (s.empty()) return false;
+
+            // Cheap gate: only bother when a special symbol is present.
+            size_t firstSym = std::string::npos;
+            for (const auto& sym : symbols) {
+                if (sym.empty()) continue;
+                const size_t f = s.find(sym);
+                if (f != std::string::npos && f < firstSym) firstSym = f;
+            }
+            if (firstSym == std::string::npos) return false;
+
+            std::string rebuilt;
+            rebuilt.reserve(s.size() + 16);
+            bool anyTranslated = false;
+
+            std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+
+            auto emitSegment = [&](const char* seg, size_t len) {
+                if (len == 0) return;
+                // 1) raw segment, spaces included
+                auto it = ult::translationCache.find(std::string(seg, len));
+                if (it != ult::translationCache.end()) {
+                    rebuilt += it->second;
+                    if (it->second.size() != len || it->second.compare(0, len, seg, len) != 0)
+                        anyTranslated = true;
+                    return;
+                }
+                // 2) space-trimmed core, original spacing preserved
+                size_t b = 0, e = len;
+                while (b < e && seg[b] == ' ') ++b;
+                while (e > b && seg[e - 1] == ' ') --e;
+                if (b > 0 || e < len) {
+                    it = ult::translationCache.find(std::string(seg + b, e - b));
+                    if (it != ult::translationCache.end()) {
+                        rebuilt.append(seg, b);           // leading spaces
+                        rebuilt += it->second;
+                        rebuilt.append(seg + e, len - e); // trailing spaces
+                        if (it->second.size() != e - b || it->second.compare(0, e - b, seg + b, e - b) != 0)
+                            anyTranslated = true;
+                        return;
+                    }
+                }
+                rebuilt.append(seg, len);
+            };
+
+            size_t pos = 0;
+            while (pos < s.size()) {
+                size_t best = std::string::npos, bestLen = 0;
+                for (const auto& sym : symbols) {
+                    if (sym.empty()) continue;
+                    const size_t f = s.find(sym, pos);
+                    if (f != std::string::npos && f < best) { best = f; bestLen = sym.length(); }
+                }
+                if (best == std::string::npos) {
+                    emitSegment(s.data() + pos, s.size() - pos);
+                    break;
+                }
+                emitSegment(s.data() + pos, best - pos);
+                rebuilt.append(s, best, bestLen); // symbol kept verbatim (colored at draw)
+                pos = best + bestLen;
+            }
+
+            if (anyTranslated) s = std::move(rebuilt);
+            return anyTranslated;
+        }
+
         class FontManager {
         public:
             struct Glyph {
@@ -4224,79 +4303,13 @@ namespace tsl {
                                                     s32 x, const s32 y, const u32 fontSize,
                                                     const Color& defaultColor,
                                                     const Color& specialColor) {
-                // Per-segment translation: when the full string has no
-                // translation of its own, translate the text BETWEEN the
-                // special symbols individually (e.g. "test ⟨div⟩ word" →
-                // tr(test) ⟨div⟩ tr(word)).  Each raw segment (spaces
-                // included) is tried first, then its space-trimmed core with
-                // the original spacing re-attached.  Full-string keys keep
-                // priority, untouched strings take the original fast path,
-                // and drawString's own cache lookup afterwards is a no-op.
-                const std::string* textPtr = &text;
-                std::string rebuilt;
-                if (!text.empty()) {
-                    // Cheap gate: only bother when a special symbol is present.
-                    size_t firstSym = std::string::npos;
-                    for (const auto& sym : specialSymbols) {
-                        if (sym.empty()) continue;
-                        const size_t f = text.find(sym);
-                        if (f != std::string::npos && f < firstSym) firstSym = f;
-                    }
-                    if (firstSym != std::string::npos) {
-                        std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
-                        // Full-string translations (composite keys) win as before.
-                        if (ult::translationCache.find(text) == ult::translationCache.end()) {
-                            bool anyTranslated = false;
-                            rebuilt.reserve(text.size() + 16);
-
-                            auto emitSegment = [&](const char* seg, size_t len) {
-                                if (len == 0) return;
-                                // 1) raw segment, spaces included (e.g. " Unsafe")
-                                auto it = ult::translationCache.find(std::string(seg, len));
-                                if (it != ult::translationCache.end()) {
-                                    rebuilt += it->second;
-                                    anyTranslated = true;
-                                    return;
-                                }
-                                // 2) space-trimmed core, original spacing preserved
-                                size_t b = 0, e = len;
-                                while (b < e && seg[b] == ' ') ++b;
-                                while (e > b && seg[e - 1] == ' ') --e;
-                                if (b > 0 || e < len) {
-                                    it = ult::translationCache.find(std::string(seg + b, e - b));
-                                    if (it != ult::translationCache.end()) {
-                                        rebuilt.append(seg, b);          // leading spaces
-                                        rebuilt += it->second;
-                                        rebuilt.append(seg + e, len - e); // trailing spaces
-                                        anyTranslated = true;
-                                        return;
-                                    }
-                                }
-                                rebuilt.append(seg, len);
-                            };
-
-                            size_t pos = 0;
-                            while (pos < text.size()) {
-                                size_t best = std::string::npos, bestLen = 0;
-                                for (const auto& sym : specialSymbols) {
-                                    if (sym.empty()) continue;
-                                    const size_t f = text.find(sym, pos);
-                                    if (f != std::string::npos && f < best) { best = f; bestLen = sym.length(); }
-                                }
-                                if (best == std::string::npos) {
-                                    emitSegment(text.data() + pos, text.size() - pos);
-                                    break;
-                                }
-                                emitSegment(text.data() + pos, best - pos);
-                                rebuilt.append(text, best, bestLen); // symbol drawn/colored as-is
-                                pos = best + bestLen;
-                            }
-
-                            if (anyTranslated) textPtr = &rebuilt;
-                        }
-                    }
-                }
-                return drawString(*textPtr, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
+                // NOTE: per-segment translation deliberately does NOT happen
+                // here.  Draw-time substitution desynchronizes the string from
+                // the width/truncation math computed earlier on the raw text.
+                // Segments are translated once at string-set time instead
+                // (see translateStringSegments + applyInitialTranslations /
+                // CategoryHeader), so measurement and rendering always agree.
+                return drawString(text, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
             }
             
             // Calculate string dimensions without drawing
@@ -9331,23 +9344,38 @@ namespace tsl {
                 std::string& target = isValue ? m_value : m_text_clean;
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
-                
+
                 {
                     const std::string originalKey = target;
-                    
+
                     std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalKey);
                     if (translatedIt != ult::translationCache.end()) {
                         target = translatedIt->second;
                     } else {
                         readLock.unlock();
+
+                        // No full-string translation — try translating the
+                        // segments between divider symbols individually (e.g.
+                        // "2026-06-21 ⟨div⟩ Old" → date ⟨div⟩ tr(Old)).  This
+                        // runs HERE, at set time, so width measurement and
+                        // truncation math operate on the exact string that is
+                        // later drawn.  The result (or the identity when no
+                        // segment translated) is cached under the original
+                        // key, which keeps every later full-string lookup —
+                        // drawString, calculateStringWidth, other items with
+                        // the same composed value — consistent with it.
+                        std::string segmented = originalKey;
+                        tsl::gfx::translateStringSegments(segmented, tsl::s_dividerSpecialChars);
+
                         std::unique_lock<std::shared_mutex> writeLock(tsl::gfx::s_translationCacheMutex);
-                        
+
                         translatedIt = ult::translationCache.find(originalKey);
                         if (translatedIt != ult::translationCache.end()) {
                             target = translatedIt->second;
                         } else {
-                            ult::translationCache[originalKey] = originalKey;
+                            ult::translationCache[originalKey] = segmented;
+                            target = segmented;
                         }
                     }
                 }
@@ -10247,10 +10275,21 @@ namespace tsl {
                 // lookup at draw time is a no-op afterwards (translated values
                 // are not keys), so this stays idempotent.
                 {
-                    std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
-                    auto translatedIt = ult::translationCache.find(m_text);
-                    if (translatedIt != ult::translationCache.end())
-                        m_text = translatedIt->second;
+                    bool fullHit = false;
+                    {
+                        std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                        auto translatedIt = ult::translationCache.find(m_text);
+                        if (translatedIt != ult::translationCache.end() && translatedIt->second != m_text) {
+                            m_text = translatedIt->second;
+                            fullHit = true;
+                        }
+                    }
+                    // No real full-string translation (miss or identity entry):
+                    // translate the divider-separated segments individually so
+                    // headers like "Name ⟨div⟩ Reset" localize per part.  Also
+                    // at set time, keeping width/scroll math consistent.
+                    if (!fullHit)
+                        tsl::gfx::translateStringSegments(m_text, tsl::s_dividerSpecialChars);
                 }
                 m_isItem = false;
             }
