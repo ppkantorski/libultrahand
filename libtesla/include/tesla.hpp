@@ -14360,21 +14360,15 @@ namespace tsl {
             // ult::foregroundReassertStartTick).  A HOME↔game resume re-arm
             // settles within ~1-2s, so 4s gives 2x margin; slow cold title
             // launches are covered separately by the title-ID one-shot
-            // (resetForegroundCheck, 3.5s).  100ms bounds worst-case
-            // dual-input time after am re-arms the game to one interval —
-            // affordable because most re-assert ticks are cache-based
-            // (~5 IPC calls, see below) rather than full sweeps (~35).
+            // (resetForegroundCheck, 3.5s).  150ms bounds worst-case
+            // dual-input time after am re-arms the game to one interval.
+            // Each re-assert is one requestForeground call (~35 IPC calls,
+            // ~1-2ms on this background thread) — ~1% of a core for the 4s
+            // burst, only after the overlay is shown.  Deliberately NOT
+            // micro-optimized: reusing requestForeground verbatim keeps one
+            // copy of the foreground logic and zero extra state.
             constexpr u64 FOREGROUND_REASSERT_WINDOW_NS   = 4'000'000'000ULL;
-            constexpr u64 FOREGROUND_REASSERT_INTERVAL_NS = 100'000'000ULL;
-            constexpr u64 FOREGROUND_SWEEP_REFRESH_NS     = 1'000'000'000ULL;
-            // Applet ARUIDs found by the last full sweep (typically 2:
-            // qlaunch + overlayDisp).  Cheap ticks re-assert these + the
-            // application PID instead of re-querying all 32 applet program
-            // IDs.  Refreshed at burst start and every SWEEP_REFRESH_NS so a
-            // library applet spawning mid-burst is picked up within 1s.
-            u64 cachedAppletAruids[8];
-            u32 cachedAppletAruidCount = 0;
-            u64 lastForegroundSweepTick = 0;
+            constexpr u64 FOREGROUND_REASSERT_INTERVAL_NS = 150'000'000ULL;
             u64 resetStartTick = armGetSystemTick();
             const u64 startNs = armTicksToNs(resetStartTick);
 
@@ -14460,44 +14454,11 @@ namespace tsl {
                                 lastForegroundReassertTick = nowTick;
                                 if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
                                     #if IS_STATUS_MONITOR_DIRECTIVE
-                                    const bool doReassert = !isValidOverlayMode();
+                                    if (!isValidOverlayMode())
+                                        hlp::requestForeground(true, false);
                                     #else
-                                    constexpr bool doReassert = true;
+                                    hlp::requestForeground(true, false);
                                     #endif
-                                    if (doReassert) {
-                                        // Same semantics/ordering as
-                                        // hlp::requestForeground(true, false):
-                                        // applets first, then the application,
-                                        // then re-enable aruid 0 (self).
-                                        //
-                                        // Full sweep (~35 IPC) only at burst
-                                        // start and every SWEEP_REFRESH_NS;
-                                        // in between, cache-based ticks
-                                        // (~5 IPC) cover the aruid am actually
-                                        // re-arms on HOME↔game transitions.
-                                        u64 aruid;
-                                        if (lastForegroundSweepTick < burstStartTick ||
-                                                armTicksToNs(nowTick - lastForegroundSweepTick) >= FOREGROUND_SWEEP_REFRESH_NS) {
-                                            lastForegroundSweepTick = nowTick;
-                                            cachedAppletAruidCount = 0;
-                                            for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
-                                                aruid = 0;
-                                                pmdmntGetProcessId(&aruid, programId);
-                                                if (aruid != 0) {
-                                                    hlp::hidsysEnableAppletToGetInput(false, aruid);
-                                                    if (cachedAppletAruidCount < 8)
-                                                        cachedAppletAruids[cachedAppletAruidCount++] = aruid;
-                                                }
-                                            }
-                                        } else {
-                                            for (u32 i = 0; i < cachedAppletAruidCount; i++)
-                                                hlp::hidsysEnableAppletToGetInput(false, cachedAppletAruids[i]);
-                                        }
-                                        aruid = 0;
-                                        pmdmntGetApplicationProcessId(&aruid);
-                                        hlp::hidsysEnableAppletToGetInput(false, aruid);
-                                        hlp::hidsysEnableAppletToGetInput(true, 0);
-                                    }
                                 } else {
                                     // Overlay hidden/closed or foreground released —
                                     // cancel the burst.
