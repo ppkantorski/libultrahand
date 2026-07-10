@@ -4220,11 +4220,83 @@ namespace tsl {
             }
             
             inline std::pair<s32, s32> drawStringWithColoredSections(const std::string& text, bool monospace,
-                                                    const std::vector<std::string>& specialSymbols, 
-                                                    s32 x, const s32 y, const u32 fontSize, 
-                                                    const Color& defaultColor, 
+                                                    const std::vector<std::string>& specialSymbols,
+                                                    s32 x, const s32 y, const u32 fontSize,
+                                                    const Color& defaultColor,
                                                     const Color& specialColor) {
-                return drawString(text, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
+                // Per-segment translation: when the full string has no
+                // translation of its own, translate the text BETWEEN the
+                // special symbols individually (e.g. "test ⟨div⟩ word" →
+                // tr(test) ⟨div⟩ tr(word)).  Each raw segment (spaces
+                // included) is tried first, then its space-trimmed core with
+                // the original spacing re-attached.  Full-string keys keep
+                // priority, untouched strings take the original fast path,
+                // and drawString's own cache lookup afterwards is a no-op.
+                const std::string* textPtr = &text;
+                std::string rebuilt;
+                if (!text.empty()) {
+                    // Cheap gate: only bother when a special symbol is present.
+                    size_t firstSym = std::string::npos;
+                    for (const auto& sym : specialSymbols) {
+                        if (sym.empty()) continue;
+                        const size_t f = text.find(sym);
+                        if (f != std::string::npos && f < firstSym) firstSym = f;
+                    }
+                    if (firstSym != std::string::npos) {
+                        std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+                        // Full-string translations (composite keys) win as before.
+                        if (ult::translationCache.find(text) == ult::translationCache.end()) {
+                            bool anyTranslated = false;
+                            rebuilt.reserve(text.size() + 16);
+
+                            auto emitSegment = [&](const char* seg, size_t len) {
+                                if (len == 0) return;
+                                // 1) raw segment, spaces included (e.g. " Unsafe")
+                                auto it = ult::translationCache.find(std::string(seg, len));
+                                if (it != ult::translationCache.end()) {
+                                    rebuilt += it->second;
+                                    anyTranslated = true;
+                                    return;
+                                }
+                                // 2) space-trimmed core, original spacing preserved
+                                size_t b = 0, e = len;
+                                while (b < e && seg[b] == ' ') ++b;
+                                while (e > b && seg[e - 1] == ' ') --e;
+                                if (b > 0 || e < len) {
+                                    it = ult::translationCache.find(std::string(seg + b, e - b));
+                                    if (it != ult::translationCache.end()) {
+                                        rebuilt.append(seg, b);          // leading spaces
+                                        rebuilt += it->second;
+                                        rebuilt.append(seg + e, len - e); // trailing spaces
+                                        anyTranslated = true;
+                                        return;
+                                    }
+                                }
+                                rebuilt.append(seg, len);
+                            };
+
+                            size_t pos = 0;
+                            while (pos < text.size()) {
+                                size_t best = std::string::npos, bestLen = 0;
+                                for (const auto& sym : specialSymbols) {
+                                    if (sym.empty()) continue;
+                                    const size_t f = text.find(sym, pos);
+                                    if (f != std::string::npos && f < best) { best = f; bestLen = sym.length(); }
+                                }
+                                if (best == std::string::npos) {
+                                    emitSegment(text.data() + pos, text.size() - pos);
+                                    break;
+                                }
+                                emitSegment(text.data() + pos, best - pos);
+                                rebuilt.append(text, best, bestLen); // symbol drawn/colored as-is
+                                pos = best + bestLen;
+                            }
+
+                            if (anyTranslated) textPtr = &rebuilt;
+                        }
+                    }
+                }
+                return drawString(*textPtr, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
             }
             
             // Calculate string dimensions without drawing
