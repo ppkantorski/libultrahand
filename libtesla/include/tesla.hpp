@@ -10165,6 +10165,21 @@ namespace tsl {
                   m_textWidth(0) {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
+                // Translate ONCE at construction so truncation, width math and
+                // the scrolling composite all operate on the translated string.
+                // Without this, a header whose translation is still wider than
+                // the panel gets m_scrollText built from the UNTRANSLATED
+                // m_text (calculateWidths measures translated, but the scroll
+                // buffer copies m_text verbatim) — so long headers scroll in
+                // English while short ones translate.  drawString's own cache
+                // lookup at draw time is a no-op afterwards (translated values
+                // are not keys), so this stays idempotent.
+                {
+                    std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                    auto translatedIt = ult::translationCache.find(m_text);
+                    if (translatedIt != ult::translationCache.end())
+                        m_text = translatedIt->second;
+                }
                 m_isItem = false;
             }
         
