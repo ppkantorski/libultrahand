@@ -6474,17 +6474,39 @@ namespace tsl {
                 static constexpr float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
+                // Translate custom page-left/page-right names (arbitrary overlay/package-supplied
+                // text, e.g. "Tools" or "Test") individually, up front. These get folded into the
+                // composed footer strings below ("currentBottomLine"); once concatenated with
+                // icons/gaps into one big string, that composite can never match a translation
+                // cache entry as a whole, so the lookup has to happen here, on each raw piece,
+                // before it's merged in. Only hit the cache when there's something to translate.
+                std::string translatedPageLeftName = m_pageLeftName;
+                std::string translatedPageRightName = m_pageRightName;
+                if (!m_pageLeftName.empty() || !m_pageRightName.empty()) {
+                    std::shared_lock<std::shared_mutex> pageNameReadLock(tsl::gfx::s_translationCacheMutex);
+                    if (!m_pageLeftName.empty()) {
+                        const auto leftIt = ult::translationCache.find(m_pageLeftName);
+                        if (leftIt != ult::translationCache.end())
+                            translatedPageLeftName = leftIt->second;
+                    }
+                    if (!m_pageRightName.empty()) {
+                        const auto rightIt = ult::translationCache.find(m_pageRightName);
+                        if (rightIt != ult::translationCache.end())
+                            translatedPageRightName = rightIt->second;
+                    }
+                }
+
             #if IS_LAUNCHER_DIRECTIVE
                 const bool hasNextPage = !interpreterIsRunningNow &&
                     ((ult::inMainMenu.load(std::memory_order_acquire) &&
                       ((m_menuMode == ult::OVERLAYS_STR) || (m_menuMode == ult::PACKAGES_STR))) ||
-                     !m_pageLeftName.empty() || !m_pageRightName.empty());
+                     !translatedPageLeftName.empty() || !translatedPageRightName.empty());
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
                 if (hasNextPage) {
                     const float _nextPageWidth = renderer->getTextDimensions(
-                        !m_pageLeftName.empty()  ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
-                        !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
+                        !translatedPageLeftName.empty()  ? ("\uE0ED" + ult::GAP_2 + translatedPageLeftName) :
+                        !translatedPageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + translatedPageRightName) :
                         (ult::inMainMenu.load(std::memory_order_acquire) ?
                             (((m_menuMode == "packages") ? (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
                                                            (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
@@ -6498,13 +6520,13 @@ namespace tsl {
                     }
                 }
             #else
-                const bool hasNextPage = !m_pageLeftName.empty() || !m_pageRightName.empty();
+                const bool hasNextPage = !translatedPageLeftName.empty() || !translatedPageRightName.empty();
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
                 if (hasNextPage) {
                     const float _nextPageWidth = renderer->getTextDimensions(
-                        !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName)
-                                                : ("\uE0EE" + ult::GAP_2 + m_pageRightName),
+                        !translatedPageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + translatedPageLeftName)
+                                                : ("\uE0EE" + ult::GAP_2 + translatedPageRightName),
                         false, 23).first + gapWidth;
                     updateAtomicFloat(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
@@ -6529,15 +6551,15 @@ namespace tsl {
                             : ((m_menuMode == "packages") ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
                                : (m_menuMode == "overlays") ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES : ""))
                         : "") +
-                    (!interpreterIsRunningNow && !m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
-                     !interpreterIsRunningNow && !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                    (!interpreterIsRunningNow && !translatedPageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + translatedPageLeftName  :
+                     !interpreterIsRunningNow && !translatedPageRightName.empty() ? "\uE0EE" + ult::GAP_2 + translatedPageRightName : "");
                 const bool _hasOkBtn = !m_noClickableItems && !interpreterIsRunningNow;
             #else
                 const std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
                     (!m_noClickableItems ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
-                    (!m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
-                     !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                    (!translatedPageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + translatedPageLeftName  :
+                     !translatedPageRightName.empty() ? "\uE0EE" + ult::GAP_2 + translatedPageRightName : "");
                 const bool _hasOkBtn = !m_noClickableItems;
             #endif
     
