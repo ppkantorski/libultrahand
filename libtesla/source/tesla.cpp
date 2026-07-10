@@ -312,7 +312,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"s2_toggle_on_color",              "0066EE"},
     {"s2_widget_border_color_1",        "7755FF"},
     {"s2_widget_border_color_2",        "FCFC6E"},
-    {"s2_widget_border_color_3",        "5AF2E6"},
+    {"s2_widget_border_color_3",        "5AF291"},
     {"s2_widget_border_color_3_deep",   "5A91F2"},
     {"s2_widget_border_color_4",        "F2B7ED"},
     {"s2_widget_border_color_4_deep",   "F2915A"},
