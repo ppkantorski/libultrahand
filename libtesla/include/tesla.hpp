@@ -10889,7 +10889,8 @@ namespace tsl {
                                      : 100;
                 u16 handlePos = width * (this->m_value) / maxValue;
             
-                if (!m_usingNamedStepTrackbar && !m_useV2Style) {
+                const bool useCenteredLayout = !m_usingNamedStepTrackbar && !m_useV2Style;
+                if (useCenteredLayout) {
                     yPos -= 11;
                 }
             
@@ -10907,7 +10908,7 @@ namespace tsl {
                 if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
                     const u8 numSteps = m_numSteps;
                     const u16 baseX = xPos;
-                    const u16 baseY = this->getY() + 44;
+                    const u16 baseY = this->getY() + 44 - (useCenteredLayout ? 11 : 0);
                     const u8 halfNumSteps = (numSteps - 1) / 2;
                     const u16 lastStepX = baseX + width - 1;
                     const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
@@ -10928,19 +10929,19 @@ namespace tsl {
                 }
             
                 // Draw track bar background
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
             
                 const bool isEffectivelyUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
             
                 if (!this->m_focused) {
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((isEffectivelyUnlocked || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
                     if (ult::useSwitch2Style) {
                         // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
                         const Switch2Wheel w2 = buildSwitch2Wheel(!isEffectivelyUnlocked, S2_WHEEL_SLOT_HANDLE);
@@ -11251,7 +11252,9 @@ namespace tsl {
             StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false,
                         bool useV2Style = false, const std::string& label = "", const std::string& units = "",
                         bool unlockedTrackbar = true)
-                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units, unlockedTrackbar), m_numSteps(numSteps) {}
+                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units, unlockedTrackbar) {
+                m_numSteps = numSteps;
+            }
 
             virtual ~StepTrackBar() {}
 
@@ -11489,9 +11492,6 @@ namespace tsl {
                 value = std::min(value, u16(this->m_numSteps - 1));
                 this->m_value = value * (100 / (this->m_numSteps - 1));
             }
-
-        protected:
-            u8 m_numSteps = 1;
         };
 
 
