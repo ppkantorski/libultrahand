@@ -10314,7 +10314,7 @@ namespace tsl {
                 // Keep a fixed header area for separator and text (matches old 33px height)
                 const int headerTop = this->getBottomBound() - 33;
                 const int textY = this->getBottomBound() - 16;
-                const int textX = (m_hasSeparator ? (this->getX() + 16) : this->getX())+5;
+                const int textX = (m_hasSeparator ? (this->getX() + 16) : (this->getX() + 2))+5; // no-separator headers align with list-item separator start (getX()+7)
             
                 // Draw the separator rectangle on the left (fixed 22px height, 4px wide)
                 if (m_hasSeparator) {
