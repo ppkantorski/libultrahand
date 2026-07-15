@@ -6707,8 +6707,12 @@ namespace tsl {
             }
             
             inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!m_contentElement || !m_contentElement->inBounds(currX, currY))
+                if (!m_contentElement) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !m_contentElement->inBounds(currX, currY))
                     return false;
                 
                 return m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
@@ -7012,13 +7016,15 @@ namespace tsl {
             }
             
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY))
+                if (this->m_contentElement == nullptr) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !this->m_contentElement->inBounds(currX, currY))
                     return false;
                 
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
-                else return false;
+                return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
             }
             
             /**
@@ -7145,13 +7151,15 @@ namespace tsl {
             }
             
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY))
+                if (this->m_contentElement == nullptr) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !this->m_contentElement->inBounds(currX, currY))
                     return false;
                 
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
-                else return false;
+                return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
             }
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
@@ -7514,8 +7522,13 @@ namespace tsl {
                                                 
             // Fixed onTouch method - prevents controller state corruption
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                // Quick bounds check
-                if (!inBounds(currX, currY)) return false;
+                // Only gate the initial touch-down by bounds. A new touch can't start
+                // outside the list, but once a touch is already in progress (Hold or
+                // Release), it must keep reaching the children even if the finger has
+                // drifted outside the list's own rectangle — otherwise whichever item
+                // was tracking the touch never finds out the finger left/lifted, and
+                // stays stuck believing it's still being touched/held.
+                if (event == TouchEvent::Touch && !inBounds(currX, currY)) return false;
                 
                 // Forward to children first
                 for (Element* item : m_items) {
@@ -9040,6 +9053,25 @@ namespace tsl {
                 }
                 
                 if (event == TouchEvent::Hold && m_touched) [[likely]] {
+                    // If the finger has slid outside this item's own region, cancel the
+                    // touch/hold instead of continuing to track a finger that isn't over
+                    // us anymore. This mirrors normal touchscreen long-press behavior
+                    // (a press is aborted once the pointer leaves the hit area) and is
+                    // what prevents the item from getting stuck "holding" forever when
+                    // the user swipes off to the side — previously nothing here ever
+                    // re-checked bounds after the initial Touch, so m_touched (and, for
+                    // touch-holding items, m_isTouchHolding) would stay true even after
+                    // the finger left the item, and if a matching Release event never
+                    // made it back down to us either, the hold would keep advancing
+                    // based on elapsed time alone until it fired unintentionally.
+                    if (!inBounds(currX, currY)) [[unlikely]] {
+                        m_touched = false;
+                        m_flags.m_isTouchHolding = false;
+                        m_flags.m_shortThresholdCrossed = false;
+                        m_flags.m_longThresholdCrossed = false;
+                        return false;
+                    }
+
                     const u64 touchDuration_ns = ult::nowNs() - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
@@ -14096,6 +14128,11 @@ namespace tsl {
                 oldTouchPos = touchPos;
                 if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) &&
                     tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                    // Deliver a Release at the last known position before we hide, so
+                    // whatever element was tracking this touch (e.g. a hold-to-execute
+                    // item) clears its own state instead of staying stuck across the hide.
+                    if (currentGui && topElement && !interpreterIsRunning)
+                        topElement->onTouch(elm::TouchEvent::Release, touchPos.x, touchPos.y, touchPos.x, touchPos.y, initialTouchPos.x, initialTouchPos.y);
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
             #if IS_STATUS_MONITOR_DIRECTIVE
