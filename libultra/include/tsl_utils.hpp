@@ -164,6 +164,13 @@ namespace ult {
     extern std::string requestedOverlayPath;
     extern std::string requestedOverlayArgs;
     extern std::mutex overlayLaunchMutex;
+
+    // Invoked synchronously (same call, same thread) right before an "open" package command
+    // requests an overlay launch, so main.cpp can snapshot the current PackageMenu return
+    // context to disk. Left null (and simply skipped) until main.cpp registers it in main().
+    // Plain function pointer (not std::function) so it is constant-initialized to nullptr —
+    // no static-initialization-order concerns when it's assigned during main.cpp's own init.
+    extern void (*openCommandInvokedCallback)();
 #endif
     
     

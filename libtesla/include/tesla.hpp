@@ -15133,6 +15133,32 @@ namespace tsl {
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
                                 #endif
+
+                                // A launch-combo-driven overlay switch is about to happen (every
+                                // branch below ends in fireLaunch()). This always abandons any
+                                // pending Ultrahand "open" return context — only a plain back-out
+                                // (B) from a directly-opened overlay restores it; a combo switch
+                                // is treated like a normal, unrelated overlay launch.
+                                //
+                                // The original "open" launch (see the overlayLaunchRequested
+                                // consumption block above) also wrote IN_OVERLAY_STR/to_packages
+                                // into the config INI so a *plain* return would land on the
+                                // Packages tab as a fallback. Those two are a separate, older
+                                // mechanism from our own flag file, but they represent the same
+                                // "still expecting to come back to something" state, so they must
+                                // be disarmed together — otherwise a combo diversion to an
+                                // unrelated overlay leaves them stale, and whenever ovlmenu.ovl
+                                // next boots for any reason at all it force-lands on the Packages
+                                // tab. Any of case 1 / case 2 / the self-return branch below that
+                                // legitimately wants ovlmenu.ovl as its target re-sets these to
+                                // TRUE itself, later in this same block, so clearing here first is
+                                // safe and doesn't fight a genuine combo-return-to-ovlmenu.
+                                if (ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH))
+                                    ult::deleteFileOrDirectory(ult::OPEN_RETURN_CONTEXT_FILEPATH);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::FALSE_STR);
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
@@ -16022,6 +16048,22 @@ namespace tsl {
             }
         }
     
+    #if !IS_LAUNCHER_DIRECTIVE
+        // If this overlay was launched via Ultrahand's "open" command while a package
+        // return context is pending, ovlmenu.ovl will restore that package and play its
+        // own reveal feedback the instant this process exits (see the OPEN_RETURN_CONTEXT_FILEPATH
+        // restore path in ovlmenu's loadInitialGui()). Without this, a plain B-exit here
+        // would ALSO fire this overlay's own directMode exit feedback below, doubling up
+        // with ovlmenu's reveal feedback on return. Skip ours; ovlmenu's is the one that
+        // should be heard, exactly like a normal in-overlay "back" doesn't chirp on its own.
+        // A combo-driven exit is unaffected: it already skips this feedback via
+        // launchComboHasTriggered, and the combo choke point deletes this file the instant
+        // it fires, so it correctly resets to normal (non-suppressed) behavior first.
+        if (directMode && ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH)) {
+            skipClosingExitFeedback = true;
+        }
+    #endif
+    
         impl::SharedThreadData shData;
         shData.running.store(true, std::memory_order_release);
     
@@ -16081,6 +16123,19 @@ namespace tsl {
             auto it = project.find(ult::IN_OVERLAY_STR);
             if (it != project.end()) {
                 inOverlay = (it->second != ult::FALSE_STR);
+            }
+
+            // A pending Ultrahand "open" return-context file means this boot is specifically
+            // to restore a saved package position after a plain back-out. IN_OVERLAY_STR can't
+            // be trusted here: the directly-opened overlay's own boot (ordinary, pre-existing
+            // logic, unrelated to this feature) already cleared it to FALSE the moment it
+            // started in direct mode, regardless of whether that overlay knows anything about
+            // Ultrahand at all. Our flag file, by contrast, is only ever written/read by
+            // ovlmenu.ovl itself, so it survives the opened overlay's entire lifetime intact —
+            // treat its presence the same as a genuine combo-return for reveal purposes so the
+            // restored menu doesn't come back invisible, waiting on a manual re-summon.
+            if (ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH)) {
+                inOverlay = true;
             }
         
             // Only update the overlay key once, for either firstBoot or skipCombo

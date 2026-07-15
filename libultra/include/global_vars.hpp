@@ -81,6 +81,13 @@ namespace ult {
     extern const std::string NOTIFICATIONS_FLAG_FILEPATH;
     extern const std::string RELOADING_FLAG_FILEPATH;
     extern const std::string NTP_SYNC_PENDING_FLAG_FILEPATH;
+    // Single-use, self-clearing flag file: holds a serialized PackageMenu return-context
+    // stack captured by the "open" package command so that backing all the way out of a
+    // directly-opened overlay (no launch combo in between) can restore the exact package /
+    // section / page / item the user was on. Written in main.cpp (captureOpenReturnContext),
+    // consumed in main.cpp (loadOpenReturnContext), and cleared on any launch-combo-driven
+    // overlay switch in tesla.hpp.
+    extern const std::string OPEN_RETURN_CONTEXT_FILEPATH;
 
     extern const std::set<std::string> PROTECTED_FILES;
 
@@ -172,6 +179,7 @@ namespace ult {
     extern const std::string COPY_SYMBOL;
     extern const std::string INPROGRESS_SYMBOL;
     extern const std::string STAR_SYMBOL;
+    extern const std::string LAUNCH_SYMBOL;
     extern const std::string DIVIDER_SYMBOL;
     extern const std::string NOTIFY_HEADER;
     extern const std::string HOLD_A_SYMBOL;

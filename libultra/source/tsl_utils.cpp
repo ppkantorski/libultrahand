@@ -239,6 +239,7 @@ namespace ult {
     std::string requestedOverlayPath;
     std::string requestedOverlayArgs;
     std::mutex overlayLaunchMutex;
+    void (*openCommandInvokedCallback)() = nullptr;
     #endif
     
     // CUSTOM SECTION START
