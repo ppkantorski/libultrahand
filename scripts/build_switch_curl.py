@@ -6,10 +6,11 @@ Rebuilds libcurl for the Switch (devkitA64 / devkitPro) from the exact
 source devkitPro's own `switch-curl` package uses -- curl 7.69.1 plus
 their libnx TLS-backend patch (lib/vtls/libnx.c, the thing that lets curl
 do HTTPS through the console's ssl: sysmodule instead of bundling
-mbedtls) -- but with the protocol handlers Ultrahand never calls
-(FTP, TELNET, DICT, GOPHER, TFTP, RTSP, IMAP, POP3, SMTP, SMB, LDAP,
+mbedtls) -- but with protocol handlers most Switch homebrew apps never
+use (FTP, TELNET, DICT, GOPHER, TFTP, RTSP, IMAP, POP3, SMTP, SMB, LDAP,
 MQTT, FILE) compiled out at ./configure time instead of just left
-unused-but-linked.
+unused-but-linked. If your app does use one of these, remove it from
+DISABLE_PROTOCOLS near the top of this file.
 
 Why this can't be a Makefile flag in your app: curl keeps a single
 static protocol dispatch table (Curl_builtin in lib/url.c) that
@@ -55,16 +56,17 @@ What it does, in order:
   3. Applies the one-line upstream fix for curl/curl#5126 (cross-compile
      AC_REQUIRE bug) to m4/curl-functions.m4
   4. Sets up the same cross-compile environment switchvars.sh would
-  5. ./buildconf && ./configure (devkitPro's exact flags + our extra
-     --disable-<protocol> flags) && make -C lib
+  5. ./buildconf && ./configure (devkitPro's exact flags + the extra
+     --disable-<protocol> flags configured below) && make -C lib
   6. Backs up your current installed libcurl.a/headers, then installs
      the new static lib into $DEVKITPRO/portlibs/switch (needs sudo,
      same as your libnx install flow)
   7. Verifies with aarch64-none-elf-nm that the disabled protocols are
      actually gone, and prints an old-vs-new .a size comparison
 
-After this finishes, just rebuild Ultrahand as normal -- nothing in
-your app's Makefile needs to change, it links -lcurl exactly like before.
+After this finishes, just rebuild your homebrew project as normal --
+nothing in your app's Makefile needs to change, it links -lcurl
+exactly like before.
 """
 
 import argparse
@@ -90,8 +92,11 @@ PATCH_URL = ("https://raw.githubusercontent.com/devkitPro/pacman-packages/"
              "master/switch/curl/switch-curl.patch")
 PATCH_SHA256 = "723c7d884fc7c39ae1a3115ba245bb8c1415da47bbd60ab8f943ca98f92ebc9a"
 
-# Confirmed via grep of download_funcs.cpp: only CURLOPT_URL http(s)://
-# calls exist anywhere in Ultrahand. Everything below is dead weight.
+# Defaults assume your app only ever does CURLOPT_URL http(s):// calls,
+# which covers most Switch homebrew (downloading files, hitting an API,
+# etc). Before relying on this, grep your own source for curl_easy_setopt
+# calls to confirm you don't use any of the protocols below -- if you do,
+# just remove them from this list.
 DISABLE_PROTOCOLS = [
     "ftp", "file", "ldap", "ldaps", "rtsp", "dict",
     "telnet", "tftp", "pop3", "imap", "smtp", "smb", "gopher", "mqtt",
@@ -211,7 +216,8 @@ def build_devkitpro_env() -> dict:
     devkitpro = os.environ.get("DEVKITPRO")
     if not devkitpro:
         sys.exit("DEVKITPRO is not set. Source your devkitPro environment first, "
-                  "the same way you do before building Ultrahand/libnx.")
+                  "the same way you would before building any devkitPro/libnx "
+                  "homebrew project.")
     devkitpro = str(Path(devkitpro))
 
     devkita64_gcc = Path(devkitpro) / "devkitA64" / "bin" / "aarch64-none-elf-gcc"
@@ -388,7 +394,7 @@ def main():
     print(f"\n  libcurl.a size: {new_installed_size:,} bytes"
           + (f"  (was {old_size:,} bytes, {old_size - new_installed_size:+,} bytes)" if old_size else ""))
 
-    log("Done. Rebuild Ultrahand normally -- your Makefile is unchanged, it still just links -lcurl.")
+    log("Done. Rebuild your homebrew project normally -- your Makefile is unchanged, it still just links -lcurl.")
 
 
 if __name__ == "__main__":
