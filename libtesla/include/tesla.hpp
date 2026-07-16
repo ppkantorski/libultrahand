@@ -9052,6 +9052,24 @@ namespace tsl {
                     }
                 }
                 
+                // Finger moved far enough that the gesture became a scroll (the
+                // dispatcher switched to InputMode::TouchScroll and now sends Scroll
+                // events instead of Hold). Match normal touchscreen list behavior:
+                // abandon any in-progress touch/hold on this item so the enclosing
+                // List scrolls instead of the row staying "held". Without this a
+                // hold-to-execute item keeps m_isTouchHolding set while the finger
+                // slides around, so processHold() keeps advancing (and can fire) and
+                // the row appears locked in place until the finger is lifted.
+                if (event == TouchEvent::Scroll) [[unlikely]] {
+                    if (m_touched || m_flags.m_isTouchHolding) {
+                        m_touched = false;
+                        m_flags.m_isTouchHolding = false;
+                        m_flags.m_shortThresholdCrossed = false;
+                        m_flags.m_longThresholdCrossed = false;
+                    }
+                    return false;  // let the enclosing List handle the scroll
+                }
+
                 if (event == TouchEvent::Hold && m_touched) [[likely]] {
                     // If the finger has slid outside this item's own region, cancel the
                     // touch/hold instead of continuing to track a finger that isn't over
