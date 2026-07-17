@@ -7385,25 +7385,27 @@ namespace tsl {
                 //    Fix: keep drawing until  logical_bottom + kTableBGOverhang > kTableScissorTop,
                 //    i.e. until the background has fully scrolled above the scissor edge.
                 //
-                //  BOTTOM BUG – lines appear only when they can fit (entering from below):
-                //    Outer cull starts when logical_top < bottomBound (647), but the first row
-                //    isn't drawn until logical_top + startGap < kTableScissorBottom (645), i.e.
-                //    logical_top < 625.  The 22 px gap (647→625) shows background with no rows.
-                //    Fix: don't start the draw call until the first row is about to enter the
-                //    scissor, i.e. logical_top < kTableScissorBottom − kTableFirstRowGap.
+                //  BOTTOM EDGE – must vanish at exactly the same point as text:
+                //    The inner TableDrawer scissor and the per-row cull already clip
+                //    anything below kTableScissorBottom (645), which is the same edge
+                //    text items are clipped at.  So the outer cull only needs to keep
+                //    calling frame() while any part of the table is above that edge,
+                //    i.e. logical_top < kTableScissorBottom.  (Previously this test
+                //    subtracted a 20 px "first row" gap to avoid painting an empty
+                //    background before rows scrolled in, but that clipped the still-
+                //    visible background/rows ~20 px early — the background sliding in
+                //    is the same behavior text backgrounds already have.)
                 static constexpr s32 kTableScissorTop   = 88;
                 const         s32 kTableScissorBottom   = kTableScissorTop
                     + static_cast<s32>(cfg::FramebufferHeight) - 73 - 97 + 2 + 5;
                 // Background overhang below logical bottom = 20 − endGap + 2.
                 // Worst case (smallest endGap = 3) → 19 px; use 20 to be safe.
                 static constexpr s32 kTableBGOverhang   = 20;
-                // Default startGap in buildTableDrawerLines (first row y-offset from logical top).
-                static constexpr s32 kTableFirstRowGap  = 20;
 
                 for (Element* entry : m_items) {
                     if (entry->isTable()) {
                         if (entry->getBottomBound() + kTableBGOverhang  > kTableScissorTop &&
-                            entry->getTopBound()                         < kTableScissorBottom - kTableFirstRowGap) {
+                            entry->getTopBound()                         < kTableScissorBottom) {
                             entry->frame(renderer);
                         }
                     } else {
