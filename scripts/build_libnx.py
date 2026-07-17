@@ -3,7 +3,7 @@
 build_libnx.py
 
 Builds and installs libnx for the Nintendo Switch (devkitA64 / devkitPro)
-from the official switchbrew/libnx source, with two local patches applied
+from the official switchbrew/libnx source, with two local edits applied
 on top of stock upstream:
 
   nx/Makefile
@@ -11,8 +11,7 @@ on top of stock upstream:
       warnings don't hard-fail the build.
     - Replaces the release BUILD_CFLAGS from "-DNDEBUG=1 -O2" with a
       size-focused flag set: -Os -fomit-frame-pointer -fdata-sections
-      -ffunction-sections -ffast-math -finline-small-functions
-      -fno-strict-aliasing -frename-registers -falign-functions=16
+      -ffunction-sections -fno-strict-aliasing
 
   nx/switch.ld
     - Narrows the .eh_frame KEEP rule so only crtbegin.o's and
@@ -21,8 +20,18 @@ on top of stock upstream:
       strips per-object C++ exception-unwind tables out of the final
       binary.
 
-Both patches are embedded below as unified diffs and applied with
-`patch -p1` against a fresh checkout of upstream libnx.
+WHY STRING REPLACEMENT INSTEAD OF `patch`:
+    The previous version embedded these edits as unified diffs applied
+    with `patch -p1`. That is fragile: `patch` matches on surrounding
+    context lines byte-for-byte, and libnx's Makefile / switch.ld are
+    TAB-indented. Any diff whose context used spaces (or any upstream
+    reformatting) makes the hunks fail to anchor and get rejected --
+    which is exactly what happened. Instead we now do targeted string
+    substitutions that key off the distinctive inner content and are
+    insensitive to leading whitespace. Each edit asserts it matched the
+    expected number of times, so if upstream ever genuinely changes the
+    target text the build stops with a clear error rather than silently
+    producing an unpatched library.
 
 Usage:
     python3 build_libnx.py [options]
@@ -32,12 +41,12 @@ Run from an empty working directory.
 Requirements:
   - devkitPro pacman with devkitA64 installed
   - DEVKITPRO environment variable set (source your devkitPro env)
-  - host tools: make, patch, tar
+  - host tools: make, tar
 
 Steps performed:
   1. Downloads the libnx source tree from GitHub for the chosen ref
      (--ref, default "master"; accepts a branch, tag, or commit SHA)
-  2. Applies the two patches described above
+  2. Applies the two edits described above
   3. make clean && make -jN
   4. Backs up the currently installed $DEVKITPRO/libnx, then installs
      the new build (sudo -E make install)
@@ -73,62 +82,53 @@ DEFAULT_REF = "master"
 # --keep has something stable to look for.
 SRC_DIRNAME = "libnx-src"
 
-# The two local patches applied on top of stock upstream libnx. Embedded
-# as unified diffs and applied with `patch -p1` against a fresh checkout.
+# The size-focused release flags substituted in for the stock "-O2".
+# (Trimmed safe set: no -ffast-math, no -frename-registers -- these carry
+# real risk for little/no benefit. To restore the aggressive set, edit the
+# string below.)
+RELEASE_BUILD_CFLAGS = (
+    '-DNDEBUG=1 -Os -fomit-frame-pointer -fdata-sections '
+    '-ffunction-sections -fno-strict-aliasing'
+)
 
-MAKEFILE_PATCH = """--- a/nx/Makefile
-+++ b/nx/Makefile
-@@ -26,7 +26,7 @@
- #---------------------------------------------------------------------------------
- ARCH   :=  -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIC -ftls-model=local-exec
- 
--CFLAGS :=  -g -Wall -Werror \\
-+CFLAGS :=  -g -Wall \\
-            -ffunction-sections \\
-            -fdata-sections \\
-            $(ARCH) \\
-@@ -112,7 +112,7 @@
- 
- lib/libnx.a : lib release $(SOURCES) $(INCLUDES)
-    @$(MAKE) BUILD=release OUTPUT=$(CURDIR)/$@ \\
--   BUILD_CFLAGS="-DNDEBUG=1 -O2" \\
-+   BUILD_CFLAGS="-DNDEBUG=1 -Os -fomit-frame-pointer -fdata-sections -ffunction-sections -ffast-math -finline-small-functions -fno-strict-aliasing -frename-registers -falign-functions=16" \\
-    DEPSDIR=$(CURDIR)/release \\
-    --no-print-directory -C release \\
-    -f $(CURDIR)/Makefile
-@@ -153,4 +153,3 @@
- #---------------------------------------------------------------------------------------
- endif
- #---------------------------------------------------------------------------------------
--
-"""
+# ---------------------------------------------------------------------------
+# The local edits applied on top of stock upstream libnx.
+#
+# Each entry: (relative_path, old_substring, new_substring, expected_count,
+#              human description). old_substring is chosen to avoid leading
+#              whitespace so tabs-vs-spaces can't break the match.
+# ---------------------------------------------------------------------------
 
-SWITCHLD_PATCH = """--- a/nx/switch.ld
-+++ b/nx/switch.ld
-@@ -77,7 +77,7 @@
- 
-    .gcc_except_table  : { *(.gcc_except_table .gcc_except_table.*) } :rodata
-    .eh_frame_hdr      : { *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*) } :rodata
--   .eh_frame          : { KEEP (*(.eh_frame)) *(.eh_frame.*) } :rodata
-+   .eh_frame : { KEEP (*crtbegin.o(.eh_frame)) KEEP (*crtend.o(.eh_frame)) } :rodata
-    .gnu_extab         : { *(.gnu_extab*) } : rodata
-    .exception_ranges  : { *(.exception_ranges .exception_ranges*) } :rodata
- 
-@@ -192,7 +192,7 @@
-       ================== */
- 
-    /* Discard sections that difficult post-processing */
--   /DISCARD/ : { *(.group .comment .note) }
-+   /DISCARD/ : { *(.group .comment .note) *(.eh_frame) *(.eh_frame.*) }
- 
-    /* Stabs debugging sections. */
-    .stab          0 : { *(.stab) }
-"""
-
-PATCHES = {
-    "nx/Makefile": MAKEFILE_PATCH,
-    "nx/switch.ld": SWITCHLD_PATCH,
-}
+EDITS = [
+    (
+        "nx/Makefile",
+        "-g -Wall -Werror",
+        "-g -Wall",
+        1,
+        "drop -Werror from CFLAGS",
+    ),
+    (
+        "nx/Makefile",
+        'BUILD_CFLAGS="-DNDEBUG=1 -O2"',
+        f'BUILD_CFLAGS="{RELEASE_BUILD_CFLAGS}"',
+        1,
+        "size-focused release BUILD_CFLAGS",
+    ),
+    (
+        "nx/switch.ld",
+        "{ KEEP (*(.eh_frame)) *(.eh_frame.*) }",
+        "{ KEEP (*crtbegin.o(.eh_frame)) KEEP (*crtend.o(.eh_frame)) }",
+        1,
+        "keep only crtbegin.o/crtend.o .eh_frame terminators",
+    ),
+    (
+        "nx/switch.ld",
+        "{ *(.group .comment .note) }",
+        "{ *(.group .comment .note) *(.eh_frame) *(.eh_frame.*) }",
+        1,
+        "discard all other .eh_frame content",
+    ),
+]
 
 
 def log(msg):
@@ -156,12 +156,12 @@ def run(cmd, cwd=None, env=None, check=True, capture=False, input=None):
 
 
 def check_host_tools():
-    missing = [t for t in ("make", "patch", "tar") if shutil.which(t) is None]
+    missing = [t for t in ("make", "tar") if shutil.which(t) is None]
     if missing:
         sys.exit(
             "Missing host build tools: " + ", ".join(missing) +
             "\nInstall them with your system package manager first "
-            "(e.g. apt install make patch tar)."
+            "(e.g. apt install make tar)."
         )
 
 
@@ -224,12 +224,43 @@ def download_source(ref: str, workdir: Path) -> Path:
     return srcdir
 
 
-def apply_patches(srcdir: Path, workdir: Path):
-    for relpath, patch_text in PATCHES.items():
-        patchfile = workdir / (Path(relpath).name + ".patch")
-        patchfile.write_text(patch_text)
-        log(f"Applying patch to {relpath}")
-        run(["patch", "-p1", "-i", str(patchfile)], cwd=srcdir)
+def apply_edits(srcdir: Path):
+    """
+    Apply the local edits via whitespace-insensitive string substitution.
+    Each edit must match its expected count exactly, otherwise we stop --
+    a mismatch means upstream changed the target text and the edit needs
+    to be revisited rather than silently skipped.
+    """
+    for relpath, old, new, expected, desc in EDITS:
+        target = srcdir / relpath
+        if not target.exists():
+            sys.exit(f"Can't find {target} -- did the source layout change upstream?")
+
+        text = target.read_text()
+        count = text.count(old)
+
+        if count == 0:
+            sys.exit(
+                f"\n[EDIT FAILED] {relpath}: could not find the text to change "
+                f"for '{desc}'.\n  Looking for: {old!r}\n"
+                "  Upstream libnx probably changed this line -- update the "
+                "corresponding entry in EDITS."
+            )
+        if count != expected:
+            sys.exit(
+                f"\n[EDIT FAILED] {relpath}: expected to change {expected} "
+                f"occurrence(s) for '{desc}' but found {count}.\n"
+                f"  Looking for: {old!r}\n"
+                "  Refusing to guess -- update the EDITS entry."
+            )
+
+        # Skip if it already looks applied (idempotent for --keep reuse).
+        if new in text and old not in text:
+            log(f"{relpath}: '{desc}' already applied, skipping")
+            continue
+
+        target.write_text(text.replace(old, new))
+        log(f"{relpath}: applied '{desc}' ({count} change)")
 
 
 def build_devkitpro_env() -> dict:
@@ -276,7 +307,7 @@ def main():
         if resolved != args.ref:
             print(f"  '{args.ref}' -> {resolved}")
         srcdir = download_source(resolved, workdir)
-        apply_patches(srcdir, workdir)
+        apply_edits(srcdir)
 
     log(f"make clean; make -j{args.jobs}")
     run(["make", "clean"], cwd=srcdir, env=env)
