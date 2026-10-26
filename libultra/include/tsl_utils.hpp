@@ -328,6 +328,7 @@ namespace ult {
     extern std::string POLISH;
     extern std::string SIMPLIFIED_CHINESE;
     extern std::string TRADITIONAL_CHINESE;
+    extern std::string TURKISH;
 
     extern std::string OVERLAYS; //defined in libTesla now
     extern std::string OVERLAYS_ABBR;

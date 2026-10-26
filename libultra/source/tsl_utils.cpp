@@ -389,6 +389,7 @@ namespace ult {
     std::string POLISH;
     std::string SIMPLIFIED_CHINESE;
     std::string TRADITIONAL_CHINESE;
+    std::string TURKISH;
     std::string OVERLAYS;
     std::string OVERLAYS_ABBR;
     std::string OVERLAY;
@@ -616,6 +617,7 @@ namespace ult {
         {&POLISH,                     "POLISH",                     "Polish"},
         {&SIMPLIFIED_CHINESE,         "SIMPLIFIED_CHINESE",         "Simplified Chinese"},
         {&TRADITIONAL_CHINESE,        "TRADITIONAL_CHINESE",        "Traditional Chinese"},
+        {&TURKISH,                    "TURKISH",                    "Turkish"},
         {&OVERLAYS,                   "OVERLAYS",                   "Overlays"},
         {&OVERLAYS_ABBR,              "OVERLAYS_ABBR",              "Overlays"},
         {&OVERLAY,                    "OVERLAY",                    "Overlay"},
