@@ -223,7 +223,7 @@ inline void signalSound()    { leventSignal(&soundEvent); }
 inline void signalFeedback() { leventSignal(&hapticsEvent); leventSignal(&soundEvent); }
 
 inline std::atomic<bool> feedbackPollerStop{false};
-inline std::atomic<bool> hidReinitInProgress{false};
+//inline std::atomic<bool> hidReinitInProgress{false};
 
 // ─── Shallow-sleep coordination ───────────────────────────────────────────────
 // Maintained by backgroundEventPoller via the PSC (Power State Coordinator)
@@ -15456,28 +15456,28 @@ namespace tsl {
                             // Reinitialize HID unconditionally — this restores input
                             // state on wake, and is safe on sleep entry too (HID
                             // will simply reinit again on wake if needed).
-                            hidReinitInProgress.store(true, std::memory_order_seq_cst);
-                            svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish
+                           //hidReinitInProgress.store(true, std::memory_order_seq_cst);
+                           //svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish
 
-                            hidExit();
-                            if (R_SUCCEEDED(hidInitialize())) {
-                                padInitialize(&pad_p1, HidNpadIdType_No1);
-                                padInitialize(&pad_handheld, HidNpadIdType_Handheld);
-                                hidInitializeTouchScreen();
-                                padUpdate(&pad_p1);
-                                padUpdate(&pad_handheld);
-                                {
-                                    std::lock_guard<std::mutex> lock(shData->dataMutex);
-                                    shData->keysDown        = 0;
-                                    shData->keysHeld        = 0;
-                                    shData->keysDownPending = 0;
-                                    shData->touchState      = { 0 };
-                                }
-                                triggerInitHaptics.store(true, std::memory_order_release);
-                                signalFeedback(); // wake poller to run initHaptics
-                            }
+                           //hidExit();
+                           //if (R_SUCCEEDED(hidInitialize())) {
+                           //    padInitialize(&pad_p1, HidNpadIdType_No1);
+                           //    padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+                           //    hidInitializeTouchScreen();
+                           //    padUpdate(&pad_p1);
+                           //    padUpdate(&pad_handheld);
+                           //    {
+                           //        std::lock_guard<std::mutex> lock(shData->dataMutex);
+                           //        shData->keysDown        = 0;
+                           //        shData->keysHeld        = 0;
+                           //        shData->keysDownPending = 0;
+                           //        shData->touchState      = { 0 };
+                           //    }
+                           //    triggerInitHaptics.store(true, std::memory_order_release);
+                           //    signalFeedback(); // wake poller to run initHaptics
+                           //}
 
-                            hidReinitInProgress.store(false, std::memory_order_seq_cst);
+                           //hidReinitInProgress.store(false, std::memory_order_seq_cst);
                             break;
 
 
@@ -15655,8 +15655,7 @@ namespace tsl {
                 const bool stopping  = feedbackPollerStop.load(std::memory_order_acquire);
                 const bool launching = ult::launchingOverlay.load(std::memory_order_acquire);
 
-                if (!ult::useHapticFeedback || disableHaptics.load(std::memory_order_acquire)
-                    || hidReinitInProgress.load(std::memory_order_acquire)) {
+                if (!ult::useHapticFeedback || disableHaptics.load(std::memory_order_acquire)) {
                     triggerInitHaptics.store(false, std::memory_order_release);
                     triggerRumbleClick.store(false, std::memory_order_release);
                     triggerRumbleDoubleClick.store(false, std::memory_order_release);
