@@ -177,12 +177,17 @@ sounds = {
              [(41.5, 0), (42, 0.14), (43, 0.23), (43.5, 0.35), (44, 0.37), (44.5, 0.31), (45.5, 0.21),
               (46.5, 0.14), (47.5, 0.10), (48.5, 0.06), (49.5, 0.03), (50.5, 0)],
              harm=(0, -41, -58, -64))), -15.3),
-    # settings: a soft tap, a warm two-note chime (D6 + A6 together), then a high D7
-    'settings': finish(mix(90,
-        click(0, 3, 1800, 0.6, 0.25, bright=0.1),
-        blip(1, 1174.7, 1.0, 6, 24, 0.80, harm=(0, -10, -16, -24), curve=1.6),
-        blip(1, 1760.0, 1.0, 6, 22, 0.55, harm=(0, -18, -28), curve=1.6),
-        blip(62, 2349.3, 1.0, 4, 18, 0.50, harm=(0, -24, -32), curve=1.8)), -14.0),
+    # settings: a soft breath blooming into a warm D major chord (D5, F#5, A5 with rich
+    # harmonics; the top note lasts longest, so it lifts), then a breath and a pure D6
+    # swelling in and out an octave above
+    'settings': finish(mix(118,
+        noise([(0, 0), (3, 0.18), (8, 0.14), (14, 0)], [(3800, 1.5, 1.0), (2000, 2, 0.5)], air=0.1),
+        blip(2.0, 587.3, 9, 2, 26, 0.60, harm=(0, -6, -10, -16, -20, -26), curve=1.4),
+        blip(2.0, 588.4, 10, 2, 26, 0.25, harm=(0, -10), curve=1.4),
+        blip(3.0, 740.0, 10, 3, 30, 0.45, harm=(0, -8, -14, -20), curve=1.4),
+        blip(4.0, 880.0, 12, 6, 36, 0.50, harm=(0, -10, -16), curve=1.3),
+        noise([(55, 0), (62, 0.06), (68, 0.05), (73, 0)], [(3000, 1.5, 1.0)], air=0.1),
+        blip(64, 1174.7, 16, 2, 34, 0.62, harm=(0, -14, -14, -27), curve=1.3)), -14.5),
     # toggle on: a small body ringing at 2.4-2.9 kHz, struck three times, ringing out
     'on': finish(mix(34,
         tone([(2, 2400), (5, 2450), (8, 2900), (11, 2950), (14, 2800), (34, 2780)],
