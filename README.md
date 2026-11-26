@@ -7,7 +7,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/ppkantorski/libultrahand?color=222222)](https://github.com/ppkantorski/libultrahand/issues)
 [![GitHub stars](https://img.shields.io/github/stars/ppkantorski/libultrahand)](https://github.com/ppkantorski/libultrahand/stargazers)
 
-An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library — a comprehensive foundation for Nintendo Switch overlay development.
+An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library, for building Nintendo Switch overlays.
 
 ![libultrahand Logo](.pics/libultrahand.png)
 
@@ -16,9 +16,13 @@ An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (origina
 ## Features
 
 ### Rendering & UI
-- Fully anti-aliased rendering — rounded rects, uniform rounded rects, bordered rounded rects, and circles
+- Fully anti-aliased rendering of rounded rects, uniform rounded rects, bordered rounded rects, and circles
+- Frosted glass backdrop: a blurred, tinted copy of whatever is behind the overlay (live in games, and on the HOME menu and in applets). Every libultrahand overlay gets it automatically when `Frosted Glass` is on in Ultrahand (6 MB of overlay memory or more)
+- Full color (8-bit) wallpapers and glass with more than 8 MB of overlay memory
+- NEON fills, blending, and glyph drawing; small shapes are drawn without spawning render threads
 - Global alpha limiter for smooth show/hide transitions and glyph rendering
 - Rewritten `List` class with `jumpToItem`, proper wall handling, and no pointer caching
+- Touch scrolling with momentum, and a draggable scroll bar that keeps a minimum length on long lists
 - `TrackBar` and `TrackBarV2` with touch support, click animations, and haptic feedback
 - `ToggleListItem`, `CategoryHeader` (with right-side value display), and other standard UI elements
 - `OverlayFrame` / `HeaderOverlayFrame` with auto-scrolling titles and subtitles
@@ -28,9 +32,12 @@ An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (origina
 
 ### Theming & Appearance
 - Full `theme.ini` system with extensive color variables covering every UI surface
-- Per-overlay theme overrides via `UI_OVERRIDE_PATH` — scoped to `/config/<OVERLAY_NAME>/`
+- Per-overlay theme overrides via `UI_OVERRIDE_PATH`, scoped to `/config/<OVERLAY_NAME>/`
 - Wallpaper support (`.rgba`, 448×720 px) with heap-aware loading and optimized rendering
-- Status bar widget — clock, temperature, battery, backdrop, and border (opt-in via `USING_WIDGET_DIRECTIVE`)
+- Animated wallpapers (`.uaw`) streamed from the SD card, made with Ultrahand's `extra/make_uaw.py` or the [Ultrahand Wallpaper Designer](https://ppkantorski.github.io/Ultrahand-Wallpaper/)
+- Ultrahand's per-wallpaper `Light` and `Color` presets (`wallpaper.ini`) are applied in every overlay
+- Status bar widget with clock, temperature, battery, backdrop, and border (opt-in via `USING_WIDGET_DIRECTIVE`)
+- Follows Ultrahand's `Theme Settings` (text border, uniform logo, bottom / divider / edge lines)
 
 ### Language & Localization
 - Automatic string translation at render time via `drawString`
@@ -41,6 +48,7 @@ An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (origina
 - WAV sound effect playback (8–48 kHz, 16-bit PCM) via libnx `audout`, with volume control
 - Sound and haptics each run on dedicated background threads for reliability and performance
 - Haptic rumble patterns for click and double-click feedback
+- Separate button and touch haptics (`ult::useButtonHaptics`, `ult::useTouchHaptics`, replacing `ult::useHapticFeedback`)
 
 ### Notifications
 - Multi-slot toast notification system (up to 8 concurrent; 4 on 4MB heap)
@@ -48,9 +56,11 @@ An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (origina
 - Optional notification icons (50×50 RGBA), titles, timestamps, duration, alignment, and font size
 - Per-app notification filtering via flag files; API toggle hotkey for live enable/disable
 - `tsl::notification->show` and `tsl::notification->showNow` for queued and immediate display
+- Optional Switch 2 style notifications with their own outline color (`notification_border_color`)
 
 ### Input
-- Full touch support alongside controller input — tap, hold, swipe, and drag
+- Full touch support alongside controller input: tap, hold, swipe, drag, and fling
+- Holding a direction steps at a steady pace (timed after the Switch 2), with its own lighter hold sound
 - Configurable per-item touch, hold, and release behavior on `ListItem`
 - `tsl::shiftItemFocus` for programmatic focus control
 
@@ -60,19 +70,20 @@ An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (origina
 - Per-download socket init/exit to minimize memory pressure
 
 ### libultra Utilities
-- **File & path** — copy, move, delete, mkdir, wildcard matching, directory traversal, dot-clean
-- **INI** — full read/write, section and key management, pattern-matched bulk edits
-- **JSON** — read/write via cJSON (migrated from jansson)
-- **Hex** — binary file editing by offset, swap, string, decimal, reversed decimal, and custom pattern
-- **Strings** — trim, split, format, version parsing, placeholder resolution
-- **Lists** — file-backed list reading, set operations, filtering
-- **Mod conversion** — `.pchtxt` to `.ips` or Atmosphere cheat format (with `@disabled` flag support)
-- **Debug** — thread-safe timestamped logging via `USING_LOGGING_DIRECTIVE`
+- **File & path**: copy, move, delete, mkdir, wildcard matching, directory traversal, dot-clean
+- **INI**: full read/write, section and key management, pattern-matched bulk edits
+- **JSON**: read/write via cJSON (migrated from jansson)
+- **Hex**: binary file editing by offset, swap, string, decimal, reversed decimal, and custom pattern
+- **Strings**: trim, split, format, version parsing, placeholder resolution
+- **Lists**: file-backed list reading, set operations, filtering
+- **Mod conversion**: `.pchtxt` to `.ips` or Atmosphere cheat format (with `@disabled` flag support)
+- **Images**: PNG to RGBA conversion (`convertPngToRgba`)
+- **Debug**: thread-safe timestamped logging via `USING_LOGGING_DIRECTIVE`
 
 ### Compatibility & Integration
-- Full drop-in replacement for libtesla — all existing Tesla overlays work without modification
+- Full drop-in replacement for libtesla. Existing Tesla overlays work without modification
 - All overlays act as combo launchers for any overlay registered in Ultrahand's `overlays.ini`
-- Launch Recall — combo re-entry returns to the exact overlay/package previously launched
+- Launch Recall: combo re-entry returns to the exact overlay/package previously launched
 - Ultrahand signature (`ULTR`) embedded at link time to enable first-class Ultrahand integration
 - Unsupported overlay warning when launching overlays compiled against incompatible AMS versions
 
@@ -84,7 +95,7 @@ A growing ecosystem of libultrahand-based overlays, all launchable and manageabl
 
 | Overlay | Description |
 |---|---|
-| [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay) | Fully scriptable overlay menu ecosystem — the primary libultrahand reference implementation |
+| [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay) | Fully scriptable overlay menu ecosystem and the main libultrahand reference |
 | [Status Monitor](https://github.com/ppkantorski/Status-Monitor-Overlay) | Real-time CPU/GPU/RAM, temps, battery, and frequency stats |
 | [sys-clk](https://github.com/ppkantorski/sys-clk) | Per-game CPU/GPU/memory overclocking and underclocking |
 | [FPSLocker](https://github.com/ppkantorski/FPSLocker) | Custom FPS targets and display refresh rates for retail games |
@@ -239,7 +250,7 @@ All directives should be added to both `CFLAGS` and `CXXFLAGS` unless your `CXXF
 
 ### Theme & Wallpaper Override
 
-Scopes a `theme.ini` and `wallpaper.rgba` to your overlay at `/config/<OVERLAY_NAME>/`:
+Scopes a `theme.ini` and `wallpaper.rgba` to your overlay at `/config/<OVERLAY_NAME>/`. An animated `wallpaper.uaw` in the same folder is used before `wallpaper.rgba`:
 
 ```makefile
 UI_OVERRIDE_PATH := /config/<OVERLAY_NAME>/
@@ -274,7 +285,7 @@ CFLAGS   += -DUSING_WIDGET_DIRECTIVE=1
 CXXFLAGS += -DUSING_WIDGET_DIRECTIVE=1
 ```
 
-Activates `i2cInitialize()` internally — remove it from your own service init if present.
+Activates `i2cInitialize()` internally, so remove it from your own service init if present.
 
 ### Logging
 
@@ -283,6 +294,45 @@ Enables thread-safe file logging to `<packagePath>/log.txt` via `logMessage()`. 
 ```makefile
 CFLAGS   += -DUSING_LOGGING_DIRECTIVE=1
 CXXFLAGS += -DUSING_LOGGING_DIRECTIVE=1
+```
+
+### Glass Panel
+
+Lets your overlay draw frosted glass under a freely placed panel with `renderer->drawGlassPanel(x, y, w, h, radius, color)`. Panels larger than the menu column (56×90 cells of 8 px) also need their largest size in cells:
+
+```makefile
+CFLAGS   += -DUSING_GLASS_PANEL_DIRECTIVE=1
+CXXFLAGS += -DUSING_GLASS_PANEL_DIRECTIVE=1
+# Optional, only for panels larger than the menu column
+CFLAGS   += -DGLASS_PANEL_MAX_W=160 -DGLASS_PANEL_MAX_H=90
+CXXFLAGS += -DGLASS_PANEL_MAX_W=160 -DGLASS_PANEL_MAX_H=90
+```
+
+### Glass One Buffer
+
+Shares one buffer between the glass's screenshot and live game reads (480 KB less memory). Useful for overlays that are tight on memory:
+
+```makefile
+CFLAGS   += -DUSING_GLASS_ONE_BUFFER_DIRECTIVE=1
+CXXFLAGS += -DUSING_GLASS_ONE_BUFFER_DIRECTIVE=1
+```
+
+### Favorites
+
+List items whose text starts with the star symbol (`ult::STAR_SYMBOL`) draw the star in Ultrahand's star colors:
+
+```makefile
+CFLAGS   += -DUSING_FAVORITES_DIRECTIVE=1
+CXXFLAGS += -DUSING_FAVORITES_DIRECTIVE=1
+```
+
+### Live Logging
+
+For test builds only. Writes frame timing and glass diagnostics to `/config/ultrahand/live_logging.log` while `live_logging` is on in `config.ini`. Leave it out of release builds:
+
+```makefile
+CFLAGS   += -DUSING_LIVE_LOGGING_DIRECTIVE=1
+CXXFLAGS += -DUSING_LIVE_LOGGING_DIRECTIVE=1
 ```
 
 ### Back Button Override
@@ -306,7 +356,7 @@ CFLAGS   += -DULTRA_TARGETED_SIZE
 CXXFLAGS += -DULTRA_TARGETED_SIZE
 ```
 
-These can be used together — `TESLA_TARGETED_SPEED` optimizes the hot rendering path while `ULTRA_TARGETED_SIZE` keeps utility code compact.
+These can be used together: `TESLA_TARGETED_SPEED` optimizes the hot rendering path while `ULTRA_TARGETED_SIZE` keeps utility code compact.
 
 ### Launcher Build
 
