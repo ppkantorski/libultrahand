@@ -223,7 +223,7 @@ inline void signalSound()    { leventSignal(&soundEvent); }
 inline void signalFeedback() { leventSignal(&hapticsEvent); leventSignal(&soundEvent); }
 
 inline std::atomic<bool> feedbackPollerStop{false};
-inline std::atomic<bool> hidReinitInProgress{false};
+//inline std::atomic<bool> hidReinitInProgress{false};
 
 // ─── Shallow-sleep coordination ───────────────────────────────────────────────
 // Maintained by backgroundEventPoller via the PSC (Power State Coordinator)
@@ -347,7 +347,7 @@ namespace tsl {
 
     // Shared static specialChars vectors — avoids duplicate static init at each call site
     inline const std::vector<std::string> s_dividerSpecialChars = {ult::DIVIDER_SYMBOL};
-    inline const std::vector<std::string> s_footerSpecialChars  = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5"};
+    inline const std::vector<std::string> s_footerSpecialChars  = {"\uE0E1","\uE0E0","\uE0ED","\uE0EE","\uE0E5","\uE0E2"};
 
     // Windowed-mode notification Y offset in touch space.
     // Set to (g_win_pos_y * 2/3) by windowed overlay; 0 in normal mode.
@@ -1083,6 +1083,9 @@ namespace tsl {
 
     void initializeTheme(const std::string& themeIniPath = ult::THEME_CONFIG_INI_PATH);
 
+    // wrappingMode: "none", "char", "word", or "auto" — "auto" resolves per
+    // string to "char" when the text contains a word-per-character script
+    // (CJK ideographs, kana, Hangul, etc.) and to "word" otherwise.
     extern std::vector<std::string> wrapText(
         const std::string& text,
         float maxWidth,
@@ -1463,9 +1466,88 @@ namespace tsl {
 
         // Forward declarations
         class Renderer;
-        
+
         inline static std::shared_mutex s_translationCacheMutex;
-        
+
+        // ── Per-segment translation ───────────────────────────────────────────
+        // Translates the pieces of `s` that sit between any of `symbols`
+        // (divider glyphs etc.), leaving the symbols themselves untouched.
+        // For each segment the raw form (spaces included, e.g. " Unsafe") is
+        // tried first, then the space-trimmed core with the original spacing
+        // re-attached.  Identity cache entries (inserted when negative lookups
+        // are cached) do not count as translations.  Returns true and replaces
+        // `s` only when a segment really changed.
+        // Intended to run at STRING-SET time (not draw time) so that width
+        // measurement, truncation and rendering all see the same string.
+        // Takes the cache lock itself — callers must NOT hold
+        // s_translationCacheMutex.
+        inline bool translateStringSegments(std::string& s, const std::vector<std::string>& symbols) {
+            if (s.empty()) return false;
+
+            // Cheap gate: only bother when a special symbol is present.
+            size_t firstSym = std::string::npos;
+            for (const auto& sym : symbols) {
+                if (sym.empty()) continue;
+                const size_t f = s.find(sym);
+                if (f != std::string::npos && f < firstSym) firstSym = f;
+            }
+            if (firstSym == std::string::npos) return false;
+
+            std::string rebuilt;
+            rebuilt.reserve(s.size() + 16);
+            bool anyTranslated = false;
+
+            std::shared_lock<std::shared_mutex> readLock(s_translationCacheMutex);
+
+            auto emitSegment = [&](const char* seg, size_t len) {
+                if (len == 0) return;
+                // 1) raw segment, spaces included
+                auto it = ult::translationCache.find(std::string(seg, len));
+                if (it != ult::translationCache.end()) {
+                    rebuilt += it->second;
+                    if (it->second.size() != len || it->second.compare(0, len, seg, len) != 0)
+                        anyTranslated = true;
+                    return;
+                }
+                // 2) space-trimmed core, original spacing preserved
+                size_t b = 0, e = len;
+                while (b < e && seg[b] == ' ') ++b;
+                while (e > b && seg[e - 1] == ' ') --e;
+                if (b > 0 || e < len) {
+                    it = ult::translationCache.find(std::string(seg + b, e - b));
+                    if (it != ult::translationCache.end()) {
+                        rebuilt.append(seg, b);           // leading spaces
+                        rebuilt += it->second;
+                        rebuilt.append(seg + e, len - e); // trailing spaces
+                        if (it->second.size() != e - b || it->second.compare(0, e - b, seg + b, e - b) != 0)
+                            anyTranslated = true;
+                        return;
+                    }
+                }
+                rebuilt.append(seg, len);
+            };
+
+            size_t pos = 0;
+            while (pos < s.size()) {
+                size_t best = std::string::npos, bestLen = 0;
+                for (const auto& sym : symbols) {
+                    if (sym.empty()) continue;
+                    const size_t f = s.find(sym, pos);
+                    if (f != std::string::npos && f < best) { best = f; bestLen = sym.length(); }
+                }
+                if (best == std::string::npos) {
+                    emitSegment(s.data() + pos, s.size() - pos);
+                    break;
+                }
+                emitSegment(s.data() + pos, best - pos);
+                rebuilt.append(s, best, bestLen); // symbol kept verbatim (colored at draw)
+                pos = best + bestLen;
+            }
+
+            if (anyTranslated) s = std::move(rebuilt);
+            return anyTranslated;
+        }
+
         class FontManager {
         public:
             struct Glyph {
@@ -2500,6 +2582,110 @@ namespace tsl {
 
                 const s32 T   = thickness;
                 const s32 r   = radius;
+
+                // radius == 0: degenerate to a plain rectangular border (four rect sides).
+                // When a wheel is present we must sample per-pixel so the gradient flows
+                // continuously around all four sides.  The switch2WheelColorAt classifier
+                // uses cxL/cxR to decide "left-of / right-of" and ccyT/ccyB to decide
+                // "above / below" the straight side zones.  For a zero-radius border the
+                // inner corners sit at (x+T, y+T) / (x+w-T-1, y+h-T-1), so we use those
+                // as the anchors.  That makes every pixel in the left band satisfy px < cxL,
+                // every pixel in the right band satisfy px > cxR, and top/bottom band pixels
+                // fall between them — exactly matching the side classification the sampler
+                // expects.  Ri=0 because there is no inner arc.
+                if (r <= 0) {
+                    if (wheel == nullptr) {
+                        this->drawRect(x,             y,              width,     T,            highlightColor); // top
+                        this->drawRect(x,             y + height - T, width,     T,            highlightColor); // bottom
+                        this->drawRect(x,             y + T,          T,         height - 2*T, highlightColor); // left
+                        this->drawRect(x + width - T, y + T,          T,         height - 2*T, highlightColor); // right
+                    } else {
+                        // switch2WheelColorAt is designed for Ri > 0: it projects each pixel
+                        // to a point on the INNER boundary ring (radius Ri) before classifying
+                        // which side it belongs to.  When Ri == 0 the projection collapses —
+                        // every projected point lands exactly ON the boundary line (not strictly
+                        // inside it), and the strict < / > comparisons in Step 2 of that
+                        // function then misclassify all pixels as "bottom", producing two
+                        // identical bottom-side gradients instead of a clockwise four-sided flow.
+                        //
+                        // For r == 0 the border is a plain rectangle with no inner arc, so we
+                        // skip the projection entirely.  Instead we compute the clockwise
+                        // perimeter position s directly from each pixel's position relative to
+                        // the bounding box, then pass s straight to switch2WheelColorFromS.
+                        //
+                        // Clockwise from top-left:
+                        //   top    band: s in [0.00, 0.25)  — left → right
+                        //   right  band: s in [0.25, 0.50)  — top  → bottom
+                        //   bottom band: s in [0.50, 0.75)  — right → left
+                        //   left   band: s in [0.75, 1.00)  — bottom → top
+                        //
+                        // Corner pixels (where two bands meet) are assigned by the
+                        // "minimum distance to edge" rule, with top/bottom winning ties
+                        // over left/right — this matches the winding of a clockwise traversal.
+                        //
+                        // W and H are the max t-denominator (pixel span − 1), giving t=1 at
+                        // the far corner of each side so the gradient reaches the corner value
+                        // exactly and the adjacent side picks up from there without a gap.
+
+                        u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                        const u8   ba   = highlightColor.a;
+
+                        s32 sc_x0 = 0, sc_xe0 = static_cast<s32>(cfg::FramebufferWidth);
+                        s32 sc_y0 = 0, sc_ye0 = static_cast<s32>(cfg::FramebufferHeight);
+                        if (this->m_scissorDepth != 0) [[unlikely]] {
+                            const auto& sc = this->m_scissorStack[this->m_scissorDepth - 1];
+                            sc_x0  = static_cast<s32>(sc.x);
+                            sc_xe0 = static_cast<s32>(sc.x_max);
+                            sc_y0  = static_cast<s32>(sc.y);
+                            sc_ye0 = static_cast<s32>(sc.y_max);
+                        }
+
+                        const float W_f = static_cast<float>(width  - 1);
+                        const float H_f = static_cast<float>(height - 1);
+                        const s32   rx  = x + width  - 1;   // rightmost column
+                        const s32   by  = y + height - 1;   // bottom-most row
+
+                        // perimeterS: clockwise s for a pixel on a rectangular border.
+                        // Caller guarantees the pixel is actually in one of the four bands.
+                        // top/bottom bands claim corner pixels (dist_top or dist_bottom
+                        // is strictly <= dist_left/dist_right at corner positions).
+                        auto perimeterS = [&](s32 px, s32 py) -> float {
+                            const s32 dt = py - y;           // dist to top edge
+                            const s32 db = by - py;          // dist to bottom edge
+                            const s32 dl = px - x;           // dist to left edge
+                            const s32 dr = rx - px;          // dist to right edge
+                            const s32 m  = std::min({dt, db, dl, dr});
+                            float s;
+                            if (dt == m)          { s = 0.00f + (static_cast<float>(px - x)  / W_f) * 0.25f; }
+                            else if (dr == m)     { s = 0.25f + (static_cast<float>(py - y)  / H_f) * 0.25f; }
+                            else if (db == m)     { s = 0.50f + (static_cast<float>(rx - px) / W_f) * 0.25f; }
+                            else                  { s = 0.75f + (static_cast<float>(by - py) / H_f) * 0.25f; }
+                            s -= wheel->rotFrac;
+                            s -= floorf(s);
+                            return s;
+                        };
+
+                        auto paintSpan = [&](s32 py, s32 px0, s32 px1) {
+                            if (py < sc_y0 || py >= sc_ye0) return;
+                            const s32 ax0 = std::max(px0, sc_x0);
+                            const s32 ax1 = std::min(px1, sc_xe0);
+                            if (ax0 >= ax1) return;
+                            const u32 rb = blockLinearYPart(static_cast<u32>(py), offsetWidthVar);
+                            for (s32 px = ax0; px < ax1; ++px) {
+                                const float s  = perimeterS(px, py);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, px, py);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rb), wc, ba);
+                            }
+                        };
+
+                        for (s32 py = y;              py < y + T;          ++py) paintSpan(py, x, x + width);             // top
+                        for (s32 py = y + height - T; py < y + height;     ++py) paintSpan(py, x, x + width);             // bottom
+                        for (s32 py = y + T;          py < y + height - T; ++py) paintSpan(py, x, x + T);                 // left
+                        for (s32 py = y + T;          py < y + height - T; ++py) paintSpan(py, x + width - T, x + width); // right
+                    }
+                    return;
+                }
+
                 const s32 Ri  = r - T;  // inner radius (0 for Switch1)
 
                 const s32 cxL = x + r;
@@ -2558,11 +2744,60 @@ namespace tsl {
                     const s32 topCornerY   = cyT;
                     const s32 bottomCornerY= cyB;
 
-                    // Four straight bars (original layout)
-                    this->drawRect(startX,                    startY - T,              adjustedWidth, T,              highlightColor);
-                    this->drawRect(startX,                    startY + adjustedHeight, adjustedWidth, T,              highlightColor);
-                    this->drawRect(startX - T,                startY,                  T,             adjustedHeight, highlightColor);
-                    this->drawRect(startX + adjustedWidth,    startY,                  T,             adjustedHeight, highlightColor);
+                    // Four straight bars.
+                    // When a wheel is present, paint per-pixel with the wheel sampler.
+                    // ccyT/ccyB for Switch1 equal cyT/cyB (rT==0), so we pass those directly.
+                    // Ri==0 is correct here too (full quarter-disc corners, no inner arc).
+                    if (wheel == nullptr) {
+                        this->drawRect(startX,                 startY - T,              adjustedWidth, T,              highlightColor);
+                        this->drawRect(startX,                 startY + adjustedHeight, adjustedWidth, T,              highlightColor);
+                        this->drawRect(startX - T,             startY,                  T,             adjustedHeight, highlightColor);
+                        this->drawRect(startX + adjustedWidth, startY,                  T,             adjustedHeight, highlightColor);
+                    } else {
+                        // Switch1 straight bars: switch2WheelColorAt fails with Ri=0
+                        // for the same reason as the r=0 path above — the projection
+                        // lands exactly on the boundary, and the strict < / > checks
+                        // misclassify everything.  Use the same direct perimeter-s
+                        // approach: classify by which edge the pixel is closest to,
+                        // compute t linearly within that side, then call
+                        // switch2WheelColorFromS directly.
+                        const float s1_W_f = static_cast<float>(width  - 1);
+                        const float s1_H_f = static_cast<float>(height - 1);
+                        const s32   s1_rx  = x + width  - 1;
+                        const s32   s1_by  = y + height - 1;
+
+                        auto s1_perimeterS = [&](s32 px, s32 py) -> float {
+                            const s32 dt = py - y;
+                            const s32 db = s1_by - py;
+                            const s32 dl = px - x;
+                            const s32 dr = s1_rx - px;
+                            const s32 m  = std::min({dt, db, dl, dr});
+                            float s;
+                            if (dt == m)      { s = 0.00f + (static_cast<float>(px - x)    / s1_W_f) * 0.25f; }
+                            else if (dr == m) { s = 0.25f + (static_cast<float>(py - y)    / s1_H_f) * 0.25f; }
+                            else if (db == m) { s = 0.50f + (static_cast<float>(s1_rx - px) / s1_W_f) * 0.25f; }
+                            else              { s = 0.75f + (static_cast<float>(s1_by - py) / s1_H_f) * 0.25f; }
+                            s -= wheel->rotFrac;
+                            s -= floorf(s);
+                            return s;
+                        };
+
+                        auto paintBarSpan = [&](s32 py, s32 px0, s32 px1) {
+                            if (py < sc_y || py >= sc_ye) return;
+                            const s32 ax0 = std::max(px0, sc_x), ax1 = std::min(px1, sc_xe);
+                            if (ax0 >= ax1) return;
+                            const u32 rb = blockLinearYPart(static_cast<u32>(py), owv);
+                            for (s32 px = ax0; px < ax1; ++px) {
+                                const float s  = s1_perimeterS(px, py);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, px, py);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(px), rb), wc, base_a);
+                            }
+                        };
+                        for (s32 py = startY - T;             py < startY;                  ++py) paintBarSpan(py, startX,                 startX + adjustedWidth); // top
+                        for (s32 py = startY + adjustedHeight; py < startY+adjustedHeight+T; ++py) paintBarSpan(py, startX,                 startX + adjustedWidth); // bottom
+                        for (s32 py = startY;                 py < startY + adjustedHeight; ++py) paintBarSpan(py, startX - T,             startX);                 // left
+                        for (s32 py = startY;                 py < startY + adjustedHeight; ++py) paintBarSpan(py, startX + adjustedWidth, startX+adjustedWidth+T); // right
+                    }
 
                     // Pre-calculate AA colors once
                     const Color aaColor1 = {highlightColor.r, highlightColor.g, highlightColor.b, static_cast<u8>(highlightColor.a >> 1)};  // 50%
@@ -2570,16 +2805,47 @@ namespace tsl {
 
                     const u8 ha = base_a;
 
-                    // Draw span [xs, xe) at row yr.
-                    // NOTE: not always_inline. This lambda has 8 call sites below; forcing
-                    // inline copied its whole span-loop body 8x and bloated .text. Leaving
-                    // the choice to the optimizer emits one body + 8 calls (much smaller at -Os).
+                    // Draw span [xs, xe) at row yr — used for Bresenham corner arcs.
+                    // When wheel is present, sample per-pixel; otherwise paint flat.
+                    // NOTE: not always_inline — see original comment above.
+                    //
+                    // Corner arc pixels also misclassify under switch2WheelColorAt with
+                    // Ri=0: the corner branch projects (px,py) to (cxL + 0*cos, ccyT + 0*sin)
+                    // = (cxL, ccyT) — exactly on the boundary — so they fall into the same
+                    // broken bottom-bar bucket as the straight-bar pixels.  We use the same
+                    // direct perimeter-s approach as the bar block above (classify by nearest
+                    // edge, compute t linearly), calling switch2WheelColorFromS directly.
+                    //
+                    // W_f / H_f / rx / by are the same shape as in the r=0 block; they are
+                    // recomputed here because s1_perimeterS (defined in the bars else-block)
+                    // is out of scope at this point in the Switch1 path.
+                    const float hs_W_f = static_cast<float>(width  - 1);
+                    const float hs_H_f = static_cast<float>(height - 1);
+                    const s32   hs_rx  = x + width  - 1;
+                    const s32   hs_by  = y + height - 1;
                     auto hspan = [&](s32 yr, s32 xs, s32 xe) {
                         if (yr < sc_y || yr >= sc_ye) return;
                         const u32 rb = blockLinearYPart(static_cast<u32>(yr), owv);
                         const s32 x0c = std::max(sc_x, xs), x1c = std::min(sc_xe, xe);
-                        for (s32 i = x0c; i < x1c; ++i)
-                            blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                        if (wheel == nullptr) {
+                            for (s32 i = x0c; i < x1c; ++i)
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), highlightColor, ha);
+                        } else {
+                            for (s32 i = x0c; i < x1c; ++i) {
+                                const s32 dt = yr - y,   db = hs_by - yr;
+                                const s32 dl = i  - x,   dr = hs_rx - i;
+                                const s32 m  = std::min({dt, db, dl, dr});
+                                float s;
+                                if (dt == m)      { s = 0.00f + (static_cast<float>(i - x)      / hs_W_f) * 0.25f; }
+                                else if (dr == m) { s = 0.25f + (static_cast<float>(yr - y)     / hs_H_f) * 0.25f; }
+                                else if (db == m) { s = 0.50f + (static_cast<float>(hs_rx - i)  / hs_W_f) * 0.25f; }
+                                else              { s = 0.75f + (static_cast<float>(hs_by - yr) / hs_H_f) * 0.25f; }
+                                s -= wheel->rotFrac;
+                                s -= floorf(s);
+                                const Color wc = switch2WheelColorFromS(*wheel, s, i, yr);
+                                blendPixelDirect(fb16, blockLinearOffset(static_cast<u32>(i), rb), wc, ha);
+                            }
+                        }
                     };
 
                     // Bresenham circle arc spans
@@ -2875,10 +3141,23 @@ namespace tsl {
                                                 const Color& color,
                                                 const s32 startRow, const s32 endRow)
             {
-                if (radius <= 0) return;
-        
                 const s32 x_end = x + w;
                 const s32 y_end = y + h;
+
+                // radius == 0: degenerate to a plain filled rectangle
+                if (radius <= 0) {
+                    const s32 clip_x     = std::max({0, x, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].x     : 0)});
+                    const s32 clip_x_end = std::min({(s32)cfg::FramebufferWidth,  x_end, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].x_max : (s32)cfg::FramebufferWidth)});
+                    const s32 clip_y     = std::max({0, y, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].y     : 0)});
+                    const s32 clip_y_end = std::min({(s32)cfg::FramebufferHeight, y_end, (self->m_scissorDepth ? (s32)self->m_scissorStack[self->m_scissorDepth-1].y_max : (s32)cfg::FramebufferHeight)});
+                    if (clip_x >= clip_x_end || clip_y >= clip_y_end) return;
+                    u16* fb16 = reinterpret_cast<u16*>(self->m_currentFramebuffer);
+                    for (s32 yc = std::max(startRow, clip_y); yc < std::min(endRow, clip_y_end); ++yc) {
+                        const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
+                        fillRowSpanNEON(fb16, rowBase, clip_x, clip_x_end, color);
+                    }
+                    return;
+                }
         
                 // Clamp x/y extents to both framebuffer AND active scissor rectangle
                 s32 clip_x     = std::max(0, x);
@@ -4020,10 +4299,16 @@ namespace tsl {
             }
             
             inline std::pair<s32, s32> drawStringWithColoredSections(const std::string& text, bool monospace,
-                                                    const std::vector<std::string>& specialSymbols, 
-                                                    s32 x, const s32 y, const u32 fontSize, 
-                                                    const Color& defaultColor, 
+                                                    const std::vector<std::string>& specialSymbols,
+                                                    s32 x, const s32 y, const u32 fontSize,
+                                                    const Color& defaultColor,
                                                     const Color& specialColor) {
+                // NOTE: per-segment translation deliberately does NOT happen
+                // here.  Draw-time substitution desynchronizes the string from
+                // the width/truncation math computed earlier on the raw text.
+                // Segments are translated once at string-set time instead
+                // (see translateStringSegments + applyInitialTranslations /
+                // CategoryHeader), so measurement and rendering always agree.
                 return drawString(text, monospace, x, y, fontSize, defaultColor, 0, true, &specialColor, &specialSymbols);
             }
             
@@ -5298,6 +5583,7 @@ namespace tsl {
             // alternate palette.
             static constexpr int S2_WHEEL_SLOT_HANDLE = 0;
             static constexpr int S2_WHEEL_SLOT_BORDER = 1;
+            bool  m_s2WheelInitialized[2] = { false, false }; // has this slot been seeded by a first buildSwitch2Wheel() call yet?
             bool  m_s2WheelAltActive[2] = { false, false }; // last target per slot: false=default, true=alt
             float m_s2WheelBlend[2] = { 0.0f, 0.0f };       // current eased blend per slot [0,1] (0=default, 1=alt)
             float m_s2WheelBlendStart[2] = { 0.0f, 0.0f };  // blend captured when that slot's target last flipped
@@ -5430,11 +5716,11 @@ namespace tsl {
              *
              * @param direction Direction to shake highlight in
              */
-            void inline shakeHighlight(FocusDirection direction) {
+            void inline shakeHighlight(FocusDirection direction, const bool skipFeedback = false) {
                 this->m_highlightShaking = true;
                 this->m_highlightShakingDirection = direction;
                 this->m_highlightShakingStartTime = ult::nowNs(); // Changed
-                if (direction != FocusDirection::None && m_isItem) {
+                if (direction != FocusDirection::None && m_isItem && !skipFeedback) {
                     triggerWallFeedback();
                 }
             }
@@ -5588,7 +5874,19 @@ namespace tsl {
             Switch2Wheel buildSwitch2Wheel(bool altActive, int slot = S2_WHEEL_SLOT_HANDLE) {
                 static constexpr double S2_BLEND_DURATION_NS = 300.0 * 1000000.0; // 300ms cross-fade
                 const u64 now = ult::nowNs();
-                if (altActive != m_s2WheelAltActive[slot]) {
+                if (!m_s2WheelInitialized[slot]) {
+                    // First time this slot is driven for this element: seed it directly at
+                    // whatever palette it actually starts in, rather than always starting from
+                    // "default" and letting the block below see that as a flip. Without this,
+                    // an element that's already in its alt state the first time it's drawn
+                    // (e.g. a trackbar that's locked from the moment the page opens) would
+                    // visibly cross-fade in from the default palette on its very first frame.
+                    m_s2WheelInitialized[slot] = true;
+                    m_s2WheelAltActive[slot] = altActive;
+                    m_s2WheelBlend[slot] = altActive ? 1.0f : 0.0f;
+                    m_s2WheelBlendStart[slot] = m_s2WheelBlend[slot];
+                    m_s2WheelBlendChangeNs[slot] = now;
+                } else if (altActive != m_s2WheelAltActive[slot]) {
                     m_s2WheelAltActive[slot] = altActive;
                     m_s2WheelBlendStart[slot] = m_s2WheelBlend[slot]; // capture current so an interrupted fade reverses smoothly
                     m_s2WheelBlendChangeNs[slot] = now;
@@ -5939,8 +6237,10 @@ namespace tsl {
          */
         class TableDrawer : public Element {
         public:
-            TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false)
-                : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable) {
+            TableDrawer(std::function<void(gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h)> renderFunc, bool _hideTableBackground, size_t _endGap, bool _isScrollable = false,
+                        bool _drawTableBorder = true, bool _hasCustomBGColor = false, Color _customBGColor = Color(0,0,0,0))
+                : Element(), m_renderFunc(renderFunc), hideTableBackground(_hideTableBackground), endGap(_endGap), isScrollable(_isScrollable),
+                  drawTableBorder(_drawTableBorder), hasCustomBGColor(_hasCustomBGColor), customBGColor(_customBGColor) {
                     m_isTable = isScrollable;  // Mark this element as a table
                     m_isItem = false;
                 }
@@ -5952,18 +6252,26 @@ namespace tsl {
                 renderer->enableScissoring(0, 88, tsl::cfg::FramebufferWidth, tsl::cfg::FramebufferHeight - 73 - 97 +2+5);
                 
                 if (!hideTableBackground) {
-                    renderer->drawRoundedRect(this->getX() + 8, this->getY()-4, this->getWidth() - 1, this->getHeight() + 22 - endGap-2, 12.0, aWithOpacity(tableBGColor));
-                    const Switch2Wheel w2 = makeSwitch2Wheel(
-                        s2TableBorderColor1,      // anchor[0] UR — fixed peak:  Muted Violet-Steel (default)  (r=7, g=5, b=F, a=F)
-                        s2TableBorderColor2,      // anchor[2] LL — fixed peak:  Deep Slate (default)          (r=6, g=4, b=F, a=F)
-                        s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel (default)      (r=7, g=9, b=9, a=F)
-                        s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy (default)     (r=6, g=5, b=7, a=F)
-                        s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle (default)      (r=A, g=9, b=8, a=F)
-                        s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray (default)    (r=7, g=5, b=5, a=F)
-                        12.0,
-                        true
-                    );
-                    renderer->drawBorderedRoundedRect(this->getX() +8-1, this->getY() - 4-1, this->getWidth() - 1 + 2, this->getHeight() + 22 - endGap - 2 + 2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    // ;bg_color= override: use the custom RGB channels but keep the
+                    // theme's live alpha/translucency so fade and opacity settings
+                    // still behave normally and theme switches still apply.
+                    const Color bgColorToUse = hasCustomBGColor
+                        ? Color(customBGColor.r, customBGColor.g, customBGColor.b, tableBGColor.a)
+                        : tableBGColor;
+                    renderer->drawRoundedRect(this->getX() + 8, this->getY()-4, this->getWidth() - 1, this->getHeight() + 22 - endGap-2, 12.0, aWithOpacity(bgColorToUse));
+                    if (drawTableBorder) {
+                        const Switch2Wheel w2 = makeSwitch2Wheel(
+                            s2TableBorderColor1,      // anchor[0] UR — fixed peak:  Muted Violet-Steel (default)  (r=7, g=5, b=F, a=F)
+                            s2TableBorderColor2,      // anchor[2] LL — fixed peak:  Deep Slate (default)          (r=6, g=4, b=F, a=F)
+                            s2TableBorderColor3,      // anchor[1] LR — hero bright: dim Warm Steel (default)      (r=7, g=9, b=9, a=F)
+                            s2TableBorderColor3Deep,  // anchor[1] LR — hero deep:   dark Slate Navy (default)     (r=6, g=5, b=7, a=F)
+                            s2TableBorderColor4,      // anchor[3] UL — hero bright: dim Periwinkle (default)      (r=A, g=9, b=8, a=F)
+                            s2TableBorderColor4Deep,  // anchor[3] UL — hero deep:   dark Indigo Gray (default)    (r=7, g=5, b=5, a=F)
+                            12.0,
+                            true
+                        );
+                        renderer->drawBorderedRoundedRect(this->getX() +8-1, this->getY() - 4-1, this->getWidth() - 1 + 2, this->getHeight() + 22 - endGap - 2 + 2, 1, 12, a(tableBorderColor), ult::useDynamicTableColors ? &w2 : nullptr);
+                    }
                 }
                 
                 m_renderFunc(renderer, this->getX() + 4, this->getY(), this->getWidth() + 4, this->getHeight());
@@ -5987,6 +6295,9 @@ namespace tsl {
             bool hideTableBackground = false;
             size_t endGap = 3;
             bool isScrollable = false;
+            bool drawTableBorder = true;
+            bool hasCustomBGColor = false;
+            Color customBGColor = Color(0,0,0,0);
         };
 
 
@@ -5994,7 +6305,7 @@ namespace tsl {
         // Simple utility function to draw the dynamic "Ultra" part of the logo
         static s32 drawDynamicUltraText(gfx::Renderer* renderer, s32 startX, s32 y, u32 fontSize, 
                                        const tsl::Color& staticColor, bool useNotificationMethod = false) {
-            static constexpr double cycleDuration = 1.6;
+            static constexpr double cycleDuration = 2.0;
             s32 currentX = startX;
             
             if (ult::useDynamicLogo) {
@@ -6248,7 +6559,7 @@ namespace tsl {
             
             #if IS_LAUNCHER_DIRECTIVE
                 updateFooterButtonWidths(renderer,
-                    "\uE0E1" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::BACK   : ult::HIDE),
+                    (!interpreterIsRunningNow ? "\uE0E1" + ult::GAP_2 + ult::BACK : "\uE0E2" + ult::GAP_2 + ult::HIDE),
                     "\uE0E0" + ult::GAP_2 + (!interpreterIsRunningNow ? ult::OK     : ult::CANCEL),
                     m_noClickableItems);
             #else
@@ -6264,17 +6575,39 @@ namespace tsl {
                 static constexpr float buttonStartX = 30;
                 const float buttonY = static_cast<float>(cfg::FramebufferHeight - 73 + 1);
                 
+                // Translate custom page-left/page-right names (arbitrary overlay/package-supplied
+                // text, e.g. "Tools" or "Test") individually, up front. These get folded into the
+                // composed footer strings below ("currentBottomLine"); once concatenated with
+                // icons/gaps into one big string, that composite can never match a translation
+                // cache entry as a whole, so the lookup has to happen here, on each raw piece,
+                // before it's merged in. Only hit the cache when there's something to translate.
+                std::string translatedPageLeftName = m_pageLeftName;
+                std::string translatedPageRightName = m_pageRightName;
+                if (!m_pageLeftName.empty() || !m_pageRightName.empty()) {
+                    std::shared_lock<std::shared_mutex> pageNameReadLock(tsl::gfx::s_translationCacheMutex);
+                    if (!m_pageLeftName.empty()) {
+                        const auto leftIt = ult::translationCache.find(m_pageLeftName);
+                        if (leftIt != ult::translationCache.end())
+                            translatedPageLeftName = leftIt->second;
+                    }
+                    if (!m_pageRightName.empty()) {
+                        const auto rightIt = ult::translationCache.find(m_pageRightName);
+                        if (rightIt != ult::translationCache.end())
+                            translatedPageRightName = rightIt->second;
+                    }
+                }
+
             #if IS_LAUNCHER_DIRECTIVE
                 const bool hasNextPage = !interpreterIsRunningNow &&
                     ((ult::inMainMenu.load(std::memory_order_acquire) &&
                       ((m_menuMode == ult::OVERLAYS_STR) || (m_menuMode == ult::PACKAGES_STR))) ||
-                     !m_pageLeftName.empty() || !m_pageRightName.empty());
+                     !translatedPageLeftName.empty() || !translatedPageRightName.empty());
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
                 if (hasNextPage) {
                     const float _nextPageWidth = renderer->getTextDimensions(
-                        !m_pageLeftName.empty()  ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName) :
-                        !m_pageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + m_pageRightName) :
+                        !translatedPageLeftName.empty()  ? ("\uE0ED" + ult::GAP_2 + translatedPageLeftName) :
+                        !translatedPageRightName.empty() ? ("\uE0EE" + ult::GAP_2 + translatedPageRightName) :
                         (ult::inMainMenu.load(std::memory_order_acquire) ?
                             (((m_menuMode == "packages") ? (ult::usePageSwap ? "\uE0EE" : "\uE0ED") :
                                                            (ult::usePageSwap ? "\uE0ED" : "\uE0EE")) +
@@ -6288,13 +6621,13 @@ namespace tsl {
                     }
                 }
             #else
-                const bool hasNextPage = !m_pageLeftName.empty() || !m_pageRightName.empty();
+                const bool hasNextPage = !translatedPageLeftName.empty() || !translatedPageRightName.empty();
                 if (hasNextPage != ult::hasNextPageButton.load(std::memory_order_acquire))
                     ult::hasNextPageButton.store(hasNextPage, std::memory_order_release);
                 if (hasNextPage) {
                     const float _nextPageWidth = renderer->getTextDimensions(
-                        !m_pageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + m_pageLeftName)
-                                                : ("\uE0EE" + ult::GAP_2 + m_pageRightName),
+                        !translatedPageLeftName.empty() ? ("\uE0ED" + ult::GAP_2 + translatedPageLeftName)
+                                                : ("\uE0EE" + ult::GAP_2 + translatedPageRightName),
                         false, 23).first + gapWidth;
                     updateAtomicFloat(ult::nextPageWidth, _nextPageWidth);
                     if (ult::touchingNextPage.load(std::memory_order_acquire)) {
@@ -6309,8 +6642,7 @@ namespace tsl {
     
             #if IS_LAUNCHER_DIRECTIVE
                 const std::string currentBottomLine =
-                    "\uE0E1" + ult::GAP_2 +
-                    (interpreterIsRunningNow ? ult::HIDE : ult::BACK) + ult::GAP_1 +
+                    (interpreterIsRunningNow ? "\uE0E2" + ult::GAP_2 + ult::HIDE : "\uE0E1" + ult::GAP_2 + ult::BACK) + ult::GAP_1 +
                     (!m_noClickableItems && !interpreterIsRunningNow ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
                     (interpreterIsRunningNow ? "\uE0E5" + ult::GAP_2 + ult::CANCEL + ult::GAP_1 : "") +
                     (!interpreterIsRunningNow
@@ -6320,15 +6652,15 @@ namespace tsl {
                             : ((m_menuMode == "packages") ? "\uE0EE" + ult::GAP_2 + ult::OVERLAYS_ABBR
                                : (m_menuMode == "overlays") ? "\uE0ED" + ult::GAP_2 + ult::PACKAGES : ""))
                         : "") +
-                    (!interpreterIsRunningNow && !m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
-                     !interpreterIsRunningNow && !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                    (!interpreterIsRunningNow && !translatedPageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + translatedPageLeftName  :
+                     !interpreterIsRunningNow && !translatedPageRightName.empty() ? "\uE0EE" + ult::GAP_2 + translatedPageRightName : "");
                 const bool _hasOkBtn = !m_noClickableItems && !interpreterIsRunningNow;
             #else
                 const std::string currentBottomLine =
                     "\uE0E1" + ult::GAP_2 + ult::BACK + ult::GAP_1 +
                     (!m_noClickableItems ? "\uE0E0" + ult::GAP_2 + ult::OK + ult::GAP_1 : "") +
-                    (!m_pageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + m_pageLeftName  :
-                     !m_pageRightName.empty() ? "\uE0EE" + ult::GAP_2 + m_pageRightName : "");
+                    (!translatedPageLeftName.empty()  ? "\uE0ED" + ult::GAP_2 + translatedPageLeftName  :
+                     !translatedPageRightName.empty() ? "\uE0EE" + ult::GAP_2 + translatedPageRightName : "");
                 const bool _hasOkBtn = !m_noClickableItems;
             #endif
     
@@ -6375,8 +6707,12 @@ namespace tsl {
             }
             
             inline bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!m_contentElement || !m_contentElement->inBounds(currX, currY))
+                if (!m_contentElement) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !m_contentElement->inBounds(currX, currY))
                     return false;
                 
                 return m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
@@ -6455,6 +6791,13 @@ namespace tsl {
         #if IS_LAUNCHER_DIRECTIVE
             // Get package color based on m_colorSelection
             tsl::Color getPackageColor() const {
+                // "In-Package Titles" theme toggle: when OFF, forces every in-package
+                // title to use the theme's default package color, overriding whatever
+                // color the package dev requested via the package header (e.g.
+                // ;color=). When ON (default), the package dev's color choice is
+                // respected, same as before this toggle existed.
+                if (!ult::useInPackageTitles) return defaultPackageColor;
+
                 if (m_colorSelection.empty()) return defaultPackageColor;
                 
                 const char c = m_colorSelection[0];
@@ -6613,7 +6956,7 @@ namespace tsl {
                 const std::string& renderSubtitle = m_subtitle;
                 
                 renderer->drawString(renderTitle, false, 20, 50, 32, defaultOverlayColor);
-                renderer->drawStringWithColoredSections(renderSubtitle, false, tsl::s_dividerSpecialChars, 20, y+2+23, 15, bannerVersionTextColor, separatorColor);
+                renderer->drawStringWithColoredSections(renderSubtitle, false, tsl::s_dividerSpecialChars, 20, y+2+23, 15, bannerVersionTextColor, textSeparatorColor);
                 
                 if (FullMode == true)
                     renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(bottomSeparatorColor));
@@ -6673,13 +7016,15 @@ namespace tsl {
             }
             
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY))
+                if (this->m_contentElement == nullptr) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !this->m_contentElement->inBounds(currX, currY))
                     return false;
                 
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
-                else return false;
+                return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
             }
             
             /**
@@ -6806,13 +7151,15 @@ namespace tsl {
             }
             
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) {
-                // Discard touches outside bounds
-                if (!this->m_contentElement->inBounds(currX, currY))
+                if (this->m_contentElement == nullptr) return false;
+                // Only discard a brand-new touch that starts outside bounds. Once a
+                // touch is already active, keep forwarding Hold/Release even if the
+                // finger has moved outside the content area, so descendants can
+                // cancel/clear their own touch state instead of freezing mid-hold.
+                if (event == TouchEvent::Touch && !this->m_contentElement->inBounds(currX, currY))
                     return false;
                 
-                if (this->m_contentElement != nullptr)
-                    return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
-                else return false;
+                return this->m_contentElement->onTouch(event, currX, currY, prevX, prevY, initialX, initialY);
             }
             
             virtual Element* requestFocus(Element *oldFocus, FocusDirection direction) override {
@@ -7038,25 +7385,27 @@ namespace tsl {
                 //    Fix: keep drawing until  logical_bottom + kTableBGOverhang > kTableScissorTop,
                 //    i.e. until the background has fully scrolled above the scissor edge.
                 //
-                //  BOTTOM BUG – lines appear only when they can fit (entering from below):
-                //    Outer cull starts when logical_top < bottomBound (647), but the first row
-                //    isn't drawn until logical_top + startGap < kTableScissorBottom (645), i.e.
-                //    logical_top < 625.  The 22 px gap (647→625) shows background with no rows.
-                //    Fix: don't start the draw call until the first row is about to enter the
-                //    scissor, i.e. logical_top < kTableScissorBottom − kTableFirstRowGap.
+                //  BOTTOM EDGE – must vanish at exactly the same point as text:
+                //    The inner TableDrawer scissor and the per-row cull already clip
+                //    anything below kTableScissorBottom (645), which is the same edge
+                //    text items are clipped at.  So the outer cull only needs to keep
+                //    calling frame() while any part of the table is above that edge,
+                //    i.e. logical_top < kTableScissorBottom.  (Previously this test
+                //    subtracted a 20 px "first row" gap to avoid painting an empty
+                //    background before rows scrolled in, but that clipped the still-
+                //    visible background/rows ~20 px early — the background sliding in
+                //    is the same behavior text backgrounds already have.)
                 static constexpr s32 kTableScissorTop   = 88;
                 const         s32 kTableScissorBottom   = kTableScissorTop
                     + static_cast<s32>(cfg::FramebufferHeight) - 73 - 97 + 2 + 5;
                 // Background overhang below logical bottom = 20 − endGap + 2.
                 // Worst case (smallest endGap = 3) → 19 px; use 20 to be safe.
                 static constexpr s32 kTableBGOverhang   = 20;
-                // Default startGap in buildTableDrawerLines (first row y-offset from logical top).
-                static constexpr s32 kTableFirstRowGap  = 20;
 
                 for (Element* entry : m_items) {
                     if (entry->isTable()) {
                         if (entry->getBottomBound() + kTableBGOverhang  > kTableScissorTop &&
-                            entry->getTopBound()                         < kTableScissorBottom - kTableFirstRowGap) {
+                            entry->getTopBound()                         < kTableScissorBottom) {
                             entry->frame(renderer);
                         }
                     } else {
@@ -7175,8 +7524,13 @@ namespace tsl {
                                                 
             // Fixed onTouch method - prevents controller state corruption
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                // Quick bounds check
-                if (!inBounds(currX, currY)) return false;
+                // Only gate the initial touch-down by bounds. A new touch can't start
+                // outside the list, but once a touch is already in progress (Hold or
+                // Release), it must keep reaching the children even if the finger has
+                // drifted outside the list's own rectangle — otherwise whichever item
+                // was tracking the touch never finds out the finger left/lifted, and
+                // stays stuck believing it's still being touched/held.
+                if (event == TouchEvent::Touch && !inBounds(currX, currY)) return false;
                 
                 // Forward to children first
                 for (Element* item : m_items) {
@@ -8617,17 +8971,13 @@ namespace tsl {
             #endif
                 // Fast path for non-truncated text
                 if (!m_flags.m_truncated) [[likely]] {
-                    const Color textColor = m_focused
-                        ? (!ult::useSelectionText
-                            ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor)
-                            : (useClickTextColor
-                                ? clickTextColor
-                                : selectedTextColor))
-                        : (m_flags.m_hasCustomTextColor
-                            ? m_customTextColor
-                            : (useClickTextColor
-                                ? clickTextColor
-                                : defaultTextColor));
+                    const Color textColor = m_flags.m_hasCustomTextColor
+                        ? m_customTextColor
+                        : (m_focused
+                            ? (!ult::useSelectionText
+                                ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)
+                                : (useClickTextColor ? clickTextColor : selectedTextColor))
+                            : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)));
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_text_clean, false, specialChars, this->getX() + 19, textBaselineY, 23,
                         textColor, m_focused ? starColor : selectionStarColor);
@@ -8704,7 +9054,44 @@ namespace tsl {
                     }
                 }
                 
+                // Finger moved far enough that the gesture became a scroll (the
+                // dispatcher switched to InputMode::TouchScroll and now sends Scroll
+                // events instead of Hold). Match normal touchscreen list behavior:
+                // abandon any in-progress touch/hold on this item so the enclosing
+                // List scrolls instead of the row staying "held". Without this a
+                // hold-to-execute item keeps m_isTouchHolding set while the finger
+                // slides around, so processHold() keeps advancing (and can fire) and
+                // the row appears locked in place until the finger is lifted.
+                if (event == TouchEvent::Scroll) [[unlikely]] {
+                    if (m_touched || m_flags.m_isTouchHolding) {
+                        m_touched = false;
+                        m_flags.m_isTouchHolding = false;
+                        m_flags.m_shortThresholdCrossed = false;
+                        m_flags.m_longThresholdCrossed = false;
+                    }
+                    return false;  // let the enclosing List handle the scroll
+                }
+
                 if (event == TouchEvent::Hold && m_touched) [[likely]] {
+                    // If the finger has slid outside this item's own region, cancel the
+                    // touch/hold instead of continuing to track a finger that isn't over
+                    // us anymore. This mirrors normal touchscreen long-press behavior
+                    // (a press is aborted once the pointer leaves the hit area) and is
+                    // what prevents the item from getting stuck "holding" forever when
+                    // the user swipes off to the side — previously nothing here ever
+                    // re-checked bounds after the initial Touch, so m_touched (and, for
+                    // touch-holding items, m_isTouchHolding) would stay true even after
+                    // the finger left the item, and if a matching Release event never
+                    // made it back down to us either, the hold would keep advancing
+                    // based on elapsed time alone until it fired unintentionally.
+                    if (!inBounds(currX, currY)) [[unlikely]] {
+                        m_touched = false;
+                        m_flags.m_isTouchHolding = false;
+                        m_flags.m_shortThresholdCrossed = false;
+                        m_flags.m_longThresholdCrossed = false;
+                        return false;
+                    }
+
                     const u64 touchDuration_ns = ult::nowNs() - m_touchStartTime_ns;
                     const float touchDurationInSeconds = static_cast<float>(touchDuration_ns) * 1e-9f;
                     
@@ -8795,6 +9182,31 @@ namespace tsl {
             
             inline void clearValueColor() {
                 m_flags.m_hasCustomValueColor = false;
+            }
+
+            // setBaseTextColor/setBaseValueColor establish the item's theme-driven
+            // "default" color (e.g. overlayTextColor, packageVersionTextColor, etc.)
+            // without hard-overriding the Selection Text/Value theme colors on focus,
+            // unlike setTextColor()/setValueColor() which are meant for explicit
+            // per-item overrides (e.g. ;text_color=/;footer_color=) and always win
+            // regardless of focus state. Use these for default/listing colors that
+            // should still switch to the selection color when focused.
+            inline void setBaseTextColor(Color color) {
+                m_baseTextColor = color;
+                m_flags.m_hasBaseTextColor = true;
+            }
+
+            inline void setBaseValueColor(Color color) {
+                m_baseValueColor = color;
+                m_flags.m_hasBaseValueColor = true;
+            }
+
+            inline void clearBaseTextColor() {
+                m_flags.m_hasBaseTextColor = false;
+            }
+
+            inline void clearBaseValueColor() {
+                m_flags.m_hasBaseValueColor = false;
             }
 
             // Mark this item as a Switch2-style radio selector. When enabled AND
@@ -8938,6 +9350,8 @@ namespace tsl {
                 bool m_faint : 1;
                 bool m_hasCustomTextColor : 1;
                 bool m_hasCustomValueColor : 1;
+                bool m_hasBaseTextColor : 1;
+                bool m_hasBaseValueColor : 1;
                 bool m_useClickAnimation : 1;
                 bool m_useShortThreshold : 1;
                 bool m_useLongThreshold : 1;
@@ -8953,6 +9367,8 @@ namespace tsl {
         
             Color m_customTextColor;
             Color m_customValueColor;
+            Color m_baseTextColor;
+            Color m_baseValueColor;
         
             float m_scrollOffset = 0.0f;
             u16 m_maxWidth = 0;     // Changed from u32 to u16
@@ -8980,23 +9396,38 @@ namespace tsl {
                 std::string& target = isValue ? m_value : m_text_clean;
                 ult::applyLangReplacements(target, isValue);
                 ult::convertComboToUnicode(target);
-                
+
                 {
                     const std::string originalKey = target;
-                    
+
                     std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
                     auto translatedIt = ult::translationCache.find(originalKey);
                     if (translatedIt != ult::translationCache.end()) {
                         target = translatedIt->second;
                     } else {
                         readLock.unlock();
+
+                        // No full-string translation — try translating the
+                        // segments between divider symbols individually (e.g.
+                        // "2026-06-21 ⟨div⟩ Old" → date ⟨div⟩ tr(Old)).  This
+                        // runs HERE, at set time, so width measurement and
+                        // truncation math operate on the exact string that is
+                        // later drawn.  The result (or the identity when no
+                        // segment translated) is cached under the original
+                        // key, which keeps every later full-string lookup —
+                        // drawString, calculateStringWidth, other items with
+                        // the same composed value — consistent with it.
+                        std::string segmented = originalKey;
+                        tsl::gfx::translateStringSegments(segmented, tsl::s_dividerSpecialChars);
+
                         std::unique_lock<std::shared_mutex> writeLock(tsl::gfx::s_translationCacheMutex);
-                        
+
                         translatedIt = ult::translationCache.find(originalKey);
                         if (translatedIt != ult::translationCache.end()) {
                             target = translatedIt->second;
                         } else {
-                            ult::translationCache[originalKey] = originalKey;
+                            ult::translationCache[originalKey] = segmented;
+                            target = segmented;
                         }
                     }
                 }
@@ -9087,20 +9518,20 @@ namespace tsl {
                     }
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
-                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), starColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (!ult::useSelectionText ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor) : (useClickTextColor ? clickTextColor : selectedTextColor)), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_scrollText, false, specialSymbols, getX() + 19 - static_cast<s32>(m_scrollOffset), baselineY, 23,
-                        !ult::useSelectionText ? (m_flags.m_hasCustomTextColor ? m_customTextColor : defaultTextColor): (useClickTextColor ? clickTextColor : selectedTextColor), textSeparatorColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (!ult::useSelectionText ? (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor) : (useClickTextColor ? clickTextColor : selectedTextColor)), textSeparatorColor);
                 #endif
                     renderer->disableScissoring();
                     handleScrolling();
                 } else {
                 #if IS_LAUNCHER_DIRECTIVE
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), starColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)), starColor);
                 #else
                     renderer->drawStringWithColoredSections(m_ellipsisText, false, specialSymbols, getX() + 19, baselineY, 23,
-                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : defaultTextColor), textSeparatorColor);
+                        m_flags.m_hasCustomTextColor ? m_customTextColor : (useClickTextColor ? clickTextColor : (m_flags.m_hasBaseTextColor ? m_baseTextColor : defaultTextColor)), textSeparatorColor);
                 #endif
                 }
             }
@@ -9382,24 +9813,14 @@ namespace tsl {
         #else
             Color determineValueTextColor(bool useClickTextColor, bool skipTransientColor = false) const {
         #endif
-                if (m_focused && ult::useSelectionValue) {
-                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? clickTextColor :
-                               (m_flags.m_faint ? offTextColor : (ult::useSelectionText ? selectedTextColor : defaultTextColor));
-                    }
-                    // unique to focused: falls through to shared block below, but returns selectedValueTextColor at end
-                } else {
-                    if (m_flags.m_hasCustomValueColor) return m_customValueColor;
-                    if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
-                        return useClickTextColor ? clickTextColor :
-                               (m_flags.m_faint ? offTextColor : (m_focused ? (ult::useSelectionText ? selectedTextColor : defaultTextColor) : defaultTextColor));
-                    }
-                }
-        
-                // shared logic — only reached once per path. Skipped entirely when
-                // skipTransientColor is set (e.g. the radio-label-selector's adjacent
-                // label text, which should never recolour for an in-progress/failed
-                // m_value -- only the circle itself reflects that state).
+                // Transient run-state feedback (spinner / checkmark / crossmark /
+                // download-in-progress) always takes priority over any custom or
+                // theme color -- these are momentary status indicators and must
+                // stay visually correct regardless of ;footer_color=. Skipped
+                // entirely when skipTransientColor is set (e.g. the radio-label-
+                // selector's adjacent label text, which should never recolour for
+                // an in-progress/failed m_value -- only the circle itself reflects
+                // that state).
                 if (!skipTransientColor) {
                 #if IS_LAUNCHER_DIRECTIVE
                     const bool isRunning = ult::runningInterpreter.load(std::memory_order_acquire) || lastRunningInterpreter;
@@ -9411,10 +9832,21 @@ namespace tsl {
                     if (m_value == ult::INPROGRESS_SYMBOL) return m_flags.m_faint ? offTextColor : inprogressTextColor;
                     if (m_value == ult::CROSSMARK_SYMBOL)  return m_flags.m_faint ? offTextColor : invalidTextColor;
                 }
-        
+
+                // ;footer_color= override: takes priority over ;footer_highlight=
+                // (faint) dimming and over the "Selection Value" theme color when
+                // focused, since the user explicitly requested this color.
+                if (m_flags.m_hasCustomValueColor) return m_customValueColor;
+
+                if (m_value == ult::DROPDOWN_SYMBOL || m_value == ult::OPTION_SYMBOL) {
+                    return useClickTextColor ? clickTextColor :
+                           (m_flags.m_faint ? offTextColor :
+                               ((m_focused && ult::useSelectionText) ? selectedTextColor : defaultTextColor));
+                }
+
                 return (m_focused && ult::useSelectionValue)
                     ? (useClickTextColor ? clickTextColor : selectedValueTextColor)
-                    : (m_flags.m_faint ? offTextColor : onTextColor);
+                    : (m_flags.m_hasBaseValueColor ? m_baseValueColor : (m_flags.m_faint ? offTextColor : onTextColor));
             }
 
             void drawThrobber(gfx::Renderer* renderer, s32 xPosition, s32 yPosition, s32 fontSize, Color textColor) {
@@ -9885,6 +10317,32 @@ namespace tsl {
                   m_textWidth(0) {
                 ult::applyLangReplacements(m_text);
                 ult::convertComboToUnicode(m_text);
+                // Translate ONCE at construction so truncation, width math and
+                // the scrolling composite all operate on the translated string.
+                // Without this, a header whose translation is still wider than
+                // the panel gets m_scrollText built from the UNTRANSLATED
+                // m_text (calculateWidths measures translated, but the scroll
+                // buffer copies m_text verbatim) — so long headers scroll in
+                // English while short ones translate.  drawString's own cache
+                // lookup at draw time is a no-op afterwards (translated values
+                // are not keys), so this stays idempotent.
+                {
+                    bool fullHit = false;
+                    {
+                        std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                        auto translatedIt = ult::translationCache.find(m_text);
+                        if (translatedIt != ult::translationCache.end() && translatedIt->second != m_text) {
+                            m_text = translatedIt->second;
+                            fullHit = true;
+                        }
+                    }
+                    // No real full-string translation (miss or identity entry):
+                    // translate the divider-separated segments individually so
+                    // headers like "Name ⟨div⟩ Reset" localize per part.  Also
+                    // at set time, keeping width/scroll math consistent.
+                    if (!fullHit)
+                        tsl::gfx::translateStringSegments(m_text, tsl::s_dividerSpecialChars);
+                }
                 m_isItem = false;
             }
         
@@ -9908,7 +10366,7 @@ namespace tsl {
                 // Keep a fixed header area for separator and text (matches old 33px height)
                 const int headerTop = this->getBottomBound() - 33;
                 const int textY = this->getBottomBound() - 16;
-                const int textX = (m_hasSeparator ? (this->getX() + 16) : this->getX())+5;
+                const int textX = (m_hasSeparator ? (this->getX() + 16) : (this->getX() + 2))+5; // no-separator headers align with list-item separator start (getX()+7)
             
                 // Draw the separator rectangle on the left (fixed 22px height, 4px wide)
                 if (m_hasSeparator) {
@@ -10362,7 +10820,7 @@ namespace tsl {
             }
                         
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
-                s32 trackBarLeft = this->getX() + 59;
+                s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 s32 width        = this->getWidth() - 95;
 
                 if (m_icon[0] != '\0') {
@@ -10483,7 +10941,8 @@ namespace tsl {
                                      : 100;
                 u16 handlePos = width * (this->m_value) / maxValue;
             
-                if (!m_usingNamedStepTrackbar && !m_useV2Style) {
+                const bool useCenteredLayout = !m_usingNamedStepTrackbar && !m_useV2Style;
+                if (useCenteredLayout) {
                     yPos -= 11;
                 }
             
@@ -10501,7 +10960,7 @@ namespace tsl {
                 if (m_usingStepTrackbar || m_usingNamedStepTrackbar) {
                     const u8 numSteps = m_numSteps;
                     const u16 baseX = xPos;
-                    const u16 baseY = this->getY() + 44;
+                    const u16 baseY = this->getY() + 44 - (useCenteredLayout ? 11 : 0);
                     const u8 halfNumSteps = (numSteps - 1) / 2;
                     const u16 lastStepX = baseX + width - 1;
                     const float stepSpacing = static_cast<float>(width) / (numSteps - 1);
@@ -10522,19 +10981,19 @@ namespace tsl {
                 }
             
                 // Draw track bar background
-                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !m_usingNamedStepTrackbar);
+                drawBar(renderer, xPos, yPos-3, width, trackBarEmptyColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
             
                 const bool isEffectivelyUnlocked = m_unlockedTrackbar || ult::allowSlide.load(std::memory_order_acquire);
             
                 if (!this->m_focused) {
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
                     renderer->drawCircle(xPos + handlePos, yPos, 16, true, a(m_drawFrameless ? s_highlightColor : trackBarSliderBorderColor));
                     renderer->drawCircle(xPos + handlePos, yPos, 13, true, a((isEffectivelyUnlocked || touchInSliderBounds) ? trackBarSliderMalleableColor : trackBarSliderColor));
                 } else {
                     touchInSliderBounds = false;
                     if (m_unlockedTrackbar != ult::unlockedSlide.load(std::memory_order_acquire))
                         ult::unlockedSlide.store(m_unlockedTrackbar, std::memory_order_release);
-                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !m_usingNamedStepTrackbar);
+                    drawBar(renderer, xPos, yPos-3, handlePos, trackBarFullColor, !(m_usingStepTrackbar || m_usingNamedStepTrackbar));
                     if (ult::useSwitch2Style) {
                         // Locked trackbar cross-fades to the alternate wheel palette; unlocked keeps the default.
                         const Switch2Wheel w2 = buildSwitch2Wheel(!isEffectivelyUnlocked, S2_WHEEL_SLOT_HANDLE);
@@ -10845,7 +11304,9 @@ namespace tsl {
             StepTrackBar(const char icon[3], size_t numSteps, bool usingNamedStepTrackbar = false,
                         bool useV2Style = false, const std::string& label = "", const std::string& units = "",
                         bool unlockedTrackbar = true)
-                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units, unlockedTrackbar), m_numSteps(numSteps) {}
+                : TrackBar(icon, true, usingNamedStepTrackbar, useV2Style, label, units, unlockedTrackbar) {
+                m_numSteps = numSteps;
+            }
 
             virtual ~StepTrackBar() {}
 
@@ -10989,7 +11450,7 @@ namespace tsl {
                 const int stepSize = 100 / (this->m_numSteps - 1);
                 const int maxValue = stepSize * (this->m_numSteps - 1);
             
-                s32 trackBarLeft = this->getX() + 59;
+                s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 s32 width        = this->getWidth() - 95;
             
                 if (m_icon[0] != '\0') {
@@ -11083,9 +11544,6 @@ namespace tsl {
                 value = std::min(value, u16(this->m_numSteps - 1));
                 this->m_value = value * (100 / (this->m_numSteps - 1));
             }
-
-        protected:
-            u8 m_numSteps = 1;
         };
 
 
@@ -11619,7 +12077,7 @@ namespace tsl {
             virtual bool onTouch(TouchEvent event, s32 currX, s32 currY, s32 prevX, s32 prevY, s32 initialX, s32 initialY) override {
                 const u16 trackBarWidth = this->getWidth() - 95;
                 const u16 handlePos = (trackBarWidth * (this->m_value - m_minValue)) / (m_maxValue - m_minValue);
-                const s32 circleCenterX = this->getX() + 59 + handlePos;
+                const s32 circleCenterX = this->getX() + 59 + int(ult::layerEdge) + handlePos;
                 const s32 circleCenterY = this->getY() + 40 + 16 - 1;
                 static constexpr s32 circleRadius = 16;
                 static bool triggerOnce = true;
@@ -11630,7 +12088,7 @@ namespace tsl {
                 
                 // CRITICAL FIX: Check if current touch is within valid horizontal bounds
                 // Allow vertical drift (top/bottom), only care about left/right bounds
-                const s32 trackBarLeft = this->getX() + 59;
+                const s32 trackBarLeft = this->getX() + 59 + int(ult::layerEdge);
                 const s32 trackBarRight = trackBarLeft + trackBarWidth;
                 const bool currentlyInHorizontalBounds = (currX >= trackBarLeft && currX <= trackBarRight);
                 
@@ -12293,7 +12751,7 @@ namespace tsl {
         };
 
         enum class Alignment : u8 { Center = 0, Left = 1, Right = 2 };
-        enum class SplitType : u8 { Word   = 0, Char = 1 };
+        enum class SplitType : u8 { Word   = 0, Char = 1, Auto = 2 };
 
         struct NotifEntry {
             std::string text;
@@ -12311,7 +12769,7 @@ namespace tsl {
             bool hasIcon             = false;
             bool iconPending         = false;
             Alignment alignment      = Alignment::Center;
-            SplitType splitType      = SplitType::Word;
+            SplitType splitType      = SplitType::Auto;
         };
 
         struct NotifCompare {
@@ -12334,6 +12792,12 @@ namespace tsl {
         static constexpr int    MAX_VISIBLE      = 8;
         static constexpr s32    NOTIF_WIDTH      = 448;
         static constexpr s32    NOTIF_HEIGHT     = 88;
+        // Safety buffer subtracted from the wrap width so wrapped text breaks
+        // a little BEFORE reaching the timestamp's right edge / panel edge.
+        // Without it the wrap boundary sits exactly flush with the timestamp
+        // column, and CJK glyphs (which fill their full advance box) visually
+        // touch or spill past the edge before wrapping kicks in.
+        static constexpr s32    NOTIF_WRAP_MARGIN = 10;
 
         // ── Public API ───────────────────────────────────────────────────────────
         void show(const std::string& msg, size_t fontSize = 26, u32 priority = 20,
@@ -12350,6 +12814,20 @@ namespace tsl {
             NotifEntry data;
             data.text         = msg;
             data.title        = title;
+            // Translate the full strings HERE, before any wrapping happens.
+            // Wrapping splits the text into sub-lines that are drawn
+            // individually, so a full-string translation key could never
+            // match at draw time.  This covers both .notify file
+            // notifications and direct show()/showNow() callers.
+            {
+                std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+                auto it = ult::translationCache.find(data.text);
+                if (it != ult::translationCache.end()) data.text = it->second;
+                if (!data.title.empty()) {
+                    it = ult::translationCache.find(data.title);
+                    if (it != ult::translationCache.end()) data.title = it->second;
+                }
+            }
             data.fileName     = fileName;
             data.fontSize     = static_cast<u8>(std::clamp(fontSize, size_t(8), size_t(48)));
             data.durationMs   = (durationMs == 0) ? 0
@@ -12357,7 +12835,11 @@ namespace tsl {
             data.priority     = static_cast<u8>(immediately ? 0u : priority);
             data.showTime     = showTime;
             data.alignment    = parseAlignment(alignment, !title.empty());
-            data.splitType    = (!splitType.empty() && splitType[0] == 'c') ? SplitType::Char : SplitType::Word;
+            // "char" / "word" explicit; anything else (including unset) = auto
+            data.splitType    = splitType.empty()     ? SplitType::Auto
+                              : (splitType[0] == 'c') ? SplitType::Char
+                              : (splitType[0] == 'w') ? SplitType::Word
+                                                      : SplitType::Auto;
             data.arrivalNs    = ult::nowNs();
             if (!timestamp.empty()) {
                 const size_t n = std::min(timestamp.size(), sizeof(data.timestamp) - 1);
@@ -12538,7 +13020,7 @@ namespace tsl {
         [[gnu::noinline]]
         Lines getWrappedLines(const std::string& text, float pixelWidth,
                               size_t fontSize, u8 maxLines,
-                              SplitType splitType = SplitType::Word) const;
+                              SplitType splitType = SplitType::Auto) const;
 
         [[gnu::noinline]]
         s32 getEffectiveHeight(const Slot& slot) const;
@@ -13233,6 +13715,9 @@ namespace tsl {
                     {KEY_DOWN,  FocusDirection::Down},
                     {KEY_LEFT,  FocusDirection::Left},
                     {KEY_RIGHT, FocusDirection::Right},
+                    // A can't select while a command is running: bounce the highlight
+                    // to the right with wall feedback instead of firing the click flash.
+                    {KEY_A,     FocusDirection::Right},
                 };
                 for (auto& s : shakes) {
                     if (keysDown & s.key && !(keysHeld & ~s.key & ALL_KEYS_MASK)) {
@@ -13663,6 +14148,11 @@ namespace tsl {
                 oldTouchPos = touchPos;
                 if ((touchPos.x < ult::layerEdge || touchPos.x > cfg::FramebufferWidth + ult::layerEdge) &&
                     tsl::elm::Element::getInputMode() == tsl::InputMode::Touch) {
+                    // Deliver a Release at the last known position before we hide, so
+                    // whatever element was tracking this touch (e.g. a hold-to-execute
+                    // item) clears its own state instead of staying stuck across the hide.
+                    if (currentGui && topElement && !interpreterIsRunning)
+                        topElement->onTouch(elm::TouchEvent::Release, touchPos.x, touchPos.y, touchPos.x, touchPos.y, initialTouchPos.x, initialTouchPos.y);
                     oldTouchPos = { 0 };
                     initialTouchPos = { 0 };
             #if IS_STATUS_MONITOR_DIRECTIVE
@@ -14075,6 +14565,20 @@ namespace tsl {
             std::string currentTitleID;
         
             u64 lastPollTick = 0;
+            u64 lastForegroundReassertTick = 0;
+            // Re-assert cadence/window for the foreground burst (see
+            // ult::foregroundReassertStartTick).  A HOME↔game resume re-arm
+            // settles within ~1-2s, so 4s gives 2x margin; slow cold title
+            // launches are covered separately by the title-ID one-shot
+            // (resetForegroundCheck, 3.5s).  150ms bounds worst-case
+            // dual-input time after am re-arms the game to one interval.
+            // Each re-assert is one requestForeground call (~35 IPC calls,
+            // ~1-2ms on this background thread) — ~1% of a core for the 4s
+            // burst, only after the overlay is shown.  Deliberately NOT
+            // micro-optimized: reusing requestForeground verbatim keeps one
+            // copy of the foreground logic and zero extra state.
+            constexpr u64 FOREGROUND_REASSERT_WINDOW_NS   = 4'000'000'000ULL;
+            constexpr u64 FOREGROUND_REASSERT_INTERVAL_NS = 150'000'000ULL;
             u64 resetStartTick = armGetSystemTick();
             const u64 startNs = armTicksToNs(resetStartTick);
 
@@ -14130,7 +14634,64 @@ namespace tsl {
                             ult::resetForegroundCheck.store(false, std::memory_order_release);
                         }
                     }
-                    
+
+                    // Foreground re-assert burst (HOME↔game transitions).
+                    //
+                    // Armed by hlp::requestForeground(true) (overlay shown or
+                    // unhidden) and by the HOME handler below.  Covers the case
+                    // the title-ID poll above cannot see: resuming the SAME
+                    // suspended title from HOME (title ID unchanged) while the
+                    // overlay is opened via combo mid-transition.  am re-arms
+                    // the game's input focus as the resume completes, clobbering
+                    // the overlay's exclusive-input claim; without this burst,
+                    // input keeps flowing into the game underneath the overlay.
+                    //
+                    // Re-asserts every FOREGROUND_REASSERT_INTERVAL_NS until the
+                    // window expires or the overlay releases foreground —
+                    // requestForeground(false, updateGlobalFlag=true) also
+                    // clears the anchor directly, so a burst can never re-steal
+                    // input after hide/close.
+                    {
+                        const u64 burstStartTick = ult::foregroundReassertStartTick.load(std::memory_order_acquire);
+                        if (burstStartTick != 0) {
+                            if (armTicksToNs(nowTick - burstStartTick) >= FOREGROUND_REASSERT_WINDOW_NS) {
+                                // Window expired — clear only if still our anchor
+                                // (a newer arm must not be wiped).
+                                u64 expected = burstStartTick;
+                                ult::foregroundReassertStartTick.compare_exchange_strong(
+                                    expected, 0, std::memory_order_acq_rel);
+                            } else if (armTicksToNs(nowTick - lastForegroundReassertTick) >= FOREGROUND_REASSERT_INTERVAL_NS) {
+                                lastForegroundReassertTick = nowTick;
+                                if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                    // Precision gate: the clobber this burst exists
+                                    // to fix (am re-arming a resumed title's input)
+                                    // can only occur while an application process
+                                    // exists — a suspended game still has one.  With
+                                    // no game open there is nothing to fight over,
+                                    // so re-asserting would be pure side effects;
+                                    // skip the tick (1 IPC call) but keep the window
+                                    // alive in case an application appears mid-burst.
+                                    u64 appAruid = 0;
+                                    pmdmntGetApplicationProcessId(&appAruid);
+                                    if (appAruid != 0) {
+                                        #if IS_STATUS_MONITOR_DIRECTIVE
+                                        if (!isValidOverlayMode())
+                                            hlp::requestForeground(true, false);
+                                        #else
+                                        hlp::requestForeground(true, false);
+                                        #endif
+                                    }
+                                } else {
+                                    // Overlay hidden/closed or foreground released —
+                                    // cancel the burst.
+                                    u64 expected = burstStartTick;
+                                    ult::foregroundReassertStartTick.compare_exchange_strong(
+                                        expected, 0, std::memory_order_acq_rel);
+                                }
+                            }
+                        }
+                    }
+
                     if (firstUnderscanCheck || (nowNs - lastUnderscanCheckNs) >= UNDERSCAN_INTERVAL_NS) {
                         currentUnderscanPixels = tsl::gfx::getUnderscanPixels();
                     
@@ -14190,7 +14751,7 @@ namespace tsl {
                                             int duration = 0;
                                             bool showTime;
                                             std::string alignment;
-                                            bool splitChar  = false;
+                                            std::string splitTypeStr; // "char"/"word" explicit, empty = auto
                                             char timestamp[10] = {}; 
                                         };
                                         static NotifData topSlots[NotificationPrompt::MAX_VISIBLE];
@@ -14294,8 +14855,9 @@ namespace tsl {
                                             const bool alignmentExplicit = cJSON_IsString(alignmentObj) && alignmentObj->valuestring && alignmentObj->valuestring[0];
                                             nd.alignment = alignmentExplicit ? alignmentObj->valuestring
                                                                              : (nd.title.empty() ? "" : ult::LEFT_STR);
-                                            nd.splitChar = cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring
-                                                           && strcmp(splitTypeObj->valuestring, ult::CHAR_STR.c_str()) == 0;
+                                            // Pass the explicit split_type through; unset = auto
+                                            nd.splitTypeStr = (cJSON_IsString(splitTypeObj) && splitTypeObj->valuestring)
+                                                              ? splitTypeObj->valuestring : "";
 
                                             int pos = topCount;
                                             while (pos > 0 && isBetter(nd, topSlots[pos - 1])) --pos;
@@ -14325,7 +14887,7 @@ namespace tsl {
                                                                    nd.fname, nd.title, duration,
                                                                    false, firstPoll, nd.showTime,
                                                                    nd.alignment,
-                                                                   nd.splitChar ? ult::CHAR_STR : ult::WORD_STR,
+                                                                   nd.splitTypeStr,
                                                                    nd.timestamp);
                                             }
                                         }
@@ -14381,11 +14943,16 @@ namespace tsl {
                         const u64 elapsedTime_ns = armTicksToNs(nowTick - currentTouchTick);
                         if (ult::useSwipeToOpen && elapsedTime_ns <= TOUCH_THRESHOLD_NS) {
                             if ((lastTouchX != 0 && lastTouchY != 0) && (currentTouch.x != 0 || currentTouch.y != 0)) {
-                                if (ult::layerEdge == 0 && currentTouch.x > SWIPE_RIGHT_BOUND + 84 && lastTouchX <= SWIPE_RIGHT_BOUND) {
+                                // "swipe_offset" (config.ini) shifts the whole swipe zone
+                                // inward from the screen edge for deadzone calibration:
+                                // rightward when opening from the left edge, leftward when
+                                // opening from the right edge. Default 0 = original bounds.
+                                const s32 swipeOff = ult::swipeOffset;
+                                if (ult::layerEdge == 0 && static_cast<s32>(currentTouch.x) > SWIPE_RIGHT_BOUND + 84 + swipeOff && static_cast<s32>(lastTouchX) <= SWIPE_RIGHT_BOUND + swipeOff) {
                                     eventFire(&shData->comboEvent);
                                     mainComboHasTriggered.store(true, std::memory_order_release);
                                 }
-                                else if (ult::layerEdge > 0 && currentTouch.x < SWIPE_LEFT_BOUND - 84 && lastTouchX >= SWIPE_LEFT_BOUND) {
+                                else if (ult::layerEdge > 0 && static_cast<s32>(currentTouch.x) < SWIPE_LEFT_BOUND - 84 - swipeOff && static_cast<s32>(lastTouchX) >= SWIPE_LEFT_BOUND - swipeOff) {
                                     eventFire(&shData->comboEvent);
                                     mainComboHasTriggered.store(true, std::memory_order_release);
                                 }
@@ -14623,6 +15190,32 @@ namespace tsl {
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
                                 #endif
+
+                                // A launch-combo-driven overlay switch is about to happen (every
+                                // branch below ends in fireLaunch()). This always abandons any
+                                // pending Ultrahand "open" return context — only a plain back-out
+                                // (B) from a directly-opened overlay restores it; a combo switch
+                                // is treated like a normal, unrelated overlay launch.
+                                //
+                                // The original "open" launch (see the overlayLaunchRequested
+                                // consumption block above) also wrote IN_OVERLAY_STR/to_packages
+                                // into the config INI so a *plain* return would land on the
+                                // Packages tab as a fallback. Those two are a separate, older
+                                // mechanism from our own flag file, but they represent the same
+                                // "still expecting to come back to something" state, so they must
+                                // be disarmed together — otherwise a combo diversion to an
+                                // unrelated overlay leaves them stale, and whenever ovlmenu.ovl
+                                // next boots for any reason at all it force-lands on the Packages
+                                // tab. Any of case 1 / case 2 / the self-return branch below that
+                                // legitimately wants ovlmenu.ovl as its target re-sets these to
+                                // TRUE itself, later in this same block, so clearing here first is
+                                // safe and doesn't fight a genuine combo-return-to-ovlmenu.
+                                if (ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH))
+                                    ult::deleteFileOrDirectory(ult::OPEN_RETURN_CONTEXT_FILEPATH);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME, ult::IN_OVERLAY_STR, ult::FALSE_STR);
+                                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH,
+                                    ult::ULTRAHAND_PROJECT_NAME, "to_packages", ult::FALSE_STR);
                     
                     #if !IS_LAUNCHER_DIRECTIVE
                                 if (lastOverlayFilename == overlayFileName && lastOverlayMode == modeArg) {
@@ -14843,6 +15436,18 @@ namespace tsl {
                                     fclose(f);
                                 }
                             }
+                            // If the overlay stays open across this HOME transition
+                            // (disableHiding game sessions), am will re-arm the newly
+                            // focused applet's input (qlaunch on game→HOME, the game on
+                            // HOME→game resume) AFTER this event, clobbering the
+                            // overlay's exclusive-input claim.  Re-arm the re-assert
+                            // burst so the poller reclaims input once the transition
+                            // settles.  (When hiding is enabled the overlay released
+                            // foreground above, and the next unhide re-arms the burst
+                            // via requestForeground(true) instead.)
+                            if (shData->overlayOpen && ult::currentForeground.load(std::memory_order_acquire)) {
+                                ult::foregroundReassertStartTick.store(armGetSystemTick(), std::memory_order_release);
+                            }
                             break;
                         case WaiterObject_PowerButton:
                             eventClear(&powerButtonPressEvent);
@@ -14851,28 +15456,28 @@ namespace tsl {
                             // Reinitialize HID unconditionally — this restores input
                             // state on wake, and is safe on sleep entry too (HID
                             // will simply reinit again on wake if needed).
-                            hidReinitInProgress.store(true, std::memory_order_seq_cst);
-                            svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish
+                           //hidReinitInProgress.store(true, std::memory_order_seq_cst);
+                           //svcSleepThread(20'000'000ULL); // 20ms — let feedback thread finish
 
-                            hidExit();
-                            if (R_SUCCEEDED(hidInitialize())) {
-                                padInitialize(&pad_p1, HidNpadIdType_No1);
-                                padInitialize(&pad_handheld, HidNpadIdType_Handheld);
-                                hidInitializeTouchScreen();
-                                padUpdate(&pad_p1);
-                                padUpdate(&pad_handheld);
-                                {
-                                    std::lock_guard<std::mutex> lock(shData->dataMutex);
-                                    shData->keysDown        = 0;
-                                    shData->keysHeld        = 0;
-                                    shData->keysDownPending = 0;
-                                    shData->touchState      = { 0 };
-                                }
-                                triggerInitHaptics.store(true, std::memory_order_release);
-                                signalFeedback(); // wake poller to run initHaptics
-                            }
+                           //hidExit();
+                           //if (R_SUCCEEDED(hidInitialize())) {
+                           //    padInitialize(&pad_p1, HidNpadIdType_No1);
+                           //    padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+                           //    hidInitializeTouchScreen();
+                           //    padUpdate(&pad_p1);
+                           //    padUpdate(&pad_handheld);
+                           //    {
+                           //        std::lock_guard<std::mutex> lock(shData->dataMutex);
+                           //        shData->keysDown        = 0;
+                           //        shData->keysHeld        = 0;
+                           //        shData->keysDownPending = 0;
+                           //        shData->touchState      = { 0 };
+                           //    }
+                           //    triggerInitHaptics.store(true, std::memory_order_release);
+                           //    signalFeedback(); // wake poller to run initHaptics
+                           //}
 
-                            hidReinitInProgress.store(false, std::memory_order_seq_cst);
+                           //hidReinitInProgress.store(false, std::memory_order_seq_cst);
                             break;
 
 
@@ -15050,8 +15655,7 @@ namespace tsl {
                 const bool stopping  = feedbackPollerStop.load(std::memory_order_acquire);
                 const bool launching = ult::launchingOverlay.load(std::memory_order_acquire);
 
-                if (!ult::useHapticFeedback || disableHaptics.load(std::memory_order_acquire)
-                    || hidReinitInProgress.load(std::memory_order_acquire)) {
+                if (!ult::useHapticFeedback || disableHaptics.load(std::memory_order_acquire)) {
                     triggerInitHaptics.store(false, std::memory_order_release);
                     triggerRumbleClick.store(false, std::memory_order_release);
                     triggerRumbleDoubleClick.store(false, std::memory_order_release);
@@ -15500,6 +16104,22 @@ namespace tsl {
             }
         }
     
+    #if !IS_LAUNCHER_DIRECTIVE
+        // If this overlay was launched via Ultrahand's "open" command while a package
+        // return context is pending, ovlmenu.ovl will restore that package and play its
+        // own reveal feedback the instant this process exits (see the OPEN_RETURN_CONTEXT_FILEPATH
+        // restore path in ovlmenu's loadInitialGui()). Without this, a plain B-exit here
+        // would ALSO fire this overlay's own directMode exit feedback below, doubling up
+        // with ovlmenu's reveal feedback on return. Skip ours; ovlmenu's is the one that
+        // should be heard, exactly like a normal in-overlay "back" doesn't chirp on its own.
+        // A combo-driven exit is unaffected: it already skips this feedback via
+        // launchComboHasTriggered, and the combo choke point deletes this file the instant
+        // it fires, so it correctly resets to normal (non-suppressed) behavior first.
+        if (directMode && ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH)) {
+            skipClosingExitFeedback = true;
+        }
+    #endif
+    
         impl::SharedThreadData shData;
         shData.running.store(true, std::memory_order_release);
     
@@ -15559,6 +16179,19 @@ namespace tsl {
             auto it = project.find(ult::IN_OVERLAY_STR);
             if (it != project.end()) {
                 inOverlay = (it->second != ult::FALSE_STR);
+            }
+
+            // A pending Ultrahand "open" return-context file means this boot is specifically
+            // to restore a saved package position after a plain back-out. IN_OVERLAY_STR can't
+            // be trusted here: the directly-opened overlay's own boot (ordinary, pre-existing
+            // logic, unrelated to this feature) already cleared it to FALSE the moment it
+            // started in direct mode, regardless of whether that overlay knows anything about
+            // Ultrahand at all. Our flag file, by contrast, is only ever written/read by
+            // ovlmenu.ovl itself, so it survives the opened overlay's entire lifetime intact —
+            // treat its presence the same as a genuine combo-return for reveal purposes so the
+            // restored menu doesn't come back invisible, waiting on a manual re-summon.
+            if (ult::isFile(ult::OPEN_RETURN_CONTEXT_FILEPATH)) {
+                inOverlay = true;
             }
         
             // Only update the overlay key once, for either firstBoot or skipCombo

@@ -253,14 +253,14 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"bottom_text_color",               "FFFFFF"},
     {"unfocused_color",                 "666666"},
     {"click_alpha",                     "7"},
-    {"click_color",                     "3E25F7"},
+    {"click_color",                     "7777CC"},
     {"click_text_color",                "FFFFFF"},
     {"clock_color",                     "FFFFFF"},
     {"default_overlay_color",           "FFFFFF"},
     {"default_package_color",           "FFFFFF"},
     {"default_script_color",            "FF33FF"},
-    {"dynamic_logo_color_1",            "00E669"},
-    {"dynamic_logo_color_2",            "8080EA"},
+    {"dynamic_logo_color_1",            "EEEE77"},
+    {"dynamic_logo_color_2",            "EE7777"},
     {"header_separator_color",          "FFFFFF"},
     {"header_text_color",               "FFFFFF"},
     {"healthy_ram_text_color",          "00FF00"},
@@ -272,7 +272,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"invalid_text_color",              "FF0000"},
     {"invert_bg_click_color",           "false"},
     {"logo_color_1",                    "FFFFFF"},
-    {"logo_color_2",                    "FF0000"},
+    {"logo_color_2",                    "8888CC"},
     {"neutral_ram_text_color",          "FFAA00"},
     {"notification_text_color",         "FFFFFF"},
     {"notification_title_color",        "FFFFFF"},
@@ -311,11 +311,11 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"s2_toggle_off_color",             "555555"},
     {"s2_toggle_on_color",              "0066EE"},
     {"s2_widget_border_color_1",        "7755FF"},
-    {"s2_widget_border_color_2",        "6644FF"},
-    {"s2_widget_border_color_3",        "779999"},
-    {"s2_widget_border_color_3_deep",   "665577"},
-    {"s2_widget_border_color_4",        "AA9988"},
-    {"s2_widget_border_color_4_deep",   "775555"},
+    {"s2_widget_border_color_2",        "FCFC6E"},
+    {"s2_widget_border_color_3",        "5AF291"},
+    {"s2_widget_border_color_3_deep",   "5A91F2"},
+    {"s2_widget_border_color_4",        "F2B7ED"},
+    {"s2_widget_border_color_4_deep",   "F2915A"},
     {"scrollbar_color",                 "555555"},
     {"scrollbar_wall_color",            "AAAAAA"},
     {"selection_bg_alpha",              "11"},
@@ -327,7 +327,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"separator_color",                 "404040"},
     {"star_color",                      "FFFFFF"},
     {"table_bg_alpha",                  "14"},
-    {"table_bg_color",                  "2C2C2C"},
+    {"table_bg_color",                  "111111"},
     {"table_border_color",              "555555"},
     {"table_info_text_color",           "9ED0FF"},
     {"table_section_text_color",        "FFFFFF"},
@@ -617,22 +617,61 @@ namespace hlp {
      * @param enabled Focus Tesla?
      */
     void requestForeground(bool enabled, bool updateGlobalFlag) {
-        if (updateGlobalFlag)
+        if (updateGlobalFlag) {
             ult::currentForeground.store(enabled, std::memory_order_release);
 
+            /* Intentional foreground transitions arm/cancel the re-assert
+             * burst consumed by the background poller.
+             *
+             * Acquire (enabled): if the overlay is shown while a suspended
+             * title is being resumed from HOME (HOME pressed again, or the
+             * game re-selected), am re-arms the game's input focus AFTER
+             * this call, clobbering the hidsysEnableAppletToGetInput(false)
+             * claim below — input then reaches both the game and the
+             * overlay. The burst re-asserts the claim for a short window so
+             * the overlay always ends up with exclusive input.
+             *
+             * Release (!enabled): cancel any active burst immediately so a
+             * queued re-assert can never re-steal input after the overlay
+             * hides/closes.
+             *
+             * Internal re-asserts pass updateGlobalFlag=false and therefore
+             * never re-arm the window (no self-perpetuation). */
+            ult::foregroundReassertStartTick.store(
+                enabled ? armGetSystemTick() : 0, std::memory_order_release);
+        }
+
         u64 applicationAruid = 0, appletAruid = 0;
-        
+
         for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
+            // Reset each iteration: pmdmnt leaves the out-param untouched on
+            // failure, so a stale aruid from a previous hit would otherwise
+            // trigger ~30 redundant hidsys IPC calls per invocation.
+            appletAruid = 0;
             pmdmntGetProcessId(&appletAruid, programId);
-            
+
             if (appletAruid != 0)
                 hidsysEnableAppletToGetInput(!enabled, appletAruid);
         }
-        
+
+        // On newer HOS versions the Shop library-applet slot can use systemWeb
+        // (0100000000001042), outside the legacy 1000-101F applet range.
+        appletAruid = 0;
+        pmdmntGetProcessId(&appletAruid, 0x0100000000001042ULL);
+        if (appletAruid != 0)
+            hidsysEnableAppletToGetInput(!enabled, appletAruid);
 
         pmdmntGetApplicationProcessId(&applicationAruid);
-        hidsysEnableAppletToGetInput(!enabled, applicationAruid);
-        
+        // Only touch the application's input permission when an application
+        // actually exists.  With no game running applicationAruid stays 0,
+        // and the unguarded call would momentarily DISABLE input for aruid 0
+        // — the overlay's own input context — until the final call below
+        // re-enables it.  Harmless-looking as a one-shot, but any repeated
+        // caller (foreground re-assert burst) turns it into constant input
+        // strobing that visibly halts overlay navigation.
+        if (applicationAruid != 0)
+            hidsysEnableAppletToGetInput(!enabled, applicationAruid);
+
         hidsysEnableAppletToGetInput(true, 0);
     }
 
@@ -807,6 +846,16 @@ namespace impl {
             const int cap = tsl::NotificationPrompt::MAX_VISIBLE;
             tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
         }
+
+        // swipe_offset — optional deadzone calibration for swipe-to-open.
+        // Shifts the swipe start zone this many pixels inward from the screen
+        // edge (leftward when opening from the right edge).  Read-only: it is
+        // only honored if the user added it to config.ini themselves and is
+        // never written back.  Default 0; clamped to half the screen width.
+        {
+            const std::string offStr = getStr("swipe_offset", "0");
+            ult::swipeOffset = std::max(0, std::min(ult::stoi(offStr), 640));
+        }
     
         // Widget / display flags — shared
         ult::hideClock              = getBool("hide_clock");
@@ -819,7 +868,7 @@ namespace impl {
         ult::hideWidgetBorder       = getBool("hide_widget_border");
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
         ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
-        ult::useDynamicLogo         = getBool("dynamic_logo",            true);
+        ult::useDynamicLogo         = getBool("dynamic_logo",            false);
         ult::useSwitch2Style        = getBool("switch_2_style",          false);
         ult::useDynamicTableColors  = getBool("dynamic_tables",          true);
         ult::useSelectionBG         = getBool("selection_bg",            true);
@@ -900,7 +949,68 @@ std::vector<std::string> wrapText(
     float indentWidth,
     size_t fontSize
 ) {
-    if (wrappingMode == "none" || (wrappingMode != "char" && wrappingMode != ult::WORD_STR))
+    // Hard line breaks: wrap each '\n' / "\\n"-separated segment independently
+    // and emit its lines back-to-back.  Without this, char/word wrapping
+    // carries the current line straight across an embedded newline —
+    // calculateStringWidth() resets its running width at '\n', so the line
+    // never overflows at the break and the returned "wrapped line" still
+    // contains the newline.  Callers position rows one line-height apart while
+    // drawString() renders that embedded newline as an extra visual row,
+    // making the tail of an auto-wrapped line overlap the first characters of
+    // the following '\n'-broken line (reported with wrapping_mode=char + zh).
+    {
+        size_t nlPos        = text.find('\n');
+        const size_t escPos = text.find("\\n");
+        size_t skip         = 1;
+        if (escPos != std::string::npos && (nlPos == std::string::npos || escPos < nlPos)) {
+            nlPos = escPos;
+            skip  = 2;
+        }
+        if (nlPos != std::string::npos) {
+            std::vector<std::string> lines = wrapText(text.substr(0, nlPos), maxWidth,
+                                                      wrappingMode, useIndent, indent,
+                                                      indentWidth, fontSize);
+            if (lines.empty()) lines.emplace_back();  // preserve blank lines (e.g. leading "\nfoo")
+            // Note: deliberately no symmetric "if (rest.empty()) rest.emplace_back()"
+            // here. wrapText() only ever returns {} for a literally empty string, and
+            // the remainder substring is empty only when this newline is a trailing
+            // terminator (nothing after it — end of text). A genuine blank line in the
+            // middle of the text (e.g. "foo\n\nbar") always has a non-empty remainder
+            // that recurses and contributes its own placeholder via the check above,
+            // so it's still preserved correctly. Synthesizing a placeholder here too
+            // used to turn every trailing '\n' (e.g. from readListFromFile(...,
+            // preserveNewlines=true), which leaves fgets' line terminator on each
+            // entry) into a phantom blank row after every single line.
+            std::vector<std::string> rest = wrapText(text.substr(nlPos + skip), maxWidth,
+                                                     wrappingMode, useIndent, indent,
+                                                     indentWidth, fontSize);
+            lines.insert(lines.end(), std::make_move_iterator(rest.begin()),
+                                      std::make_move_iterator(rest.end()));
+            return lines;
+        }
+    }
+
+    // "auto" — resolve to "char" when the text contains any word-per-character
+    // script (CJK ideographs, kana, Hangul, etc.), otherwise "word".  Detection
+    // is per-string, so in the same table a translated Asian line wraps per
+    // character while an untranslated Latin line still wraps per word.
+    std::string resolvedMode = wrappingMode;
+    if (wrappingMode == ult::AUTO_STR) {
+        resolvedMode = ult::WORD_STR;
+        u32 cp;
+        auto itAuto = text.cbegin();
+        while (itAuto != text.cend()) {
+            const ssize_t w = decode_utf8(&cp, reinterpret_cast<const u8*>(&(*itAuto)));
+            if (w <= 0) break;
+            if (isWordPerCharScript(cp)) {
+                resolvedMode = ult::CHAR_STR;
+                break;
+            }
+            itAuto += w;
+        }
+    }
+
+    if (resolvedMode == ult::NONE_STR || (resolvedMode != ult::CHAR_STR && resolvedMode != ult::WORD_STR))
         return { text };
 
     std::vector<std::string> wrappedLines;
@@ -962,7 +1072,7 @@ std::vector<std::string> wrapText(
         }
     };
 
-    if (wrappingMode == "char") {
+    if (resolvedMode == ult::CHAR_STR) {
         static constexpr char hyphen = '-';
         u32 prevCharacter     = 0;
         u32 prevPrevCharacter = 0;
@@ -1290,7 +1400,9 @@ NotificationPrompt::Lines
 NotificationPrompt::getWrappedLines(const std::string& text, float pixelWidth,
                                     size_t fontSize, u8 maxLines,
                                     SplitType splitType) const {
-    const std::string& stStr = (splitType == SplitType::Char) ? ult::CHAR_STR : ult::WORD_STR;
+    const std::string& stStr = (splitType == SplitType::Char) ? ult::CHAR_STR
+                             : (splitType == SplitType::Auto) ? ult::AUTO_STR
+                                                              : ult::WORD_STR;
 
     Lines split;
     {
@@ -1330,11 +1442,11 @@ s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
     u8    wrapMax;
     if (hasTitleLayout) {
         const s32 taw = g.hasIconCol ? g.textAreaW : (NOTIF_WIDTH - 2 * (g.baseIconPad + 2));
-        wrapW   = g.hasIconCol ? static_cast<float>(taw - g.baseIconPad - 2)
-                               : static_cast<float>(taw);
+        wrapW   = g.hasIconCol ? static_cast<float>(taw - g.baseIconPad - 2 - NOTIF_WRAP_MARGIN)
+                               : static_cast<float>(taw - NOTIF_WRAP_MARGIN);
         wrapMax = 4;
     } else {
-        wrapW   = static_cast<float>(g.textAreaW - 4);
+        wrapW   = static_cast<float>(g.textAreaW - 4 - NOTIF_WRAP_MARGIN);
         wrapMax = 9;
     }
 
@@ -1456,16 +1568,19 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     s32   effectiveHeight = NOTIF_HEIGHT;
 
     if (hasTitleIconLayout) {
-        lines = getWrappedLines(slot.data.text, titleInnerWf, fontSize, 5, slot.data.splitType);
-        applyEllipsis(lines, 4, titleInnerWf, fontSize, renderer);
+        // Wrap a small margin short of the timestamp's right edge; the
+        // alignment box (titleInnerWf) itself is left untouched.
+        const float titleWrapWf = titleInnerWf - NOTIF_WRAP_MARGIN;
+        lines = getWrappedLines(slot.data.text, titleWrapWf, fontSize, 5, slot.data.splitType);
+        applyEllipsis(lines, 4, titleWrapWf, fontSize, renderer);
         if (lines.count > 1) {
             const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
             effectiveHeight += extraLinesHeight(static_cast<s32>(lines.count - 1), fm.lineHeight);
         }
     } else if (!slot.data.text.empty() && g.textAreaW > 0) {
-        lines = getWrappedLines(slot.data.text, static_cast<float>(g.textAreaW - 4),
-                                fontSize, 9, slot.data.splitType);
-        applyEllipsis(lines, 8, static_cast<float>(g.textAreaW - 4), fontSize, renderer);
+        const float bodyWrapWf = static_cast<float>(g.textAreaW - 4 - NOTIF_WRAP_MARGIN);
+        lines = getWrappedLines(slot.data.text, bodyWrapWf, fontSize, 9, slot.data.splitType);
+        applyEllipsis(lines, 8, bodyWrapWf, fontSize, renderer);
         if (lines.count > 1) {
             const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontSize);
             effectiveHeight += extraLinesHeight(static_cast<s32>(lines.count - 1), fm.lineHeight);

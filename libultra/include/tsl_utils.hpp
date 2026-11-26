@@ -103,12 +103,40 @@ namespace ult {
     extern std::string lastTitleID;
     extern std::atomic<bool> resetForegroundCheck;
 
+    /**
+     * Foreground re-assert burst anchor (system tick; 0 = inactive).
+     *
+     * Armed whenever the overlay intentionally acquires foreground
+     * (hlp::requestForeground(true) with updateGlobalFlag) and on HOME
+     * button presses while the overlay is open and holding foreground.
+     *
+     * Rationale: when a suspended title is resumed from the HOME menu
+     * (HOME pressed again, or the game re-selected), am re-arms the
+     * application's input focus as part of the resume transition. If the
+     * overlay was shown via combo right around that transition, its
+     * hidsysEnableAppletToGetInput(false, app) claim is clobbered a
+     * moment later and input flows into BOTH the game and the overlay.
+     * The title-ID poll (resetForegroundCheck) never fires here because
+     * resuming the same game does not change the title ID.
+     *
+     * While armed, the background poller re-asserts the foreground claim
+     * every FOREGROUND_REASSERT_INTERVAL_NS for
+     * FOREGROUND_REASSERT_WINDOW_NS, so the overlay reclaims exclusive
+     * input at most one interval after the system re-arms the game.
+     */
+    extern std::atomic<u64> foregroundReassertStartTick;
+
 
     //extern bool isLauncher;
     extern std::atomic<bool> internalTouchReleased;
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
+    // Optional deadzone calibration for swipe-to-open ("swipe_offset" in
+    // config.ini). Shifts the swipe start zone this many pixels inward from
+    // the screen edge (leftward when opening from the right edge). Read-only
+    // — never written back to config.ini. Default 0.
+    extern s32 swipeOffset;
     extern bool useLaunchCombos;
     //extern bool useLaunchRecall;
     //extern bool usePageRecall;
@@ -136,6 +164,13 @@ namespace ult {
     extern std::string requestedOverlayPath;
     extern std::string requestedOverlayArgs;
     extern std::mutex overlayLaunchMutex;
+
+    // Invoked synchronously (same call, same thread) right before an "open" package command
+    // requests an overlay launch, so main.cpp can snapshot the current PackageMenu return
+    // context to disk. Left null (and simply skipped) until main.cpp registers it in main().
+    // Plain function pointer (not std::function) so it is constant-initialized to nullptr —
+    // no static-initialization-order concerns when it's assigned during main.cpp's own init.
+    extern void (*openCommandInvokedCallback)();
 #endif
     
     
@@ -364,6 +399,7 @@ namespace ult {
     extern std::string LIBULTRAHAND_TITLES;
     extern std::string LIBULTRAHAND_VERSIONS;
     extern std::string PACKAGE_TITLES;
+    extern std::string IN_PACKAGE_TITLES;
 
     extern std::string KEY_COMBO;
     extern std::string MODE;
@@ -636,7 +672,7 @@ namespace ult {
     void reinitializeWidgetVars();
     #endif
     
-    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
+    extern bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions, useInPackageTitles;
     
 
 

@@ -378,7 +378,7 @@ namespace ult {
         std::vector<std::pair<uint32_t, std::vector<uint8_t>>> patches;
         char lineBuffer[512];  // Fixed: Use char buffer for fgets
         std::string line;
-        uint32_t lineNum = 0;
+        //uint32_t lineNum = 0;
         std::string nsobid;
         int offset = 0; // Default offset
         bool enabled = true;
@@ -390,7 +390,7 @@ namespace ult {
     
         while (fgets(lineBuffer, sizeof(lineBuffer), pchtxtFile) != nullptr) {
             line = lineBuffer;  // Convert to string
-            ++lineNum;
+            //++lineNum;
             if (line.empty() || line.front() == '@' || !enabled) {
                 if (line.find("@nsobid-") == 0) {
                     nsobid = line.substr(8);

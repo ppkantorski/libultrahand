@@ -77,6 +77,7 @@ namespace ult {
     const std::string NOTIFICATIONS_FLAG_FILEPATH = FLAGS_PATH + NOTIFICATIONS_FLAG_FILENAME;
     const std::string RELOADING_FLAG_FILEPATH     = FLAGS_PATH + RELOADING_FLAG_FILENAME;
     const std::string NTP_SYNC_PENDING_FLAG_FILEPATH = FLAGS_PATH + "NTP_SYNC_PENDING.flag";
+    const std::string OPEN_RETURN_CONTEXT_FILEPATH   = FLAGS_PATH + "open_return_context.flag";
 
     // Protected files
     const std::set<std::string> PROTECTED_FILES = {
@@ -139,6 +140,7 @@ namespace ult {
     CONSTEXPR_STRING std::string LEFT_STR             = "left";
     CONSTEXPR_STRING std::string RIGHT_STR            = "right";
     CONSTEXPR_STRING std::string CENTER_STR           = "center";
+    CONSTEXPR_STRING std::string AUTO_STR             = "auto";
     CONSTEXPR_STRING std::string CHAR_STR             = "char";
     CONSTEXPR_STRING std::string WORD_STR             = "word";
     CONSTEXPR_STRING std::string NONE_STR             = "none";
@@ -177,6 +179,7 @@ namespace ult {
     CONSTEXPR_STRING std::string COPY_SYMBOL         = "\u2192";
     CONSTEXPR_STRING std::string INPROGRESS_SYMBOL   = "\u25CF";
     CONSTEXPR_STRING std::string STAR_SYMBOL         = "\u2605";
+    CONSTEXPR_STRING std::string LAUNCH_SYMBOL       = "\uE072";
     CONSTEXPR_STRING std::string DIVIDER_SYMBOL      = "";
     CONSTEXPR_STRING std::string NOTIFY_HEADER       = "  ";
     CONSTEXPR_STRING std::string HOLD_A_SYMBOL       = "";

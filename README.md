@@ -191,7 +191,7 @@ CFLAGS := -Wall -Os \
           -frename-registers -falign-functions=16 \
           $(ARCH) $(DEFINES)
 
-CXXFLAGS := $(CFLAGS) -std=c++26 \
+CXXFLAGS := $(CFLAGS) -std=c++23 \
             -fno-exceptions -fno-rtti \
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -ffast-math -Wno-dangling-else

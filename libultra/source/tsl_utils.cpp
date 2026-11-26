@@ -205,11 +205,14 @@ namespace ult {
     
     std::string lastTitleID;
     std::atomic<bool> resetForegroundCheck(false); // initialize as true
+    std::atomic<u64> foregroundReassertStartTick(0); // 0 = burst inactive
     std::atomic<bool> internalTouchReleased(true);
 
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
+    s32 swipeOffset = 0; // "swipe_offset" — swipe-to-open deadzone calibration
+
     bool useLaunchCombos = true;
     //bool useLaunchRecall = true;
     //bool usePageRecall = true;
@@ -223,7 +226,7 @@ namespace ult {
     bool useStickNavigation = true;
     bool usePageSwap = false;
     bool useSwitch2Style = true;
-    bool useDynamicLogo = true;
+    bool useDynamicLogo = false;
     bool useDynamicTableColors = true;
     bool useSelectionBG = true;
     bool useSelectionText = true;
@@ -236,6 +239,7 @@ namespace ult {
     std::string requestedOverlayPath;
     std::string requestedOverlayArgs;
     std::mutex overlayLaunchMutex;
+    void (*openCommandInvokedCallback)() = nullptr;
     #endif
     
     // CUSTOM SECTION START
@@ -454,6 +458,7 @@ namespace ult {
     std::string LIBULTRAHAND_TITLES;
     std::string LIBULTRAHAND_VERSIONS;
     std::string PACKAGE_TITLES;
+    std::string IN_PACKAGE_TITLES;
 
     std::string KEY_COMBO;
     std::string MODE;
@@ -676,6 +681,7 @@ namespace ult {
         {&LIBULTRAHAND_TITLES,        "LIBULTRAHAND_TITLES",        "libultrahand Titles"},
         {&LIBULTRAHAND_VERSIONS,      "LIBULTRAHAND_VERSIONS",      "libultrahand Versions"},
         {&PACKAGE_TITLES,             "PACKAGE_TITLES",             "Package Titles"},
+        {&IN_PACKAGE_TITLES,          "IN_PACKAGE_TITLES",          "In-Package Titles"},
         {&KEY_COMBO,                  "KEY_COMBO",                  "Key Combo"},
         {&MODE,                       "MODE",                       "Mode"},
         {&LAUNCH_MODES,               "LAUNCH_MODES",               "Launch Modes"},
@@ -1230,7 +1236,7 @@ namespace ult {
     }
     #endif
     
-    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions;
+    bool cleanVersionLabels, hideOverlayVersions, hidePackageVersions, useLibultrahandTitles, useLibultrahandVersions, usePackageTitles, usePackageVersions, useInPackageTitles;
     
 
 
