@@ -39,8 +39,8 @@ include $(DEVKITPRO)/libnx/switch_rules
 #   of a homebrew executable (.nro). This is intended to be used for sysmodules.
 #   NACP building is skipped as well. #lib/Atmosphere-libs/libexosphere/source/pmic
 #---------------------------------------------------------------------------------
-APP_TITLE	:= Ultrahand Example
-APP_AUTHOR	:= ppkantorski
+APP_TITLE	:= Overlay Example
+APP_AUTHOR	:= your_name
 APP_VERSION	:= 1.0.0
 TARGET		:= ovlmenu
 BUILD		:= build
@@ -70,7 +70,7 @@ CFLAGS += $(INCLUDE) -D__SWITCH__ -DAPP_VERSION="\"$(APP_VERSION)\"" -D_FORTIFY_
 #---------------------------------------------------------------------------------
 
 # Overlay UI config path
-UI_OVERRIDE_PATH := /config/ultrahand_example/
+UI_OVERRIDE_PATH := /config/overlay_example/
 CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 
 # Enable Widget
@@ -88,7 +88,7 @@ LDFLAGS += -Wl,-wrap,__cxa_throw \
 #---------------------------------------------------------------------------------
 
 
-CXXFLAGS := $(CFLAGS) -std=c++26 -Wno-dangling-else -ffast-math -fno-unwind-tables -fno-asynchronous-unwind-tables 
+CXXFLAGS := $(CFLAGS) -std=c++23 -Wno-dangling-else -ffast-math -fno-unwind-tables -fno-asynchronous-unwind-tables 
 
 ASFLAGS := $(ARCH)
 LDFLAGS += -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,-Map,$(notdir $*.map)
