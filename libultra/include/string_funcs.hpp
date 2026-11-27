@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <iterator> 
@@ -138,7 +139,7 @@ namespace ult {
      *
      * @param path The input path string to preprocess, passed by reference.
      */
-    void preprocessPath(std::string& path, const std::string& packagePath = "");
+    void preprocessPath(std::string& path, const std::string& packagePath = {});
     
     /**
      * @brief Preprocesses a URL string by adding "https://" prefix.
@@ -250,4 +251,13 @@ namespace ult {
     #if IS_LAUNCHER_DIRECTIVE
     std::string inputExists(const std::string& input);
     #endif
+
+    // Plain text writes for files: the same bytes as fprintf with %s, without newlib's
+    // FILE printf engine (~15 KB that nothing else needs). Like %s, a string stops at
+    // its first NUL.
+    void fputLine(FILE* f, const char* s);                                         // s "\n"
+    inline void fputLine(FILE* f, const std::string& s) { fputLine(f, s.c_str()); }
+    void fputKeyValue(FILE* f, const std::string& key, const std::string& value);  // key=value "\n"
+    void fputSection(FILE* f, const char* name);                                   // [name] "\n"
+    inline void fputSection(FILE* f, const std::string& name) { fputSection(f, name.c_str()); }
 }

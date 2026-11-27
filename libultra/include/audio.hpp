@@ -40,6 +40,8 @@ namespace ult {
             Settings,
             Move,
             Notification,
+            MainSettings,   // opening Ultrahand's own settings; optional file, falls back to settings.wav
+            Hold,           // held / dragged list and trackbar steps; optional, falls back to tick.wav
             Count
         };
 
@@ -56,9 +58,10 @@ namespace ult {
         static bool initialize();
         static void exit();
 
+        // The sounds every pack must have (main_settings.wav and hold.wav are optional).
         static inline bool allSoundsExist() {
-            for (const auto& path : m_soundPaths)
-                if (!isFile(path)) return false;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(SoundType::MainSettings); ++i)
+                if (!isFile(m_soundPaths[i])) return false;
             return true;
         }
 
@@ -76,6 +79,8 @@ namespace ult {
         static inline void playSettingsSound()     { playSound(SoundType::Settings);     }
         static inline void playMoveSound()         { playSound(SoundType::Move);         }
         static inline void playNotificationSound() { playSound(SoundType::Notification); }
+        static inline void playMainSettingsSound() { playSound(SoundType::MainSettings); }
+        static inline void playHoldSound()         { playSound(SoundType::Hold);         }
 
         static void setMasterVolume(float volume);
         static void setEnabled(bool enabled);
@@ -109,7 +114,9 @@ namespace ult {
             "sdmc:/config/ultrahand/sounds/off.wav",
             "sdmc:/config/ultrahand/sounds/settings.wav",
             "sdmc:/config/ultrahand/sounds/move.wav",
-            "sdmc:/config/ultrahand/sounds/notification.wav"
+            "sdmc:/config/ultrahand/sounds/notification.wav",
+            "sdmc:/config/ultrahand/sounds/main_settings.wav",
+            "sdmc:/config/ultrahand/sounds/hold.wav"
         };
 
         // Loads WAV into rawBuf (16-bit, native channels, no volume applied).

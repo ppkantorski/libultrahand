@@ -487,7 +487,7 @@ namespace ult {
         }
         
         if (start == input.size()) {
-            return ""; // No digits found
+            return {}; // No digits found
         }
         
         
@@ -548,7 +548,7 @@ namespace ult {
         if (index < tokens.size()) {
             return tokens[index];
         } else {
-            return ""; // Return empty string if index is out of bounds
+            return {}; // Return empty string if index is out of bounds
         }
     }
     
@@ -562,5 +562,22 @@ namespace ult {
         memcpy(&result[paddingSpaces], numStr.data(), numStr.length());
         
         return result;
+    }
+
+    void fputLine(FILE* f, const char* s) {
+        fputs(s, f);
+        fputc('\n', f);
+    }
+
+    void fputKeyValue(FILE* f, const std::string& key, const std::string& value) {
+        fputs(key.c_str(), f);
+        fputc('=', f);
+        fputLine(f, value.c_str());
+    }
+
+    void fputSection(FILE* f, const char* name) {
+        fputc('[', f);
+        fputs(name, f);
+        fputs("]\n", f);
     }
 }

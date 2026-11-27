@@ -61,6 +61,7 @@ namespace ult {
     const std::string SOUNDS_PATH                 = BASE_CONFIG_PATH + ".sounds/";
     const std::string LOADED_SOUNDS_PATH          = BASE_CONFIG_PATH + "sounds/";
     const std::string FLAGS_PATH                  = BASE_CONFIG_PATH + "flags/";
+    const std::string CACHE_PATH                  = BASE_CONFIG_PATH + "cache/";
     const std::string NOTIFICATIONS_PATH          = BASE_CONFIG_PATH + "notifications/";
     const std::string NOTIFICATIONS_ICONS_PATH    = ASSETS_PATH + "notifications/";
     const std::string NOTIFICATIONS_FLAGS_PATH    = FLAGS_PATH + "notifications/";
@@ -68,6 +69,7 @@ namespace ult {
     const std::string HB_APPSTORE_JSON            = SWITCH_PATH + "appstore/.get/packages/UltrahandOverlay/info.json";
     std::string THEME_CONFIG_INI_PATH             = BASE_CONFIG_PATH + THEME_FILENAME;
     std::string WALLPAPER_PATH                    = BASE_CONFIG_PATH + WALLPAPER_FILENAME;
+    std::string WALLPAPER_ANIM_OVERRIDE;
     const std::string DOWNLOADS_PATH              = BASE_CONFIG_PATH + "downloads/";
     const std::string FUSE_DATA_INI_PATH          = BASE_CONFIG_PATH + FUSE_FILENAME;
     const std::string PACKAGE_PATH                = SWITCH_PATH + ".packages/";
@@ -173,6 +175,8 @@ namespace ult {
     CONSTEXPR_STRING std::string OPTION_SYMBOL       = "\u22EF";
     CONSTEXPR_STRING std::string DROPDOWN_SYMBOL     = "\uE14A";
     CONSTEXPR_STRING std::string CHECKMARK_SYMBOL    = "\uE14B";
+    CONSTEXPR_STRING std::string PICTURE_SYMBOL      = "\uE01E";
+    CONSTEXPR_STRING std::string VIDEO_SYMBOL        = "\uE076";
     CONSTEXPR_STRING std::string CROSSMARK_SYMBOL    = "\uE14C";
     CONSTEXPR_STRING std::string DOWNLOAD_SYMBOL     = "\u2193";
     CONSTEXPR_STRING std::string UNZIP_SYMBOL        = "\u2191"; 

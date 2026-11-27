@@ -125,7 +125,20 @@ namespace ult {
         cachedPlayer1Style  = currentPlayer1Style;
     }
 
+    // No controller known when a rumble is due: query again, briefly. Right after an overlay
+    // process starts (e.g. Status Monitor relaunching itself to switch modes, with feedback on
+    // its first frame) the npad styles can still read 0, and the rumble would be dropped while
+    // the sound still plays. Waits at most ~50 ms and only in that case; this runs on the
+    // haptics thread, so blocking is fine.
+    static void ensureVibrationDevices() {
+        for (u32 i = 0; !cachedHandheldStyle && !cachedPlayer1Style && i < 10; ++i) {
+            if (i) svcSleepThread(5'000'000ULL);
+            initHaptics();
+        }
+    }
+
     void rumbleClickStandalone() {
+        ensureVibrationDevices();
         const HidVibrationValue& preset = getHapticsPreset();
         sendVibration(&vibrationStop);
         //sendVibration(&preset);
@@ -134,7 +147,19 @@ namespace ult {
         sendVibration(&vibrationStop);
     }
 
+    void rumbleHoldBeat(int pct) {
+        if (pct < 0) {
+            sendVibration(&vibrationStop);
+            return;
+        }
+        ensureVibrationDevices();
+        HidVibrationValue v = getHapticsPreset();
+        v.amp_low *= 0.55f + 0.0045f * pct; // 55% -> 100% of the click strength
+        sendVibration(&v);
+    }
+
     void rumbleDoubleClickStandalone() {
+        ensureVibrationDevices();
         const HidVibrationValue& preset = getHapticsPreset();
         sendVibration(&vibrationStop);
         //sendVibration(&preset);

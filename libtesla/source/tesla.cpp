@@ -103,6 +103,7 @@ Color logoColor2;
 size_t defaultBackgroundAlpha = 0;
 Color defaultBackgroundColor;
 Color defaultTextColor;
+Color notificationBorderColor;
 Color notificationTextColor;
 Color notificationTitleColor;
 Color notificationTimeColor;
@@ -274,6 +275,7 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"logo_color_1",                    "FFFFFF"},
     {"logo_color_2",                    "8888CC"},
     {"neutral_ram_text_color",          "FFAA00"},
+    {"notification_border_color",       "555555"},
     {"notification_text_color",         "FFFFFF"},
     {"notification_title_color",        "FFFFFF"},
     {"notification_time_color",         "AAAAAA"},
@@ -326,8 +328,8 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"separator_alpha",                 "15"},
     {"separator_color",                 "404040"},
     {"star_color",                      "FFFFFF"},
-    {"table_bg_alpha",                  "14"},
-    {"table_bg_color",                  "111111"},
+    {"table_bg_alpha",                  "12"},
+    {"table_bg_color",                  "000000"},
     {"table_border_color",              "555555"},
     {"table_info_text_color",           "9ED0FF"},
     {"table_section_text_color",        "FFFFFF"},
@@ -345,9 +347,9 @@ constexpr ThemeDefault defaultThemeSettings[] = {
     {"ult_package_text_color",          "9ED0FF"},
     {"ult_package_version_text_color",  "00FFDD"},
     {"warning_text_color",              "FF7777"},
-    {"widget_backdrop_alpha",           "15"},
+    {"widget_backdrop_alpha",           "12"},
     {"widget_backdrop_color",           "000000"},
-    {"widget_border_color",             "555555"}
+    {"widget_border_color",             "8888CC"}
 };
 const size_t defaultThemeSettingsCount = sizeof(defaultThemeSettings) / sizeof(defaultThemeSettings[0]);
 
@@ -377,8 +379,15 @@ bool isValidHexColor(std::string_view s) {
 // Falls through to getThemeDefault() for any missing key so colors are always
 // valid even when no theme file exists.
 // ---------------------------------------------------------------------------
+// Theme colours from already-parsed theme.ini data (parseOverlaySettings passes what
+// initializeTheme just parsed and completed, instead of reading the same file again).
+static void initializeThemeVarsFrom(const std::map<std::string, std::map<std::string, std::string>>& themeData);
+
 void initializeThemeVars() {
-    auto themeData = ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH);
+    initializeThemeVarsFrom(ult::getParsedDataFromIniFile(ult::THEME_CONFIG_INI_PATH));
+}
+
+static void initializeThemeVarsFrom(const std::map<std::string, std::map<std::string, std::string>>& themeData) {
 
     auto getValue = [&](const char* key) -> const char* {
         auto sectionIt = themeData.find(ult::THEME_STR);
@@ -409,6 +418,7 @@ void initializeThemeVars() {
     defaultBackgroundAlpha       = getAlpha("bg_alpha");
     defaultBackgroundColor       = getColor("bg_color", defaultBackgroundAlpha);
     defaultTextColor             = getColor("text_color");
+    notificationBorderColor      = getColor("notification_border_color");
     notificationTextColor        = getColor("notification_text_color");
     notificationTitleColor       = getColor("notification_title_color");
     notificationTimeColor        = getColor("notification_time_color");
@@ -513,7 +523,15 @@ void initializeThemeVars() {
 }
 
 
+// Adds any missing default keys to theme.ini and returns its data as written (the same
+// as reading the file back: the saver writes exactly the key=value lines the parser reads).
+static std::map<std::string, std::map<std::string, std::string>> initializeThemeData(const std::string& themeIniPath);
+
 void initializeTheme(const std::string& themeIniPath) {
+    initializeThemeData(themeIniPath);
+}
+
+static std::map<std::string, std::map<std::string, std::string>> initializeThemeData(const std::string& themeIniPath) {
     auto themeData = ult::getParsedDataFromIniFile(themeIniPath);
     auto& themeSection = themeData[ult::THEME_STR];
     bool needsUpdate = false;
@@ -531,6 +549,7 @@ void initializeTheme(const std::string& themeIniPath) {
         ult::saveIniFileData(themeIniPath, themeData);
     if (!ult::isDirectory(ult::THEMES_PATH))
         ult::createDirectory(ult::THEMES_PATH);
+    return themeData;
 }
 
 
@@ -643,7 +662,74 @@ namespace hlp {
 
         u64 applicationAruid = 0, appletAruid = 0;
 
+    #if 0 && USING_LIVE_LOGGING_DIRECTIVE   // (input-routing diagnostic, off: set the 0 to 1 to log it)
+        // Live log (live_logging on): every system applet process running (0100000000001000-10FF),
+        // marked with whether this claim covers it, and the application. Intentional calls only
+        // (open / hide), not the background re-asserts.
+        if (ult::glassLog && updateGlobalFlag) {
+            char line[480];
+            int n = snprintf(line, sizeof(line), "input %s:", enabled ? "claim (overlay shown)" : "release (overlay hidden)");
+            for (u64 programId = 0x0100000000001000UL; programId <= 0x01000000000010FFUL && n < (int)sizeof(line) - 40; programId++) {
+                u64 pid = 0;
+                if (R_FAILED(pmdmntGetProcessId(&pid, programId)) || pid == 0) continue;
+                const bool covered = programId < 0x0100000000001020UL || programId == 0x0100000000001042ULL;
+                n += snprintf(line + n, sizeof(line) - n, " %03lx=pid %lu%s", (unsigned long)(programId & 0xFFF),
+                              (unsigned long)pid, covered ? "" : " (NOT covered)");
+            }
+            u64 apid = 0, atid = 0;
+            pmdmntGetApplicationProcessId(&apid);
+            if (apid) {
+                const bool infoUp = serviceIsActive(pminfoGetServiceSession());
+                if (infoUp || R_SUCCEEDED(pminfoInitialize())) {
+                    pminfoGetProgramId(&atid, apid);
+                    if (!infoUp) pminfoExit();
+                }
+            }
+            if (n < (int)sizeof(line) - 40)
+                snprintf(line + n, sizeof(line) - n, " | application pid %lu (%016lx)", (unsigned long)apid, (unsigned long)atid);
+            ult::glass::live::log("%s", line);
+
+            // The newest applet events of the play-event log (which applet came to / left the front),
+            // oldest first: applet id, program id (low 12 bits), event (0 launch, 1/5/6 exit, 2 in
+            // focus, 3/4 out of focus).
+            const bool pdmUp = serviceIsActive(pdmqryGetServiceSession());
+            if (pdmUp || R_SUCCEEDED(pdmqryInitialize())) {
+                s32 total = 0, first = 0, last = 0;
+                static PdmPlayEvent ev[16];
+                s32 out = 0;
+                if (R_SUCCEEDED(pdmqryGetAvailablePlayEventRange(&total, &first, &last)) && total > 0 &&
+                    R_SUCCEEDED(pdmqryQueryPlayEvent(last - 15 < first ? first : last - 15, ev, 16, &out))) {
+                    n = snprintf(line, sizeof(line), "  play events:");
+                    for (s32 i = 0; i < out && n < (int)sizeof(line) - 24; ++i) {
+                        if (ev[i].play_event_type != PdmPlayEventType_Applet) continue;
+                        const auto& a = ev[i].event_data.applet;
+                        const u64 t = ((u64)a.program_id[0] << 32) | a.program_id[1];
+                        n += snprintf(line + n, sizeof(line) - n, " [app%u %03lx e%u]", a.applet_id,
+                                      (unsigned long)(t & 0xFFF), a.event_type);
+                    }
+                    ult::glass::live::log("%s", line);
+                }
+                if (!pdmUp) pdmqryExit();
+            }
+        }
+    #endif
+
+        pmdmntGetApplicationProcessId(&applicationAruid);
+        // Release with the game or HOME in front (the play-event log's newest "in focus"): input back to
+        // the game and the two system applets (HOME menu 000, overlay applet 00c) only. Library applets
+        // keep what the claim set (no input); the system gives one its input when it comes to the
+        // front. Given back to all of them, one alive in the background got the controls too: Super
+        // Mario 3D All-Stars' offline web applet (00f) behind Galaxy, whose hidden Select menu then
+        // moved with up/down (ticking, in the game or at HOME) until it came to the front once.
+        // A library applet in front, or unknown: all of them, as before.
+        bool applets = true;
+        if (!enabled) {
+            const int front = ult::glass::frontApplet();
+            applets = front != AppletId_application && front != AppletId_SystemAppletMenu;
+        }
+
         for (u64 programId = 0x0100000000001000UL; programId < 0x0100000000001020UL; programId++) {
+            if (!applets && programId != 0x0100000000001000UL && programId != 0x010000000000100CUL) continue;
             // Reset each iteration: pmdmnt leaves the out-param untouched on
             // failure, so a stale aruid from a previous hit would otherwise
             // trigger ~30 redundant hidsys IPC calls per invocation.
@@ -657,11 +743,10 @@ namespace hlp {
         // On newer HOS versions the Shop library-applet slot can use systemWeb
         // (0100000000001042), outside the legacy 1000-101F applet range.
         appletAruid = 0;
-        pmdmntGetProcessId(&appletAruid, 0x0100000000001042ULL);
+        if (applets) pmdmntGetProcessId(&appletAruid, 0x0100000000001042ULL);
         if (appletAruid != 0)
             hidsysEnableAppletToGetInput(!enabled, appletAruid);
 
-        pmdmntGetApplicationProcessId(&applicationAruid);
         // Only touch the application's input permission when an application
         // actually exists.  With no game running applicationAruid stays 0,
         // and the unguarded call would momentarily DISABLE input for aruid 0
@@ -708,7 +793,7 @@ namespace hlp {
      * @return Combo string
      */
     std::string keysToComboString(u64 keys) {
-        if (keys == 0) return "";  // Early return for empty input
+        if (keys == 0) return {};  // Early return for empty input
     
         std::string result;
         bool first = true;
@@ -806,6 +891,8 @@ namespace impl {
                 ult::parseValueFromIniSection(ult::TESLA_CONFIG_INI_PATH, ult::TESLA_STR, ult::KEY_COMBO_STR));
         if (decodedKeys) tsl::cfg::launchCombo = decodedKeys;
     
+        ult::currentWallpaperName = getStr("current_wallpaper");   // its black level: wallpaper.ini
+
         // Datetime format
         ult::datetimeFormat = getStr("datetime_format", ult::DEFAULT_DT_FORMAT.c_str());
         ult::removeQuotes(ult::datetimeFormat);
@@ -823,6 +910,13 @@ namespace impl {
             const std::string langOverride = UI_PATH + "lang/" + lang + ".json";
             if (ult::isFile(UI_PATH + "theme.ini"))      ult::THEME_CONFIG_INI_PATH = UI_PATH + "theme.ini";
             if (ult::isFile(UI_PATH + "wallpaper.rgba")) ult::WALLPAPER_PATH        = UI_PATH + "wallpaper.rgba";
+            // An animated wallpaper.uaw in the folder wins over wallpaper.rgba (if it can't
+            // be played the still one is used). Its animated.cache goes in this folder's cache/.
+            const bool ownStill = ult::WALLPAPER_PATH.size() > UI_PATH.size() && ult::WALLPAPER_PATH.compare(0, UI_PATH.size(), UI_PATH) == 0;
+            if (ult::isFile(UI_PATH + "wallpaper.uaw"))  ult::WALLPAPER_ANIM_OVERRIDE   = UI_PATH + "wallpaper.uaw";
+            // The overlay's own wallpaper: Ultrahand's per-wallpaper Light / Color values
+            // (wallpaper.ini [<current_wallpaper>]) belong to another picture.
+            if (ownStill || !ult::WALLPAPER_ANIM_OVERRIDE.empty()) ult::currentWallpaperName.clear();
             if (ult::isFile(langOverride))               ult::loadTranslationsFromJSON(langOverride);
         }
         #endif
@@ -832,17 +926,21 @@ namespace impl {
         //ult::useLaunchRecall        = getBool("launch_recall",        true);
         ult::useNotifications       = getBool("notifications",        true);
         ult::useNotificationsHotkey = getBool("notifications_hotkey", true);
+        ult::useSwitch2Notifications = getBool("notifications_switch_2_style", true);
         ult::silenceNotifications   = getBool("silence_notifications");
         ult::useSoundEffects        = getBool("sound_effects",        true);
-        ult::useHapticFeedback      = getBool("haptic_feedback");
+        // Haptics default to the pre-2.6.0 "haptic_feedback" value (otherwise button off, touch on)
+        ult::useButtonHaptics       = getBool("button_haptics", getBool("haptic_feedback"));
+        ult::useTouchHaptics        = getBool("touch_haptics",  getBool("haptic_feedback", true));
         ult::useAutoNTPSync         = getBool("auto_ntp_sync",        true);
         ult::useStickNavigation     = getBool("stick_navigation",     true);
         ult::useSwipeToOpen         = getBool("swipe_to_open",        true);
+        ult::useTextBorder          = getBool("text_border",          true);
         ult::useOpaqueScreenshots   = getBool("opaque_screenshots",   true);
     
-        // max_notifications — default to 3 so it's always clamped correctly
+        // max_notifications — default to 8 so it's always clamped correctly
         {
-            const std::string maxStr = getStr("max_notifications", "3");
+            const std::string maxStr = getStr("max_notifications", "8");
             const int cap = tsl::NotificationPrompt::MAX_VISIBLE;
             tsl::maxNotifications = std::max(1, std::min(ult::stoi(maxStr), cap));
         }
@@ -863,17 +961,31 @@ namespace impl {
         ult::hidePCBTemp            = getBool("hide_pcb_temp",           true);
         ult::hideSOCTemp            = getBool("hide_soc_temp",           true);
         ult::dynamicWidgetColors    = getBool("dynamic_widget_colors",   true);
-        ult::dynamicWidgetBorder    = getBool("dynamic_widget_border",   true);
+        ult::dynamicWidgetBorder    = getBool("dynamic_widget_border",   false);
         ult::hideWidgetBackdrop     = getBool("hide_widget_backdrop");
         ult::hideWidgetBorder       = getBool("hide_widget_border");
         ult::centerWidgetAlignment  = getBool("center_widget_alignment", true);
-        ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop");
+        ult::extendedWidgetBackdrop = getBool("extended_widget_backdrop", true); // inverted: true = off
         ult::useDynamicLogo         = getBool("dynamic_logo",            false);
+        ult::useUniformLogo         = getBool("uniform_logo",            false);
         ult::useSwitch2Style        = getBool("switch_2_style",          false);
+        ult::useFrostedGlass        = getBool("frosted_glass",           false);
+        ult::glassWithCheats        = getBool("glass_with_cheats",       false);
+        ult::useGlassLayer          = getBool("full_color_glass",        true);
+        ult::glassDarkness          = static_cast<u8>(std::max(0, std::min(ult::stoi(getStr("glass_darkness", "5")), 12)));
+        ult::glassBlurRadius        = static_cast<u8>(std::max(1, std::min(ult::stoi(getStr("glass_blur_radius", "1")), 7)));
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        {   const std::string v = getStr("live_logging", "0");
+            ult::glassLog = !v.empty() && (v[0] == '1' || v[0] == 't' || v[0] == 'T'); }
+    #endif
         ult::useDynamicTableColors  = getBool("dynamic_tables",          true);
         ult::useSelectionBG         = getBool("selection_bg",            true);
         ult::useSelectionText       = getBool("selection_text");
         ult::useSelectionValue      = getBool("selection_value");
+        ult::useBottomLine          = getBool("bottom_line",             false);
+        ult::useUltrahandVersion    = getBool("ultrahand_version",       false);
+        ult::useDividerLines        = getBool("divider_lines",           false);
+        ult::useEdgeLine            = getBool("edge_line",               false);
     
         #if IS_LAUNCHER_DIRECTIVE
         // Launcher-only vars that live in ult:: or global scope — readable here
@@ -891,17 +1003,22 @@ namespace impl {
         }
     
         // Theme and language
+        STARTUP_MARK("  settings: config.ini + flags");
         const std::string langFile = ult::LANG_PATH + lang + ".json";
         if (ult::isFile(langFile)) ult::parseLanguage(langFile);
         else ult::reinitializeLangVars();
+        STARTUP_MARK("  settings: language");
     
-        tsl::initializeTheme();
-        tsl::initializeThemeVars();
+        // theme.ini read once: initializeTheme()'s completed data goes straight to the colours
+        tsl::initializeThemeVarsFrom(tsl::initializeThemeData(ult::THEME_CONFIG_INI_PATH));
+        STARTUP_MARK("  settings: theme");
+
+        s_parsedSettingsHash = hashSettingsSection(section);
     }
 }
 
 // Max notifications cap (max value of 4 on limited memory, 8 otherwise)
-int maxNotifications = 3;
+int maxNotifications = 8;
 
 
 
@@ -1276,6 +1393,7 @@ void NotificationPrompt::update() {
 
         if (slot.data.iconPending) {
             slot.data.iconPending = false;
+            slot.height = 0;   // the icon column may go away: measure again
             const std::string& fname = slot.data.fileName;
             if (!fname.empty()) {
                 std::string base = fname;
@@ -1332,7 +1450,8 @@ void NotificationPrompt::update() {
         for (int i = 0; i < maxNotifications; ++i)
             if (!(slots_[i].flags & SLOT_ACTIVE)) { freeSlot = i; break; }
         if (freeSlot < 0) break;
-        NotifEntry next = pending_queue_.top();
+        // top() is const only to protect the ordering; the entry is popped right away
+        NotifEntry next = std::move(const_cast<NotifEntry&>(pending_queue_.top()));
         pending_queue_.pop();
         placeInSlot_NoLock(freeSlot, std::move(next), false, false);
     }
@@ -1427,11 +1546,21 @@ NotificationPrompt::getWrappedLines(const std::string& text, float pixelWidth,
         }
     }
     if (result.count == 0 && split.count > 0)
-        result.buf[result.count++] = "";
+        result.buf[result.count++].clear();
     return result;
 }
 
+// The height only depends on the slot's text, font size, split type and icon column, so it is
+// measured once (wrapping the text is the costly part) and kept until one of those changes.
+// Not kept while the fonts aren't loaded yet. Caller holds state_mutex_.
 s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
+    if (slot.height) return slot.height;
+    const s32 h = measureHeight(slot);
+    if (tsl::gfx::FontManager::isInitialized()) slot.height = static_cast<s16>(h);
+    return h;
+}
+
+s32 NotificationPrompt::measureHeight(const Slot& slot) const {
     if (slot.data.text.empty()) return NOTIF_HEIGHT;
 
     const IconGeom g            = computeIconGeom(slot);
@@ -1441,7 +1570,7 @@ s32 NotificationPrompt::getEffectiveHeight(const Slot& slot) const {
     float wrapW;
     u8    wrapMax;
     if (hasTitleLayout) {
-        const s32 taw = g.hasIconCol ? g.textAreaW : (NOTIF_WIDTH - 2 * (g.baseIconPad + 2));
+        const s32 taw = g.hasIconCol ? g.textAreaW : (g.boxW - 2 * (g.baseIconPad + 2));
         wrapW   = g.hasIconCol ? static_cast<float>(taw - g.baseIconPad - 2 - NOTIF_WRAP_MARGIN)
                                : static_cast<float>(taw - NOTIF_WRAP_MARGIN);
         wrapMax = 4;
@@ -1469,6 +1598,7 @@ void NotificationPrompt::placeInSlot_NoLock(int idx, NotifEntry&& e,
 
     Slot& slot             = slots_[idx];
     slot.data              = std::move(e);
+    slot.height            = 0;
     slot.data.state        = skipFadeIn ? PromptState::Visible : PromptState::FadingIn;
     slot.data.stateStartNs = now;
     slot.data.expireNs     = (slot.data.durationMs == 0) ? UINT64_MAX
@@ -1535,6 +1665,36 @@ void NotificationPrompt::applyEllipsis(Lines& lines, u8 maxLines,
     last = "...";
 }
 
+// t-px outline of a rounded box (the edge of drawRoundedRect's shape), corners anti-aliased
+static void drawRoundedOutline(gfx::Renderer* renderer, s32 x, s32 y, s32 w, s32 h, s32 r, s32 t, Color color) {
+    renderer->drawRect(x + r, y, w - 2 * r, t, color);
+    renderer->drawRect(x + r, y + h - t, w - 2 * r, t, color);
+    renderer->drawRect(x, y + r, t, h - 2 * r, color);
+    renderer->drawRect(x + w - t, y + r, t, h - 2 * r, color);
+
+    // Corner pixel (i, j) of the r x r square: its share of the ring between radius r - t and r
+    // around the corner's centre
+    const u8 baseA = color.a;
+    const float rOut = static_cast<float>(r), rIn = static_cast<float>(r - t);
+    for (s32 j = 0; j < r; ++j) {
+        for (s32 i = 0; i < r; ++i) {
+            const float dx = static_cast<float>(r - i) - 0.5f;
+            const float dy = static_cast<float>(r - j) - 0.5f;
+            const float d = std::sqrt(dx * dx + dy * dy);
+            const float cov = std::min(std::min(d - rIn + 0.5f, rOut - d + 0.5f), 1.0f);
+            if (cov <= 0.0f)
+                continue;
+            color.a = static_cast<u8>(baseA * cov + 0.5f);
+            if (!color.a)
+                continue;
+            renderer->setPixelBlendDst(x + i, y + j, color);
+            renderer->setPixelBlendDst(x + w - 1 - i, y + j, color);
+            renderer->setPixelBlendDst(x + i, y + h - 1 - j, color);
+            renderer->setPixelBlendDst(x + w - 1 - i, y + h - 1 - j, color);
+        }
+    }
+}
+
 void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                                    s32 baseY, float fadeAlpha, bool promptOnly) {
     // Precompute all faded colours once — avoids applyAlpha+a2 overhead inside loops
@@ -1546,6 +1706,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     const Color fadedTitleColor = fc(notificationTitleColor);
     const Color fadeTimeColor   = fc(notificationTimeColor);
     const Color fadedEdgeColor  = fc(edgeSeparatorColor);
+    const Color fadedBorderColor = fc(notificationBorderColor);
     const Color fadedSeparatorColor = fc(separatorColor); 
 
     // ── Layout geometry ──────────────────────────────────────────────────────
@@ -1554,8 +1715,8 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
 
     const IconGeom g           = computeIconGeom(slot, x);
     const float    innerWf     = static_cast<float>(g.textAreaW - g.baseIconPad - 2);
-    const s32  titleTextAreaX  = g.hasIconCol ? g.textAreaX : x + (g.baseIconPad + 2);
-    const s32  titleTextAreaW  = g.hasIconCol ? g.textAreaW : NOTIF_WIDTH - 2 * (g.baseIconPad + 2);
+    const s32  titleTextAreaX  = g.hasIconCol ? g.textAreaX : g.boxX + (g.baseIconPad + 2);
+    const s32  titleTextAreaW  = g.hasIconCol ? g.textAreaW : g.boxW - 2 * (g.baseIconPad + 2);
     const float titleInnerWf   = g.hasIconCol ? innerWf : static_cast<float>(titleTextAreaW);
     const u8   fontSize        = slot.data.fontSize;
     const Alignment alignment  = slot.data.alignment;
@@ -1589,12 +1750,22 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
 
     if (baseY + effectiveHeight > static_cast<s32>(tsl::cfg::FramebufferHeight)) return;
 
+    // The box the notification is drawn in: the whole slot, or (Switch 2 style) inset at the top
+    // and sides, where the top inset is the gap to the notification above
+    const s32 inset = g.boxX - x;
+    const s32 boxY  = baseY + inset;
+    const s32 boxH  = effectiveHeight - inset;
+
     // ── Background ───────────────────────────────────────────────────────────
     renderer->enableScissoring(static_cast<u32>(std::max(0, x)),
                                static_cast<u32>(std::max(0, baseY)),
                                static_cast<u32>(NOTIF_WIDTH),
                                static_cast<u32>(effectiveHeight));
 
+    if (inset) {
+        // (too small for the multi-threaded version to use threads)
+        renderer->drawRoundedRectSingleThreaded(g.boxX, boxY, g.boxW, boxH, S2_RADIUS, fadedBgColor);
+    } else {
     #if IS_STATUS_MONITOR_DIRECTIVE
         renderer->drawRect(x, baseY, NOTIF_WIDTH, effectiveHeight, fadedBgColor);
     #else
@@ -1603,11 +1774,12 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
         else
             renderer->drawRect(x, baseY, NOTIF_WIDTH, effectiveHeight, fadedBgColor);
     #endif
+    }
 
     // ── Icon ─────────────────────────────────────────────────────────────────
     if (g.hasIconCol && slot.data.hasIcon && (slot.flags & SLOT_ICON_LOADED) && slot.iconBuf) {
-        const s32 dstX        = x + g.baseIconPad;
-        const s32 iconVertPad = (effectiveHeight - NOTIF_ICON_DIM) / 2;
+        const s32 dstX        = g.boxX + g.baseIconPad;
+        const s32 iconVertPad = (boxH - NOTIF_ICON_DIM) / 2 + inset;
         s32 drawH = NOTIF_ICON_DIM;
         if (dstX + NOTIF_ICON_DIM > static_cast<s32>(tsl::cfg::FramebufferWidth))
             drawH = 0;
@@ -1635,7 +1807,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
                                   ? lineCount * messageFm.lineHeight
                                     + (lineCount - 1) * 3
                                   : 0);
-            const s32 originY  = (effectiveHeight - blockH) / 2 + baseY;
+            const s32 originY  = (boxH - blockH) / 2 + boxY;
             const s32 titleY   = originY + titleFm.ascent - 3 + 1;
             const s32 messageY = originY + titleFm.lineHeight + LINE_GAP + messageFm.ascent + 1+2;
 
@@ -1654,7 +1826,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
             if (slot.data.showTime && slot.data.timestamp[0] != '\0') {
                 const s32 tsW = renderer->getNotificationTextDimensions(
                                     slot.data.timestamp, false, TITLE_FONT).first;
-                const s32 tsRightEdge = x + NOTIF_WIDTH - g.baseIconPad - 2;
+                const s32 tsRightEdge = g.boxX + g.boxW - g.baseIconPad - 2;
                 const s32 tsX = tsRightEdge - tsW;
                 if (tsX > titleTextAreaX)
                     renderer->drawNotificationString(slot.data.timestamp, false,
@@ -1683,7 +1855,7 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
             const s32  totalTextH = lineCount > 0
                                   ? lineCount * fm.lineHeight + (lineCount - 1) * 3
                                   : 0;
-            const s32  startY    = (effectiveHeight - totalTextH) / 2 + fm.ascent + baseY;
+            const s32  startY    = (boxH - totalTextH) / 2 + fm.ascent + boxY;
             const s32  padAdjust = g.hasIconCol ? g.baseIconPad + 2 : 0;
             const s32  lineStep  = fm.lineHeight + (lineCount > 1 ? 3 : 0);
             const bool needsLineWidth = (alignment != Alignment::Left);
@@ -1724,9 +1896,13 @@ void NotificationPrompt::drawSlot(gfx::Renderer* renderer, const Slot& slot,
     }
 
     // ── Border ───────────────────────────────────────────────────────────────
-    const s32 edgeX = ult::useRightAlignment ? x : x + NOTIF_WIDTH - 1;
-    renderer->drawRect(edgeX, baseY, 1, effectiveHeight, fadedEdgeColor);
-    renderer->drawRect(x, baseY + effectiveHeight - 1, NOTIF_WIDTH, 1, fadedEdgeColor);
+    if (inset) {
+        drawRoundedOutline(renderer, g.boxX, boxY, g.boxW, boxH, S2_RADIUS, S2_BORDER, fadedBorderColor);
+    } else {
+        const s32 edgeX = ult::useRightAlignment ? x : x + NOTIF_WIDTH - 1;
+        renderer->drawRect(edgeX, baseY, 1, effectiveHeight, fadedEdgeColor);
+        renderer->drawRect(x, baseY + effectiveHeight - 1, NOTIF_WIDTH, 1, fadedEdgeColor);
+    }
     renderer->disableScissoring();
 }
 
@@ -1754,11 +1930,54 @@ void NotificationPrompt::drawUltrahandLine(gfx::Renderer* renderer, const std::s
         curX += bw;
     }
     curX = tsl::elm::drawDynamicUltraText(renderer, curX, y, fontSize, fc(logoColor1), true);
-    renderer->drawNotificationString(hand, false, curX, y, fontSize, fc(logoColor2));
+    renderer->drawNotificationString(hand, false, curX, y, fontSize, fc(ult::useUniformLogo ? logoColor1 : logoColor2));
     curX += hw;
     if (!after.empty())
         renderer->drawNotificationString(after, false, curX, y, fontSize, fc(textColor));
 }
 #endif
+
+namespace elm {
+
+void addInfoTable(List* list, std::initializer_list<InfoField> fields) {
+    static constexpr s32 kColumnX  = 120;  // info column
+    static constexpr s32 kFontSize = 16;
+    static constexpr s32 kStartGap = 20;
+    static constexpr s32 kEndGap   = 11;
+    static constexpr s32 kLineGap  = 3;
+    const float maxWidth = static_cast<float>(cfg::FramebufferWidth - 95 - kColumnX);
+
+    std::vector<std::string> headers, lines;
+    for (const InfoField& field : fields) {
+        if (field.text.empty())
+            continue;
+        const auto wrapped = wrapText(field.text, maxWidth, field.wrapMode, false, "", 0, kFontSize);
+        for (size_t i = 0; i < wrapped.size(); ++i) {
+            headers.push_back(i == 0 ? field.header : std::string());
+            lines.push_back(wrapped[i]);
+        }
+    }
+    if (lines.empty())
+        return;
+
+    const Color headerColor = sectionTextColor;
+    const Color textColor = infoTextColor;
+    const u32 height = static_cast<u32>(kFontSize * lines.size() + kLineGap * (lines.size() - 1) + kEndGap);
+
+    list->addItem(new TableDrawer(
+        [headers = std::move(headers), lines = std::move(lines), headerColor, textColor]
+        (gfx::Renderer* renderer, s32 x, s32 y, s32 w, s32 h) {
+            for (size_t i = 0; i < lines.size(); ++i) {
+                const s32 rowY = y + kStartGap + static_cast<s32>(i) * (kFontSize + kLineGap);
+                renderer->drawStringWithColoredSections(headers[i], false, s_dividerSpecialChars, x + 13, rowY,
+                                                        kFontSize, headerColor, textSeparatorColor);
+                renderer->drawStringWithColoredSections(lines[i], false, s_dividerSpecialChars, x + kColumnX, rowY,
+                                                        kFontSize, textColor, textSeparatorColor);
+            }
+        },
+        false, kEndGap, true), height);
+}
+
+} // namespace elm
 
 } // namespace tsl

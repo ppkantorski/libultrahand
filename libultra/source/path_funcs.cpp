@@ -30,8 +30,6 @@ namespace ult {
     
     std::mutex logMutex2; // Mutex for thread-safe logging (defined here, declared as extern in header)
 
-    static std::vector<std::string> fileList;
-
     // RAII wrapper for FILE* to ensure proper cleanup
     class FileGuard {
     private:
@@ -128,12 +126,21 @@ namespace ult {
      * @param directoryPath The path of the directory to be created.
      */
     void createDirectory(const std::string& directoryPath) {
-        const std::string volume = ROOT_PATH;
+        // Already there (the usual case): one check instead of an mkdir per path level.
+        // (stat is given the path without its trailing '/'.)
+        {
+            struct stat st;
+            const bool slash = directoryPath.size() > 1 && directoryPath.back() == '/' &&
+                               directoryPath[directoryPath.size() - 2] != ':';
+            if (stat(slash ? directoryPath.substr(0, directoryPath.size() - 1).c_str() : directoryPath.c_str(), &st) == 0 &&
+                S_ISDIR(st.st_mode)) return;
+        }
+        const std::string& volume = ROOT_PATH;
         std::string path = directoryPath;
     
         // Remove leading "sdmc:/" if present
         if (path.compare(0, volume.size(), volume) == 0) {
-            path = path.substr(volume.size());
+            path.erase(0, volume.size());
         }
     
         std::string parentPath = volume;
@@ -151,7 +158,7 @@ namespace ult {
     
         // Create the final directory level if it doesn't exist
         if (pos < path.size()) {
-            parentPath += path.substr(pos);
+            parentPath.append(path, pos, std::string::npos);
             createSingleDirectory(parentPath); // Create the final directory
         }
     }
@@ -160,7 +167,7 @@ namespace ult {
     void writeLog(FILE* logFile, const std::string& line) {
         if (logFile) {
             std::lock_guard<std::mutex> lock(logMutex2);
-            fprintf(logFile, "%s\n", line.c_str());
+            fputLine(logFile, line);
             fflush(logFile); // Ensure data is written immediately
         } else {
             #if USING_LOGGING_DIRECTIVE
@@ -213,11 +220,10 @@ namespace ult {
         const bool pathIsFile = pathToDelete.back() != '/';
         
         if (pathIsFile) {
+            bool deleted = false;
             if (isFile(pathToDelete)) {
                 if (remove(pathToDelete.c_str()) == 0) {
-                    if (needsLogging) {
-                        successfulDeletions.push_back(pathToDelete);
-                    }
+                    deleted = true;
                 } else {
                     #if USING_LOGGING_DIRECTIVE
                     if (!disableLogging)
@@ -227,7 +233,7 @@ namespace ult {
             }
             
             // Write log for single file deletion if needed
-            if (needsLogging && !successfulDeletions.empty()) {
+            if (needsLogging && deleted) {
                 createDirectory(getParentDirFromPath(logSource));
                 if (FILE* logFile = fopen(logSource.c_str(), "a")) {
                     writeLog(logFile, pathToDelete);
@@ -249,6 +255,7 @@ namespace ult {
         if (rootPath.back() != '/') rootPath += '/';
         
         std::string currentDir = rootPath;
+        std::string childPath;   // reused for every entry
         struct stat st;
         
         while (true) {
@@ -279,12 +286,14 @@ namespace ult {
                 const char* name = entry->d_name;
                 if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
                 
-                std::string childPath = currentDir + name;
+                childPath.assign(currentDir);
+                childPath += name;
                 if (stat(childPath.c_str(), &st) != 0) continue;
                 
                 if (S_ISDIR(st.st_mode)) {
                     // Found a subdirectory - dive into it
-                    currentDir = childPath + "/";
+                    currentDir = childPath;
+                    currentDir += '/';
                     foundSubdir = true;
                     break;
                 } else if (S_ISREG(st.st_mode)) {
@@ -371,20 +380,16 @@ namespace ult {
     void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSource, 
         const std::unordered_set<std::string>* filterSet) {
         
-        fileList = getFilesListByWildcards(pathPattern);
+        const std::vector<std::string> fileList = getFilesListByWildcards(pathPattern);
         
-        for (auto& path : fileList) {
+        for (const auto& path : fileList) {
             // Check filter before deleting
             const bool shouldDelete = !filterSet || filterSet->find(path) == filterSet->end();
             
             if (shouldDelete) {
                 deleteFileOrDirectory(path, logSource);
             }
-            path = "";
         }
-        
-        fileList.clear();
-        fileList.shrink_to_fit();
     }
 
     // Helper function to reverse a log file safely
@@ -434,7 +439,7 @@ namespace ult {
                 size_t len = strlen(buffer);
                 if (len > 0 && buffer[len - 1] == '\n') buffer[len - 1] = '\0';
                 
-                fprintf(outFile, "%s\n", buffer);
+                fputLine(outFile, buffer);
             }
         }
         
@@ -482,9 +487,10 @@ namespace ult {
             if (logDestFile) setvbuf(logDestFile, nullptr, _IOFBF, 8192);
         }
     
-        // Recursive helper that moves files/dirs and logs in post-order (deepest first)
-        std::function<void(const std::string&, const std::string&)> moveRecursive = 
-            [&](const std::string& srcPath, const std::string& dstPath) {
+        // Recursive helper that moves files/dirs and logs in post-order (deepest first).
+        // It takes itself as the first argument, so no std::function is needed.
+        auto moveRecursive = 
+            [&](auto& self, const std::string& srcPath, const std::string& dstPath) -> void {
             
             DIR* dir = opendir(srcPath.c_str());
             if (!dir) {
@@ -495,6 +501,7 @@ namespace ult {
             }
 
             dirent* entry;
+            std::string fullSrcPath, fullDstPath;   // reused for every entry
             
             while ((entry = readdir(dir)) != nullptr) {
                 const char* name = entry->d_name;
@@ -503,11 +510,11 @@ namespace ult {
                 }
     
                 // Build full paths
-                std::string fullSrcPath = srcPath;
+                fullSrcPath.assign(srcPath);
                 if (!fullSrcPath.empty() && fullSrcPath.back() != '/') fullSrcPath += '/';
                 fullSrcPath += name;
     
-                std::string fullDstPath = dstPath;
+                fullDstPath.assign(dstPath);
                 if (!fullDstPath.empty() && fullDstPath.back() != '/') fullDstPath += '/';
                 fullDstPath += name;
     
@@ -523,7 +530,7 @@ namespace ult {
                     }
     
                     // Recurse into subdirectory
-                    moveRecursive(fullSrcPath, fullDstPath);
+                    self(self, fullSrcPath, fullDstPath);
     
                     // Remove the now-empty source directory
                     if (rmdir(fullSrcPath.c_str()) != 0) {
@@ -535,10 +542,10 @@ namespace ult {
                     // Log after processing (post-order)
                     if (needsLogging) {
                         if (logSrcFile) {
-                            fprintf(logSrcFile, "%s/\n", fullSrcPath.c_str());
+                            fputs(fullSrcPath.c_str(), logSrcFile); fputs("/\n", logSrcFile);
                         }
                         if (logDestFile) {
-                            fprintf(logDestFile, "%s/\n", fullDstPath.c_str());
+                            fputs(fullDstPath.c_str(), logDestFile); fputs("/\n", logDestFile);
                         }
                     }
                     continue;
@@ -552,10 +559,10 @@ namespace ult {
                 if (rename(fullSrcPath.c_str(), fullDstPath.c_str()) == 0) {
                     if (needsLogging) {
                         if (logSrcFile) {
-                            fprintf(logSrcFile, "%s\n", fullSrcPath.c_str());
+                            fputLine(logSrcFile, fullSrcPath);
                         }
                         if (logDestFile) {
-                            fprintf(logDestFile, "%s\n", fullDstPath.c_str());
+                            fputLine(logDestFile, fullDstPath);
                         }
                     }
                 } else {
@@ -568,7 +575,7 @@ namespace ult {
         };
     
         // Start the recursive move
-        moveRecursive(sourcePath, destinationPath);
+        moveRecursive(moveRecursive, sourcePath, destinationPath);
     
         // Close log files
         if (logSrcFile) fclose(logSrcFile);
@@ -709,12 +716,12 @@ namespace ult {
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
         const std::string& logSource, const std::string& logDestination, const std::unordered_set<std::string>* filterSet) {
         
-        fileList = getFilesListByWildcards(sourcePathPattern);
+        const std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
         
         std::string folderName, fixedDestinationPath;
         
         // Iterate through the file list
-        for (std::string& sourceFileOrDirectory : fileList) {
+        for (const std::string& sourceFileOrDirectory : fileList) {
             // Check filter before moving
             const bool shouldMove = !filterSet || filterSet->find(sourceFileOrDirectory) == filterSet->end();
             
@@ -729,11 +736,7 @@ namespace ult {
                     moveFileOrDirectory(sourceFileOrDirectory, fixedDestinationPath, logSource, logDestination);
                 }
             }
-            sourceFileOrDirectory = "";
         }
-    
-        fileList.clear();
-        fileList.shrink_to_fit();
     }
     
     /**
@@ -895,6 +898,7 @@ namespace ult {
     
             // Calculate base path with slash for efficient concatenation
             bool needsSlash = (!path.empty() && path.back() != '/');
+            std::string fullPath;   // reused for every entry
             
             dirent* entry;
             while ((entry = readdir(dir)) != nullptr) {
@@ -907,7 +911,7 @@ namespace ult {
                 }
                 
                 // Build the full path
-                std::string fullPath = path;
+                fullPath.assign(path);
                 if (needsSlash) fullPath += '/';
                 fullPath += entry->d_name;
     
@@ -1028,6 +1032,7 @@ namespace ult {
             if (fromWithSlash.back() != '/') fromWithSlash += '/';
 
             bool hasContent = false;
+            std::string subFromPath, subToPath;   // reused for every entry
             dirent* entry;
             while ((entry = readdir(dir)) != nullptr) {
                 if (abortFileOp.load(std::memory_order_acquire)) {
@@ -1040,8 +1045,10 @@ namespace ult {
                 
                 hasContent = true;
                 
-                std::string subFromPath = fromWithSlash + entry->d_name;
-                std::string subToPath = actualToPath + entry->d_name;
+                subFromPath.assign(fromWithSlash);
+                subFromPath += entry->d_name;
+                subToPath.assign(actualToPath);
+                subToPath += entry->d_name;
                 
                 // Check if this entry is a directory and add trailing slash if so
                 struct stat entryStat;
@@ -1124,7 +1131,7 @@ namespace ult {
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
         const std::string& logSource, const std::string& logDestination, const std::unordered_set<std::string>* filterSet) {
         
-        fileList = getFilesListByWildcards(sourcePathPattern);
+        const std::vector<std::string> fileList = getFilesListByWildcards(sourcePathPattern);
         
         // Calculate total size only for files that will actually be copied
         long long totalSize = 0;
@@ -1136,18 +1143,14 @@ namespace ult {
         }
     
         long long totalBytesCopied = 0;
-        for (std::string& sourcePath : fileList) {
+        for (const std::string& sourcePath : fileList) {
             // Check filter before copying
             const bool shouldCopy = !filterSet || filterSet->find(sourcePath) == filterSet->end();
             
             if (shouldCopy) {
                 copyFileOrDirectory(sourcePath, toDirectory, &totalBytesCopied, totalSize, logSource, logDestination);
             }
-            sourcePath = "";
         }
-        
-        fileList.clear();
-        fileList.shrink_to_fit();
     }
 
 
@@ -1162,8 +1165,8 @@ namespace ult {
      * @param targetPath The path of the target directory where files will be mirrored and deleted.
      *                   Default is "sdmc:/". You can specify a different target path if needed.
      */
-    void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode) {
-        fileList = getFilesListFromDirectory(sourcePath);
+    void mirrorFiles(const std::string& sourcePath, const std::string& targetPath, const std::string& mode) {
+        const std::vector<std::string> fileList = getFilesListFromDirectory(sourcePath);
         std::string updatedPath;
         long long totalSize = 0;
         long long totalBytesCopied = 0;
@@ -1177,7 +1180,7 @@ namespace ult {
             }
         }
         
-        for (auto& path : fileList) {
+        for (const auto& path : fileList) {
             // Generate the corresponding path in the target directory by replacing the source path
             updatedPath = targetPath + path.substr(sourcePath.size());
             if (mode == "delete")
@@ -1186,11 +1189,7 @@ namespace ult {
                 if (path != updatedPath)
                     copyFileOrDirectory(path, updatedPath, &totalBytesCopied, totalSize);
             }
-            path = "";
         }
-        
-        fileList.clear();
-        fileList.shrink_to_fit();
     }
     
     /**
@@ -1204,7 +1203,7 @@ namespace ult {
      */
     void createFlagFiles(const std::string& wildcardPattern, const std::string& outputDir) {
         // 1) Gather all matches from the wildcard pattern
-        fileList = ult::getFilesListByWildcards(wildcardPattern);
+        const std::vector<std::string> fileList = ult::getFilesListByWildcards(wildcardPattern);
         if (fileList.empty()) {
             return; // No matches, nothing to do
         }
@@ -1218,21 +1217,15 @@ namespace ult {
             outputPrefix.push_back('/');
         
         std::string baseName, outFile;
-        for (auto& fullPath : fileList) {
+        for (const auto& fullPath : fileList) {
             baseName = ult::getNameFromPath(fullPath);
-            if (baseName.empty()) {
-                fullPath = "";
-                continue;
-            }
+            if (baseName.empty()) continue;
     
             outFile = outputPrefix + baseName;
             
             FileGuard fp(std::fopen(outFile.c_str(), "wb"));
             // File automatically closed by FileGuard destructor
-            fullPath = "";
         }
-        fileList.clear();
-        fileList.shrink_to_fit();
     }
         
     /**
@@ -1257,8 +1250,13 @@ namespace ult {
         struct dirent* entry;
         struct stat pathStat;
         bool needsSlash = (!sourcePath.empty() && sourcePath.back() != '/');
+        std::string fullPath;   // reused for every entry
     
         while ((entry = readdir(dir)) != nullptr) {
+            // Stop when the command is cancelled (dot-clean / can take a while)
+            if (abortFileOp.load(std::memory_order_acquire))
+                break;
+
             const char* fileName = entry->d_name;
     
             // Fast skip for "." and ".."
@@ -1268,7 +1266,7 @@ namespace ult {
             }
     
             // Build full path
-            std::string fullPath = sourcePath;
+            fullPath.assign(sourcePath);
             if (needsSlash) fullPath += '/';
             fullPath += fileName;
     

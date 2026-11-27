@@ -86,7 +86,7 @@ namespace ult {
             return;  // Handle the error accordingly
         }
     
-        fprintf(cheatFile, "%s\n", newCheat.c_str());  // Write the new cheat followed by a newline
+        fputLine(cheatFile, newCheat);  // Write the new cheat followed by a newline
         fclose(cheatFile);  // Close the file
     #else
         std::ofstream cheatFile(cheatFilePath, std::ios::app);
@@ -111,11 +111,11 @@ namespace ult {
     std::string extractCheatName(const std::string &filePath) {
         const size_t lastSlash = filePath.find_last_of("/\\");
         if (lastSlash == std::string::npos) {
-            return "";
+            return {};
         }
         const size_t secondLastSlash = filePath.find_last_of("/\\", lastSlash - 1);
         if (secondLastSlash == std::string::npos) {
-            return "";
+            return {};
         }
         const std::string lastDir = filePath.substr(secondLastSlash + 1, lastSlash - secondLastSlash - 1);
         std::string fileName = filePath.substr(lastSlash + 1);
@@ -155,7 +155,7 @@ namespace ult {
                 return potentialID;
             }
         }
-        return "";
+        return {};
     }
     
     
@@ -244,7 +244,7 @@ namespace ult {
         }
     
         if (!cheatNameExists) {
-            fprintf(outCheatFile, "[%s]\n", cheatName.c_str());
+            fputSection(outCheatFile, cheatName);
         }
     
         int offset = 0;
@@ -331,7 +331,7 @@ namespace ult {
             }
     
             if (!exists) {
-                fprintf(outCheatFile, "%s\n", cheatLine.c_str());
+                fputLine(outCheatFile, cheatLine);
                 validCheatsProcessed++; // ADDED: Increment counter for new cheats
             }
         }

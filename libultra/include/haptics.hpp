@@ -30,4 +30,8 @@ namespace ult {
     // Both functions return only after the full haptic sequence has completed.
     void rumbleClickStandalone();
     void rumbleDoubleClickStandalone();
+
+    // One hold-to-run rumble beat at a strength for the hold progress (pct 0..100);
+    // pct < 0 stops it. Non-blocking: the haptics thread times the beats.
+    void rumbleHoldBeat(int pct);
 }

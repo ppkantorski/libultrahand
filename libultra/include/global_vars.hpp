@@ -53,6 +53,7 @@ namespace ult {
     extern const std::string SOUNDS_PATH;
     extern const std::string LOADED_SOUNDS_PATH;
     extern const std::string FLAGS_PATH;
+    extern const std::string CACHE_PATH;    // overlays.cache, animated.cache, glass_found.cache
     extern const std::string NOTIFICATIONS_PATH;
     extern const std::string NOTIFICATIONS_ICONS_PATH;
     extern const std::string NOTIFICATIONS_FLAGS_PATH;
@@ -63,6 +64,7 @@ namespace ult {
     // Can be overriden with UI_OVERRIDE_PATH directive
     extern std::string THEME_CONFIG_INI_PATH;
     extern std::string WALLPAPER_PATH;
+    extern std::string WALLPAPER_ANIM_OVERRIDE;   // UI override folder's wallpaper.uaw ("" = none)
 
     extern const std::string SPLIT_PROJECT_NAME_1;
     extern const std::string SPLIT_PROJECT_NAME_2;
@@ -173,6 +175,8 @@ namespace ult {
     extern const std::string OPTION_SYMBOL;
     extern const std::string DROPDOWN_SYMBOL;
     extern const std::string CHECKMARK_SYMBOL;
+    extern const std::string PICTURE_SYMBOL;   // still image (Wallpaper menu)
+    extern const std::string VIDEO_SYMBOL;     // animated (.uaw)
     extern const std::string CROSSMARK_SYMBOL;
     extern const std::string DOWNLOAD_SYMBOL;
     extern const std::string UNZIP_SYMBOL; 
