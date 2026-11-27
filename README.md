@@ -1,11 +1,11 @@
 # ☆ libultrahand
-[![platform](https://img.shields.io/badge/platform-Switch-898c8c?logo=C++.svg)](https://gbatemp.net/forums/nintendo-switch.283/?prefix_id=44)
-[![language](https://img.shields.io/badge/language-C++-ba1632?logo=C++.svg)](https://github.com/topics/cpp)
-[![GPLv2 License](https://img.shields.io/badge/license-GPLv2-189c11.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Latest Version](https://img.shields.io/github/v/release/ppkantorski/libultrahand?label=latest&color=blue)](https://github.com/ppkantorski/libultrahand/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/ppkantorski/libultrahand/total?color=6f42c1)](https://github.com/ppkantorski/libultrahand/graphs/traffic)
-[![GitHub issues](https://img.shields.io/github/issues/ppkantorski/libultrahand?color=222222)](https://github.com/ppkantorski/libultrahand/issues)
-[![GitHub stars](https://img.shields.io/github/stars/ppkantorski/libultrahand)](https://github.com/ppkantorski/libultrahand/stargazers)
+[![platform](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/static/platform-switch.svg)](https://gbatemp.net/forums/nintendo-switch.283/?prefix_id=44)
+[![language](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/static/language-cpp.svg)](https://github.com/topics/cpp)
+[![GPLv2 License](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/static/license-gplv2.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
+[![Latest Version](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/libultrahand-latest-label.svg)](https://github.com/ppkantorski/libultrahand/releases/latest)
+[![Downloads](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/libultrahand-downloads.svg)](https://github.com/ppkantorski/libultrahand/graphs/traffic)
+[![GitHub issues](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/libultrahand-issues.svg)](https://github.com/ppkantorski/libultrahand/issues)
+[![GitHub stars](https://raw.githubusercontent.com/ppkantorski/ppkantorski/main/.github/badges/libultrahand-stars.svg)](https://github.com/ppkantorski/libultrahand/stargazers)
 
 An enhanced fork of [**libtesla**](https://github.com/WerWolv/libtesla) (originally by [WerWolv](https://github.com/WerWolv)) combined with the **libultra** utility library, for building Nintendo Switch overlays.
 
