@@ -22,6 +22,18 @@ namespace ult {
 
     static std::mutex json_access_mutex;
 
+    // Writes printed JSON text in one unbuffered write. True if all of it was written.
+    static bool writeJsonText(const std::string& filePath, const char* text) {
+        std::lock_guard<std::mutex> lock(json_access_mutex);
+        FILE* file = fopen(filePath.c_str(), "w");
+        if (!file) return false;
+        setvbuf(file, nullptr, _IONBF, 0);
+        const size_t len = std::strlen(text);
+        const bool ok = fwrite(text, 1, len, file) == len;
+        fclose(file);
+        return ok;
+    }
+
     /**
      * @brief Reads JSON data from a file and returns it as a `json_t` object.
      *
@@ -35,6 +47,7 @@ namespace ult {
         if (!file) {
             return nullptr;
         }
+        setvbuf(file, nullptr, _IONBF, 0);   // one read straight into the buffer below
     
         // Get file size
         fseek(file, 0, SEEK_END);
@@ -47,12 +60,11 @@ namespace ult {
             return nullptr;
         }
     
-        // Use vector<char> for better performance and explicit null termination
-        std::vector<char> buffer;
-        buffer.resize(static_cast<size_t>(fileSize) + 1); // +1 for null terminator
+        // +1 for the null terminator; not zero-filled, the read fills it
+        std::unique_ptr<char[]> buffer(new char[static_cast<size_t>(fileSize) + 1]);
     
         // Read the file in one operation
-        const size_t bytesRead = fread(buffer.data(), 1, static_cast<size_t>(fileSize), file);
+        const size_t bytesRead = fread(buffer.get(), 1, static_cast<size_t>(fileSize), file);
         fclose(file);
         
         if (bytesRead != static_cast<size_t>(fileSize)) {
@@ -64,7 +76,7 @@ namespace ult {
         
         
         // Parse the JSON content - pass buffer directly to avoid string copy
-        cJSON* root = cJSON_Parse(buffer.data());
+        cJSON* root = cJSON_Parse(buffer.get());
         if (!root) {
             #if USING_LOGGING_DIRECTIVE
             const char* error_ptr = cJSON_GetErrorPtr();
@@ -117,7 +129,7 @@ namespace ult {
         if (value && cJSON_IsString(value) && value->valuestring) {
             return value->valuestring;
         } else {
-            return ""; // Key not found or not a string, return empty string/char*
+            return {}; // Key not found or not a string, return empty string/char*
         }
     }
     
@@ -139,7 +151,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Failed to load JSON file from path: " + filePath);
             #endif
-            return "";
+            return {};
         }
     
         // Retrieve the string value associated with the key
@@ -154,7 +166,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage("Key not found or not a string in JSON: " + key);
             #endif
-            return "";
+            return {};
         }
     }
 
@@ -245,19 +257,7 @@ namespace ult {
             return false;
         }
         
-        bool success = false;
-        {
-            std::lock_guard<std::mutex> lock(json_access_mutex);
-            
-            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode for JSON
-            if (file) {
-                const size_t jsonLength = std::strlen(jsonString);
-                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
-                success = (bytesWritten == jsonLength);
-                fclose(file);
-            }
-        }
-    
+        const bool success = writeJsonText(filePath, jsonString);
         cJSON_free(jsonString);
         return success;
     }
@@ -298,20 +298,7 @@ namespace ult {
             return false;
         }
     
-        bool success = false;
-
-        {
-            std::lock_guard<std::mutex> lock(json_access_mutex);
-            
-            FILE* file = fopen(filePath.c_str(), "w"); // Use text mode
-            if (file) {
-                const size_t jsonLength = std::strlen(jsonString);
-                const size_t bytesWritten = fwrite(jsonString, 1, jsonLength, file);
-                success = (bytesWritten == jsonLength);
-                fclose(file);
-            }
-        }
-    
+        const bool success = writeJsonText(filePath, jsonString);
         cJSON_free(jsonString);
         return success;
     }

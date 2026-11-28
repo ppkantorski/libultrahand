@@ -171,22 +171,31 @@ static bool syncNtpCore(const std::string& ntpUrl) {
     return synced;
 }
 
-// Public on-demand NTP sync. Checks internet access, initializes sockets,
-// calls the core sync, then tears down. Returns true on success.
+// Socket configuration shared by downloads and the NTP sync
+static constexpr SocketInitConfig socketInitConfig = {
+    // TCP buffers
+    .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
+    .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
+    .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
+    .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
+
+    // UDP buffers
+    .udp_tx_buf_size     = 512,                // 512 B default
+    .udp_rx_buf_size     = 512,                // 512 B default
+
+    // Socket buffer efficiency
+    .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
+                                               // 1 = prioritize memory efficiency (smaller internal allocations)
+    .bsd_service_type    = BsdServiceType_Auto // Auto-select service
+};
+
+// Public on-demand NTP sync (the ntp-sync command and NTP Sync Time in Tools).
+// Checks internet access, initializes sockets, calls the core sync, then tears down.
+// Returns true on success.
 bool syncNtp(const std::string& ntpUrl) {
     if (!hasInternetAccess())
         return false;
 
-    static constexpr SocketInitConfig socketInitConfig = {
-        .tcp_tx_buf_size     = 0,
-        .tcp_rx_buf_size     = 0,
-        .tcp_tx_buf_max_size = 0,
-        .tcp_rx_buf_max_size = 0,
-        .udp_tx_buf_size     = 512,
-        .udp_rx_buf_size     = 512,
-        .sb_efficiency       = 1,
-        .bsd_service_type    = BsdServiceType_Auto
-    };
     if (!R_SUCCEEDED(socketInitialize(&socketInitConfig)))
         return false;
 
@@ -303,23 +312,6 @@ bool downloadFile(const std::string& url, const std::string& toDestination, bool
         return false;
     }
 
-    static constexpr SocketInitConfig socketInitConfig = {
-        // TCP buffers
-        .tcp_tx_buf_size     = 16 * 1024,          // 16 KB default
-        .tcp_rx_buf_size     = 16 * 1024*2,        // 16 KB default
-        .tcp_tx_buf_max_size = 64 * 1024,          // 64 KB default max
-        .tcp_rx_buf_max_size = 64 * 1024*2,        // 64 KB default max
-        
-        // UDP buffers
-        .udp_tx_buf_size     = 512,                // 512 B default
-        .udp_rx_buf_size     = 512,                // 512 B default
-    
-        // Socket buffer efficiency
-        .sb_efficiency       = 1,                  // 0 = default, balanced memory vs CPU
-                                                   // 1 = prioritize memory efficiency (smaller internal allocations)
-        .bsd_service_type    = BsdServiceType_Auto // Auto-select service
-    };
-    
     if (!noSocketInit) {
         if (!R_SUCCEEDED(socketInitialize(&socketInitConfig))) {
             #if USING_LOGGING_DIRECTIVE

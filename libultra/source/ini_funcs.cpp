@@ -20,8 +20,13 @@
 #include <ini_funcs.hpp>
 
 namespace ult {
+    std::atomic<unsigned int> iniWriteEpoch{0};
+
     // Thread safety infrastructure
     namespace {
+        // Declared right after a writer's lock: counts the write once it is on the card.
+        struct IniWriteMark { ~IniWriteMark() { iniWriteEpoch.fetch_add(1, std::memory_order_acq_rel); } };
+
         std::unordered_map<std::string, std::shared_ptr<std::shared_mutex>> fileMutexMap;
         std::mutex mapMutex;
         
@@ -34,6 +39,35 @@ namespace ult {
                 return mutex;
             }
             return it->second;
+        }
+
+        // "key=value\n"
+        void appendKeyValue(std::string& out, const std::string& key, const std::string& value) {
+            out += key;
+            out += '=';
+            out += value;
+            out += '\n';
+        }
+
+        // Writes a whole INI file. An existing file that is not getting shorter is overwritten
+        // in place instead of with "w" (truncate to 0, then allocate storage again while
+        // writing): fewer SD metadata updates for the same bytes. A shorter or new file is
+        // written with "w". Caller holds the file's lock.
+        void writeIniContent(const std::string& filePath, const std::string& content) {
+            FILE* file = fopen(filePath.c_str(), "r+");
+            if (file) {
+                long oldSize = -1;
+                if (fseek(file, 0, SEEK_END) == 0) oldSize = ftell(file);
+                if (oldSize < 0 || oldSize > static_cast<long>(content.size()) || fseek(file, 0, SEEK_SET) != 0) {
+                    fclose(file);
+                    file = nullptr;
+                }
+            }
+            if (!file) file = fopen(filePath.c_str(), "w");
+            if (!file) return;
+            setvbuf(file, nullptr, _IONBF, 0);   // one write of the whole content
+            if (!content.empty()) fwrite(content.data(), 1, content.size(), file);
+            fclose(file);
         }
     }
 
@@ -300,9 +334,6 @@ namespace ult {
         
         auto bufferPtr = std::make_unique<char[]>(1024);
         char* buffer = bufferPtr.get();
-        std::string key, value;
-        key.reserve(64);
-        value.reserve(256);
         
         std::map<std::string, std::string>* currentSectionMap = nullptr;
         
@@ -384,9 +415,7 @@ namespace ult {
         std::string line;
         //line.reserve(256);
         
-        std::string key, value;
-        key.reserve(64);
-        value.reserve(128);
+        std::string key, value;   // (no reserve: short ones stay in the strings' own storage when moved into the map)
         
         bool inTargetSection = false;
         size_t len, delimiterPos;
@@ -572,15 +601,9 @@ namespace ult {
                 if (end - start > 2) {
                     // Compare directly without constructing string
                     const size_t sectionLen = end - start - 2;
+                    // (no early exit after the section: a later section of the same name counts too)
                     inTargetSection = (sectionLen == sectionName.length() && 
                                        std::memcmp(start + 1, sectionName.data(), sectionLen) == 0);
-                    
-                    // Early exit: left target section without finding key
-                    if (!inTargetSection && value.empty() && sectionLen > 0) {
-                        // We passed a different section; if we already processed target, we're done
-                        // This is implicit - if inTargetSection was true before and now false, we already found it or it doesn't exist
-                        continue;
-                    }
                 }
             } else if (inTargetSection) {
                 // Find '=' delimiter
@@ -626,6 +649,7 @@ namespace ult {
     void cleanIniFormatting(const std::string& filePath) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
         const std::string tempPath = filePath + ".tmp";
         
@@ -728,22 +752,21 @@ namespace ult {
     void setIniFile(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredValue, const std::string& desiredNewKey, const std::string& comment) {
         auto fileMutex = getFileMutex(fileToEdit);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
-        if (!isFile(fileToEdit)) {
-            createDirectory(getParentDirFromPath(fileToEdit));
-        }
-        
         FILE* configFile = fopen(fileToEdit.c_str(), "r");
         if (!configFile) {
+            createDirectory(getParentDirFromPath(fileToEdit));
             configFile = fopen(fileToEdit.c_str(), "w"); // Create a new file if it doesn't exist
             if (configFile) {
-                fprintf(configFile, "[%s]\n%s=%s\n", desiredSection.c_str(), desiredKey.c_str(), desiredValue.c_str());
+                fputSection(configFile, desiredSection);
+                fputKeyValue(configFile, desiredKey, desiredValue);
                 fclose(configFile);
             }
             return;
         }
     
-        StringStream buffer(""); // Use StringStream to collect results
+        std::string buffer;   // the new file
         auto linePtr = std::make_unique<char[]>(1024);
         char* line = linePtr.get();
         bool sectionFound = false;
@@ -790,15 +813,16 @@ namespace ult {
     
             if (lineStr[0] == '[' && lineStr.back() == ']') {
                 if (sectionFound && !keyFound) {
-                    buffer << desiredKey << "=" << desiredValue << '\n';  // Add missing key-value pair
+                    appendKeyValue(buffer, desiredKey, desiredValue);  // Add missing key-value pair
                     keyFound = true;
                 }
                 if (!firstSection) {
-                    buffer << '\n';  // Add a newline before the start of a new section
+                    buffer += '\n';  // Add a newline before the start of a new section
                 }
                 currentSection.assign(lineStr, 1, lineStr.size() - 2);
                 sectionFound = (currentSection == desiredSection);
-                buffer << lineStr << '\n';
+                buffer += lineStr;
+                buffer += '\n';
                 firstSection = false;
 
                 // Clear strings to reuse capacity
@@ -838,7 +862,8 @@ namespace ult {
                 }
             }
     
-            buffer << lineStr << '\n';
+            buffer += lineStr;
+            buffer += '\n';
 
             // Clear strings to reuse capacity
             lineStr.clear();
@@ -846,21 +871,17 @@ namespace ult {
         }
     
         if (!sectionFound && !keyFound) {
-            if (!firstSection) buffer << '\n';  // Ensure newline before adding a new section, unless it's the first section
-            buffer << '[' << desiredSection << ']' << '\n';
-            buffer << desiredKey << "=" << desiredValue << '\n';
+            if (!firstSection) buffer += '\n';  // Ensure newline before adding a new section, unless it's the first section
+            buffer += '[';
+            buffer += desiredSection;
+            buffer += "]\n";
+            appendKeyValue(buffer, desiredKey, desiredValue);
         } else if (!keyFound) {
-            buffer << desiredKey << "=" << desiredValue << '\n';
+            appendKeyValue(buffer, desiredKey, desiredValue);
         }
     
         fclose(configFile);
-    
-        // Write to the file again
-        FILE* outFile = fopen(fileToEdit.c_str(), "w");
-        if (outFile) {
-            fputs(buffer.str().c_str(), outFile);
-            fclose(outFile);
-        }
+        writeIniContent(fileToEdit, buffer);
     }
     
     
@@ -910,13 +931,14 @@ namespace ult {
     void addIniSection(const std::string& filePath, const std::string& sectionName) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
         FILE* inputFile = fopen(filePath.c_str(), "r");
         if (!inputFile) {
             // Create new file with just the section if file doesn't exist
             FILE* newFile = fopen(filePath.c_str(), "w");
             if (newFile) {
-                fprintf(newFile, "[%s]\n", sectionName.c_str());
+                fputSection(newFile, sectionName);
                 fclose(newFile);
             }
             #if USING_LOGGING_DIRECTIVE
@@ -1000,7 +1022,7 @@ namespace ult {
                 }
             }
             
-            fprintf(tempFile, "[%s]\n", sectionName.c_str());
+            fputSection(tempFile, sectionName);
         }
     
         fclose(inputFile);
@@ -1040,6 +1062,7 @@ namespace ult {
     void renameIniSection(const std::string& filePath, const std::string& currentSectionName, const std::string& newSectionName) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -1073,9 +1096,9 @@ namespace ult {
     
             if (!lineStr.empty() && lineStr[0] == '[' && lineStr[lineStr.length() - 2] == ']') {
                 sectionName = lineStr.substr(1, lineStr.length() - 2);
-                fprintf(tempFile, "[%s]\n", sectionName == currentSectionName ? newSectionName.c_str() : sectionName.c_str());
+                fputSection(tempFile, sectionName == currentSectionName ? newSectionName.c_str() : sectionName.c_str());
             } else {
-                fprintf(tempFile, "%s\n", line);
+                fputLine(tempFile, line);
             }
         }
     
@@ -1113,6 +1136,7 @@ namespace ult {
     void removeIniSection(const std::string& filePath, const std::string& sectionName) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -1154,7 +1178,7 @@ namespace ult {
             // Early exit for empty lines
             if (len == 0) {
                 if (!inSectionToRemove) {
-                    fprintf(tempFile, "%s", line);
+                    fputs(line, tempFile);
                 }
                 continue;
             }
@@ -1170,7 +1194,7 @@ namespace ult {
             // Early exit for whitespace-only lines
             if (end < start) {
                 if (!inSectionToRemove) {
-                    fprintf(tempFile, "%s", line);
+                    fputs(line, tempFile);
                 }
                 continue;
             }
@@ -1191,10 +1215,10 @@ namespace ult {
                 
                 // Different section - not the one to remove
                 inSectionToRemove = false;
-                fprintf(tempFile, "%s", line);
+                fputs(line, tempFile);
             } else if (!inSectionToRemove) {
                 // Write the line as-is to preserve formatting
-                fprintf(tempFile, "%s", line);
+                fputs(line, tempFile);
             }
             // If inSectionToRemove is true, skip writing this line
         }
@@ -1226,6 +1250,7 @@ namespace ult {
     void removeIniKey(const std::string& filePath, const std::string& sectionName, const std::string& keyName) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
 
         FILE* configFile = fopen(filePath.c_str(), "r");
         if (!configFile) {
@@ -1274,7 +1299,7 @@ namespace ult {
             if (!trimmedLine.empty() && trimmedLine.front() == '[' && trimmedLine.back() == ']') {
                 currentSection.assign(trimmedLine, 1, trimmedLine.length() - 2);
                 inTargetSection = (currentSection == sectionName);
-                fprintf(tempFile, "%s", line); // Write original line
+                fputs(line, tempFile); // Write original line
             } else if (inTargetSection) {
                 // Check if line starts with the key (handle spaces around =)
                 eqPos = trimmedLine.find('=');
@@ -1285,9 +1310,9 @@ namespace ult {
                         continue; // Skip this line
                     }
                 }
-                fprintf(tempFile, "%s", line);
+                fputs(line, tempFile);
             } else {
-                fprintf(tempFile, "%s", line);
+                fputs(line, tempFile);
             }
         }
     
@@ -1523,41 +1548,26 @@ namespace ult {
     void saveIniFileData(const std::string& filePath, const std::map<std::string, std::map<std::string, std::string>>& data) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
-        
-        FILE* file = fopen(filePath.c_str(), "w");
-        if (!file) {
-            return;
-        }
-    
-        // Use larger buffer for better write performance
-        auto writeBuffer = std::make_unique<char[]>(4096);
-        setvbuf(file, writeBuffer.get(), _IOFBF, 4096);
-        
-        std::string buffer;
-        buffer.reserve(2048); // Pre-allocate buffer
-        
+        IniWriteMark writeMark;
+
+        // Build the whole file first: "[section]\n", then "key=value\n" lines, and a blank
+        // line after each section.
+        std::string content;
+        content.reserve(4096);
         for (const auto& section : data) {
-            buffer.clear();
-            
-            // Build section header
-            buffer += '[';
-            buffer += section.first;
-            buffer += "]\n";
-            
-            // Build all key-value pairs for this section
+            content += '[';
+            content += section.first;
+            content += "]\n";
             for (const auto& kv : section.second) {
-                buffer += kv.first;
-                buffer += '=';
-                buffer += kv.second;
-                buffer += '\n';
+                content += kv.first;
+                content += '=';
+                content += kv.second;
+                content += '\n';
             }
-            buffer += '\n'; // Section separator
-            
-            // Write entire section at once
-            fwrite(buffer.data(), 1, buffer.size(), file);
+            content += '\n'; // Section separator
         }
-    
-        fclose(file);
+
+        writeIniContent(filePath, content);
     }
 
 
@@ -1573,6 +1583,7 @@ namespace ult {
                                        KeyOp operation) {
         auto fileMutex = getFileMutex(filePath);
         std::unique_lock<std::shared_mutex> lock(*fileMutex);
+        IniWriteMark writeMark;
         
         const std::string tempPath = filePath + ".tmp";
         const bool matchAll = patternKey.empty();
@@ -1604,25 +1615,25 @@ namespace ult {
                         size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
                         for (size_t i = 0; i < section.size(); ++i) {
                             if (i == tgtIdx) {
-                                fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                                fputKeyValue(out, targetKey, value);
                             } else {
-                                fprintf(out, "%s\n", section[i].c_str());
+                                fputLine(out, section[i]);
                             }
                             if (i + 1 == insertAt) {
-                                fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                                fputKeyValue(out, targetKey, value);
                             }
                         }
                     } else if (operation == KeyOp::REMOVE) {
                         for (size_t i = 0; i < section.size(); ++i) {
-                            if (i != tgtIdx) fprintf(out, "%s\n", section[i].c_str());
+                            if (i != tgtIdx) fputLine(out, section[i]);
                         }
                     }
                 } else {
-                    for (const auto& l : section) fprintf(out, "%s\n", l.c_str());
+                    for (const auto& l : section) fputLine(out, l);
                 }
                 
                 section.clear();
-                fprintf(out, "%s\n", buf);
+                fputLine(out, buf);
                 inMatch = matchAll;
                 patIdx = tgtIdx = SIZE_MAX;
                 continue;
@@ -1645,21 +1656,21 @@ namespace ult {
                 size_t insertAt = (tgtIdx != SIZE_MAX) ? SIZE_MAX : (matchAll ? section.size() : patIdx + 1);
                 for (size_t i = 0; i < section.size(); ++i) {
                     if (i == tgtIdx) {
-                        fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                        fputKeyValue(out, targetKey, value);
                     } else {
-                        fprintf(out, "%s\n", section[i].c_str());
+                        fputLine(out, section[i]);
                     }
                     if (i + 1 == insertAt) {
-                        fprintf(out, "%s=%s\n", targetKey.c_str(), value.c_str());
+                        fputKeyValue(out, targetKey, value);
                     }
                 }
             } else if (operation == KeyOp::REMOVE) {
                 for (size_t i = 0; i < section.size(); ++i) {
-                    if (i != tgtIdx) fprintf(out, "%s\n", section[i].c_str());
+                    if (i != tgtIdx) fputLine(out, section[i]);
                 }
             }
         } else {
-            for (const auto& l : section) fprintf(out, "%s\n", l.c_str());
+            for (const auto& l : section) fputLine(out, l);
         }
         
         fclose(in);

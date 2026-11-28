@@ -90,6 +90,14 @@ namespace ult {
     void Audio::reloadAllSounds() {
         for (uint32_t i = 0; i < static_cast<uint32_t>(SoundType::Count); ++i)
             loadSoundFromWav(static_cast<SoundType>(i), m_soundPaths[i]);
+        // Packs without main_settings.wav: the main settings menu plays settings.wav.
+        constexpr uint32_t kMain = static_cast<uint32_t>(SoundType::MainSettings);
+        if (m_initialized && !m_cachedSounds[kMain].rawBuf)
+            loadSoundFromWav(SoundType::MainSettings, m_soundPaths[static_cast<uint32_t>(SoundType::Settings)]);
+        // Packs without hold.wav: held steps play tick.wav.
+        constexpr uint32_t kHold = static_cast<uint32_t>(SoundType::Hold);
+        if (m_initialized && !m_cachedSounds[kHold].rawBuf)
+            loadSoundFromWav(SoundType::Hold, m_soundPaths[static_cast<uint32_t>(SoundType::Navigate)]);
         // growPlayBuf() is called inside loadSoundFromWav after each load,
         // so m_playBuf is always sized to the current high-water mark.
     }

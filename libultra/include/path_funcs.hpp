@@ -119,7 +119,7 @@ namespace ult {
      *
      * @param path The path of the file or directory to be deleted.
      */
-    void deleteFileOrDirectory(const std::string& pathToDelete, const std::string& logSource = "");
+    void deleteFileOrDirectory(const std::string& pathToDelete, const std::string& logSource = {});
     
     
     
@@ -132,16 +132,16 @@ namespace ult {
      *
      * @param pathPattern The pattern used to match and delete files or directories.
      */
-    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSourc = "", const std::unordered_set<std::string>* filterSet = nullptr);
+    void deleteFileOrDirectoryByPattern(const std::string& pathPattern, const std::string& logSourc = {}, const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     void moveDirectory(const std::string& sourcePath, const std::string& destinationPath,
-                       const std::string& logSource = "", const std::string& logDestination = "");
+                       const std::string& logSource = {}, const std::string& logDestination = {});
     
     
     
     bool moveFile(const std::string& sourcePath, const std::string& destinationPath,
-                  const std::string& logSource = "", const std::string& logDestination = "");
+                  const std::string& logSource = {}, const std::string& logDestination = {});
     
     
     
@@ -156,7 +156,7 @@ namespace ult {
      * @param destinationPath The path of the destination where the file or directory will be moved.
      */
     void moveFileOrDirectory(const std::string& sourcePath, const std::string& destinationPath,
-        const std::string& logSource = "", const std::string& logDestination = "");
+        const std::string& logSource = {}, const std::string& logDestination = {});
     
     
     
@@ -174,7 +174,7 @@ namespace ult {
      * @param filterSet Optional set of paths to exclude from moving (nullptr to move all).
      */
     void moveFilesOrDirectoriesByPattern(const std::string& sourcePathPattern, const std::string& destinationPath,
-        const std::string& logSource = "", const std::string& logDestination = "", const std::unordered_set<std::string>* filterSet = nullptr);
+        const std::string& logSource = {}, const std::string& logDestination = {}, const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     
@@ -187,7 +187,7 @@ namespace ult {
      * @param toFile The path of the destination where the file will be copied.
      */
     void copySingleFile(const std::string& fromFile, const std::string& toFile, long long& totalBytesCopied, const long long totalSize,
-                        const std::string& logSource = "", const std::string& logDestination = "");
+                        const std::string& logSource = {}, const std::string& logDestination = {});
     
     
     
@@ -210,7 +210,7 @@ namespace ult {
      * @param toPath The path of the destination where the file or directory will be copied.
      */
     void copyFileOrDirectory(const std::string& fromPath, const std::string& toPath, long long* totalBytesCopied = nullptr, long long totalSize = 0,
-        const std::string& logSource = "", const std::string& logDestination = "");
+        const std::string& logSource = {}, const std::string& logDestination = {});
     
     
     
@@ -229,7 +229,7 @@ namespace ult {
      * @param filterSet Optional set of paths to exclude from copying (nullptr to copy all).
      */
     void copyFileOrDirectoryByPattern(const std::string& sourcePathPattern, const std::string& toDirectory,
-        const std::string& logSource = "", const std::string& logDestination = "", const std::unordered_set<std::string>* filterSet = nullptr);
+        const std::string& logSource = {}, const std::string& logDestination = {}, const std::unordered_set<std::string>* filterSet = nullptr);
     
     
     
@@ -245,7 +245,7 @@ namespace ult {
      * @param targetPath The path of the target directory where files will be mirrored and deleted.
      *                   Default is "sdmc:/". You can specify a different target path if needed.
      */
-    void mirrorFiles(const std::string& sourcePath, const std::string targetPath, const std::string mode);
+    void mirrorFiles(const std::string& sourcePath, const std::string& targetPath, const std::string& mode);
     
 
     /**

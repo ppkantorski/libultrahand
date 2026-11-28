@@ -31,7 +31,8 @@ namespace ult {
         std::string trimmed = value;
         trim(trimmed);
         if (trimmed.size() > 2 && trimmed.front() == '(' && trimmed.back() == ')') {
-            trimmed = trimmed.substr(1, trimmed.size() - 2);
+            trimmed.pop_back();
+            trimmed.erase(0, 1);
             ult::StringStream ss(trimmed);
             std::string token;
             while (ss.getline(token, ',')) {
@@ -43,7 +44,7 @@ namespace ult {
     }
     
     std::string joinIniList(const std::vector<std::string>& list) {
-        std::string result = "";
+        std::string result;
         for (size_t i = 0; i < list.size(); ++i) {
             result += list[i];
             if (i + 1 < list.size()) {
@@ -108,22 +109,13 @@ namespace ult {
                 break;
             }
             
-            if (preserveNewlines) {
-                // Keep the line as-is, including newlines
-                lines.emplace_back(buffer);
-            } else {
-                // Remove newlines
-                len = strlen(buffer);
-                if (len > 0 && buffer[len - 1] == '\n') {
-                    buffer[len - 1] = '\0';
-                    --len;
-                    // Also remove carriage return if present
-                    if (len > 0 && buffer[len - 1] == '\r') {
-                        buffer[len - 1] = '\0';
-                    }
-                }
-                lines.emplace_back(buffer);
+            len = strlen(buffer);
+            if (!preserveNewlines && len > 0 && buffer[len - 1] == '\n') {
+                // Remove the newline (and a carriage return before it)
+                --len;
+                if (len > 0 && buffer[len - 1] == '\r') --len;
             }
+            lines.emplace_back(buffer, len);
         }
     
         fclose(file);
@@ -141,7 +133,7 @@ namespace ult {
             #if USING_LOGGING_DIRECTIVE
             logMessage(UNABLE_TO_OPEN_FILE + listPath);
             #endif
-            return "";
+            return {};
         }
     
         static constexpr size_t BUFFER_SIZE = 8192;
@@ -151,28 +143,26 @@ namespace ult {
         for (size_t i = 0; i < listIndex; ++i) {
             if (!fgets(buffer, BUFFER_SIZE, file)) {
                 fclose(file);
-                return ""; // Index out of bounds
+                return {}; // Index out of bounds
             }
         }
         
         // Read the target line
         if (!fgets(buffer, BUFFER_SIZE, file)) {
             fclose(file);
-            return ""; // Index out of bounds
+            return {}; // Index out of bounds
         }
         
         fclose(file);
         
         // Efficiently remove newline character
-        const size_t len = strlen(buffer);
+        size_t len = strlen(buffer);
         if (len > 0 && buffer[len - 1] == '\n') {
-            buffer[len - 1] = '\0';
-            if (len > 1 && buffer[len - 2] == '\r') {
-                buffer[len - 2] = '\0';
-            }
+            --len;
+            if (len > 0 && buffer[len - 1] == '\r') --len;
         }
         
-        return std::string(buffer);
+        return std::string(buffer, len);
     }
 
 
@@ -249,11 +239,9 @@ namespace ult {
         while (fgets(buffer, BUFFER_SIZE, file)) {
             // Remove trailing newline character if it exists
             len = strlen(buffer);
-            if (len > 0 && buffer[len - 1] == '\n') {
-                buffer[len - 1] = '\0';
-            }
+            if (len > 0 && buffer[len - 1] == '\n') --len;
             
-            std::string line = buffer;
+            std::string line(buffer, len);
             if (!packagePath.empty()) {
                 preprocessPath(line, packagePath);
             }
@@ -279,7 +267,7 @@ namespace ult {
         }
     
         for (const auto& entry : fileSet) {
-            fprintf(file, "%s\n", entry.c_str());
+            fputLine(file, entry);
         }
     
         fclose(file);
@@ -360,10 +348,11 @@ namespace ult {
         auto wildcardFiles = getFilesListByWildcards(wildcardPatternFilePath);
         
         static constexpr size_t BUFFER_SIZE = 8192;
+        std::string line;   // reused for every line read
 
         for (auto& filePath : wildcardFiles) {
             if (filePath == txtFilePath || targetLines.empty()) {
-                filePath = "";  // Clear early
+                filePath.clear();  // Clear early
                 continue; 
             }
             
@@ -381,18 +370,19 @@ namespace ult {
             char buffer[BUFFER_SIZE];
             
             while (fgets(buffer, BUFFER_SIZE, file) && !targetLines.empty()) { // Early exit!
-                char* newlinePos = strchr(buffer, '\n');
-                if (newlinePos) *newlinePos = '\0';
+                const char* newlinePos = strchr(buffer, '\n');
+                line.clear();
+                line.append(buffer, newlinePos ? static_cast<size_t>(newlinePos - buffer) : strlen(buffer));
                 
-                auto it = targetLines.find(std::string(buffer));
+                auto it = targetLines.find(line);
                 if (it != targetLines.end()) {
-                    duplicates.emplace(std::move(*it)); // Move instead of copy
+                    duplicates.emplace(*it);
                     targetLines.erase(it);
                 }
             }
             fclose(file);
             
-            filePath = "";  // Clear after processing - reduces vector memory footprint
+            filePath.clear();  // Clear after processing - reduces vector memory footprint
         }
         
         writeSetToFile(duplicates, outputTxtFilePath);

@@ -19,6 +19,12 @@
  ********************************************************************************/
 
 #include <tsl_utils.hpp>
+#include <glass.hpp>
+#include <animated.hpp>
+#include <image_fx.hpp>
+#if IS_LAUNCHER_DIRECTIVE
+#include <zlib.h>   // PNG wallpapers (convertPngToRgba)
+#endif
 
 //#include <cstdlib>
 extern "C" { // assertion override
@@ -29,9 +35,414 @@ extern "C" { // assertion override
 
 namespace ult {
 
+    struct tm* localTime(time_t t, struct tm* out) {
+        return gmtime_r(&t, out);
+    }
+
+    namespace {
+        // The "C" locale's names (newlib's _C_time_locale)
+        constexpr const char* kWday[]    = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        constexpr const char* kWeekday[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+        constexpr const char* kMon[]     = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+        constexpr const char* kMonth[]   = { "January", "February", "March", "April", "May", "June", "July", "August",
+                                             "September", "October", "November", "December" };
+
+        constexpr bool isLeap(int y) {
+            return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        }
+
+        // A number the way newlib's strftime prints it with sniprintf: '-' or `pre` in front, at least
+        // `prec` digits (0 at precision 0 prints none, a negative one counts as 1), right-aligned in
+        // `width`. Like snprintf it writes at most n - 1 characters plus the terminator and returns the
+        // full length (-1 past INT_MAX).
+        int putNum(char* s, size_t n, unsigned long long m, bool neg, long prec, unsigned width = 0, char pre = 0) {
+            char dig[20];
+            int nd = 0;
+            if (prec < 0) prec = 1;
+            while (m) {
+                dig[nd++] = (char)('0' + m % 10);
+                m /= 10;
+            }
+
+            if (neg) pre = '-';
+            const unsigned long long body = (unsigned long long)(pre != 0) + (unsigned long long)(nd > prec ? nd : prec);
+            const unsigned long long total = body < width ? width : body;
+            if (total > 0x7fffffffull) return -1;
+            if (n) {
+                size_t k = 0;
+                for (unsigned long long i = body; i < total && k + 1 < n; ++i)
+                    s[k++] = ' ';
+                if (pre && k + 1 < n) s[k++] = pre;
+                for (long i = nd; i < prec && k + 1 < n; ++i)
+                    s[k++] = '0';
+                for (int i = nd - 1; i >= 0 && k + 1 < n; --i)
+                    s[k++] = dig[i];
+                s[k] = '\0';
+            }
+
+            return (int)total;
+        }
+
+        int putInt(char* s, size_t n, long long v, long prec, unsigned width = 0) {
+            return putNum(s, n, v < 0 ? 0ull - (unsigned long long)v : (unsigned long long)v, v < 0, prec, width);
+        }
+
+        // A finished string, the way snprintf would write it
+        int putStr(char* s, size_t n, const char* str, int len) {
+            if (n) {
+                const size_t k = (size_t)len < n - 1 ? (size_t)len : n - 1;
+                memcpy(s, str, k);
+                s[k] = '\0';
+            }
+
+            return len;
+        }
+
+        // Two-digit fields joined by `sep` (%D %R %T), as newlib's single snprintf writes them
+        int putFields(char* s, size_t n, const int* v, int count, char sep) {
+            char tmp[40];
+            int len = 0;
+            for (int i = 0; i < count; ++i) {
+                if (i) tmp[len++] = sep;
+                len += putInt(&tmp[len], sizeof(tmp) - len, v[i], 2);
+            }
+
+            return putStr(s, n, tmp, len);
+        }
+
+        // newlib's iso_year_adjust: -1, 0 or 1 to the year for the ISO week numbering (%g %G %V)
+        constexpr int pack(int yday, int wday, int leap) {
+            return (yday << 4) + (wday << 1) + leap;
+        }
+
+        int isoYearAdjust(const struct tm* t) {
+            const int leap = isLeap(t->tm_year + (1900 - (t->tm_year < 0 ? 0 : 2000)));
+            switch (pack(t->tm_yday, t->tm_wday, leap)) {
+                case pack(0, 5, 0):                          // Jan 1 is a Fri, Sat or Sun
+                case pack(0, 6, 0):
+                case pack(0, 0, 0):
+                case pack(0, 5, 1):
+                case pack(0, 6, 1):
+                case pack(0, 0, 1):
+                case pack(1, 6, 0):                          // Jan 2 is a Sat or Sun
+                case pack(1, 0, 0):
+                case pack(1, 6, 1):
+                case pack(1, 0, 1):
+                case pack(2, 0, 0):                          // Jan 3 is a Sun
+                case pack(2, 0, 1):
+                    return -1;                               // last week of the year before
+                case pack(362, 1, 0):                        // Dec 29 is a Mon
+                case pack(363, 1, 1):
+                case pack(363, 1, 0):                        // Dec 30 is a Mon or Tue
+                case pack(363, 2, 0):
+                case pack(364, 1, 1):
+                case pack(364, 2, 1):
+                case pack(364, 1, 0):                        // Dec 31 is a Mon, Tue or Wed
+                case pack(364, 2, 0):
+                case pack(364, 3, 0):
+                case pack(365, 1, 1):
+                case pack(365, 2, 1):
+                case pack(365, 3, 1):
+                    return 1;                                // first week of the next year
+            }
+
+            return 0;
+        }
+    }
+
+    size_t formatTime(char* s, size_t maxsize, const char* format, const struct tm* t) {
+        size_t count = 0;
+        int len = 0;
+        // The field just written still leaves room for the terminator (newlib's CHECK_LENGTH)
+        auto fits = [&]() -> bool {
+            if (len < 0) return false;
+            count += len;
+            return count < maxsize;
+        };
+        auto copy = [&](const char* str) -> bool {
+            for (; *str; ++str) {
+                if (count < maxsize - 1) s[count++] = *str;
+                else return false;
+            }
+
+            return true;
+        };
+        auto recurse = [&](const char* fmt) -> bool {
+            len = (int)formatTime(&s[count], maxsize - count, fmt, t);
+            if (len <= 0) return false;
+            count += len;
+            return true;
+        };
+
+        for (;;) {
+            while (*format && *format != '%') {
+                if (count < maxsize - 1) s[count++] = *format++;
+                else return 0;
+            }
+
+            if (*format == '\0') break;
+            ++format;
+            char pad = '\0';
+            unsigned long width = 0;
+
+            // POSIX-1.2008: '0' / '+' and a minimum width (used by %C %F %G %Y %v)
+            if (*format == '0' || *format == '+') pad = *format++;
+            if (*format >= '1' && *format <= '9') {
+                char* fp;
+                width = strtoul(format, &fp, 10);
+                format = fp;
+            }
+
+            if (*format == 'E' || *format == 'O') ++format;   // (no era or alternative digits in "C")
+
+            const int year100 = t->tm_year >= 0 ? t->tm_year % 100 : abs(t->tm_year + 1900) % 100;
+            switch (*format) {
+                case 'a':
+                    if (!copy(kWday[t->tm_wday])) return 0;
+                    break;
+                case 'A':
+                    if (!copy(kWeekday[t->tm_wday])) return 0;
+                    break;
+                case 'b':
+                case 'h':
+                    if (!copy(kMon[t->tm_mon])) return 0;
+                    break;
+                case 'B':
+                    if (!copy(kMonth[t->tm_mon])) return 0;
+                    break;
+                case 'c':
+                    if (!recurse("%a %b %e %H:%M:%S %Y")) return 0;
+                    break;
+                case 'r':
+                    if (!recurse("%I:%M:%S %p")) return 0;
+                    break;
+                case 'x':
+                    if (!recurse("%m/%d/%y")) return 0;
+                    break;
+                case 'X':
+                    if (!recurse("%H:%M:%S")) return 0;
+                    break;
+                case 'C': {
+                    const int neg = t->tm_year < -1900;
+                    const int century = t->tm_year >= 0 ? t->tm_year / 100 + 19 : abs(t->tm_year + 1900) / 100;
+                    const char pre = neg ? '-' : (pad == '+' && century >= 100) ? '+' : '\0';
+                    if (width < 2) width = 2;
+                    len = putNum(&s[count], maxsize - count, (unsigned)century, false, (long)(int)(width - neg), 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'd':
+                case 'e':
+                    len = putInt(&s[count], maxsize - count, t->tm_mday, *format == 'd' ? 2 : 1, *format == 'd' ? 0 : 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'D': {
+                    const int v[] = { t->tm_mon + 1, t->tm_mday, year100 };
+                    len = putFields(&s[count], maxsize - count, v, 3, '/');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'F': {
+                    // "%+4Y-%m-%d", flags and width can change that
+                    char fmt[32], *f = fmt;
+                    *f++ = '%';
+                    *f++ = pad ? pad : '+';
+                    if (!pad) width = 10;
+                    if (width < 6) width = 6;
+                    width -= 6;
+                    if (width) f += putNum(f, fmt + 32 - f, width, false, 1);
+                    strcpy(f, "Y-%m-%d");
+                    if (!recurse(fmt)) return 0;
+                    break;
+                }
+                case 'g': {
+                    int adjust = isoYearAdjust(t);
+                    if (adjust < 0 && t->tm_year <= -1900) adjust = 1;
+                    else if (adjust > 0 && t->tm_year < -1900) adjust = -1;
+                    len = putInt(&s[count], maxsize - count, ((year100 + adjust) % 100 + 100) % 100, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'G': {
+                    int sign = t->tm_year < -1900;
+                    int adjust = isoYearAdjust(t);
+                    int century = t->tm_year >= 0 ? t->tm_year / 100 + 19 : abs(t->tm_year + 1900) / 100;
+                    int year = year100;
+                    if (adjust < 0 && t->tm_year <= -1900) sign = adjust = 1;
+                    else if (adjust > 0 && sign) adjust = -1;
+                    year += adjust;
+                    if (year == -1) {
+                        year = 99;
+                        --century;
+                    } else if (year == 100) {
+                        year = 0;
+                        ++century;
+                    }
+                    const unsigned pYear = (unsigned)(century * 100 + year);
+                    char pre = sign ? '-' : '\0';
+                    if (!sign && pad == '+' && pYear >= 10000) {
+                        pre = '+';
+                        sign = 1;
+                    }
+                    if (width && sign) --width;
+                    len = putNum(&s[count], maxsize - count, pYear, false, (long)(int)width, 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'H':
+                case 'k':
+                    len = putInt(&s[count], maxsize - count, t->tm_hour, *format == 'k' ? 1 : 2, *format == 'k' ? 2 : 0);
+                    if (!fits()) return 0;
+                    break;
+                case 'l':
+                case 'I': {
+                    const int h12 = (t->tm_hour == 0 || t->tm_hour == 12) ? 12 : t->tm_hour % 12;
+                    len = putInt(&s[count], maxsize - count, h12, *format == 'I' ? 2 : 1, *format == 'I' ? 0 : 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'j':
+                    len = putInt(&s[count], maxsize - count, t->tm_yday + 1, 3);
+                    if (!fits()) return 0;
+                    break;
+                case 'm':
+                    len = putInt(&s[count], maxsize - count, t->tm_mon + 1, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'M':
+                    len = putInt(&s[count], maxsize - count, t->tm_min, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'n':
+                    if (count < maxsize - 1) s[count++] = '\n';
+                    else return 0;
+                    break;
+                case 'p':
+                case 'P':
+                    if (!copy(t->tm_hour < 12 ? (*format == 'P' ? "am" : "AM") : (*format == 'P' ? "pm" : "PM"))) return 0;
+                    break;
+                case 'q':
+                    len = putInt(&s[count], maxsize - count, t->tm_mon / 3 + 1, 1);
+                    if (!fits()) return 0;
+                    break;
+                case 'R': {
+                    const int v[] = { t->tm_hour, t->tm_min };
+                    len = putFields(&s[count], maxsize - count, v, 2, ':');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 's':
+                    // seconds since the epoch (the time-zone offset is 0 without TZ)
+                    len = putInt(&s[count], maxsize - count,
+                                 (((((long long)t->tm_year - 69) / 4 - (t->tm_year - 1) / 100 + (t->tm_year + 299) / 400 +
+                                    (t->tm_year - 70) * 365 + t->tm_yday) * 24 + t->tm_hour) * 60 + t->tm_min) * 60 + t->tm_sec, 1);
+                    if (!fits()) return 0;
+                    break;
+                case 'S':
+                    len = putInt(&s[count], maxsize - count, t->tm_sec, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 't':
+                    if (count < maxsize - 1) s[count++] = '\t';
+                    else return 0;
+                    break;
+                case 'T': {
+                    const int v[] = { t->tm_hour, t->tm_min, t->tm_sec };
+                    len = putFields(&s[count], maxsize - count, v, 3, ':');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'u':
+                    if (count < maxsize - 1) s[count++] = t->tm_wday == 0 ? '7' : (char)('0' + t->tm_wday);
+                    else return 0;
+                    break;
+                case 'U':
+                    len = putInt(&s[count], maxsize - count, (t->tm_yday + 7 - t->tm_wday) / 7, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'V': {
+                    const int adjust = isoYearAdjust(t);
+                    const int wday = t->tm_wday ? t->tm_wday - 1 : 6;
+                    int week = (t->tm_yday + 10 - wday) / 7;
+                    if (adjust > 0) week = 1;
+                    else if (adjust < 0)
+                        week = 52 + (4 >= (wday - t->tm_yday - isLeap(t->tm_year + (1900 - 1 - (t->tm_year < 0 ? 0 : 2000)))));
+                    len = putInt(&s[count], maxsize - count, week, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'v': {
+                    // "%e-%b-%+4Y", flags and width can change the year
+                    char fmt[32], *f = fmt;
+                    strcpy(f, "%e-%b-%");
+                    f += strlen(f);
+                    *f++ = pad ? pad : '+';
+                    if (!pad) width = 10;
+                    if (width < 6) width = 6;
+                    width -= 6;
+                    if (width) f += putNum(f, fmt + 32 - f, width, false, 1);
+                    strcpy(f, "Y");
+                    if (!recurse(fmt)) return 0;
+                    break;
+                }
+                case 'w':
+                    if (count < maxsize - 1) s[count++] = (char)('0' + t->tm_wday);
+                    else return 0;
+                    break;
+                case 'W': {
+                    const int wday = t->tm_wday ? t->tm_wday - 1 : 6;
+                    len = putInt(&s[count], maxsize - count, (t->tm_yday + 7 - wday) / 7, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'y':
+                    len = putInt(&s[count], maxsize - count, year100, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'Y': {
+                    int sign = t->tm_year < -1900;
+                    unsigned year = (unsigned)t->tm_year + 1900u;
+                    char pre = '\0';
+                    if (sign) {
+                        pre = '-';
+                        year = 0xffffffffu - year + 1;
+                    } else if (pad == '+' && year >= 10000) {
+                        pre = '+';
+                        sign = 1;
+                    }
+                    if (width && sign) --width;
+                    len = putNum(&s[count], maxsize - count, year, false, (long)(int)width, 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'z':
+                    if (t->tm_isdst >= 0) {                          // (UTC without TZ, newlib's "%+03ld%.2ld")
+                        len = putStr(&s[count], maxsize - count, "+0000", 5);
+                        if (!fits()) return 0;
+                    }
+                    break;
+                case 'Z':
+                    if (t->tm_isdst >= 0 && !copy("GMT")) return 0;     // (newlib's name without TZ)
+                    break;
+                case '%':
+                    if (count < maxsize - 1) s[count++] = '%';
+                    else return 0;
+                    break;
+                default:
+                    return 0;
+            }
+
+            if (*format) ++format;
+            else break;
+        }
+
+        if (maxsize) s[count] = '\0';
+        return count;
+    }
+
     void formatTimestamp(time_t t, char* buf, size_t bufSize) {
         struct tm tm;
-        localtime_r(&t, &tm);
+        localTime(t, &tm);
         int hour12 = tm.tm_hour % 12;
         if (hour12 == 0) hour12 = 12;
         std::snprintf(buf, bufSize, "%d:%02d %s",
@@ -156,7 +567,7 @@ namespace ult {
     }
     
     
-    u16 activeHeaderHeight = 97;
+    u16 activeHeaderHeight = 98;
 
     bool consoleIsDocked() {
         Result rc = apmInitialize();
@@ -211,6 +622,7 @@ namespace ult {
     u32 layerEdge = 0;
     bool useRightAlignment = false;
     bool useSwipeToOpen = true;
+    bool useTextBorder = true;  // thin black ring around all text but the banner logo (Theme Settings > Text Border)
     s32 swipeOffset = 0; // "swipe_offset" — swipe-to-open deadzone calibration
 
     bool useLaunchCombos = true;
@@ -218,19 +630,36 @@ namespace ult {
     //bool usePageRecall = true;
     bool useNotifications = true;
     bool useNotificationsHotkey = true;
+    bool useSwitch2Notifications = true;
     bool useStartupNotification = true;
     bool silenceNotifications = false;
     bool useSoundEffects = true;
-    bool useHapticFeedback = false;
+    bool useButtonHaptics = false;
+    bool useTouchHaptics = true;
     bool useAutoNTPSync = true;
     bool useStickNavigation = true;
     bool usePageSwap = false;
     bool useSwitch2Style = true;
+    bool useFrostedGlass = false;
+    bool glassWithCheats = true;
+    std::atomic<bool> glassFallback{false};
+    u8 glassDarkness = 5;
+    u8 glassBlurRadius = 1;
+    u8 glassRed = 0xFF, glassGreen = 0xFF, glassBlue = 0xFF;  // 0xFF: follow the theme
+#if USING_LIVE_LOGGING_DIRECTIVE
+    bool glassLog = false;
+#endif
+    bool useGlassLayer = true;
     bool useDynamicLogo = false;
+    bool useUniformLogo = false;
     bool useDynamicTableColors = true;
     bool useSelectionBG = true;
     bool useSelectionText = true;
     bool useSelectionValue = false;
+    bool useBottomLine = false;
+    bool useUltrahandVersion = false;
+    bool useDividerLines = false;
+    bool useEdgeLine = false;
 
     std::atomic<bool> noClickableItems{false};
     
@@ -304,15 +733,13 @@ namespace ult {
         { HidNpadButton_Minus, "MINUS", "\uE0B6" }, { HidNpadButton_Plus, "PLUS", "\uE0B5" }
     }};
 
-    static std::unordered_map<std::string, std::string> createButtonCharMap() {
-        std::unordered_map<std::string, std::string> map;
-        for (const auto& keyInfo : KEYS_INFO) {
-            map[keyInfo.name] = keyInfo.glyph;
-        }
-        return map;
+    // The glyph for a button name ("ZL" -> its icon), or nullptr. KEYS_INFO's names are
+    // unique, so this is what a name -> glyph map would give, without building one.
+    static const char* buttonGlyph(const std::string& name) {
+        for (const auto& keyInfo : KEYS_INFO)
+            if (name == keyInfo.name) return keyInfo.glyph;
+        return nullptr;
     }
-    
-    std::unordered_map<std::string, std::string> buttonCharMap = createButtonCharMap();
     
     
     void convertComboToUnicode(std::string& combo) {
@@ -332,7 +759,6 @@ namespace ult {
         const size_t length = combo.length();
         size_t end = 0;  // Moved outside the loop
         std::string token;  // Moved outside the loop
-        auto it = buttonCharMap.end();  // Initialize iterator once outside the loop
         
         // Iterate through the combo string and split by '+'
         for (size_t i = 0; i <= length; ++i) {
@@ -343,10 +769,10 @@ namespace ult {
                 while (end > start && std::isspace(combo[end - 1])) end--;  // Trim trailing spaces
                 
                 token = combo.substr(start, end - start);  // Reuse the token variable
-                it = buttonCharMap.find(token);  // Reuse the iterator
+                const char* const glyph = buttonGlyph(token);
                 
-                if (it != buttonCharMap.end()) {
-                    unicodeCombo += it->second;  // Append the mapped Unicode value
+                if (glyph) {
+                    unicodeCombo += glyph;  // Append the mapped Unicode value
                     modified = true;
                 } else {
                     unicodeCombo += token;  // Append the original token if not found
@@ -428,7 +854,12 @@ namespace ult {
     std::string INPUT_SETTINGS;
     std::string LAUNCH_COMBOS;
     std::string SWIPE_TO_OPEN;
-    std::string HAPTIC_FEEDBACK;
+    std::string BUTTON_HAPTICS;
+    std::string TOUCH_HAPTICS;
+    #if IS_LAUNCHER_DIRECTIVE
+    std::string HOME_SHORTCUT;
+    std::string NO_CONTROLLER_SLOT;
+    #endif
     std::string STICK_NAVIGATION;
     std::string HOLD_DURATION;
 
@@ -445,16 +876,63 @@ namespace ult {
     std::string SHOW_UNSUPPORTED;
     std::string PAGE_SWAP;
     std::string OVERLAY_VERSIONS;
+    std::string ULTRAHAND_VERSION;
     std::string PACKAGE_VERSIONS;
     std::string CLEAN_VERSIONS;
 
     std::string THEME_SETTINGS;
+    std::string VERSION_SETTINGS;
+    std::string LABEL_COLORS;
     std::string SWITCH_2_STYLE;
+    std::string UNIFORM_LOGO;
+    std::string TEXT_BORDER;
+    std::string LIGHT;
+    std::string COLOR;
+    std::string EXPOSURE;
+    std::string BRIGHTNESS;
+    std::string HIGHLIGHTS;
+    std::string SHADOWS;
+    std::string CONTRAST;
+    std::string BLACK_POINT;
+    std::string SATURATION;
+    std::string VIBRANCE;
+    std::string WARMTH;
+    std::string TINT;
+    std::string TRANSPARENCY;
+    std::string PRESETS;
+    std::string TOOLS;
+    std::string RESTORE_DEFAULTS;
+    std::string RESTORE_DEFAULTS_INFO;
+    std::string RESTORE_ROOT_PKG;
+    std::string RESTORE_ROOT_PKG_INFO;
+    std::string CLEAN_INIS;
+    std::string CLEAN_INIS_INFO;
+    std::string DOT_CLEAN_SD;
+    std::string DOT_CLEAN_SD_INFO;
+    std::string NTP_SYNC_TIME;
+    std::string NTP_SYNC_TIME_INFO;
+    std::string BLUR;
+    std::string DARKNESS;
+    std::string RED;
+    std::string GREEN;
+    std::string BLUE;
+    std::string ENABLE;
+    std::string USE_BACKGROUND_COLOR;
+    std::string RESET;
+    std::string ALL;
+    std::string IMAGES;
+    std::string VIDEOS;
+    std::string FROSTED_GLASS;
+    std::string GLASS_WITH_CHEATS;
+    std::string GLASS_CHEATS_WARNING;
     std::string DYNAMIC_LOGO;
     std::string DYNAMIC_TABLES;
     std::string SELECTION_BACKGROUND;
     std::string SELECTION_TEXT;
     std::string SELECTION_VALUE;
+    std::string BOTTOM_LINE;
+    std::string DIVIDER_LINES;
+    std::string EDGE_LINE;
     std::string LIBULTRAHAND_TITLES;
     std::string LIBULTRAHAND_VERSIONS;
     std::string PACKAGE_TITLES;
@@ -482,6 +960,8 @@ namespace ult {
     //std::string SOUND_SUPPORT_DISABLED;
     std::string WALLPAPER_SUPPORT_ENABLED;
     std::string SOUND_SUPPORT_ENABLED;
+    std::string FULL_COLOR_SUPPORT_ENABLED;
+    std::string FULL_COLOR_SUPPORT_DISABLED;
     std::string EXIT_OVERLAY_SYSTEM;
     std::string ULTRAHAND_ABOUT;
     std::string ULTRAHAND_CREDITS_START;
@@ -551,6 +1031,8 @@ namespace ult {
     std::string CANCEL;
     std::string GAP_1;
     std::string GAP_2;
+    std::string API_NOTIFICATIONS_ENABLED;
+    std::string API_NOTIFICATIONS_DISABLED;
 
     std::atomic<float> halfGap = 0.0f;
 
@@ -596,234 +1078,33 @@ namespace ult {
     #endif
 
 
-    // --- Single source-of-truth table ---
+    // Language table (lang_table.hpp). LANG_STRS holds "KEY\0Default\0" for each entry,
+    // LANG_VARS the matching variables, in the same order.
+    #define LANG(var, def) #var "\0" def "\0"
+    static constexpr char LANG_STRS[] =
+        #include "lang_table.hpp"
+        ;
+    #undef LANG
 
-    struct LangEntry { std::string* var; const char* key; const char* defaultVal; };
-
-    static constexpr LangEntry LANG_TABLE[] = {
-        #if IS_LAUNCHER_DIRECTIVE
-        {&ENGLISH,                    "ENGLISH",                    "English"},
-        {&SPANISH,                    "SPANISH",                    "Spanish"},
-        {&FRENCH,                     "FRENCH",                     "French"},
-        {&GERMAN,                     "GERMAN",                     "German"},
-        {&JAPANESE,                   "JAPANESE",                   "Japanese"},
-        {&KOREAN,                     "KOREAN",                     "Korean"},
-        {&ITALIAN,                    "ITALIAN",                    "Italian"},
-        {&DUTCH,                      "DUTCH",                      "Dutch"},
-        {&PORTUGUESE,                 "PORTUGUESE",                 "Portuguese"},
-        {&RUSSIAN,                    "RUSSIAN",                    "Russian"},
-        {&UKRAINIAN,                  "UKRAINIAN",                  "Ukrainian"},
-        {&POLISH,                     "POLISH",                     "Polish"},
-        {&SIMPLIFIED_CHINESE,         "SIMPLIFIED_CHINESE",         "Simplified Chinese"},
-        {&TRADITIONAL_CHINESE,        "TRADITIONAL_CHINESE",        "Traditional Chinese"},
-        {&OVERLAYS,                   "OVERLAYS",                   "Overlays"},
-        {&OVERLAYS_ABBR,              "OVERLAYS_ABBR",              "Overlays"},
-        {&OVERLAY,                    "OVERLAY",                    "Overlay"},
-        {&HIDDEN_OVERLAYS,            "HIDDEN_OVERLAYS",            "Hidden Overlays"},
-        {&PACKAGES,                   "PACKAGES",                   "Packages"},
-        {&PACKAGE,                    "PACKAGE",                    "Package"},
-        {&HIDDEN_PACKAGES,            "HIDDEN_PACKAGES",            "Hidden Packages"},
-        {&HIDDEN,                     "HIDDEN",                     "Hidden"},
-        {&HIDE_OVERLAY,               "HIDE_OVERLAY",               "Hide Overlay"},
-        {&HIDE_PACKAGE,               "HIDE_PACKAGE",               "Hide Package"},
-        {&LAUNCH_ARGUMENTS,           "LAUNCH_ARGUMENTS",           "Launch Arguments"},
-        {&FORCE_AMS110_SUPPORT,       "FORCE_AMS110_SUPPORT",       "Force AMS110+ Support"},
-        {&QUICK_LAUNCH,               "QUICK_LAUNCH",               "Quick Launch"},
-        {&BOOT_COMMANDS,              "BOOT_COMMANDS",              "Boot Commands"},
-        {&EXIT_COMMANDS,              "EXIT_COMMANDS",              "Exit Commands"},
-        {&ERROR_LOGGING,              "ERROR_LOGGING",              "Error Logging"},
-        {&COMMANDS,                   "COMMANDS",                   "Commands"},
-        {&SETTINGS,                   "SETTINGS",                   "Settings"},
-        {&FAVORITE,                   "FAVORITE",                   "Favorite"},
-        {&MAIN_SETTINGS,              "MAIN_SETTINGS",              "Main Settings"},
-        {&UI_SETTINGS,                "UI_SETTINGS",                "UI Settings"},
-        {&WIDGET,                     "WIDGET",                     "Widget"},
-        {&WIDGET_ITEMS,               "WIDGET_ITEMS",               "Widget Items"},
-        {&WIDGET_SETTINGS,            "WIDGET_SETTINGS",            "Widget Settings"},
-        {&CLOCK,                      "CLOCK",                      "Clock"},
-        {&BATTERY,                    "BATTERY",                    "Battery"},
-        {&SOC_TEMPERATURE,            "SOC_TEMPERATURE",            "SOC Temperature"},
-        {&PCB_TEMPERATURE,            "PCB_TEMPERATURE",            "PCB Temperature"},
-        {&BACKDROP,                   "BACKDROP",                   "Backdrop"},
-        {&BORDER,                     "BORDER",                     "Border"},
-        {&DYNAMIC_BORDER,             "DYNAMIC_BORDER",             "Dynamic Border"},
-        {&DYNAMIC_TEMPS,              "DYNAMIC_TEMPS",              "Dynamic Temps"},
-        {&CENTER_ALIGNMENT,           "CENTER_ALIGNMENT",           "Center Alignment"},
-        {&EXTENDED_BACKDROP,          "EXTENDED_BACKDROP",          "Extended Backdrop"},
-        {&MISCELLANEOUS,              "MISCELLANEOUS",              "Miscellaneous"},
-        {&INPUT_SETTINGS,             "INPUT_SETTINGS",             "Input Settings"},
-        {&LAUNCH_COMBOS,              "LAUNCH_COMBOS",              "Launch Combos"},
-        {&SWIPE_TO_OPEN,              "SWIPE_TO_OPEN",              "Swipe to Open"},
-        {&HAPTIC_FEEDBACK,            "HAPTIC_FEEDBACK",            "Haptic Feedback"},
-        {&STICK_NAVIGATION,           "STICK_NAVIGATION",           "Stick Navigation"},
-        {&HOLD_DURATION,              "HOLD_DURATION",              "Hold Duration"},
-        {&FEATURE_SETTINGS,           "FEATURE_SETTINGS",           "Feature Settings"},
-        {&OPAQUE_SCREENSHOTS,         "OPAQUE_SCREENSHOTS",         "Opaque Screenshots"},
-        {&RIGHT_SIDE_MODE,            "RIGHT_SIDE_MODE",            "Right-side Mode"},
-        {&NTP_SYNC_DOWNLOADS,         "NTP_SYNC_DOWNLOADS",         "NTP Sync Downloads"},
-        {&MENU_SETTINGS,              "MENU_SETTINGS",              "Menu Settings"},
-        {&PACKAGES_MENU,              "PACKAGES_MENU",              "Packages Menu"},
-        {&USER_GUIDE,                 "USER_GUIDE",                 "User Guide"},
-        {&SHOW_HIDDEN,                "SHOW_HIDDEN",                "Show Hidden"},
-        {&SHOW_DELETE,                "SHOW_DELETE",                "Show Delete"},
-        {&SHOW_UNSUPPORTED,           "SHOW_UNSUPPORTED",           "Show Unsupported"},
-        {&PAGE_SWAP,                  "PAGE_SWAP",                  "Page Swap"},
-        {&OVERLAY_VERSIONS,           "OVERLAY_VERSIONS",           "Overlay Versions"},
-        {&PACKAGE_VERSIONS,           "PACKAGE_VERSIONS",           "Package Versions"},
-        {&CLEAN_VERSIONS,             "CLEAN_VERSIONS",             "Clean Versions"},
-        {&THEME_SETTINGS,             "THEME_SETTINGS",             "Theme Settings"},
-        {&SWITCH_2_STYLE,             "SWITCH_2_STYLE",             "Switch 2 Style"},
-        {&DYNAMIC_LOGO,               "DYNAMIC_LOGO",               "Dynamic Logo"},
-        {&DYNAMIC_TABLES,             "DYNAMIC_TABLES",             "Dynamic Tables"},
-        {&SELECTION_BACKGROUND,       "SELECTION_BACKGROUND",       "Selection Background"},
-        {&SELECTION_TEXT,             "SELECTION_TEXT",             "Selection Text"},
-        {&SELECTION_VALUE,            "SELECTION_VALUE",            "Selection Value"},
-        {&LIBULTRAHAND_TITLES,        "LIBULTRAHAND_TITLES",        "libultrahand Titles"},
-        {&LIBULTRAHAND_VERSIONS,      "LIBULTRAHAND_VERSIONS",      "libultrahand Versions"},
-        {&PACKAGE_TITLES,             "PACKAGE_TITLES",             "Package Titles"},
-        {&IN_PACKAGE_TITLES,          "IN_PACKAGE_TITLES",          "In-Package Titles"},
-        {&KEY_COMBO,                  "KEY_COMBO",                  "Key Combo"},
-        {&MODE,                       "MODE",                       "Mode"},
-        {&LAUNCH_MODES,               "LAUNCH_MODES",               "Launch Modes"},
-        {&LANGUAGE,                   "LANGUAGE",                   "Language"},
-        {&OVERLAY_INFO,               "OVERLAY_INFO",               "Overlay Info"},
-        {&SOFTWARE_UPDATE,            "SOFTWARE_UPDATE",            "Software Update"},
-        {&UPDATE_ULTRAHAND,           "UPDATE_ULTRAHAND",           "Update Ultrahand"},
-        {&SYSTEM,                     "SYSTEM",                     "System"},
-        {&DEVICE_INFO,                "DEVICE_INFO",                "Device Info"},
-        {&FIRMWARE,                   "FIRMWARE",                   "Firmware"},
-        {&BOOTLOADER,                 "BOOTLOADER",                 "Bootloader"},
-        {&HARDWARE,                   "HARDWARE",                   "Hardware"},
-        {&MEMORY,                     "MEMORY",                     "Memory"},
-        {&VENDOR,                     "VENDOR",                     "Vendor"},
-        {&MODEL,                      "MODEL",                      "Model"},
-        {&STORAGE,                    "STORAGE",                    "Storage"},
-        {&OVERLAY_MEMORY,             "OVERLAY_MEMORY",             "Overlay Memory"},
-        {&NOT_ENOUGH_MEMORY,          "NOT_ENOUGH_MEMORY",          "Not enough memory."},
-        {&WALLPAPER_SUPPORT_DISABLED, "WALLPAPER_SUPPORT_DISABLED", "Wallpaper support disabled."},
-        {&WALLPAPER_SUPPORT_ENABLED,  "WALLPAPER_SUPPORT_ENABLED",  "Wallpaper support enabled."},
-        {&SOUND_SUPPORT_ENABLED,      "SOUND_SUPPORT_ENABLED",      "Sound support enabled."},
-        {&EXIT_OVERLAY_SYSTEM,        "EXIT_OVERLAY_SYSTEM",        "Exit Overlay System"},
-        {&ULTRAHAND_ABOUT,            "ULTRAHAND_ABOUT",            "Ultrahand Overlay is a customizable overlay ecosystem for overlays, commands, hotkeys, and advanced system interaction."},
-        {&ULTRAHAND_CREDITS_START,    "ULTRAHAND_CREDITS_START",    "Special thanks to "},
-        {&ULTRAHAND_CREDITS_END,      "ULTRAHAND_CREDITS_END",      " and many others. ♥"},
-        {&LOCAL_IP,                   "LOCAL_IP",                   "Local IP"},
-        {&WALLPAPER,                  "WALLPAPER",                  "Wallpaper"},
-        {&THEME,                      "THEME",                      "Theme"},
-        {&SOUNDS,                     "SOUNDS",                     "Sounds"},
-        {&DEFAULT,                    "DEFAULT",                    "default"},
-        {&ROOT_PACKAGE,               "ROOT_PACKAGE",               "Root Package"},
-        {&SORT_PRIORITY,              "SORT_PRIORITY",              "Sort Priority"},
-        {&OPTIONS,                    "OPTIONS",                    "Options"},
-        {&FAILED_TO_OPEN,             "FAILED_TO_OPEN",             "Failed to open file"},
-        {&NOTIFICATIONS,              "NOTIFICATIONS",              "Notifications"},
-        {&NOTIFICATION_SETTINGS,      "NOTIFICATION_SETTINGS",      "Notification Settings"},
-        {&SILENCE_NOTIFICATIONS,      "SILENCE_NOTIFICATIONS",      "Silence Notifications"},
-        {&STARTUP_NOTIFICATION,       "STARTUP_NOTIFICATION",       "Startup Notification"},
-        {&MAX_SLOTS,                  "MAX_SLOTS",                  "Max Slots"},
-        {&API_NOTIFICATIONS,          "API_NOTIFICATIONS",          "API Notifications"},
-        {&API_TOGGLE_HOTKEY,          "API_TOGGLE_HOTKEY",          "API Toggle Hotkey"},
-        {&DISMISS_NOTIFICATION,       "DISMISS_NOTIFICATION",       "Dismiss Notification"},
-        {&API_TOGGLE,                 "API_TOGGLE",                 "API Toggle"},
-        {&CLICK,                      "CLICK",                      "click"},
-        {&TAP,                        "TAP",                        "tap"},
-        {&HOLD_FOR_4S,                "HOLD_FOR_4S",                "hold for 4s"},
-        {&PACKAGE_INFO,               "PACKAGE_INFO",               "Package Info"},
-        {&_TITLE,                     "_TITLE",                     "Title"},
-        {&_VERSION,                   "_VERSION",                   "Version"},
-        {&_CREATOR,                   "_CREATOR",                   "Creator(s)"},
-        {&_ABOUT,                     "_ABOUT",                     "About"},
-        {&_CREDITS,                   "_CREDITS",                   "Credits"},
-        {&SETTINGS_MENU,              "SETTINGS_MENU",              "Settings Menu"},
-        {&SCRIPT_OVERLAY,             "SCRIPT_OVERLAY",             "Script Overlay"},
-        {&STAR_FAVORITE,              "STAR_FAVORITE",              "Star/Favorite"},
-        {&APP_SETTINGS,               "APP_SETTINGS",               "App Settings"},
-        {&ON_MAIN_MENU,               "ON_MAIN_MENU",               "on Main Menu"},
-        {&ON_A_COMMAND,               "ON_A_COMMAND",               "on a command"},
-        {&ON_OVERLAY_PACKAGE,         "ON_OVERLAY_PACKAGE",         "on overlay/package"},
-        {&ULTRAHAND_HAS_STARTED,      "ULTRAHAND_HAS_STARTED",      "Ultrahand has started."},
-        {&ULTRAHAND_HAS_RESTARTED,    "ULTRAHAND_HAS_RESTARTED",    "Ultrahand has restarted."},
-        {&NEW_UPDATE_IS_AVAILABLE,    "NEW_UPDATE_IS_AVAILABLE",    "New update is available!"},
-        {&DELETE_PACKAGE,             "DELETE_PACKAGE",             "Delete Package"},
-        {&DELETE_OVERLAY,             "DELETE_OVERLAY",             "Delete Overlay"},
-        {&SELECTION_IS_EMPTY,         "SELECTION_IS_EMPTY",         "Selection is empty!"},
-        {&FORCED_SUPPORT_WARNING,     "FORCED_SUPPORT_WARNING",     "Forcing support can be dangerous."},
-        {&TASK_IS_COMPLETE,           "TASK_IS_COMPLETE",           "Task is complete!"},
-        {&TASK_HAS_FAILED,            "TASK_HAS_FAILED",            "Task has failed."},
-        {&REBOOT_TO,                  "REBOOT_TO",                  "Reboot To"},
-        {&REBOOT,                     "REBOOT",                     "Reboot"},
-        {&SHUTDOWN,                   "SHUTDOWN",                   "Shutdown"},
-        {&BOOT_ENTRY,                 "BOOT_ENTRY",                 "Boot Entry"},
-        {&INI_ENTRY,                  "INI_ENTRY",                  "INI Entry"},
-        #endif
-
-        {&INCOMPATIBLE_WARNING,       "INCOMPATIBLE_WARNING",       "Incompatible on AMS v1.10+"},
-        {&OVERLAY_DOES_NOT_EXIST,     "OVERLAY_DOES_NOT_EXIST",     "Overlay does not exist!"},
-        {&SYSTEM_RAM,                 "SYSTEM_RAM",                 "System RAM"},
-        {&FREE,                       "FREE",                       "free"},
-        {&UNAVAILABLE_SELECTION,      "UNAVAILABLE_SELECTION",      "Not available"},
-        {&ON,                         "ON",                         "On"},
-        {&OFF,                        "OFF",                        "Off"},
-        {&OK,                         "OK",                         "OK"},
-        {&BACK,                       "BACK",                       "Back"},
-        {&HIDE,                       "HIDE",                       "Hide"},
-        {&CANCEL,                     "CANCEL",                     "Cancel"},
-        {&GAP_1,                      "GAP_1",                      "     "},
-        {&GAP_2,                      "GAP_2",                      "  "},
-
-        #if USING_WIDGET_DIRECTIVE
-        {&SUNDAY,                     "SUNDAY",                     "Sunday"},
-        {&MONDAY,                     "MONDAY",                     "Monday"},
-        {&TUESDAY,                    "TUESDAY",                    "Tuesday"},
-        {&WEDNESDAY,                  "WEDNESDAY",                  "Wednesday"},
-        {&THURSDAY,                   "THURSDAY",                   "Thursday"},
-        {&FRIDAY,                     "FRIDAY",                     "Friday"},
-        {&SATURDAY,                   "SATURDAY",                   "Saturday"},
-        {&JANUARY,                    "JANUARY",                    "January"},
-        {&FEBRUARY,                   "FEBRUARY",                   "February"},
-        {&MARCH,                      "MARCH",                      "March"},
-        {&APRIL,                      "APRIL",                      "April"},
-        {&MAY,                        "MAY",                        "May"},
-        {&JUNE,                       "JUNE",                       "June"},
-        {&JULY,                       "JULY",                       "July"},
-        {&AUGUST,                     "AUGUST",                     "August"},
-        {&SEPTEMBER,                  "SEPTEMBER",                  "September"},
-        {&OCTOBER,                    "OCTOBER",                    "October"},
-        {&NOVEMBER,                   "NOVEMBER",                   "November"},
-        {&DECEMBER,                   "DECEMBER",                   "December"},
-        {&SUN,                        "SUN",                        "Sun"},
-        {&MON,                        "MON",                        "Mon"},
-        {&TUE,                        "TUE",                        "Tue"},
-        {&WED,                        "WED",                        "Wed"},
-        {&THU,                        "THU",                        "Thu"},
-        {&FRI,                        "FRI",                        "Fri"},
-        {&SAT,                        "SAT",                        "Sat"},
-        {&JAN,                        "JAN",                        "Jan"},
-        {&FEB,                        "FEB",                        "Feb"},
-        {&MAR,                        "MAR",                        "Mar"},
-        {&APR,                        "APR",                        "Apr"},
-        {&MAY_ABBR,                   "MAY_ABBR",                   "May"},
-        {&JUN,                        "JUN",                        "Jun"},
-        {&JUL,                        "JUL",                        "Jul"},
-        {&AUG,                        "AUG",                        "Aug"},
-        {&SEP,                        "SEP",                        "Sep"},
-        {&OCT,                        "OCT",                        "Oct"},
-        {&NOV,                        "NOV",                        "Nov"},
-        {&DEC,                        "DEC",                        "Dec"},
-        #endif
+    #define LANG(var, def) &var,
+    static std::string* const LANG_VARS[] = {
+        #include "lang_table.hpp"
     };
+    #undef LANG
 
-    static constexpr size_t LANG_TABLE_SIZE = sizeof(LANG_TABLE) / sizeof(LANG_TABLE[0]);
 
-
-    // --- reinitializeLangVars: just a loop now ---
+    // Sets every language string to its English default.
     void reinitializeLangVars() {
-        for (size_t i = 0; i < LANG_TABLE_SIZE; ++i)
-            *LANG_TABLE[i].var = LANG_TABLE[i].defaultVal;
+        const char* p = LANG_STRS;
+        for (std::string* var : LANG_VARS) {
+            p += strlen(p) + 1;  // skip the key
+            *var = p;
+            p += strlen(p) + 1;
+        }
     }
 
 
-    // --- parseLanguage: same loop, different source ---
+    // Loads a language JSON. Keys it doesn't have keep the English default.
     void parseLanguage(const std::string& langFile) {
         std::unordered_map<std::string, std::string> jsonMap;
         if (!parseJsonToMap(langFile, jsonMap)) {
@@ -832,14 +1113,16 @@ namespace ult {
             #endif
             return;
         }
-        for (size_t i = 0; i < LANG_TABLE_SIZE; ++i) {
-            auto it = jsonMap.find(LANG_TABLE[i].key);
-            *LANG_TABLE[i].var = (it != jsonMap.end()) ? it->second : LANG_TABLE[i].defaultVal;
+        const char* p = LANG_STRS;
+        for (std::string* var : LANG_VARS) {
+            auto it = jsonMap.find(p);
+            p += strlen(p) + 1;
+            *var = (it != jsonMap.end()) ? it->second : p;
+            p += strlen(p) + 1;
         }
     }
 
 
-    // --- localizeTimeStr and applyLangReplacements unchanged ---
     #if USING_WIDGET_DIRECTIVE
     void localizeTimeStr(char* timeStr) {
         static const struct { const char* key; std::string* val; } mappings[] = {
@@ -901,13 +1184,34 @@ namespace ult {
     std::atomic<bool> refreshWallpaperNow(false);
     std::atomic<bool> refreshWallpaper(false);
     std::atomic<bool> refreshCombos(false);
-    std::vector<u8> wallpaperData; 
+    WallpaperBuffer wallpaperData;
+
+    bool WallpaperBuffer::resize(size_t n) {
+        if (n > m_cap) {
+            release();
+            m_data = static_cast<u8*>(glass::sharedAlloc(glass::PoolUser::Wallpaper, n));
+            if (!m_data) return false;
+            m_cap = n;
+        }
+        if (n > m_size) std::memset(m_data + m_size, 0, n - m_size);
+        m_size = n;
+        return true;
+    }
+
+    void WallpaperBuffer::release() {
+        glass::sharedFree(m_data);
+        m_data = nullptr;
+        m_size = m_cap = 0;
+    }
+    bool fullColorWallpaper = false;
+    std::atomic<u32> wallpaperGeneration{0};
     std::atomic<bool> inPlot(false);
     
     std::mutex wallpaperMutex;
+    std::atomic<u64> glassStartPauseUntilNs{0};
     std::condition_variable cv;
     
-    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize) {
+    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize, const WallAdj* adj) {
         FILE* f = fopen(filePath.c_str(), "rb");
         if (!f) return false;
     
@@ -925,6 +1229,17 @@ namespace ult {
     
             const uint8_t* src = chunkBuffer;
             size_t i = 0;
+            if (adj && adj->on) {                       // 8 px: adjust the 8-bit RGB, then 4444
+                for (; i + 32 <= bytesRead; i += 32) {
+                    uint8x8x4_t v = vld4_u8(src + i);
+                    uint8x8x3_t c{{ v.val[0], v.val[1], v.val[2] }};
+                    wallAdj8(*adj, c);
+                    const uint8x8_t lo = vorr_u8(vand_u8(c.val[0], mask), vshr_n_u8(c.val[1], 4));
+                    const uint8x8_t hi = vorr_u8(vand_u8(c.val[2], mask), vshr_n_u8(v.val[3], 4));
+                    vst2_u8(dst, uint8x8x2_t{{ lo, hi }});
+                    dst += 16;
+                }
+            }
             for (; i + 16 <= bytesRead; i += 16) {
                 uint8x16_t data = vld1q_u8(src + i);
                 uint8x8x2_t sep = vuzp_u8(vget_low_u8(data), vget_high_u8(data));
@@ -942,42 +1257,695 @@ namespace ult {
     }
 
     
+    // Frosted glass replaces the wallpaper entirely: while it is on, the wallpaper
+    // is never read from the SD card and any loaded copy is freed (~630 KB).
+    // Turning glass off reloads it (see reloadWallpaper / the Frosted Glass toggle).
+    static inline bool glassReplacesWallpaper() {
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        return false;   // Status Monitor: Full mode has no glass and still draws the wallpaper
+    #else
+        return useFrostedGlass && !limitedMemory && !glassFallback.load(std::memory_order_acquire);
+    #endif
+    }
+    // The wallpaper is about to change: flags it (refreshWallpaper) and waits, locked, until no
+    // frame is drawing it. The lock is the caller's for the change.
+    static std::unique_lock<std::mutex> beginWallpaperChange() {
+        refreshWallpaper.store(true, std::memory_order_release);
+        std::unique_lock<std::mutex> lock(wallpaperMutex);
+        cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire); });
+        return lock;
+    }
+
+    static inline void freeWallpaperData() {   // (an animated wallpaper stops with it)
+        anim::stop();
+        wallpaperData.release();
+        setWallpaperBaked(kNoWallAdjust);
+        wallpaperGeneration.fetch_add(1, std::memory_order_acq_rel);
+    }
+
     void loadWallpaperFile(const std::string& filePath, s32 width, s32 height) {
+        if (glassReplacesWallpaper()) { freeWallpaperData(); return; }
         const size_t srcSize = width * height * 4;
-        wallpaperData.resize(srcSize / 2);
-        if (!isFile(filePath) ||
-            !loadRGBA8888toRGBA4444(filePath, wallpaperData.data(), srcSize))
-            wallpaperData.clear();
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        // load time (SD read + conversion), one line per load
+        struct LoadTimer {
+            u64 t0 = ult::glassLog ? armGetSystemTick() : 0;
+            ~LoadTimer() {
+                if (ult::glassLog)
+                    glass::live::log("wallpaper: loaded in %lu us (%s)",
+                                     (unsigned long)(armTicksToNs(armGetSystemTick() - t0) / 1000),
+                                     fullColorWallpaper ? "8-bit RGB" : "RGBA4444");
+            }
+        } loadTimer;
+    #endif
+        if (fullColorWallpaper) {
+            // Full-colour output (> 8 MB heap): keep 8 bits per channel, but store only
+            // what is drawn: pre-multiplied RGB, 3 bytes/px (968 KB instead of 1.29 MB for
+            // RGBA8888). The frame's alpha comes from the theme, so the wallpaper's alpha is
+            // only needed here. Converted in 32 KB chunks while reading, with no full-size
+            // temporary. composeFullColor() draws it.
+            const size_t px = static_cast<size_t>(width) * height;
+            if (!wallpaperData.resize(px * 3)) { freeWallpaperData(); return; }   // no memory: no wallpaper
+            FILE* f = fopen(filePath.c_str(), "rb");
+            // 32 KB read chunk (8192 px), only for the duration of the load
+            u8* const chunk = static_cast<u8*>(aligned_alloc(16, 32768));
+            bool ok = f != nullptr && chunk != nullptr;
+            u8* dst = wallpaperData.data();
+            size_t done = 0;
+            while (ok && done < px) {
+                const size_t want = std::min<size_t>(px - done, 32768 / 4);
+                if (fread(chunk, 4, want, f) != want) { ok = false; break; }
+                size_t i = 0;
+                for (; i + 8 <= want; i += 8) {
+                    const uint8x8x4_t v = vld4_u8(chunk + i * 4);
+                    auto pm = [&](uint8x8_t c) {                  // c * a / 255, rounded
+                        const uint16x8_t t = vmull_u8(c, v.val[3]);
+                        return vrshrn_n_u16(vsraq_n_u16(t, t, 8), 8);
+                    };
+                    vst3_u8(dst + (done + i) * 3, uint8x8x3_t{{ pm(v.val[0]), pm(v.val[1]), pm(v.val[2]) }});
+                }
+                for (; i < want; ++i) {
+                    const u8* sp = chunk + i * 4; u8* dp = dst + (done + i) * 3;
+                    for (int c = 0; c < 3; ++c) { const u32 t = sp[c] * sp[3]; dp[c] = static_cast<u8>((t + (t >> 8) + 128) >> 8); }
+                }
+                done += want;
+            }
+            if (f) fclose(f);
+            free(chunk);
+            if (!ok) freeWallpaperData();
+            else { bakeLoadedWallpaper(); wallpaperGeneration.fetch_add(1, std::memory_order_acq_rel); }
+            return;
+        }
+        // RGBA4444 (6 / 8 MB): the adjustments for this colour mode (wallpaperAdjustSection)
+        // go in as the file is converted, before the colour is cut to 4 bits.
+        s8 t[WA_COUNT];
+        wallpaperAdjustTarget(t);
+        setWallpaperBaked(t);
+        if (!wallpaperData.resize(srcSize / 2) || !isFile(filePath) ||
+            !loadRGBA8888toRGBA4444(filePath, wallpaperData.data(), srcSize,
+                                    wallpaperBakedAdj.on ? &wallpaperBakedAdj : nullptr)) {
+            wallpaperData.release();
+            setWallpaperBaked(kNoWallAdjust);
+        }
+        wallpaperGeneration.fetch_add(1, std::memory_order_acq_rel);
     }
     
+    const std::string& wallpaperIniPath() {
+        static const std::string p = SETTINGS_PATH + "wallpaper.ini";
+        return p;
+    }
+    std::string currentWallpaperName;
+    const char* const kWallpaperAdjustKeys[WA_COUNT] = {
+        "exposure", "brightness", "highlights", "shadows", "contrast", "black_point",
+        "saturation", "vibrance", "warmth", "tint"
+    };
+    std::atomic<s8> wallpaperAdjust[WA_COUNT] = {};
+    std::atomic<s8> wallpaperAlpha{-1};
+
+    using WallpaperIni = std::map<std::string, std::map<std::string, std::string>>;
+    static const std::string* iniValue(const WallpaperIni& ini, const std::string& section, const char* key) {
+        const auto sec = ini.find(section);
+        if (sec == ini.end()) return nullptr;
+        const auto it = sec->second.find(key);
+        return (it == sec->second.end() || it->second.empty()) ? nullptr : &it->second;
+    }
+    std::string wallpaperAdjustSection(const std::string& name) {
+        return name + (fullColorWallpaper ? " - full" : " - limited");
+    }
+    // wallpaperAdjust[] = wallpaper.ini [<current_wallpaper>] (or its 4-bit section; 0 where missing),
+    // and wallpaperAlpha from the same section (default kDefaultWallpaperAlpha).
+    static void setAdjustFromIni(const WallpaperIni& ini) {
+        const std::string section = currentWallpaperName.empty() ? std::string() : wallpaperAdjustSection(currentWallpaperName);
+        for (u32 i = 0; i < WA_COUNT; ++i) {
+            int v = 0;
+            if (!section.empty())
+                if (const std::string* sv = iniValue(ini, section, kWallpaperAdjustKeys[i])) v = ult::stoi(*sv);
+            wallpaperAdjust[i].store(static_cast<s8>(std::max(-100, std::min(v, 100))), std::memory_order_relaxed);
+        }
+        int a = -1;                                   // no named wallpaper: the theme's alpha
+        if (!section.empty()) {
+            a = kDefaultWallpaperAlpha;
+            if (const std::string* sv = iniValue(ini, section, "alpha")) a = std::max(0, std::min(ult::stoi(*sv), 15));
+        }
+        wallpaperAlpha.store(static_cast<s8>(a), std::memory_order_relaxed);
+    }
+
+    // Glass memory and wallpaper take turns in one block (glass::sharedAlloc): with glass off
+    // and a wallpaper about to load, the glass memory goes first (it is taken back when glass
+    // is switched on again).
+    static inline void releaseGlassForWallpaper() {
+    #if !IS_STATUS_MONITOR_DIRECTIVE
+        if (!limitedMemory) glass::release();
+    #endif
+    }
+
+    // Loads the current wallpaper (caller holds wallpaperMutex): a still image
+    // wins, else the animated one named in wallpaper.ini. Also sets its adjustments from
+    // wallpaper.ini [<current_wallpaper>] (baked in by the load). One small file read.
+    // resume: an animated wallpaper may continue from animated.cache. readAdjust false: keep
+    // wallpaperAdjust[] as it is (a value still changing, not saved to wallpaper.ini yet).
+    static void loadCurrentWallpaper(bool resume = true, bool readAdjust = true) {
+        releaseGlassForWallpaper();
+        const auto ini = getParsedDataFromIniFile(wallpaperIniPath());
+        if (readAdjust) setAdjustFromIni(ini);
+        // An overlay's own wallpaper.uaw (UI override folder) comes first.
+        if (!WALLPAPER_ANIM_OVERRIDE.empty() && anim::startFromPath(WALLPAPER_ANIM_OVERRIDE, resume)) return;
+        if (isFile(WALLPAPER_PATH)) loadWallpaperFile(WALLPAPER_PATH);
+        else if (const std::string* animPath = iniValue(ini, "wallpaper", "animated")) anim::startFromPath(*animPath, resume);
+    }
+
+    // ---- wallpaper adjustments: where they are applied (image_fx.hpp) ----
+    std::atomic<bool> wallpaperAdjustLive{false};
+    std::atomic<bool> wallpaperAdjustSpread{false};
+    s8 wallpaperBaked[WA_COUNT] = {};
+    WallAdj wallpaperBakedAdj{};
+
+    void wallAdjBuffer(const WallAdj& wa, u8* rgb, size_t px) {
+        if (!wa.on) return;
+        for (size_t i = 0; i + 8 <= px; i += 8) {
+            uint8x8x3_t w = vld3_u8(rgb + i * 3);
+            wallAdj8(wa, w);
+            vst3_u8(rgb + i * 3, w);
+        }
+    }
+
+    void wallAdjBuffer4444(const WallAdj& wa, u8* p, size_t px) {
+        if (!wa.on) return;
+        for (size_t i = 0; i + 8 <= px; i += 8) {
+            uint8x8x2_t v = vld2_u8(p + i * 2);
+            wallAdj4444(wa, v.val[0], v.val[1]);
+            vst2_u8(p + i * 2, v);
+        }
+    }
+
+    void wallpaperAdjustTarget(s8 (&out)[WA_COUNT]) {
+        const bool use = !wallpaperAdjustLive.load(std::memory_order_acquire);   // (both colour modes)
+        for (u32 i = 0; i < WA_COUNT; ++i) out[i] = use ? wallpaperAdjust[i].load(std::memory_order_relaxed) : 0;
+    }
+
+    void setWallpaperBaked(const s8 (&v)[WA_COUNT]) {
+        memcpy(wallpaperBaked, v, sizeof(wallpaperBaked));
+        wallAdjSetup(wallpaperBakedAdj, v);
+    }
+
+    static constexpr size_t kFullWallBytes = size_t(448) * 720 * 3;
+    static bool anyAdjustValues(const s8 (&v)[WA_COUNT]) {
+        for (u32 i = 0; i < WA_COUNT; ++i) if (v[i]) return true;
+        return false;
+    }
+
+    void bakeLoadedWallpaper() {
+        s8 t[WA_COUNT];
+        wallpaperAdjustTarget(t);
+        if (wallpaperData.size() != kFullWallBytes) { setWallpaperBaked(kNoWallAdjust); return; }
+        setWallpaperBaked(t);
+        wallAdjBuffer(wallpaperBakedAdj, wallpaperData.data(), kFullWallBytes / 3);
+    }
+
+    // Runs f with the wallpaper to itself (same handshake as reloadWallpaper: no frame
+    // reads it meanwhile, the animated wallpaper's decoder skips), then re-composes.
+    template <typename F>
+    static void withWallpaperLocked([[maybe_unused]] const char* what, F&& f) {
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        const u64 t0 = ult::glassLog ? armGetSystemTick() : 0;
+    #endif
+        {
+            auto lock = beginWallpaperChange();
+            f();
+            wallpaperGeneration.fetch_add(1, std::memory_order_acq_rel);
+        }
+        refreshWallpaper.store(false, std::memory_order_release);
+        cv.notify_all();
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        if (ult::glassLog)
+            glass::live::log("wallpaper: adjustments %s in %lu us", what,
+                             (unsigned long)(armTicksToNs(armGetSystemTick() - t0) / 1000));
+    #endif
+    }
+
+    static bool anyAdjust(const s8 (&v)[WA_COUNT]) {
+        for (u32 i = 0; i < WA_COUNT; ++i) if (v[i]) return true;
+        return false;
+    }
+
+    // Brings the buffer to wallpaperAdjustTarget() (caller holds wallpaperMutex).
+    // resume: an animated wallpaper that must be reloaded may continue from its state.
+    static void syncLocked(bool resume) {
+        s8 t[WA_COUNT];
+        wallpaperAdjustTarget(t);
+        if (memcmp(t, wallpaperBaked, sizeof(t)) == 0) return;
+        const bool fourBit = !fullColorWallpaper && wallpaperData.size() == size_t(448) * 720 * 2;
+        if (!fourBit && wallpaperData.size() != kFullWallBytes) { setWallpaperBaked(kNoWallAdjust); return; }   // nothing drawn
+        if (!anyAdjust(wallpaperBaked)) {                 // plain picture: bake in place
+            setWallpaperBaked(t);
+            if (fourBit) wallAdjBuffer4444(wallpaperBakedAdj, wallpaperData.data(), size_t(448) * 720);
+            else         wallAdjBuffer(wallpaperBakedAdj, wallpaperData.data(), kFullWallBytes / 3);
+            return;
+        }
+        // Something else is baked in: the plain wallpaper again (a still one from the SD card,
+        // an animated one from frame 0), with the target baked in by the load: the current
+        // wallpaperAdjust[].
+        loadCurrentWallpaper(resume, false);
+    }
+
+    void beginWallpaperAdjustEdit() {
+        if (wallpaperAdjustLive.load(std::memory_order_acquire)) return;
+        wallpaperAdjustSpread.store(fullColorWallpaper && glass::gameOutOfFocus(), std::memory_order_release);   // (4-bit: drawWallpaper is spread already)
+        withWallpaperLocked("live preview on", [] {
+            wallpaperAdjustLive.store(true, std::memory_order_release);
+            syncLocked(false);                            // target is now "none"
+        });
+    }
+
+    void endWallpaperAdjustEdit() {
+        if (!wallpaperAdjustLive.load(std::memory_order_acquire)) return;
+        withWallpaperLocked("baked in", [] {
+            wallpaperAdjustLive.store(false, std::memory_order_release);
+            syncLocked(false);                            // plain buffer: baked in place
+        });
+    }
+
+    void syncWallpaperAdjust(bool resume) {
+        s8 t[WA_COUNT];
+        wallpaperAdjustTarget(t);
+        if (memcmp(t, wallpaperBaked, sizeof(t)) == 0) return;
+        if (resume) withWallpaperLocked("synced", [] { syncLocked(true); });
+        else        withWallpaperLocked("applied (4-bit)", [] { syncLocked(false); });
+    }
+
+    #if IS_LAUNCHER_DIRECTIVE
+    // Minimal PNG -> RGBA8888 converter for wallpapers (streaming; zlib's inflate, already
+    // linked, does the decompression). The output is a plain .rgba file, so loading a PNG
+    // wallpaper later is exactly as fast as loading any other wallpaper.
+    // Supported: 8-bit grey / grey+alpha / RGB / RGBA / palette (with tRNS alpha), 16-bit
+    // grey / grey+alpha / RGB / RGBA (high byte kept), non-interlaced, exactly
+    // width x height. Anything else returns false and leaves outPath untouched.
+    // Speed: rows are inflated in blocks of ~32 KB (zlib stays on its fast path), the
+    // row filters and pixel conversion use NEON, and the file is read through one 32 KB
+    // buffer (chunk headers / CRCs never cost an SD read of their own).
+    // Temporary memory ~110 KB (zlib state + 32 KB window, row block, output, input).
+    namespace png {
+        // Unfilter one pixel-serial row (Sub / Average / Paeth) for bpp 3, 4, 6 or 8:
+        // the bpp bytes of a pixel are one NEON vector, pixels go left to right.
+        template <u32 kBpp, u8 kFilter>
+        static void unfilterPixels(u8* x, const u8* p, u32 rowBytes) {
+            auto ld = [](const u8* s) { u64 v = 0; memcpy(&v, s, kBpp); return vcreate_u8(v); };
+            auto st = [](u8* d, uint8x8_t v) { const u64 t = vget_lane_u64(vreinterpret_u64_u8(v), 0); memcpy(d, &t, kBpp); };
+            uint8x8_t a = vdup_n_u8(0), c = vdup_n_u8(0);   // left / upper-left (0 for the first pixel)
+            for (u32 i = 0; i < rowBytes; i += kBpp) {
+                const uint8x8_t raw = ld(x + i);
+                uint8x8_t pred;
+                if constexpr (kFilter == 1) {
+                    pred = a;
+                } else if constexpr (kFilter == 3) {
+                    pred = vhadd_u8(a, ld(p + i));                  // floor((a + b) / 2)
+                } else {
+                    const uint8x8_t b = ld(p + i);
+                    const uint16x8_t pa = vabdl_u8(b, c);           // |p - a| = |b - c|
+                    const uint16x8_t pb = vabdl_u8(a, c);           // |p - b| = |a - c|
+                    const uint16x8_t pc = vabdq_u16(vaddl_u8(a, b), vshll_n_u8(c, 1));   // |a + b - 2c|
+                    const uint8x8_t useA = vmovn_u16(vandq_u16(vcleq_u16(pa, pb), vcleq_u16(pa, pc)));
+                    const uint8x8_t useB = vmovn_u16(vcleq_u16(pb, pc));
+                    pred = vbsl_u8(useA, a, vbsl_u8(useB, b, c));
+                    c = b;
+                }
+                a = vadd_u8(raw, pred);
+                st(x + i, a);
+            }
+        }
+
+        // Undo the row filter (cur[-1] = filter type) of row x against the previous row p.
+        static bool unfilterRow(u8 filter, u8* x, const u8* p, u32 rowBytes, u32 bpp) {
+            switch (filter) {
+                case 0: return true;
+                case 2: {
+                    u32 i = 0;
+                    for (; i + 16 <= rowBytes; i += 16) vst1q_u8(x + i, vaddq_u8(vld1q_u8(x + i), vld1q_u8(p + i)));
+                    for (; i < rowBytes; ++i) x[i] += p[i];
+                    return true;
+                }
+                case 1: case 3: case 4: break;
+                default: return false;
+            }
+            #define PNG_UNFILTER_BPP(B) \
+                if (bpp == B) { \
+                    if (filter == 1) unfilterPixels<B, 1>(x, p, rowBytes); \
+                    else if (filter == 3) unfilterPixels<B, 3>(x, p, rowBytes); \
+                    else unfilterPixels<B, 4>(x, p, rowBytes); \
+                    return true; \
+                }
+            PNG_UNFILTER_BPP(4) PNG_UNFILTER_BPP(3) PNG_UNFILTER_BPP(8) PNG_UNFILTER_BPP(6)
+            #undef PNG_UNFILTER_BPP
+            // bpp 1 / 2 (grey, grey + alpha): scalar
+            if (filter == 1) {
+                for (u32 i = bpp; i < rowBytes; ++i) x[i] += x[i - bpp];
+            } else if (filter == 3) {
+                for (u32 i = 0; i < bpp; ++i) x[i] += p[i] >> 1;
+                for (u32 i = bpp; i < rowBytes; ++i) x[i] += (u32(x[i - bpp]) + p[i]) >> 1;
+            } else {
+                for (u32 i = 0; i < bpp; ++i) x[i] += p[i];
+                for (u32 i = bpp; i < rowBytes; ++i) {
+                    const s32 a = x[i - bpp], b = p[i], c = p[i - bpp];
+                    const s32 pa = std::abs(b - c), pb = std::abs(a - c), pc = std::abs(a + b - 2 * c);
+                    x[i] += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+                }
+            }
+            return true;
+        }
+
+        // RGBA8888 pixels -> the in-memory wallpaper format, with the same arithmetic as
+        // loadWallpaperFile: RGBA4444 bytes (r|g, b|a high nibbles), or (full colour)
+        // pre-multiplied 8-bit RGB.
+        static void toWallpaper(const u8* src, size_t px, u8* dst, bool fullColor) {
+            size_t i = 0;
+            if (fullColor) {
+                for (; i + 8 <= px; i += 8) {
+                    const uint8x8x4_t v = vld4_u8(src + i * 4);
+                    auto pm = [&](uint8x8_t ch) {                   // ch * a / 255, rounded
+                        const uint16x8_t t = vmull_u8(ch, v.val[3]);
+                        return vrshrn_n_u16(vsraq_n_u16(t, t, 8), 8);
+                    };
+                    vst3_u8(dst + i * 3, uint8x8x3_t{{ pm(v.val[0]), pm(v.val[1]), pm(v.val[2]) }});
+                }
+                for (; i < px; ++i) {
+                    const u8* sp = src + i * 4; u8* dp = dst + i * 3;
+                    for (int ch = 0; ch < 3; ++ch) { const u32 t = sp[ch] * sp[3]; dp[ch] = static_cast<u8>((t + (t >> 8) + 128) >> 8); }
+                }
+                return;
+            }
+            const uint8x8_t mask = vdup_n_u8(0xF0);
+            const size_t bytes = px * 4;
+            for (; i + 16 <= bytes; i += 16) {
+                const uint8x16_t data = vld1q_u8(src + i);
+                const uint8x8x2_t sep = vuzp_u8(vget_low_u8(data), vget_high_u8(data));
+                vst1_u8(dst + i / 2, vorr_u8(vand_u8(sep.val[0], mask), vshr_n_u8(sep.val[1], 4)));
+            }
+            for (; i + 1 < bytes; i += 2) dst[i / 2] = (src[i] & 0xF0) | (src[i + 1] >> 4);
+        }
+    }
+
+    // wallDst (optional): also fill the in-memory wallpaper (width x height in the format
+    // toWallpaper writes), so a new PNG wallpaper needs no read-back of the .rgba file.
+    bool convertPngToRgba(const std::string& pngPath, const std::string& outPath, u32 width, u32 height, u8* wallDst) {
+        struct Ctx {
+            FILE* in = nullptr; FILE* out = nullptr;
+            z_stream zs{}; bool zInit = false;
+            u8* mem = nullptr;
+            ~Ctx() { if (zInit) inflateEnd(&zs); if (in) fclose(in); if (out) fclose(out); free(mem); }
+        } c;
+        const std::string tmpPath = outPath + ".tmp";
+        auto fail = [&]() { if (c.out) { fclose(c.out); c.out = nullptr; } std::remove(tmpPath.c_str()); return false; };
+        auto be32 = [](const u8* p) { return (u32(p[0]) << 24) | (u32(p[1]) << 16) | (u32(p[2]) << 8) | u32(p[3]); };
+
+        c.in = fopen(pngPath.c_str(), "rb");
+        if (!c.in) return false;
+        setvbuf(c.in, nullptr, _IONBF, 0);                      // our own 32 KB buffer below
+
+        u8 hdr[8 + 8 + 13 + 4];                                 // signature, IHDR (with its CRC)
+        static constexpr u8 kSig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+        if (fread(hdr, 1, sizeof(hdr), c.in) != sizeof(hdr) || memcmp(hdr, kSig, 8) != 0 ||
+            be32(hdr + 8) != 13 || memcmp(hdr + 12, "IHDR", 4) != 0) return false;
+        const u8* ih = hdr + 16;
+        const u32 w = be32(ih), h = be32(ih + 4);
+        const u8 depth = ih[8], type = ih[9];
+        if (w != width || h != height || ih[10] != 0 || ih[11] != 0 || ih[12] != 0) return false;   // size, method, interlace
+        u32 channels;
+        switch (type) {
+            case 0: channels = 1; break;   // grey
+            case 2: channels = 3; break;   // RGB
+            case 3: channels = 1; break;   // palette
+            case 4: channels = 2; break;   // grey + alpha
+            case 6: channels = 4; break;   // RGBA
+            default: return false;
+        }
+        if (!(depth == 8 || (depth == 16 && type != 3))) return false;
+        const u32 bpp = channels * (depth / 8);                // bytes per pixel (filter distance)
+        const u32 rowBytes = w * bpp;
+        const u32 stride = rowBytes + 1;                        // filter byte + row
+        const u32 kRows = std::max<u32>(1, 32768 / stride);     // rows inflated per block
+        const u32 outRow = w * 4;
+        const u32 wallBpp = fullColorWallpaper ? 3u : 2u;      // bytes per pixel in wallDst
+
+        // One block: palette | previous row | row block | output rows | input buffer
+        constexpr u32 kInBytes = 32768;
+        const size_t memSize = 1024 + 16 + stride + size_t(kRows) * stride + 16 + size_t(kRows) * outRow + kInBytes;
+        c.mem = static_cast<u8*>(malloc(memSize));
+        if (!c.mem) return false;
+        u32* const pal = reinterpret_cast<u32*>(c.mem);         // 256 x RGBA (bytes R,G,B,A)
+        u8* const prevRow = c.mem + 1024 + 16;                  // [filter][row]: the row above block row 0
+        u8* const block = prevRow + stride;                     // kRows x [filter][row]
+        u8* const outBuf = block + size_t(kRows) * stride + 16;
+        u8* const inBuf = outBuf + size_t(kRows) * outRow;
+        for (u32 i = 0; i < 256; ++i) pal[i] = 0xFF000000u;     // black, opaque
+        memset(prevRow, 0, stride);
+        u32 palCount = 0;
+
+        // Buffered reader over the PNG file.
+        u32 inPos = 0, inEnd = 0;
+        auto refill = [&]() -> bool {
+            if (inPos < inEnd) return true;
+            inPos = 0; inEnd = static_cast<u32>(fread(inBuf, 1, kInBytes, c.in));
+            return inEnd != 0;
+        };
+        auto get = [&](u8* dst, u32 n) -> bool {
+            while (n) {
+                if (!refill()) return false;
+                const u32 k = std::min(n, inEnd - inPos);
+                memcpy(dst, inBuf + inPos, k); inPos += k; dst += k; n -= k;
+            }
+            return true;
+        };
+        auto skip = [&](u32 n) -> bool {
+            const u32 k = std::min(n, inEnd - inPos); inPos += k; n -= k;
+            if (n == 0) return true;
+            inPos = inEnd = 0;
+            return fseek(c.in, n, SEEK_CUR) == 0;
+        };
+
+        if (inflateInit(&c.zs) != Z_OK) return false;
+        c.zInit = true;
+        c.out = fopen(tmpPath.c_str(), "wb");
+        if (!c.out) return false;
+        setvbuf(c.out, nullptr, _IONBF, 0);                     // writes are whole output blocks
+
+        u32 rowsDone = 0, blockFill = 0, blockRows = 0;         // bytes inflated into block, rows finished in it
+        bool zEnd = false;
+
+        // Converts one unfiltered row to RGBA8888.
+        auto convertRow = [&](const u8* s, u8* d) -> bool {
+            u32 px = 0;
+            if (depth == 8) {
+                switch (type) {
+                    case 6: memcpy(d, s, outRow); return true;
+                    case 2:
+                        for (; px + 16 <= w; px += 16) {
+                            const uint8x16x3_t v = vld3q_u8(s + px * 3);
+                            vst4q_u8(d + px * 4, uint8x16x4_t{{ v.val[0], v.val[1], v.val[2], vdupq_n_u8(255) }});
+                        }
+                        for (; px < w; ++px) { d[px*4] = s[px*3]; d[px*4+1] = s[px*3+1]; d[px*4+2] = s[px*3+2]; d[px*4+3] = 255; }
+                        return true;
+                    case 0:
+                        for (; px + 16 <= w; px += 16) {
+                            const uint8x16_t g = vld1q_u8(s + px);
+                            vst4q_u8(d + px * 4, uint8x16x4_t{{ g, g, g, vdupq_n_u8(255) }});
+                        }
+                        for (; px < w; ++px) { d[px*4] = d[px*4+1] = d[px*4+2] = s[px]; d[px*4+3] = 255; }
+                        return true;
+                    case 4:
+                        for (; px + 16 <= w; px += 16) {
+                            const uint8x16x2_t v = vld2q_u8(s + px * 2);
+                            vst4q_u8(d + px * 4, uint8x16x4_t{{ v.val[0], v.val[0], v.val[0], v.val[1] }});
+                        }
+                        for (; px < w; ++px) { d[px*4] = d[px*4+1] = d[px*4+2] = s[px*2]; d[px*4+3] = s[px*2+1]; }
+                        return true;
+                    case 3:
+                        for (; px < w; ++px) {
+                            if (s[px] >= palCount) return false;
+                            memcpy(d + px * 4, &pal[s[px]], 4);
+                        }
+                        return true;
+                }
+                return false;
+            }
+            // 16-bit: keep the high (first) byte of every sample
+            for (; px < w; ++px, d += 4) {
+                const u8* q = s + px * bpp;
+                switch (type) {
+                    case 0: d[0] = d[1] = d[2] = q[0]; d[3] = 255; break;
+                    case 2: d[0] = q[0]; d[1] = q[2]; d[2] = q[4]; d[3] = 255; break;
+                    case 4: d[0] = d[1] = d[2] = q[0]; d[3] = q[2]; break;
+                    case 6: d[0] = q[0]; d[1] = q[2]; d[2] = q[4]; d[3] = q[6]; break;
+                }
+            }
+            return true;
+        };
+
+        // Finishes every complete row in the block; a full block is written out.
+        auto finishRows = [&]() -> bool {
+            while ((blockRows + 1) * stride <= blockFill) {
+                if (rowsDone == h) return false;                // more rows than the image has
+                u8* const r = block + size_t(blockRows) * stride;
+                const u8* const above = (blockRows ? r - stride : prevRow) + 1;
+                if (!png::unfilterRow(r[0], r + 1, above, rowBytes, bpp) ||
+                    !convertRow(r + 1, outBuf + size_t(blockRows) * outRow)) return false;
+                ++blockRows; ++rowsDone;
+            }
+            if (blockRows == kRows) {
+                const size_t n = size_t(kRows) * outRow;
+                if (wallDst) png::toWallpaper(outBuf, size_t(kRows) * w, wallDst + size_t(rowsDone - kRows) * w * wallBpp, fullColorWallpaper);
+                if (fwrite(outBuf, 1, n, c.out) != n) return false;
+                memcpy(prevRow, block + size_t(kRows - 1) * stride, stride);
+                blockRows = blockFill = 0;
+            }
+            return true;
+        };
+
+        // Chunks after IHDR.
+        while (!zEnd) {
+            u8 ch[8];
+            if (!get(ch, 8)) return fail();
+            u32 len = be32(ch);
+            if (len > 0x7FFFFFFFu) return fail();
+            if (!memcmp(ch + 4, "IDAT", 4)) {
+                while (len && !zEnd) {
+                    if (!refill()) return fail();
+                    const u32 n = std::min(len, inEnd - inPos);
+                    c.zs.next_in = inBuf + inPos; c.zs.avail_in = n;
+                    while (c.zs.avail_in && !zEnd) {
+                        c.zs.next_out = block + blockFill; c.zs.avail_out = kRows * stride - blockFill;
+                        const int r = inflate(&c.zs, Z_NO_FLUSH);
+                        if (r != Z_OK && r != Z_STREAM_END) return fail();
+                        blockFill = kRows * stride - c.zs.avail_out;
+                        if (!finishRows()) return fail();
+                        if (r == Z_STREAM_END) zEnd = true;
+                    }
+                    const u32 used = n - c.zs.avail_in;
+                    inPos += used; len -= used;
+                }
+                if (len && !skip(len)) return fail();           // data after the stream end
+            } else if (!memcmp(ch + 4, "PLTE", 4)) {
+                if (len % 3 || len > 768 || type != 3) {
+                    if (type == 3 || !skip(len)) return fail(); // PLTE in RGB files is a hint
+                } else {
+                    u8 t[768];
+                    if (!get(t, len)) return fail();
+                    palCount = len / 3;
+                    for (u32 i = 0; i < palCount; ++i) memcpy(&pal[i], t + i * 3, 3);
+                }
+            } else if (!memcmp(ch + 4, "tRNS", 4) && type == 3) {
+                if (len > 256) return fail();
+                u8 t[256];
+                if (!get(t, len)) return fail();
+                for (u32 i = 0; i < len; ++i) reinterpret_cast<u8*>(&pal[i])[3] = t[i];
+            } else if (!memcmp(ch + 4, "IEND", 4)) {
+                break;
+            } else if (!(ch[4] & 0x20)) {
+                return fail();                                  // unknown critical chunk
+            } else if (!skip(len)) {
+                return fail();                                  // ancillary chunk: skipped
+            }
+            if (!skip(4)) return fail();                        // CRC
+        }
+        if (!zEnd || rowsDone != h || blockFill != blockRows * stride) return fail();
+        const size_t tail = size_t(blockRows) * outRow;
+        if (tail && fwrite(outBuf, 1, tail, c.out) != tail) return fail();
+        if (tail && wallDst) png::toWallpaper(outBuf, size_t(blockRows) * w, wallDst + size_t(rowsDone - blockRows) * w * wallBpp, fullColorWallpaper);
+        if (fclose(c.out) != 0) { c.out = nullptr; return fail(); }
+        c.out = nullptr;
+        std::remove(outPath.c_str());
+        if (std::rename(tmpPath.c_str(), outPath.c_str()) != 0) return fail();
+        return true;
+    }
+    
+
+    // Sets a PNG as the wallpaper: decoded once into WALLPAPER_PATH (.rgba) and, when the
+    // wallpaper is shown, straight into memory in the same pass, so the 1.29 MB file is
+    // never read back. Same renderer handshake as reloadWallpaper(). Returns false if the
+    // PNG can't be used, keeping the current wallpaper (file and memory).
+    // The PNG checks convertPngToRgba makes before decoding anything: signature, IHDR,
+    // size, a supported type / depth, not interlaced. Lets an unusable file be refused
+    // before the current wallpaper is touched.
+    static bool pngHeaderOk(const std::string& pngPath, u32 width, u32 height) {
+        FILE* f = fopen(pngPath.c_str(), "rb");
+        if (!f) return false;
+        u8 h[8 + 8 + 13];
+        const bool got = fread(h, 1, sizeof(h), f) == sizeof(h);
+        fclose(f);
+        static constexpr u8 kSig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+        if (!got || memcmp(h, kSig, 8) != 0 || memcmp(h + 12, "IHDR", 4) != 0) return false;
+        auto be32 = [](const u8* p) { return (u32(p[0]) << 24) | (u32(p[1]) << 16) | (u32(p[2]) << 8) | u32(p[3]); };
+        const u8* ih = h + 16;
+        const u8 depth = ih[8], type = ih[9];
+        if (be32(h + 8) != 13 || be32(ih) != width || be32(ih + 4) != height || ih[10] || ih[11] || ih[12]) return false;
+        if (type != 0 && type != 2 && type != 3 && type != 4 && type != 6) return false;
+        return depth == 8 || (depth == 16 && type != 3);
+    }
+
+    bool setWallpaperFromPng(const std::string& pngPath) {
+        if (!pngHeaderOk(pngPath, 448, 720)) return false;       // nothing touched
+        if (glassReplacesWallpaper() || limitedMemory) {          // not shown: file only
+            if (!convertPngToRgba(pngPath, WALLPAPER_PATH)) return false;
+            reloadWallpaper();
+            return true;
+        }
+        auto lock = beginWallpaperChange();
+        freeWallpaperData();
+        releaseGlassForWallpaper();
+        // (no memory: as a refused PNG, files untouched)
+        const bool ok = wallpaperData.resize(size_t(448) * 720 * (fullColorWallpaper ? 3 : 2)) &&
+                        convertPngToRgba(pngPath, WALLPAPER_PATH, 448, 720, wallpaperData.data());
+        if (ok) {
+            setAdjustFromIni(getParsedDataFromIniFile(wallpaperIniPath()));   // this wallpaper's
+            if (fullColorWallpaper) bakeLoadedWallpaper();
+            else {                                        // 4-bit: adjusted while converting, from the file
+                s8 t[WA_COUNT];
+                wallpaperAdjustTarget(t);
+                if (anyAdjustValues(t)) loadWallpaperFile(WALLPAPER_PATH);
+                else setWallpaperBaked(kNoWallAdjust);
+            }
+            wallpaperGeneration.fetch_add(1, std::memory_order_acq_rel);
+        } else {                                                  // files untouched: back to the
+            freeWallpaperData();                                  // previous wallpaper
+            loadCurrentWallpaper();   // still, else animated (wallpaper.ini) + black level
+        }
+        refreshWallpaper.store(false, std::memory_order_release);
+        cv.notify_all();
+        return ok;
+    }
+    #endif
+
 
     void loadWallpaperFileWhenSafe() {
         if (!limitedMemory && !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire)) {
             std::unique_lock<std::mutex> lock(wallpaperMutex);
             cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire) && !refreshWallpaper.load(std::memory_order_acquire); });
-            if (wallpaperData.empty() && isFile(WALLPAPER_PATH)) {
-                loadWallpaperFile(WALLPAPER_PATH);
+            if (glassReplacesWallpaper()) {
+                if (!wallpaperData.empty()) freeWallpaperData();
+            } else if (wallpaperData.empty()) {
+                loadCurrentWallpaper();   // still, else animated (wallpaper.ini) + black level
             }
         }
     }
 
 
     void reloadWallpaper() {
-        // Signal that wallpaper is being refreshed
-        refreshWallpaper.store(true, std::memory_order_release);
+        auto lock = beginWallpaperChange();
         
-        // Lock the mutex for condition waiting
-        std::unique_lock<std::mutex> lock(wallpaperMutex);
+        // Clear the current wallpaper data (and give the memory back). Freed for the glass: an
+        // animated wallpaper saves where it is first, so it carries on from there when it comes back
+        // (glass off, a held game's wallpaper) instead of from the last overlay's exit.
+        const bool hadWallpaper = !wallpaperData.empty();
+        if (hadWallpaper && glassReplacesWallpaper()) anim::saveState();
+        freeWallpaperData();
+        // Freed for the glass (they share one block): keep the last frame up until the glass
+        // draws (at most 500 ms) instead of drawing a frame with neither (see the overlay loop).
+        if (hadWallpaper && glassReplacesWallpaper())
+            glassStartPauseUntilNs.store(ult::nowNs() + 500'000'000ULL, std::memory_order_release);
         
-        // Wait for inPlot to be false before reloading the wallpaper
-        cv.wait(lock, [] { return !inPlot.load(std::memory_order_acquire); });
-        
-        // Clear the current wallpaper data
-        wallpaperData.clear();
-        
-        // Reload the wallpaper file
-        if (isFile(WALLPAPER_PATH)) {
-            loadWallpaperFile(WALLPAPER_PATH);
+        // Reload the wallpaper unless frosted glass replaces it. A still image wins;
+        // otherwise an animated wallpaper (.uaw), if one is set.
+        if (!glassReplacesWallpaper()) {
+            loadCurrentWallpaper();   // still, else animated (wallpaper.ini) + black level
         }
         
         // Signal that wallpaper has finished refreshing
@@ -995,6 +1963,9 @@ namespace ult {
     std::atomic<bool> touchingSelect(false);
     std::atomic<bool> touchingNextPage(false);
     std::atomic<bool> touchingMenu(false);
+    #if IS_LAUNCHER_DIRECTIVE
+    bool useHomeShortcut = true;
+    #endif
     std::atomic<bool> shortTouchAndRelease(false);
     std::atomic<bool> longTouchAndRelease(false);
     std::atomic<bool> simulatedBack(false);
@@ -1213,7 +2184,7 @@ namespace ult {
 
     // Shared helper: single hash lookup instead of count() + at()
     static bool getBoolFromSection(const std::map<std::string, std::string>& section,
-                                   const std::string& key, bool defaultValue = false) {
+                                   const char* key, bool defaultValue = false) {
         const auto it = section.find(key);
         return (it != section.end()) ? (it->second != FALSE_STR) : defaultValue;
     }
@@ -1228,11 +2199,11 @@ namespace ult {
         hideSOCTemp           = getBoolFromSection(ultrahandSection, "hide_soc_temp",            true);
         hidePCBTemp           = getBoolFromSection(ultrahandSection, "hide_pcb_temp",            true);
         dynamicWidgetColors   = getBoolFromSection(ultrahandSection, "dynamic_widget_colors",    true);
-        dynamicWidgetBorder   = getBoolFromSection(ultrahandSection, "dynamic_widget_border",    true);
+        dynamicWidgetBorder   = getBoolFromSection(ultrahandSection, "dynamic_widget_border",    false);
         hideWidgetBackdrop    = getBoolFromSection(ultrahandSection, "hide_widget_backdrop",     false);
         hideWidgetBorder      = getBoolFromSection(ultrahandSection, "hide_widget_border",       false);
         centerWidgetAlignment = getBoolFromSection(ultrahandSection, "center_widget_alignment",  true);
-        extendedWidgetBackdrop= getBoolFromSection(ultrahandSection, "extended_widget_backdrop", false);
+        extendedWidgetBackdrop= getBoolFromSection(ultrahandSection, "extended_widget_backdrop", true); // inverted: true = off
     }
     #endif
     
@@ -1388,15 +2359,6 @@ namespace ult {
     #endif
     
     
-    // Number of renderer threads to use
-    constexpr unsigned numThreads = 4;//expandedMemory ? 4 : 0;
-    std::vector<std::thread> renderThreads(numThreads);
-
-    void InPlotBarrierCompletion::operator()() noexcept {
-        inPlot.store(false, std::memory_order_release);
-    }
-    std::barrier<InPlotBarrierCompletion> inPlotBarrier(numThreads);
-
-    const s32 bmpChunkSize = ((720 + numThreads - 1) / numThreads);
-    std::atomic<s32> currentRow;
+    // Number of renderer helper threads (tsl::gfx::Renderer::runParallel)
+    constexpr unsigned numThreads = 4;
 }

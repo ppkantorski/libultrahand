@@ -65,6 +65,8 @@ ULTRA_OPT_SIZE_PUSH
 ULTRA_OPT_SIZE_POP
 
 #include "tsl_utils.hpp"
+#include "glass.hpp"
+#include "animated.hpp"
 
 //#pragma GCC pop_options
 //#pragma GCC diagnostic pop

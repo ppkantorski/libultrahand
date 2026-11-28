@@ -66,7 +66,7 @@ namespace ult {
      * @param outCheatPath The file path for the output cheat file.
      * @return True if the conversion was successful, false otherwise.
      */
-    bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName = "", std::string outCheatPath = "");
+    bool pchtxt2cheat(const std::string &pchtxtPath, std::string cheatName = {}, std::string outCheatPath = {});
 
     // Corrected helper function to convert values to big-endian format
     inline uint32_t toBigEndian(uint32_t value) {

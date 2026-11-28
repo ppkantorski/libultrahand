@@ -18,6 +18,9 @@
 #include "debug_funcs.hpp"
 
 namespace ult {
+    // (tsl_utils.cpp: localtime / strftime without newlib's time-zone code)
+    struct tm* localTime(time_t t, struct tm* out);
+    size_t formatTime(char* s, size_t maxsize, const char* format, const struct tm* t);
     //#if USING_LOGGING_DIRECTIVE
     // Define static variables
     const std::string defaultLogFilePath = "sdmc:/switch/.packages/log.txt";
@@ -27,9 +30,9 @@ namespace ult {
     
     void logMessage(const char* message) {
         std::time_t currentTime = std::time(nullptr);
-        std::tm* timeInfo = std::localtime(&currentTime);
+        std::tm timeInfo;
         char timestamp[30];
-        strftime(timestamp, sizeof(timestamp), "[%Y-%m-%d %H:%M:%S] ", timeInfo);
+        formatTime(timestamp, sizeof(timestamp), "[%Y-%m-%d %H:%M:%S] ", localTime(currentTime, &timeInfo));
         
         {
             std::lock_guard<std::mutex> lock(logMutex);

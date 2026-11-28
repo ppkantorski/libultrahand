@@ -49,7 +49,7 @@ namespace ult {
     std::string getValueFromLine(const std::string& line) {
         const size_t equalsPos = line.rfind('=');
         if (equalsPos == std::string::npos || equalsPos + 1 >= line.size()) {
-            return "";
+            return {};
         }
         
         // OPTIMIZATION: Find trim boundaries directly - no temporary string
@@ -71,7 +71,8 @@ namespace ult {
         }
         
         // Return trimmed substring directly
-        return (start <= end) ? line.substr(start, end - start + 1) : "";
+        if (start > end) return {};
+        return line.substr(start, end - start + 1);
     }
         
     
@@ -85,7 +86,7 @@ namespace ult {
     std::string getNameFromPath(const std::string& path) {
         const size_t lastNonSlash = path.find_last_not_of('/');
         if (lastNonSlash == std::string::npos) {
-            return "";  // All slashes, or empty string effectively
+            return {};  // All slashes, or empty string effectively
         }
     
         const size_t lastSlash = path.find_last_of('/', lastNonSlash);
@@ -109,7 +110,8 @@ namespace ult {
      */
     std::string getFileName(const std::string& path) {
         const size_t pos = path.find_last_of('/');
-        return (pos != std::string::npos) ? path.substr(pos + 1) : "";
+        if (pos == std::string::npos) return {};
+        return path.substr(pos + 1);
     }
     
     
@@ -121,20 +123,20 @@ namespace ult {
      * @return The name of the parent directory at the specified level.
      */
     std::string getParentDirNameFromPath(const std::string& path, size_t level) {
-        if (path.empty()) return "";
+        if (path.empty()) return {};
     
         // Start from the end of the string and move backwards to find the slashes
         size_t endPos = path.find_last_not_of('/');
-        if (endPos == std::string::npos) return "";
+        if (endPos == std::string::npos) return {};
         
         size_t pos = path.rfind('/', endPos);
-        if (pos == std::string::npos || pos == 0) return "";
+        if (pos == std::string::npos || pos == 0) return {};
     
         // Navigate up the specified number of levels
         while (level-- > 0 && pos != std::string::npos) {
             endPos = pos - 1;
             pos = path.rfind('/', endPos);
-            if (pos == std::string::npos || pos == 0) return "";
+            if (pos == std::string::npos || pos == 0) return {};
         }
     
         size_t start = path.rfind('/', pos - 1);
@@ -212,9 +214,9 @@ namespace ult {
             // Skip . and ..
             if (entryName[0] == '.' && (entryName[1] == '\0' || (entryName[1] == '.' && entryName[2] == '\0'))) continue;
             
-            const std::string fullPath = directoryPath + "/" + entryName;
-            
-            if (isEntryDirectory(entry, fullPath)) {
+            // The full path is only needed to stat an entry whose type is unknown
+            if (entry->d_type == DT_DIR ||
+                (entry->d_type == DT_UNKNOWN && isEntryDirectory(entry, directoryPath + "/" + entryName))) {
                 subdirectories.emplace_back(entryName);
             }
         }
@@ -406,14 +408,8 @@ namespace ult {
         if (start < pathLen && !directoryOnly) {
             parts.emplace_back(pathPattern.data() + start, pathLen - start);
         }
-    
-        // Extra: check parsed parts to disallow "**"
-        for (size_t i = 0; i + 1 < parts.size(); ++i) {
-            if (parts[i] == "**" && parts[i + 1] == "**") {
-                return results; // invalid, exclude
-            }
-        }
         
+        // (A part can't be "**": any pattern containing "**" was already rejected above.)
         if (!parts.empty()) {
             handleDirectory(basePath, parts, 0, results, directoryOnly, maxLines);
         }

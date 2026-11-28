@@ -54,6 +54,7 @@ namespace ult {
      */
     std::string asciiToHex(const std::string& asciiStr) {
         std::string hexStr;
+        hexStr.reserve(asciiStr.size() * 2);
     
         for (unsigned char c : asciiStr) {
             hexStr.push_back(hexLookup[c >> 4]); // High nibble
@@ -74,7 +75,7 @@ namespace ult {
         const int decimalValue = ult::stoi(decimalStr);
         if (decimalValue < 0 || byteGroupSize <= 0 || (byteGroupSize % 2) != 0) {
             // Invalid input: negative number, or byteGroupSize <= 0, or odd byteGroupSize
-            return "";
+            return {};
         }
     
         // Special case: zero
@@ -111,7 +112,7 @@ namespace ult {
     
         // If minByteGroupSize is less than hex length, number doesn't fit
         if (minByteGroupSize < hexLen) {
-            return ""; // can't fit
+            return {}; // can't fit
         }
     
         // Pad with leading zeros to match minByteGroupSize
@@ -219,14 +220,11 @@ namespace ult {
             return offsets;
         }
     
-        fseek(file, 0, SEEK_END);
-        const size_t fileSize = ftell(file);
-        fseek(file, 0, SEEK_SET);
-    
-        if (hexData.length() % 2 != 0) {
+        if (hexData.empty() || hexData.length() % 2 != 0) {
             fclose(file);
             return offsets;
         }
+        setvbuf(file, nullptr, _IONBF, 0);   // reads go straight into the chunk buffer
         
         const size_t hexLen = hexData.length();
         const size_t patternLen = hexLen / 2;
@@ -239,44 +237,46 @@ namespace ult {
         const unsigned char* patternPtr = binaryData.get();
         const unsigned char firstByte = patternPtr[0];
         
-        // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
-        std::unique_ptr<unsigned char[]> buffer(new unsigned char[HEX_BUFFER_SIZE]);
+        // The file is read in HEX_BUFFER_SIZE chunks. The last patternLen - 1 bytes of a chunk
+        // are kept in front of the next one, so a match across two chunks is found, and a
+        // comparison never reads past the bytes actually read. offset = file position of buf[0].
+        const size_t keep = patternLen - 1;
+        std::unique_ptr<unsigned char[]> buffer(new unsigned char[HEX_BUFFER_SIZE + keep]);
         size_t bytesRead = 0;
         size_t offset = 0;
+        size_t carried = 0;
         size_t i = 0;
         
 
-        while ((bytesRead = fread(buffer.get(), 1, HEX_BUFFER_SIZE, file)) > 0) {
+        while ((bytesRead = fread(buffer.get() + carried, 1, HEX_BUFFER_SIZE, file)) > 0) {
             const unsigned char* bufPtr = buffer.get();
+            const size_t avail = carried + bytesRead;
             
-            // Optimized search with first-byte filtering and loop unrolling
+            // Optimized search with first-byte filtering and loop unrolling: every start where
+            // the whole pattern fits in what has been read
             i = 0;
-            const size_t searchEnd = bytesRead;
+            const size_t searchEnd = avail >= patternLen ? avail - patternLen + 1 : 0;
             
             // Process 4 bytes at a time for better cache usage
             for (; i + 4 <= searchEnd; i += 4) {
                 // Check 4 positions at once
                 if (bufPtr[i] == firstByte) {
-                    if (offset + i + patternLen <= fileSize && 
-                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                    if (memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
                         offsets.emplace_back(ult::to_string(offset + i));
                     }
                 }
                 if (bufPtr[i + 1] == firstByte) {
-                    if (offset + i + 1 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 1, patternPtr, patternLen) == 0) {
+                    if (memcmp(bufPtr + i + 1, patternPtr, patternLen) == 0) {
                         offsets.emplace_back(ult::to_string(offset + i + 1));
                     }
                 }
                 if (bufPtr[i + 2] == firstByte) {
-                    if (offset + i + 2 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 2, patternPtr, patternLen) == 0) {
+                    if (memcmp(bufPtr + i + 2, patternPtr, patternLen) == 0) {
                         offsets.emplace_back(ult::to_string(offset + i + 2));
                     }
                 }
                 if (bufPtr[i + 3] == firstByte) {
-                    if (offset + i + 3 + patternLen <= fileSize && 
-                        memcmp(bufPtr + i + 3, patternPtr, patternLen) == 0) {
+                    if (memcmp(bufPtr + i + 3, patternPtr, patternLen) == 0) {
                         offsets.emplace_back(ult::to_string(offset + i + 3));
                     }
                 }
@@ -285,14 +285,17 @@ namespace ult {
             // Handle remaining bytes
             for (; i < searchEnd; ++i) {
                 if (bufPtr[i] == firstByte) {
-                    if (offset + i + patternLen <= fileSize && 
-                        memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
+                    if (memcmp(bufPtr + i, patternPtr, patternLen) == 0) {
                         offsets.emplace_back(ult::to_string(offset + i));
                     }
                 }
             }
             
-            offset += bytesRead;
+            // Carry the bytes that could still start a match into the next chunk
+            const size_t next = searchEnd;                    // first start not checked yet
+            carried = avail - next;                           // < patternLen
+            if (carried) memmove(buffer.get(), bufPtr + next, carried);
+            offset += next;
         }
     
         fclose(file);
@@ -415,7 +418,7 @@ namespace ult {
             // Find hex data offsets in the file
             const std::vector<std::string> offsets = findHexDataOffsets(filePath, customHexPattern);
             
-            if (!offsets.empty()) {
+            if (offsets.size() > occurrence) {
                 hexSum = ult::stoi(offsets[occurrence]);
                 
                 // Thread-safe cache write
@@ -521,7 +524,7 @@ namespace ult {
                 if (!disableLogging)
                     logMessage("Offset not found.");
                 #endif
-                return "";
+                return {};
             }
         }
 
@@ -537,7 +540,7 @@ namespace ult {
             if (!disableLogging)
                 logMessage("Failed to open the file.");
             #endif
-            return "";
+            return {};
         }
 
         if (fseek(file, totalOffset, SEEK_SET) != 0) {
@@ -546,7 +549,7 @@ namespace ult {
                 logMessage("Error seeking to offset.");
             #endif
             fclose(file);
-            return "";
+            return {};
         }
 
         // Use heap allocation for the buffer to avoid stack overflow with large buffer sizes
@@ -559,7 +562,7 @@ namespace ult {
             if (!disableLogging)
                 logMessage("Error reading data from file or end of file reached.");
             #endif
-            return "";
+            return {};
         }
 
         // Optimized hex conversion - directly build uppercase string
@@ -657,40 +660,34 @@ namespace ult {
      * @return The version string if found; otherwise, an empty string.
      */
     std::string extractVersionFromBinary(const std::string &filePath) {
-        // Step 1: Open the binary file
         FILE* file = fopen(filePath.c_str(), "rb");
         if (!file) {
-            return ""; // Return empty string if file cannot be opened
+            return {}; // Return empty string if file cannot be opened
         }
-    
-        // Get the file size
-        fseek(file, 0, SEEK_END);
-        const std::streamsize size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-    
-        // Read the entire file into a buffer
-        std::vector<uint8_t> buffer(size);
-        const size_t bytesRead = fread(buffer.data(), sizeof(uint8_t), size, file);
-        fclose(file); // Close the file after reading
-        
-        if (bytesRead != static_cast<size_t>(size)) {
-            return ""; // Return empty string if reading fails
-        }
-    
-        // Step 2: Search for the pattern "v#.#.#"
-        const char* data = reinterpret_cast<const char*>(buffer.data());
-        for (std::streamsize i = 0; i < size; ++i) {
-            if (data[i] == 'v' && i + 5 < size && 
-                std::isdigit(data[i + 1]) && data[i + 2] == '.' && 
-                std::isdigit(data[i + 3]) && data[i + 4] == '.' && 
-                std::isdigit(data[i + 5])) {
-    
-                // Extract the version string
-                return std::string(data + i, 6); // Return the version string
+        setvbuf(file, nullptr, _IONBF, 0);   // reads go straight into the chunk below
+
+        // The first "v#.#.#" in the file. Read in 4 KB chunks (not the whole file at once); the
+        // last 5 bytes of a chunk are kept in front of the next, so a match across two chunks
+        // is still found.
+        static constexpr size_t kChunk = 4096, kKeep = 5;
+        std::unique_ptr<char[]> buf(new char[kChunk + kKeep]);
+        auto isDigit = [](char c) { return c >= '0' && c <= '9'; };
+        size_t carried = 0, n;
+        while ((n = fread(buf.get() + carried, 1, kChunk, file)) > 0) {
+            const char* const data = buf.get();
+            const size_t avail = carried + n;
+            for (size_t i = 0; i + kKeep < avail; ++i) {
+                if (data[i] == 'v' && isDigit(data[i + 1]) && data[i + 2] == '.' &&
+                    isDigit(data[i + 3]) && data[i + 4] == '.' && isDigit(data[i + 5])) {
+                    fclose(file);
+                    return std::string(data + i, 6);   // the version string
+                }
             }
+            carried = avail < kKeep ? avail : kKeep;
+            memmove(buf.get(), data + avail - carried, carried);
         }
-    
-        return "";  // Return empty string if no match is found
+        fclose(file);
+        return {};  // Return empty string if no match is found
     }
 
     // 1. Table optimization: Mark as constexpr for compile-time evaluation

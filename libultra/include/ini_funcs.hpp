@@ -26,6 +26,7 @@
 #include <algorithm> // For std::remove_if
 
 #include <shared_mutex>
+#include <atomic>
 #include <unordered_map>
 #include <mutex>
 
@@ -34,6 +35,10 @@
 
 namespace ult {
 
+    // Counts ini files written by this process (any file, bumped when a write has finished).
+    // Lets code that follows a setting re-read it only after something may have changed it,
+    // instead of polling the file (see glass.cpp pollLiveSettings).
+    extern std::atomic<unsigned int> iniWriteEpoch;
     extern void clearIniMutexCache();
 
     extern size_t INI_BUFFER_SIZE;
@@ -192,7 +197,7 @@ namespace ult {
      * @param desiredValue    The new value for the key-value pair.
      * @param desiredNewKey   (Optional) If provided, the function will rename the key while preserving the original value.
      */
-    void setIniFile(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredValue, const std::string& desiredNewKey = "", const std::string& comment = "");
+    void setIniFile(const std::string& fileToEdit, const std::string& desiredSection, const std::string& desiredKey, const std::string& desiredValue, const std::string& desiredNewKey = {}, const std::string& comment = {});
     
     
     /**

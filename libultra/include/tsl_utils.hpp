@@ -44,7 +44,6 @@
 #include <list>
 #include <stack>
 #include <map>
-#include <barrier>
 
 
 struct OverlayCombo {
@@ -64,6 +63,13 @@ namespace ult {
     }
 
     void formatTimestamp(time_t t, char* buf, size_t bufSize);
+
+    // localtime / strftime without newlib's time-zone and integer-printf code (~25 KB): no TZ is
+    // ever set here, so local time is UTC (what localtime gives then), and formatTime() is newlib's
+    // C-locale strftime (same conversions, flags, widths, results and 0 on overflow or an unknown
+    // conversion), with %z / %Z / %s as newlib gives them without TZ.
+    struct tm* localTime(time_t t, struct tm* out);
+    size_t formatTime(char* s, size_t maxsize, const char* format, const struct tm* t);
 
     // math funcs
     double cos(double x);
@@ -92,7 +98,7 @@ namespace ult {
     // Function to clear the translation cache
     void clearTranslationCache();
 
-    extern u16 activeHeaderHeight;
+    extern u16 activeHeaderHeight;   // where the frame's list starts (y), 1 px below its header
 
     bool consoleIsDocked();
     
@@ -132,6 +138,7 @@ namespace ult {
     extern u32 layerEdge;
     extern bool useRightAlignment;
     extern bool useSwipeToOpen;
+    extern bool useTextBorder;   // thin black ring around all text but the banner logo (ini text_border)
     // Optional deadzone calibration for swipe-to-open ("swipe_offset" in
     // config.ini). Shifts the swipe start zone this many pixels inward from
     // the screen edge (leftward when opening from the right edge). Read-only
@@ -142,21 +149,41 @@ namespace ult {
     //extern bool usePageRecall;
     extern bool useNotifications;
     extern bool useNotificationsHotkey;
+    extern bool useSwitch2Notifications;
     extern bool useStartupNotification;
     extern bool silenceNotifications;
     extern bool useSoundEffects;
-    extern bool useHapticFeedback;
+    extern bool useButtonHaptics;
+    extern bool useTouchHaptics;
     extern bool useAutoNTPSync;
     extern bool useStickNavigation;
     extern bool usePageSwap;
     extern std::atomic<bool> noClickableItems;
     
     extern bool useSwitch2Style;
+    extern bool useFrostedGlass;  // ini frosted_glass
+    extern bool glassWithCheats;  // glass in a game held by Atmosphere's cheat engine (ini glass_with_cheats)
+    extern std::atomic<bool> glassFallback;   // glass released for the wallpaper: another debugger holds the game / vi
+    extern bool useGlassLayer;    // full-colour (RGBA8888) output with glass on >8 MB heaps (ini full_color_glass)
+    extern u8 glassDarkness;      // 0..12: highlight compression of the glass (ini glass_darkness)
+    extern u8 glassBlurRadius;    // 1..7: box radius of the 3-pass blur, in 1/8 px (ini glass_blur_radius)
+    extern u8 glassRed, glassGreen, glassBlue;  // 0..15: glass tint color (ini glass_red / glass_green / glass_blue), 0xFF: theme background color
+    // Live logging (live_logging.log, frame-time lines): only in builds with
+    // -DUSING_LIVE_LOGGING_DIRECTIVE=1. Without it none of the logging exists, so every
+    // use has to sit inside #if USING_LIVE_LOGGING_DIRECTIVE.
+#if USING_LIVE_LOGGING_DIRECTIVE
+    extern bool glassLog;
+#endif
     extern bool useDynamicLogo;
+    extern bool useUniformLogo;   // "hand" in the "Ultra" colour; no dynamic logo while on
     extern bool useDynamicTableColors;
     extern bool useSelectionBG;
     extern bool useSelectionText;
     extern bool useSelectionValue;
+    extern bool useUltrahandVersion;   // version | nx-ovlloader line under the logo (ini ultrahand_version)
+    extern bool useBottomLine;         // line above the Back / OK footer (ini bottom_line)
+    extern bool useDividerLines;       // lines between list items / trackbars + widget|logo divider (ini divider_lines)
+    extern bool useEdgeLine;           // 1-px line on the frame's outer edge (ini edge_line)
 
     
 #if IS_LAUNCHER_DIRECTIVE
@@ -183,6 +210,9 @@ namespace ult {
     extern std::atomic<bool> inHiddenMode;
     extern std::atomic<bool> inSettingsMenu;
     extern std::atomic<bool> inSubSettingsMenu;
+    #if IS_LAUNCHER_DIRECTIVE
+    extern bool useHomeShortcut;   // Settings > Home Shortcut: + / the logo on the settings page press HOME
+    #endif
     extern std::atomic<bool> inOverlaysPage;
     extern std::atomic<bool> inPackagesPage;
     
@@ -296,7 +326,6 @@ namespace ult {
      * Ordered as they should be displayed
      */
     extern const std::array<KeyInfo, 18> KEYS_INFO;
-    extern std::unordered_map<std::string, std::string> buttonCharMap;
     
     
     void convertComboToUnicode(std::string& combo);
@@ -369,7 +398,12 @@ namespace ult {
     extern std::string INPUT_SETTINGS;
     extern std::string LAUNCH_COMBOS;
     extern std::string SWIPE_TO_OPEN;
-    extern std::string HAPTIC_FEEDBACK;
+    extern std::string BUTTON_HAPTICS;
+    extern std::string TOUCH_HAPTICS;
+    #if IS_LAUNCHER_DIRECTIVE
+    extern std::string HOME_SHORTCUT;
+    extern std::string NO_CONTROLLER_SLOT;
+    #endif
     extern std::string STICK_NAVIGATION;
     extern std::string HOLD_DURATION;
 
@@ -386,16 +420,63 @@ namespace ult {
     extern std::string SHOW_UNSUPPORTED;
     extern std::string PAGE_SWAP;
     extern std::string OVERLAY_VERSIONS;
+    extern std::string ULTRAHAND_VERSION;
     extern std::string PACKAGE_VERSIONS;
     extern std::string CLEAN_VERSIONS;
 
     extern std::string THEME_SETTINGS;
+    extern std::string VERSION_SETTINGS;
+    extern std::string LABEL_COLORS;
     extern std::string SWITCH_2_STYLE;
+    extern std::string UNIFORM_LOGO;
+    extern std::string TEXT_BORDER;
+    extern std::string LIGHT;
+    extern std::string COLOR;
+    extern std::string EXPOSURE;
+    extern std::string BRIGHTNESS;
+    extern std::string HIGHLIGHTS;
+    extern std::string SHADOWS;
+    extern std::string CONTRAST;
+    extern std::string BLACK_POINT;
+    extern std::string SATURATION;
+    extern std::string VIBRANCE;
+    extern std::string WARMTH;
+    extern std::string TINT;
+    extern std::string TRANSPARENCY;
+    extern std::string PRESETS;
+    extern std::string TOOLS;
+    extern std::string RESTORE_DEFAULTS;
+    extern std::string RESTORE_DEFAULTS_INFO;
+    extern std::string RESTORE_ROOT_PKG;
+    extern std::string RESTORE_ROOT_PKG_INFO;
+    extern std::string CLEAN_INIS;
+    extern std::string CLEAN_INIS_INFO;
+    extern std::string DOT_CLEAN_SD;
+    extern std::string DOT_CLEAN_SD_INFO;
+    extern std::string NTP_SYNC_TIME;
+    extern std::string NTP_SYNC_TIME_INFO;
+    extern std::string BLUR;
+    extern std::string DARKNESS;
+    extern std::string RED;
+    extern std::string GREEN;
+    extern std::string BLUE;
+    extern std::string ENABLE;
+    extern std::string USE_BACKGROUND_COLOR;
+    extern std::string RESET;
+    extern std::string ALL;
+    extern std::string IMAGES;
+    extern std::string VIDEOS;
+    extern std::string FROSTED_GLASS;
+    extern std::string GLASS_WITH_CHEATS;
+    extern std::string GLASS_CHEATS_WARNING;
     extern std::string DYNAMIC_LOGO;
     extern std::string DYNAMIC_TABLES;
     extern std::string SELECTION_BACKGROUND;
     extern std::string SELECTION_TEXT;
     extern std::string SELECTION_VALUE;
+    extern std::string BOTTOM_LINE;
+    extern std::string DIVIDER_LINES;
+    extern std::string EDGE_LINE;
     extern std::string LIBULTRAHAND_TITLES;
     extern std::string LIBULTRAHAND_VERSIONS;
     extern std::string PACKAGE_TITLES;
@@ -424,6 +505,8 @@ namespace ult {
     //extern std::string SOUND_SUPPORT_DISABLED;
     extern std::string WALLPAPER_SUPPORT_ENABLED;
     extern std::string SOUND_SUPPORT_ENABLED;
+    extern std::string FULL_COLOR_SUPPORT_ENABLED;
+    extern std::string FULL_COLOR_SUPPORT_DISABLED;
     extern std::string EXIT_OVERLAY_SYSTEM;
 
     extern std::string ULTRAHAND_ABOUT;
@@ -504,6 +587,8 @@ namespace ult {
 
     extern std::string GAP_1;
     extern std::string GAP_2;
+    extern std::string API_NOTIFICATIONS_ENABLED;    // the notifications hotkey (any overlay)
+    extern std::string API_NOTIFICATIONS_DISABLED;
     extern std::atomic<float> halfGap;
 
     #if USING_WIDGET_DIRECTIVE
@@ -578,7 +663,31 @@ namespace ult {
     extern std::atomic<bool> refreshWallpaperNow;
     extern std::atomic<bool> refreshWallpaper;
     extern std::atomic<bool> refreshCombos;
-    extern std::vector<u8> wallpaperData;
+    // The wallpaper's pixels, used like a std::vector<u8> (clear() keeps the memory). Unlike it,
+    // resize() reports a failed allocation (size 0, false) instead of aborting the overlay, growing
+    // doesn't keep the old bytes (every caller fills it afresh), and on 6 MB and up the memory is
+    // part of the block shared with the frosted glass (glass::sharedAlloc).
+    class WallpaperBuffer {
+    public:
+        WallpaperBuffer() = default;
+        WallpaperBuffer(const WallpaperBuffer&) = delete;
+        WallpaperBuffer& operator=(const WallpaperBuffer&) = delete;
+        ~WallpaperBuffer() { release(); }
+
+        u8*       data()        { return m_data; }
+        const u8* data()  const { return m_data; }
+        size_t    size()  const { return m_size; }
+        bool      empty() const { return m_size == 0; }
+        void      clear()       { m_size = 0; }
+        bool      resize(size_t n);                // new bytes are zero, as with a vector
+        void      release();                       // memory freed (or back to the shared block)
+    private:
+        u8*    m_data = nullptr;
+        size_t m_size = 0, m_cap = 0;
+    };
+    extern WallpaperBuffer wallpaperData;
+    extern bool fullColorWallpaper;               // full-colour output: wallpaper kept as 8-bit pre-multiplied RGB
+    extern std::atomic<u32> wallpaperGeneration;  // bumped on every wallpaper (re)load / free
     extern std::atomic<bool> inPlot;
     
     extern std::mutex wallpaperMutex;
@@ -587,11 +696,45 @@ namespace ult {
     
     
     // Function to load the RGBA file into memory and modify wallpaperData directly
-    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize);
+    struct WallAdj;   // image_fx.hpp
+    // adj (optional): the wallpaper adjustments, applied to the 8-bit colour before it is
+    // cut to 4 bits (wallpapers at 6 / 8 MB).
+    bool loadRGBA8888toRGBA4444(const std::string& filePath, u8* dst, size_t srcSize, const WallAdj* adj = nullptr);
     void loadWallpaperFile(const std::string& filePath, s32 width = 448, s32 height = 720);
     void loadWallpaperFileWhenSafe();
+    // wallpaper.ini (config/ultrahand): [wallpaper] animated=<.uaw path> (the active animated
+    // wallpaper, empty for none) and per wallpaper [<name>] adjustments (keys below, -100..100),
+    // the Light and Color adjustments of the Ultrahand Wallpaper designer. Drawn in full colour
+    // (8 MB heap and up) only.
+    const std::string& wallpaperIniPath();
+    enum WallpaperAdjust : u8 {
+        WA_EXPOSURE, WA_BRIGHTNESS, WA_HIGHLIGHTS, WA_SHADOWS, WA_CONTRAST, WA_BLACK_POINT,   // Light
+        WA_SATURATION, WA_VIBRANCE, WA_WARMTH, WA_TINT,                                         // Color
+        WA_COUNT
+    };
+    extern const char* const kWallpaperAdjustKeys[WA_COUNT];   // wallpaper.ini keys
+    extern std::string currentWallpaperName;          // config.ini current_wallpaper (parseOverlaySettings)
+    extern std::atomic<s8> wallpaperAdjust[WA_COUNT]; // current wallpaper's adjustments (all 0 = none)
+    // Current wallpaper's own background alpha, 0..15 (wallpaper.ini "alpha"): replaces the
+    // theme's bg alpha under the wallpaper, with the same rules (fade, opaque screenshots).
+    // -1 means no named wallpaper (e.g. an overlay's own UI-override one): use the theme's.
+    extern std::atomic<s8> wallpaperAlpha;
+    inline constexpr s8 kDefaultWallpaperAlpha = 13;   // the default theme's bg_alpha
+    #if IS_LAUNCHER_DIRECTIVE
+    // Decodes a PNG (width x height, non-interlaced) into a plain RGBA8888 file at outPath
+    // (written to outPath.tmp, then renamed) and, with wallDst, into the in-memory
+    // wallpaper format too. False, with outPath untouched, on any error.
+    bool convertPngToRgba(const std::string& pngPath, const std::string& outPath, u32 width = 448, u32 height = 720, u8* wallDst = nullptr);
+    // Sets a PNG as the wallpaper in one pass (file + memory); false keeps the current one.
+    bool setWallpaperFromPng(const std::string& pngPath);
+    #endif
 
     void reloadWallpaper();
+    // Frosted glass switched on with a wallpaper shown: the wallpaper is freed first (glass and
+    // wallpaper share one block of memory, glass::sharedAlloc). Until this time, or the first glass
+    // frame, the overlay loop presents nothing, so the last frame with the wallpaper stays up
+    // instead of a blank one.
+    extern std::atomic<u64> glassStartPauseUntilNs;
     
     
     extern std::atomic<bool> themeIsInitialized;
@@ -723,17 +866,8 @@ namespace ult {
     #endif
     
     
-    // Number of renderer threads to use
+    // Number of renderer helper threads (tsl::gfx::Renderer::runParallel)
     extern const unsigned numThreads;
-    extern std::vector<std::thread> renderThreads;
-    extern const s32 bmpChunkSize;
-    extern std::atomic<s32> currentRow;
-    
-    
-    struct InPlotBarrierCompletion {
-        void operator()() noexcept;
-    };
-    extern std::barrier<InPlotBarrierCompletion> inPlotBarrier;
     
 
     void initializeThemeVars();
