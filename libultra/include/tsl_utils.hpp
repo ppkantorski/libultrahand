@@ -64,6 +64,13 @@ namespace ult {
 
     void formatTimestamp(time_t t, char* buf, size_t bufSize);
 
+    // localtime / strftime without newlib's time-zone and integer-printf code (~25 KB): no TZ is
+    // ever set here, so local time is UTC (what localtime gives then), and formatTime() is newlib's
+    // C-locale strftime (same conversions, flags, widths, results and 0 on overflow or an unknown
+    // conversion), with %z / %Z / %s as newlib gives them without TZ.
+    struct tm* localTime(time_t t, struct tm* out);
+    size_t formatTime(char* s, size_t maxsize, const char* format, const struct tm* t);
+
     // math funcs
     double cos(double x);
     

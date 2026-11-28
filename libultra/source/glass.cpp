@@ -44,6 +44,10 @@
  *     size in the game's address space, or by searching for a captured picture
  *     (discover()) and remembered per process. At HOME and in system applets
  *     the same reader follows vi's shared buffer instead (attachUi()).
+ *   - Display controller (namespace dc): when nx-ovlloader maps its registers, they
+ *     say which slot is on screen and how much of it the picture uses. The live
+ *     reader then takes exactly that frame, and a capture check is only needed when
+ *     the display shows something else.
  *   - Capture service (caps:sc): a JPEG of the screen with our layer excluded,
  *     decoded at 1/8 scale (DC-only decoder). Used for whatever can't be read
  *     (Album, hbmenu, unsupported games), and to verify that the live frame is
@@ -165,8 +169,10 @@ public:
         m_pos = 2;
         while (m_pos + 4 <= m_len) {
             if (m_data[m_pos] != 0xFF) return false;
+
             uint8_t marker = m_data[m_pos + 1];
             m_pos += 2;
+
             if (marker == 0xFF) {   // fill byte
                 --m_pos;
                 continue;
@@ -175,10 +181,14 @@ public:
             if (marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7)) continue;
             if (marker == 0xD9) return false;                    // EOI before scan
             if (m_pos + 2 > m_len) return false;
+
             const uint32_t segLen = (m_data[m_pos] << 8) | m_data[m_pos + 1];
+
             if (segLen < 2 || m_pos + segLen > m_len) return false;
+
             const uint8_t* seg = m_data + m_pos + 2;
             const uint32_t segBody = segLen - 2;
+
             switch (marker) {
                 case 0xC0: case 0xC1:
                     if (!parseSOF(seg, segBody)) return false;
@@ -657,8 +667,10 @@ namespace ult::glass {
     #endif
         alignas(16) u64 blk[8192 / 8];          // frameChangedAnywhere read block
     };
+
     inline Mem* s_mem = nullptr;
     inline u8*  s_jpeg = nullptr;                // capture-service JPEG buffer (512 KB), see reserve()
+
     #define s_cur     (s_mem->cur)
     #define s_prev    (s_mem->prev)
     #define s_stale   (s_mem->stale)
@@ -835,6 +847,29 @@ namespace ult::glass {
         blurToStrip(out);
     }
 
+    // The columns of the 160x90 picture the crop for `key` reads, [c0, c1): its cells and the
+    // widest blur margin (a region's follows the blur radius, at most kMargin), clamped as the
+    // crops clamp.
+    inline void keyCells(u32 key, u32& c0, u32& c1) {
+    #if ULT_GLASS_REGIONS
+        const Geo g = geoOf(key);
+        const s32 x0 = (s32)(g.x / kScale) - (s32)kMargin, x1 = x0 + (s32)(g.w + 2 * kMargin);
+    #else
+        const s32 x0 = (s32)(key / kScale) - (s32)kMargin, x1 = x0 + (s32)kWorkW;
+    #endif
+        c0 = (u32)(x0 < 0 ? 0 : (x0 > (s32)kSrcW - 1 ? (s32)kSrcW - 1 : x0));
+        c1 = (u32)(x1 <= (s32)c0 ? (s32)c0 + 1 : (x1 > (s32)kSrcW ? (s32)kSrcW : x1));
+    }
+
+    // The columns of s_small holding the last picture: all of them after a capture, the copied
+    // ones after a VIC copy (vic::grab). Worker thread only.
+    inline u32 s_smallC0 = 0, s_smallC1 = kSrcW;
+    inline bool smallCovers(u32 key) {
+        u32 c0, c1;
+        keyCells(key, c0, c1);
+        return c0 >= s_smallC0 && c1 <= s_smallC1;
+    }
+
     // ── Capture service ──────────────────────────────────────────────────────────
     // Fills s_small (160x90 RGB).
     inline bool captureOnce(u8* jpegBuf) {
@@ -844,8 +879,201 @@ namespace ult::glass {
             return false;
         u32 w = 0, h = 0;
         if (!s_decoder.decode(jpegBuf, size, s_small, sizeof(s_small), w, h)) return false;
+        s_smallC0 = 0;
+        s_smallC1 = kSrcW;
         return w == kSrcW && h == kSrcH;
     }
+
+    // ===========================================================================
+    // Display controller: the buffer on screen right now.
+    //
+    // Each display head has three hardware windows, and each one names the buffer it scans
+    // out (Tegra X1 TRM, chapter 24). Reading those registers tells, without a capture,
+    // whether the game's frame is what's on screen, which of its slots it is and how much
+    // of the slot the picture uses. The idea comes from libglass (GPL-2.0, Dimasick-git),
+    // which reads the same registers; this is a separate, much smaller implementation that
+    // steers the live reader and the VIC copy below.
+    //
+    // Rules:
+    //   - read-only, nothing is ever written there (the system's display driver owns them;
+    //     a write could race it and make a layer blink)
+    //   - a head whose clock is off or that is held in reset is never touched (the bus
+    //     would hang), checked before every read
+    //   - needs nx-ovlloader to map the registers (0x54200000, 0x80000); without that the
+    //     glass works exactly as before
+    // ===========================================================================
+    namespace dc {
+        inline const volatile u32* s_head[2] = {};   // display heads A and B (0x54200000, 0x54240000)
+        inline const volatile u32* s_car = nullptr;  // clock and reset controller (0x60006000)
+        inline s8 s_mapped = -1;                     // -1 not looked up yet, 0 no, 1 yes
+        inline u64 s_ownNs = 0;                      // when our layer's window was last seen
+
+        inline bool mapped() {
+            if (s_mapped < 0) {
+                s_mapped = 0;
+                u64 va = 0, size = 0;
+                if (R_SUCCEEDED(svcQueryMemoryMapping(&va, &size, 0x60006000, 0x1000)) && va) {
+                    s_car = reinterpret_cast<const volatile u32*>(va);
+
+                    for (u32 i = 0; i < 2; ++i) {
+                        va = size = 0;
+                        if (R_SUCCEEDED(svcQueryMemoryMapping(&va, &size, 0x54200000 + i * 0x40000, 0x40000)) && va && size >= 0x4000)
+                            s_head[i] = reinterpret_cast<const volatile u32*>(va);
+                    }
+
+                    if (s_head[0] || s_head[1]) s_mapped = 1;
+                }
+
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                if (s_mapped) GLASS_LOG("display controller: registers mapped");
+                else GLASS_LOG("display controller: not mapped (older nx-ovlloader) -> as before");
+            #endif
+            }
+
+            return s_mapped == 1;
+        }
+
+        // The scene window: the backmost full-screen 32-bit window (the game, or vi's buffer at HOME).
+        struct Scene {
+            u64  addr;           // buffer it scans out: the newest frame handed to the display
+            u32  w, h;           // buffer pixels it reads, from (0, 0) onto the whole screen; else 0
+            bool pending;        // that frame waits for the next refresh (the one before is on screen)
+            bool covered;        // another large window is up too (an applet, a system layer)
+            bool own;            // our layer has a window of its own (not merged into another one), seen
+                                 // in the last 0.5 s: the window reads as off now and then while it flips
+            u8   win;            // which window (0..2: A..C)
+            u8   fmt;            // 12 B8G8R8A8, 13 R8G8B8A8
+            u8   blk;            // block linear: log2 of the block height in GOBs; pitch linear: 0xff
+            u32  pitch;          // bytes per row
+            s32  x0, y0, x1, y1; // buffer area it reads (inclusive)
+        };
+
+        inline bool sceneRead(Scene& out) {
+            if (!mapped()) return false;
+            const u32 fbW = ult::DefaultFramebufferWidth, fbH = ult::DefaultFramebufferHeight;
+            for (u32 c = 0; c < 2; ++c) {
+                const volatile u32* r = s_head[c];
+                const u32 bit = 1u << (27 - c);                             // DISP1 / DISP2
+                if (!r || !(s_car[4] & bit) || (s_car[1] & bit)) continue;  // clock off or in reset: hands off
+                if (!(r[0x032] & 0x60)) continue;                           // head stopped
+                const u32 act = r[0x409], dw = act & 0x1fff, dh = (act >> 16) & 0x1fff;
+                if (dw < 320 || dh < 180) continue;
+                Scene sc = {};
+                int best = -1;
+                u32 bestDepth = 0, large = 0;
+                for (u32 i = 0; i < 3; ++i) {
+                    const u32 cw = 0xb80 + i * 0x200, bw = 0xbc0 + i * 0x200;
+                    const u32 opt = r[cw];
+                    if (!(opt & 0x40000000)) continue;                      // window off
+                    const u32 pre = r[cw + 6], ext = r[cw + 5];
+                    const u32 pb = pre & 0x7fff, sw = pb / 4, sh = (pre >> 16) & 0x1fff;   // (pb: bytes per line)
+                    const u32 ew = ext & 0x1fff, eh = (ext >> 16) & 0x1fff;
+                    if (sw < 64 || sh < 64) continue;                       // a 2x2 stand-in stretched over the screen
+                    // Our layer: the framebuffer's size, 32-bit or 16-bit (RGBA4444 below 8 MB of heap)
+                    const bool ours = (sh == fbH && (pb == fbW * 4 || pb == fbW * 2)) ||
+                                      (sh == fbW && (pb == fbH * 4 || pb == fbH * 2));
+                    if (ours) s_ownNs = ult::nowNs();
+                    if (!ours && ew * eh * 4 >= dw * dh) large |= 1u << i;
+
+                    // Full screen, 32-bit RGBA / BGRA, pitch or block linear, uncompressed, no byte swap
+                    const u32 fmt = r[cw + 3], kind = r[bw + 11] & 3;
+                    if (ew * 4 < dw * 3 || eh * 4 < dh * 3 || (fmt != 12 && fmt != 13) || r[cw + 1] ||
+                        (r[bw + 0x2f] & 1) || (kind != 0 && kind != 2)) continue;
+                    const u32 depth = r[cw + 0x16] & 255;                   // larger: further back
+
+                    if (best >= 0 && depth <= bestDepth) continue;
+
+                    // The newest frame is in the start address's armed copy (the word after it): used
+                    // when it reads back the same twice and is 16-byte aligned, else the plain copy.
+                    // Address 0 is valid: a swapchain's first slot can start there.
+                    u32 lo = r[bw + 1];
+
+                    if (lo != r[bw + 1] || (lo & 15)) lo = r[bw];
+
+                    const u64 addr = (u64)r[bw + 13] << 32 | lo;
+                    const s32 ox = (s32)(r[bw + 6] / 4), oy = (s32)r[bw + 8];
+
+                    if ((lo & 15) || opt != r[cw] || pre != r[cw + 6]) continue;   // reprogrammed while read
+
+                    // Buffer area it reads. An output line runs along buffer x, or along y with scan column
+                    // (the handheld panel is portrait); the direction bits flip x and y.
+                    const s32 dx = (opt & 1) ? -1 : 1, dy = (opt & 4) ? -1 : 1;
+                    const bool col = opt & 16;
+                    const s32 ex = ox + dx * (s32)((col ? sh : sw) - 1), ey = oy + dy * (s32)((col ? sw : sh) - 1);
+                    sc.x0 = ox < ex ? ox : ex;
+                    sc.y0 = oy < ey ? oy : ey;
+                    sc.x1 = ox < ex ? ex : ox;
+                    sc.y1 = oy < ey ? ey : oy;
+                    const bool corner = !sc.x0 && !sc.y0 && !r[cw + 4] && ew == dw && eh == dh;   // and on the whole screen
+                    best = (int)i;
+                    bestDepth = depth;
+                    sc.addr = addr;
+                    sc.w = corner ? (u32)(sc.x1 + 1) : 0;
+                    sc.h = corner ? (u32)(sc.y1 + 1) : 0;
+                    sc.pending = r[0x041] & (2u << i);                      // WIN_x_ACT_REQ
+                    sc.win = (u8)i;
+                    sc.fmt = (u8)fmt;
+                    sc.blk = kind == 2 ? (u8)((r[bw + 11] >> 4) & 7) : 0xff;
+                    sc.pitch = r[cw + 10] & 0xffff;
+                }
+
+                if (best < 0) continue;
+
+                sc.covered = (large & ~(1u << best)) != 0;
+                sc.own = s_ownNs && ult::nowNs() - s_ownNs < 500'000'000ULL;
+                out = sc;
+
+                return true;
+            }
+
+            return false;
+        }
+
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        // Every window's registers, for a scene that can't be read (glass log only)
+        inline void dump() {
+            if (!mapped()) return;
+            for (u32 c = 0; c < 2; ++c) {
+                const volatile u32* r = s_head[c];
+                const u32 bit = 1u << (27 - c);
+
+                if (!r || !(s_car[4] & bit) || (s_car[1] & bit)) {
+                    GLASS_LOG("dc: head %c clock off or in reset", 'A' + c);
+                    continue;
+                }
+
+                const u32 act = r[0x409];
+                GLASS_LOG("dc: head %c %s, active %ux%u, act req 0x%x", 'A' + c, (r[0x032] & 0x60) ? "running" : "stopped",
+                    act & 0x1fff, (act >> 16) & 0x1fff, r[0x041]);
+
+                for (u32 i = 0; i < 3; ++i) {
+                    const u32 cw = 0xb80 + i * 0x200, bw = 0xbc0 + i * 0x200;
+                    GLASS_LOG("dc:   window %c: opt 0x%x fmt %u swap %u pre 0x%x ext 0x%x pos 0x%x kind 0x%x comp %u depth %u addr 0x%x/0x%x",
+                        'A' + i, r[cw], r[cw + 3], r[cw + 1], r[cw + 6], r[cw + 5], r[cw + 4], r[bw + 11], r[bw + 0x2f] & 1,
+                        r[cw + 0x16] & 255, r[bw], r[bw + 1]);
+                }
+            }
+        }
+    #endif
+
+        // The scene, read again at once when a read lands mid-update (the windows read as off or
+        // changing now and then), else the last one read for up to 50 ms.
+        [[gnu::noinline]] inline bool scene(Scene& out) {
+            static Scene s_last = {};
+            static u64 s_lastNs = 0;
+
+            for (u32 i = 0; i < 3; ++i)
+                if (sceneRead(out)) {
+                    s_last = out;
+                    s_lastNs = ult::nowNs();
+                    return true;
+                }
+
+            if (!s_lastNs || ult::nowNs() - s_lastNs >= 50'000'000ULL) return false;
+            out = s_last;
+            return true;
+        }
+    } // namespace dc
 
     // ===========================================================================
     // Live source: read the game's own swapchain.
@@ -865,6 +1093,8 @@ namespace ult::glass {
     //     never held
     //   - anything unexpected: detach and fall back to the capture service
     // ===========================================================================
+    namespace vic { inline bool sceneReady(); inline bool mayFind(); inline void findNow(); }   // (below the live reader)
+
     namespace live {
         inline constexpr u64 kSlot720  = 3932160ull;   // 1280x768 RGBA8, 16-GOB blocks
         inline constexpr u64 kSlot1080 = 8847360ull;   // 1920x1152
@@ -888,6 +1118,7 @@ namespace ult::glass {
         // the game is read through the cheat engine instead: s_dbg stays empty and reads go
         // through dmnt:cht. Only queries and reads are used, so cheats keep working untouched.
         inline bool        s_viaCht = false;
+        inline bool        s_vicWait = false;     // held by another debugger: captures while the VIC searches
         inline Service     s_cht = {};             // dmnt:cht session, open while s_viaCht
         // The game in front is held by another debugger and gets no glass (normal background,
         // nothing read or captured; the 1 s re-attach notices when it lets go):
@@ -1034,6 +1265,137 @@ namespace ult::glass {
         inline u32 s_drawing = ~0u, s_done = ~0u;
         inline u64 s_shownSeq = 0;               // change counter of the frame read last (never go back)
 
+        // Display controller (dc::scene): the scene window's address is a slot's address in the
+        // process plus one constant (where the display sees that memory). Found from two or more
+        // frames the display showed, it says exactly which slot is on screen.
+        inline u64  s_dcSeen[4] = {};            // last distinct scene addresses, newest first
+        inline u64  s_dcK = 0;                   // display address - process address of the slots
+        inline bool s_dcKnown = false;           // s_dcK puts 2+ of s_dcSeen on slots, no other constant as many
+        inline u32  s_dcSlot = ~0u;              // slot the display shows (or shows next), ~0u: none of ours
+        inline bool s_dcCovered = false;         // something large is up besides it
+        inline bool s_dcFlip = false;            // s_dcSlot moved (a new frame went to the display)
+        inline u64  s_dcCachePid = 0, s_dcCacheBase = 0, s_dcCacheK = 0;   // kept for the next attach
+
+        inline u32 dcSlotOf(u64 a) {
+            const u32 n = s_slots < 4 ? s_slots : 4;
+            for (u32 i = 0; i < n; ++i)
+                if (a - s_dcK == s_slotAddr[i]) return i;
+            return ~0u;
+        }
+
+        // The constant that puts the most recent scene addresses on slot starts: two or more, and
+        // no other constant as many, means the display shows this swapchain. A game that only
+        // alternates two of three evenly spaced slots fits two constants; then the one whose slots
+        // were all drawn into wins (the third slot never changes after the first look).
+        inline void dcLearn() {
+            const u32 n = s_slots < 4 ? s_slots : 4;
+            u64 kBest = 0, kUsed = 0;
+            u32 best = 0, nBest = 0, nUsed = 0;
+            for (u32 i = 0; i < n; ++i) {
+                const u64 k = s_dcSeen[0] - s_slotAddr[i];
+                u32 hits = 0;
+                bool used = true;
+                for (u64 a : s_dcSeen) {
+                    if (!a) continue;
+                    for (u32 j = 0; j < n; ++j)
+                        if (a - k == s_slotAddr[j]) {
+                            ++hits;
+                            used = used && s_changeSeq[j] > 1;   // (1: the first look)
+                            break;
+                        }
+                }
+
+                if (hits > best) {
+                    best = hits;
+                    nBest = nUsed = 0;
+                }
+
+                if (hits == best) {
+                    ++nBest;
+                    kBest = k;
+                    if (used) {
+                        ++nUsed;
+                        kUsed = k;
+                    }
+                }
+            }
+
+            if (best < 2 || (nBest != 1 && nUsed != 1)) return;
+            const u64 bestK = nBest == 1 ? kBest : kUsed;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            if (!s_dcKnown || bestK != s_dcK) GLASS_LOG("display controller: shows this swapchain (offset 0x%lx)", (unsigned long)bestK);
+        #endif
+            s_dcK = bestK;
+            s_dcKnown = true;
+            s_dcCachePid = s_pid;
+            s_dcCacheBase = s_slotAddr[0];
+            s_dcCacheK = bestK;
+        }
+
+        // Every poll (trackSlots): which slot the display shows, and the picture size inside it.
+        [[gnu::noinline]] inline void dcPoll() {
+            const u32 was = s_dcSlot;
+            s_dcSlot = ~0u;
+            dc::Scene sc;
+
+            if (!dc::scene(sc)) return;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            if (sc.covered != s_dcCovered) GLASS_LOG("display controller: %s", sc.covered ? "another large window is up" : "only the scene and ours");
+        #endif
+            s_dcCovered = sc.covered;
+            if (sc.addr != s_dcSeen[0]) {                  // move to front (entries stay distinct)
+                u32 j = 0;
+                while (j < 3 && s_dcSeen[j] != sc.addr) ++j;
+                for (; j; --j) s_dcSeen[j] = s_dcSeen[j - 1];
+                s_dcSeen[0] = sc.addr;
+                dcLearn();
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                static u32 s_dcLogs = 0;
+                if (!s_dcKnown && s_dcLogs < 12) {
+                    ++s_dcLogs;
+                    GLASS_LOG("display controller: scene 0x%lx (%ux%u%s), minus slots: 0x%lx 0x%lx 0x%lx", (unsigned long)sc.addr,
+                        sc.w, sc.h, sc.covered ? ", covered" : "", (unsigned long)(sc.addr - s_slotAddr[0]),
+                        (unsigned long)(sc.addr - s_slotAddr[1]), (unsigned long)(sc.addr - s_slotAddr[2]));
+                }
+            #endif
+            }
+
+            if (!s_dcKnown || (s_dcSlot = dcSlotOf(sc.addr)) == ~0u) return;
+            if (s_dcSlot != was) s_dcFlip = true;
+
+            // What the window reads of the slot is the picture (often 1280x720 in a 1920x1152 slot):
+            // no size guessing, no capture checks for it.
+            if (!s_ui && sc.w >= 320 && sc.h >= 180 && sc.w <= s_bufW && sc.h <= s_bands * 128u &&
+                (sc.w != s_contentW || sc.h != s_contentH || !s_exactContent || s_sizeByCapture)) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("content size -> %ux%u (display controller)", sc.w, sc.h);
+            #endif
+                s_contentW = sc.w;
+                s_contentH = sc.h;
+                s_exactContent = s_sizePicked = true;
+                s_sizeByCapture = s_motionCheck = false;
+            }
+        }
+
+        inline bool takeDcFlip() {
+            const bool r = s_dcFlip;
+            s_dcFlip = false;
+            return r;
+        }
+
+        // The display shows one of the slots, nothing large is up besides it, and the picture size
+        // is settled: what a capture check would confirm.
+        inline bool dcOnScreen() {
+            return s_dcSlot < 4 && !s_dcCovered && (s_ui || s_exactContent || (s_bufW <= 1280 && !s_motionW));
+        }
+
+        // After reading the slot on screen: was that frame handed back to the game meanwhile (a newer
+        // one took over at a refresh)? It may be drawn into then.
+        inline bool dcReleased(u32 slot) {
+            dc::Scene sc;
+            return dc::scene(sc) && dcSlotOf(sc.addr) != slot && !sc.pending;
+        }
+
         // Newest slot changed and hasn't been seen unchanged yet. Its frame may already be
         // done, so look again soon rather than after a full poll interval.
         inline bool newestPending() {
@@ -1130,12 +1492,16 @@ namespace ult::glass {
             if (s_dbg != INVALID_HANDLE) {
                 svcCloseHandle(s_dbg);
                 s_dbg = INVALID_HANDLE;
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("detach: %s", why);
+            #endif
             }
 
             if (s_viaCht) {
                 chtDrop();
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("detach (cheat engine): %s", why);
+            #endif
             }
 
             s_discover = false;
@@ -1265,7 +1631,9 @@ namespace ult::glass {
                 if (!s_contentW) {
                     s_contentW = s_bufW;
                     s_contentH = s_bufH;
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("content size -> %ux%u (= swapchain)", s_contentW, s_contentH);
+                #endif
                 }
 
                 return true;
@@ -1275,7 +1643,9 @@ namespace ult::glass {
                 if (!s_contentW) {
                     s_contentW = 1280;
                     s_contentH = 720;
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("content size -> 1280x720");
+                #endif
                 }
 
                 return true;
@@ -1291,11 +1661,13 @@ namespace ult::glass {
             const u32 blocksW = s_bufW * 4 / 64;          // 120 at 1920
             for (u32 b = 0; b < s_bands; ++b) {
                 const bool below720 = b >= 6;                // rows 768+
+
                 for (u32 bx = below720 ? 0 : 80; bx < blocksW; bx += (below720 && bx < 80) ? 4 : 1) {
                     const u32 g = (bx * 5 + b * 3) & 15;
                     if (R_FAILED(read(gob, slotBase + (u64)b * s_bandBytes + (u64)bx * 8192u + g * 512u, sizeof(gob)))) return false;
                     bool lit = false;
                     for (u32 i = 0; i < 512 && !lit; i += 4) lit = (gob[i] | gob[i + 1] | gob[i + 2]) != 0;
+
                     if (lit) {
                         if (bx * 16 + 16 > maxX) maxX = bx * 16 + 16;
                         if (b * 128 + g * 8 + 8 > maxY) maxY = b * 128 + g * 8 + 8;
@@ -1313,7 +1685,9 @@ namespace ult::glass {
                 s_contentW = w;
                 s_contentH = (w * 9) / 16;
                 if (s_contentH > s_bands * 128) s_contentH = s_bands * 128;
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("content size -> %ux%u (buffer %ux%u)", s_contentW, s_contentH, s_bufW, s_bands * 128);
+            #endif
             }
 
             return true;
@@ -1410,9 +1784,13 @@ namespace ult::glass {
             for (s32 i = readPlayEvents() - 1; i >= 0; --i) {
                 if (ev[i].play_event_type != PdmPlayEventType_Applet) continue;
                 if (ev[i].event_data.applet.applet_id != AppletId_application) continue;
+
                 const u64 t = ((u64)ev[i].event_data.applet.program_id[0] << 32) | ev[i].event_data.applet.program_id[1];
+
                 if (t != tid && t != (tid & ~0xFFFULL)) continue;
+
                 const u8 et = ev[i].event_data.applet.event_type;
+
                 if (result < 0) result = (et == PdmAppletEventType_OutOfFocus || et == PdmAppletEventType_OutOfFocus4) ? 0 : 1;
                 if (!launchAgeS) break;
                 if (et == PdmAppletEventType_Launch) {       // seconds since the game was started
@@ -1448,14 +1826,19 @@ namespace ult::glass {
         inline void loadFound(u64 pid) {
             FoundFile ff = {};
             FILE* f = fopen(kFoundPath, "rb");
+
             if (!f) return;
+
             const size_t n = fread(&ff, 1, sizeof(ff), f);
             fclose(f);
+
             if (n != sizeof(ff) || ff.magic != kFoundMagic || ff.pid != pid || ff.n < 1 || ff.n > 4 ||
                 ff.hyp >= sizeof(kHyps) / sizeof(kHyps[0])) return;
+
             s_cachePid = pid;
             s_cacheN = ff.n;
             s_cacheHyp = ff.hyp;
+
             for (u32 i = 0; i < 4; ++i) s_cacheAddr[i] = ff.addr[i];
         }
 
@@ -1463,11 +1846,15 @@ namespace ult::glass {
         // at a process without attaching to it as a debugger. INVALID_HANDLE if it can't be had.
         inline Handle processHandle(u64 pid) {
             const bool pmUp = serviceIsActive(pmdmntGetServiceSession());
+
             if (!pmUp && R_FAILED(pmdmntInitialize())) return INVALID_HANDLE;
+
             struct { u64 location[2]; u64 overrideStatus[2]; } out;
             Handle h = INVALID_HANDLE;
             const Result rc = request(pmdmntGetServiceSession(), 65000, &pid, sizeof(pid), &out, sizeof(out), nullptr, 0, &h);
+
             if (!pmUp) pmdmntExit();
+
             return R_SUCCEEDED(rc) ? h : INVALID_HANDLE;
         }
 
@@ -1476,11 +1863,13 @@ namespace ult::glass {
         inline s64 processState(u64 pid) {
             const Handle h = processHandle(pid);
             if (h == INVALID_HANDLE) return -1;
+
             // Only the low 32 bits are written (the rest kept whatever was there), so start from 0
             // and keep those.
             s64 v = 0;
             const s64 state = R_SUCCEEDED(svcGetProcessInfo(&v, h, ProcessInfoType_ProcessState)) ? (s64)(u32)v : -1;
             svcCloseHandle(h);
+
             return state;
         }
 
@@ -1494,6 +1883,7 @@ namespace ult::glass {
             if (h == INVALID_HANDLE) return -1;
             int found = 0;
             u64 addr = 0;
+
             for (int steps = 0; steps < 400000; ++steps) {
                 MemoryInfo mi = {};
                 u32 pi = 0;
@@ -1528,6 +1918,11 @@ namespace ult::glass {
             s_newest = 0;
             s_drawing = s_done = ~0u;
             s_shownSeq = 0;
+            for (auto& v : s_dcSeen) v = 0;
+            s_dcSlot = ~0u;
+            s_dcFlip = false;
+            s_dcK = s_dcCacheK;                          // same swapchain as last time: known at once
+            s_dcKnown = s_dcCachePid == s_pid && s_dcCacheBase == s_slotAddr[0];
         #if USING_LIVE_LOGGING_DIRECTIVE
             if (ult::glassLog) {
                 s_statChanges = s_statTicks = 0;
@@ -1611,26 +2006,62 @@ namespace ult::glass {
                 // again this showing before that. (h is cleared first: the svc wrapper stores
                 // whatever the register held, even when the call fails.)
                 h = INVALID_HANDLE;
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 static u64 s_loggedHeldPid = 0;            // (each case logged once per game)
+            #endif
+                s_vicWait = false;
+                // "With Cheats" on: the VIC copies what the display shows (no debugger, no cheat engine, cheats
+                // untouched). Looked up first, since the ids that held it before usually find it at once, so an
+                // opening starts on the VIC instead of a second of captures. Off: no glass.
+                if (ult::glassWithCheats) vic::findNow();
+                if (ult::glassWithCheats && vic::sceneReady()) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    if (s_loggedHeldPid != pid) GLASS_LOG("attach pid %lu: held by another debugger -> the VIC reads the screen", (unsigned long)pid);
+                    s_loggedHeldPid = pid;
+                #endif
+                    return false;
+                }
+
+                // Still looking for the scene's buffer: captures meanwhile. Reading through the cheat engine
+                // takes most of the worker's time and would slow the search down to a crawl; it is only
+                // used once a whole search found nothing.
+                if (ult::glassWithCheats && vic::mayFind()) {
+                    s_vicWait = true;
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    static u64 s_loggedWaitPid = 0;
+                    if (s_loggedWaitPid != pid) GLASS_LOG("attach pid %lu: held by another debugger -> captures while the VIC looks for the screen", (unsigned long)pid);
+                    s_loggedWaitPid = pid;
+                #endif
+                    return false;
+                }
+
                 if (chtOpen(pid)) {
                     if (!ult::glassWithCheats) {
                         chtDrop();
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         if (s_loggedHeldPid != pid) GLASS_LOG("attach pid %lu: held by the cheat engine, With Cheats off -> no glass", (unsigned long)pid);
                         s_loggedHeldPid = pid;
+                    #endif
                         s_heldNoGlass = 1;
                         return false;
                     }
 
                     std::lock_guard<std::mutex> lk(s_dbgMtx);
                     s_viaCht = true;
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("attach pid %lu: held by the cheat engine -> reading through it", (unsigned long)pid);
+                #endif
                 } else if (R_MODULE(rc) == Module_Kernel && R_DESCRIPTION(rc) == 122) {   // busy: already debugged
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     if (s_loggedHeldPid != pid) GLASS_LOG("attach pid %lu: held by another debugger (Switch Frame Tap?) -> no glass", (unsigned long)pid);
                     s_loggedHeldPid = pid;
+                #endif
                     s_heldNoGlass = 2;
                     return false;
                 } else {
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     if (pid != s_failedPid) GLASS_LOG("attach pid %lu refused rc=0x%x", (unsigned long)pid, rc);
+                #endif
                     s_failedPid = pid;
                     s_failedUntilNs = ready == 1 ? ult::nowNs() + 2'000'000'000ULL : ~0ull;
                     return false;
@@ -1735,15 +2166,19 @@ namespace ult::glass {
             // (s_unsure, then search by content).
             const bool unsure = best && bestDev < 2;
             if (unsure && pid == s_rejectGpuOnlyPid) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("pid %lu: best size match 0x%010lx is GPU-only (dev %u) and not the display -> search by content",
                     (unsigned long)pid, (unsigned long)best, bestDev);
+            #endif
                 best = 0;
             }
 
+        #if USING_LIVE_LOGGING_DIRECTIVE
             if (!best)
                 for (u32 j = 0; j < nDisp; ++j)
                     GLASS_LOG("  region mapped by %u devices: 0x%010lx, %lu bytes (0x%lx)", disp[j].dev,
                         (unsigned long)disp[j].addr, (unsigned long)disp[j].size, (unsigned long)disp[j].size);
+        #endif
             u64 addrs[4] = {};
             u32 nSlots = 0;
             u32 cw = 0, ch = 0;
@@ -1813,7 +2248,9 @@ namespace ult::glass {
                 if (++s_discRounds > 3 || !s_band) {
                     chtClose();
                     if (h != INVALID_HANDLE) svcCloseHandle(h);
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("pid %lu: display buffers not found -> capture service", (unsigned long)pid);
+                #endif
                     s_failedPid = pid;
                     s_failedUntilNs = ~0ull;
                     return false;
@@ -1828,14 +2265,18 @@ namespace ult::glass {
                 s_discTries = 0;
                 s_discover = true;
                 ensurePump();                              // the game must never wait on a debug event
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("pid %lu: no display-swapchain region -> searching the GPU memory by content (capture service meanwhile)",
                     (unsigned long)pid);
+            #endif
                 return false;
             }
 
             s_pid = pid;
             s_slots = nSlots;
+
             for (u32 i = 0; i < 4; ++i) s_slotAddr[i] = i < nSlots ? addrs[i] : 0;
+
             s_bufW = bestW;
             s_bufH = bestH;
             s_bands = (bestH + 127u) / 128u;
@@ -1854,8 +2295,11 @@ namespace ult::glass {
             s_unsure = s_gpuOnly = unsure && best && !separate && !found;
             s_contentW = cw;
             s_contentH = ch;
+
             resetTracking();
+
             if (!s_band) s_band = static_cast<u8*>(malloc(kBandBufBytes));   // (reserve() normally has it)
+
             if (!s_band) {
                 chtClose();
                 if (h != INVALID_HANDLE) svcCloseHandle(h);
@@ -1867,23 +2311,32 @@ namespace ult::glass {
                 s_dbg = h;
             }
             s_attached.store(true, std::memory_order_release);
+
             ensurePump();
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("attached pid %lu: swapchain 0x%010lx, %u x %ux%u slots (%ux%u picture), dev %u%s",
                 (unsigned long)pid, (unsigned long)best, s_slots, s_bufW, s_bands * 128, s_bufW, s_bufH, bestDev,
                 found ? " (found by content earlier)" : s_unsure ? " (GPU-only: to be confirmed by a capture)" : "");
+        #endif
+
             s_attachNs = tAttach;
 
             for (u32 s = 0; s < s_slots; ++s) scanContent(s);   // sparse: a few ms
             if (!s_contentW) {
                 s_contentW = 1280 <= s_bufW ? 1280 : s_bufW;
                 s_contentH = 720;
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("content blank, assuming 1280x720");
+            #endif
             }
 
             const u64 now = ult::nowNs();
             s_lastScanNs = now;
             s_lastChangeNs = now;
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("attach took %lu ms (%d regions walked)", (unsigned long)((now - tAttach) / 1'000'000ULL), walked);
+        #endif
             return true;
         }
 
@@ -1922,7 +2375,9 @@ namespace ult::glass {
             const Result rc = svcDebugActiveProcess(&h, pid);
             if (R_FAILED(rc)) {
                 if (R_MODULE(rc) == Module_Kernel && R_DESCRIPTION(rc) == 122) {   // busy: already debugged
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     if (!s_uiHeld) GLASS_LOG("vi: held by another debugger (Switch Frame Tap?) -> no glass at HOME");
+                #endif
                     s_uiHeld = true;
                     return false;
                 }
@@ -1958,14 +2413,18 @@ namespace ult::glass {
 
             if (!s_viBase) {
                 svcCloseHandle(h);
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("vi: shared buffer not found -> capture service");
+            #endif
                 s_uiRefused = true;
                 return false;
             }
 
             s_pid = pid;
             s_slots = 2;
+
             for (u32 i = 0; i < 4; ++i) s_slotAddr[i] = i < 2 ? s_viBase + (u64)(kViFrontSlot + i) * kSlot720 : 0;
+
             s_bufW = 1280;
             s_bufH = 720;
             s_bands = 6;
@@ -1975,7 +2434,9 @@ namespace ult::glass {
             s_contentH = 720;
             s_found = false;
             s_mismatches = 0;
+
             resetTracking();
+
             {
                 std::lock_guard<std::mutex> lk(s_dbgMtx);
                 s_dbg = h;
@@ -1984,13 +2445,19 @@ namespace ult::glass {
             s_heldNoGlass = 0;
             s_uiHeld = false;
             s_attached.store(true, std::memory_order_release);
+
             ensurePump();
+
             const u64 now = ult::nowNs();
             s_attachNs = now;
             s_lastScanNs = now;
             s_lastChangeNs = now;
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("vi: attached (HOME menu / applets), shared buffer 0x%010lx, %lu us", (unsigned long)s_viBase,
                 (unsigned long)((now - t0) / 1000ULL));
+        #endif
+
             return true;
         }
 
@@ -2031,9 +2498,11 @@ namespace ult::glass {
             u32 nTop = 0;
             u32 bestAny = ~0u;
             u64 bestAnyAddr = 0, bestAnySlot = 0;
+
         #if USING_LIVE_LOGGING_DIRECTIVE
             u32 bestAnyHyp = 0;
         #endif
+
             u32* const map = reinterpret_cast<u32*>(s_band);
             const u32 mapCap = kBandBufBytes / 4;
             u32 regions = 0;
@@ -2226,10 +2695,12 @@ namespace ult::glass {
             };
             if (!nTop) {
                 setFocus();
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("search %u (%s): no match in %u regions / %lu MB, %lu ms; closest: 0x%010lx as %ux%u (%ux%u picture), diff %u.%u",
                     s_discTries, focus ? "around the near miss" : thorough ? "any 512 B start" : "page starts", regions, (unsigned long)(scannedPages >> 8), ms,
                     (unsigned long)bestAnyAddr, kHyps[bestAnyHyp].bufW, kHyps[bestAnyHyp].bufH, kHyps[bestAnyHyp].cw, kHyps[bestAnyHyp].ch,
                     bestAny == ~0u ? 999u : bestAny / 1000u, bestAny == ~0u ? 0u : (bestAny % 1000u) / 100u);
+            #endif
                 if (s_discTries >= 6) {
                     const u64 pid = s_discPid;
                     detach("display buffers not found by content");
@@ -2252,8 +2723,10 @@ namespace ult::glass {
             const bool precise = top[bi].score <= 6000u;
             if (!precise && s_discTries < 4) {
                 setFocus();
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("search %u: picture is moving (best diff %u.%u) -> trying again with the next capture",
                     s_discTries, top[bi].score / 1000u, (top[bi].score % 1000u) / 100u);
+            #endif
                 return false;
             }
 
@@ -2262,9 +2735,11 @@ namespace ult::glass {
             const u32 limit = top[bi].score + top[bi].score / 2u + 4000u;
             u64 addrs[4];
             u32 nSlots = 0;
+        #if USING_LIVE_LOGGING_DIRECTIVE
             for (u32 t = 0; t < nTop; ++t) GLASS_LOG("search: candidate 0x%010lx as %ux%u (%ux%u picture), diff %u.%u",
                                                (unsigned long)top[t].addr, kHyps[top[t].hyp].bufW, kHyps[top[t].hyp].bufH,
                                                kHyps[top[t].hyp].cw, kHyps[top[t].hyp].ch, top[t].score / 1000u, (top[t].score % 1000u) / 100u);
+        #endif
             for (u32 pass = 0; pass < 4 && nSlots < 4; ++pass) {       // lowest address first
                 u32 pick = ~0u;
                 for (u32 t = 0; t < nTop; ++t) {
@@ -2370,8 +2845,11 @@ namespace ult::glass {
                     const s32 shift = pBest < 8 ? (s32)pBest : (s32)pBest - 16;
                     if (used && pBest != 0 && D[pBest] > 4u * D[0] + used * 12u &&
                         movable(addrs[sl], (u64)((s64)addrs[sl] + (s64)shift * 512))) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("search: buffer 0x%010lx starts %d GOB(s) %s (block-boundary contrast %u vs %u)",
                             (unsigned long)addrs[sl], shift < 0 ? -shift : shift, shift < 0 ? "earlier" : "later", D[pBest], D[0]);
+                    #endif
+
                         const u64 moved = (u64)((s64)addrs[sl] + (s64)shift * 512);
                         if (addrs[sl] == top[bi].addr) top[bi].addr = moved;
                         addrs[sl] = moved;
@@ -2396,7 +2874,9 @@ namespace ult::glass {
                     const u64 to = (u64)((s64)addrs[j] + d);
                     const u32 a0 = scoreAt(addrs[j]), b0 = scoreAt(to);
                     if (a0 != ~0u && b0 != ~0u && b0 <= 2u * a0 + 3000u) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("search: buffer 0x%010lx put in line with the best one -> 0x%010lx", (unsigned long)addrs[j], (unsigned long)to);
+                    #endif
                         addrs[j] = to;
                     }
                 }
@@ -2407,7 +2887,9 @@ namespace ult::glass {
             s_bands = (hy.bufH + 127u) / 128u;
             s_bandBytes = (s_bufW * 4 / 64) * 8192u;
             s_slots = nSlots;
+
             for (u32 i = 0; i < 4; ++i) s_slotAddr[i] = i < nSlots ? addrs[i] : 0;
+            
             s_contentW = hy.cw;
             s_contentH = hy.ch;
             s_exactContent = true;
@@ -2417,18 +2899,23 @@ namespace ult::glass {
             s_cachePid = s_discPid;
             s_cacheN = nSlots;
             s_cacheHyp = hyp;
+
             for (u32 i = 0; i < 4; ++i) s_cacheAddr[i] = s_slotAddr[i];
             if (precise) saveFound();
             else s_cachePid = 0;
+
             resetTracking();
+
             const u64 now = ult::nowNs();
             s_attachNs = now;
             s_lastScanNs = now;
             s_lastChangeNs = now;
             s_discover = false;
             s_attached.store(true, std::memory_order_release);
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("search %u: found %u display buffer(s) of %ux%u (%ux%u picture) in %u regions / %lu MB, %lu ms -> live",
                 s_discTries, nSlots, hy.bufW, hy.bufH, hy.cw, hy.ch, regions, (unsigned long)(scannedPages >> 8), ms);
+        #endif
             return true;
         }
 
@@ -2473,6 +2960,7 @@ namespace ult::glass {
         }
 
         inline bool trackSlots(u32 stripBlock) {
+            dcPoll();
             const u32 n = s_slots < 4 ? s_slots : 4;
             const u32 bandsUsed = (s_contentH + 127) / 128;
             u64 gob[64];
@@ -2612,6 +3100,7 @@ namespace ult::glass {
         inline u32 pickSlot() {
             const u32 n = s_slots < 4 ? s_slots : 4;
             if (n < 2) return 0;
+            if (s_dcSlot < n) return s_dcSlot;               // the frame the display shows (or shows next)
 
             // The newest slot once it stopped changing. Not just "the slot the game left": a game
             // can draw frame after frame into the same slot (FF7 does at low frame rates), and the
@@ -2736,7 +3225,9 @@ namespace ult::glass {
             // Most of that area has to be moving (a small animation in a corner says little)
             const u32 inBox = ((w + 31u) / 32u) * ((hh + 127u) / 128u);
             if (changed * 10u < inBox * 3u || yExt > hh + 128u) return;
+        #if USING_LIVE_LOGGING_DIRECTIVE
             if (w != s_motionW) GLASS_LOG("moving area: %u px wide (%u of the samples changed)", w, changed);
+        #endif
             s_motionW = w;
             const u32 diffW = w > s_contentW ? w - s_contentW : s_contentW - w;
             if (diffW >= 64u && s_motionChecks < 4u &&
@@ -3060,11 +3551,16 @@ namespace ult::glass {
     #endif
 
         // The live read for `key` (a menu's column or, in Status Monitor, a region) into s_blurA.
+        // Read from the slot on screen: torn if that frame was handed back to the game meanwhile.
         inline bool captureFor(u32 key, u16* outA) {
+            const u32 shown = s_dcSlot;
         #if ULT_GLASS_REGIONS
-            if (isRegion(key)) return captureRegion(geoOf(key), outA);
+            const bool ok = isRegion(key) ? captureRegion(geoOf(key), outA) : captureStrip(key, kWorkW, outA);
+        #else
+            const bool ok = captureStrip(key, kWorkW, outA);
         #endif
-            return captureStrip(key, kWorkW, outA);
+            if (ok && shown < 4 && dcReleased(shown)) s_stripTorn = true;
+            return ok;
         }
 
         inline void shutdown() {
@@ -3072,6 +3568,1094 @@ namespace ult::glass {
             stopPump();
         }
     } // namespace live
+
+    // ===========================================================================
+    // VIC: what the display shows, copied without a debugger.
+    //
+    // The scene address (dc::scene) is a device address. The VIC, the 2D engine, uses the
+    // same address space as the display, so a buffer pinned in our own VIC channel gets the
+    // same address there. Buffers are opened by their nvmap id (ids are system-wide) and
+    // pinned one by one until one holds the scene (ids that did are kept in a file and tried
+    // first). Only buffers of the normal device heap that can hold the scene are pinned
+    // (pinning everything is known to crash nvservices). Then, for each new frame the display
+    // takes, the VIC scales the scene down into a buffer of ours (grab()), which the CPU
+    // averages into the 160x90 picture a capture gives: no debugger, no cheat engine, no
+    // screenshot and no layer juggling.
+    //
+    // It uses its own nvdrv session: the framebuffer's has 0x15000 bytes of transfer memory,
+    // too little for a channel (0x235C, shared memory too small). The smallest size that
+    // works is looked for and logged.
+    // ===========================================================================
+    namespace vic {
+        inline constexpr u32 kIovmmHeap = 0x40000000;
+        inline constexpr u32 kIdsPerStep = 16;
+        inline constexpr u64 kStepNs = 16'000'000ULL;
+        // Ids found holding the scene, newest first, kept between overlay processes (nvmap ids
+        // live until the buffer is freed: vi's shared buffer keeps its id until a reboot).
+        inline constexpr const char* kIdsPath = "sdmc:/config/ultrahand/cache/glass_ids.cache";
+        inline u32  s_hints[8] = {};
+        // The same file also keeps how far a search got (ids top..low+1 tried for that game's scene at
+        // those addresses), so the next overlay process goes on from there instead of from the newest
+        // id. Only in the same boot (ids start over at a reboot: the system tick it was written at must
+        // not be later than now) and for the same game process (process ids aren't reused in a boot).
+        struct IdCache { u32 hints[8]; u64 tick, pid; u64 addr[4]; u32 top, low; };
+        inline u64  s_addrs[4] = {};                 // last distinct scene addresses, newest first (noteAddr)
+        inline u64  s_slotBytes = 0;                 // their slot size, 0 while unknown
+        inline u32  s_skipTop = 0, s_skipLow = 0;    // ids in (s_skipLow, s_skipTop] tried already
+        inline u64  s_skipAddr[4] = {};
+        inline u32  s_passTop = 0;                   // where this walk started
+        inline u32  s_hintNext = 0;
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        inline u32  s_statOpened = 0, s_statPinned = 0;   // since the last stats line
+        inline u64  s_statNs = 0, s_statBusyNs = 0;
+        inline u32  s_logs = 0;
+    #endif
+        struct Pin { u32 handle, id, size, iova; };
+        struct Seen { u32 id, iova, size; };
+        inline Pin  s_kept[4] = {};              // buffers found holding the scene (a swapchain is 2-4)
+        inline u32  s_keptNext = 0;
+        inline Seen s_seen[64] = {};             // pinned once and not the scene: again only for a scene in its range
+        inline u32  s_seenNext = 0;
+        inline s8   s_state = -1;                // -1 not tried, 0 unusable, 1 ready
+        inline u8*  s_marker = nullptr;          // a page of ours: a fresh nvmap id tells the newest id
+        inline u32  s_ceiling = 0, s_next = 0, s_misses = 0, s_tried = 0;
+        inline u32  s_lastMatch = 0, s_neighbor = 0;
+        inline u64  s_searchNs = 0, s_stepNs = 0;
+        inline u64  s_lastAddr = ~0ull;              // scene address of the last step (~0: none; 0 is a real one)
+        // The VIC's output (the scaled scene): 640x360 with room, sampled finer (less shimmer on
+        // moving detail once averaged down to 160x90), else 320x180
+        inline u32  s_outW = 320, s_outH = 180;
+        inline constexpr u32 kGroups = kSrcW / 8;    // groups of 8 cells across the picture (the copy's unit)
+        inline constexpr u32 kCfgOff = 0, kCfgBytes = 1552;     // config struct (VIC 4.0)
+        inline constexpr u32 kCmdOff = 0x1000, kOutOff = 0x2000;
+        inline u32  s_blockBytes = 0;
+        inline u8*  s_block = nullptr;           // job description, commands and output, mapped in the channel
+        inline u32  s_blockHandle = 0, s_blockIova = 0, s_syncpt = ~0u;
+        inline bool s_blockPinned = false;
+        inline u8   s_fails = 0;                 // copies in a row that failed; 3: no more copies this process
+        // A copy of ours the VIC hasn't finished in 20 ms (busy with other work, such as a video's frames):
+        // no new one is queued and its buffers stay pinned until the syncpoint reaches its fence.
+        inline bool s_pending = false;
+        inline u32  s_pendFence = 0;
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        inline u64  s_pendNs = 0;
+    #endif
+        inline bool s_wanted = false;            // the worker has no live frames: the search may run
+        inline u64  s_lastCopyNs = 0;            // last copy that worked
+        inline u64  s_lastCopyAddr = 0;          // ... and the scene buffer it read
+        inline bool s_timedOut = false;          // copies stopped after failures: the VIC may still write the block
+        inline bool s_passDone = false;          // a whole pass over the ids found nothing: wait for a change
+        inline int inKept(u64 addr);             // (with the search below)
+
+        // ── Own nvdrv session ────────────────────────────────────────────────────
+        inline Service        s_srv = {};
+        inline TransferMemory s_tm = {};
+        inline u32 s_map = ~0u, s_fd = ~0u;      // /dev/nvmap and /dev/nvhost-vic in it
+        inline u32 s_ctrl = ~0u;                 // /dev/nvhost-ctrl: our syncpoint, read to see a copy finish (no VIC without it)
+
+        inline Result nvsOpen(u32* fd, const char* path) {
+            struct { u32 fd, error; } out = {};
+            Result rc = serviceDispatchOut(&s_srv, 0, out,
+                .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcMapAlias },
+                .buffers = { { path, strlen(path) } },
+            );
+            if (R_SUCCEEDED(rc)) rc = nvConvertError(out.error);
+            if (R_SUCCEEDED(rc)) *fd = out.fd;
+            return rc;
+        }
+
+        inline Result nvsIoctl(u32 fd, u32 req, void* arg) {
+            const size_t size = _NV_IOC_SIZE(req);
+            const u32 dir = _NV_IOC_DIR(req);
+            const struct { u32 fd, req; } in = { fd, req };
+            u32 error = 0;
+            Result rc = serviceDispatchInOut(&s_srv, 1, in, error,
+                .buffer_attrs = {
+                    SfBufferAttr_HipcAutoSelect | SfBufferAttr_In,
+                    SfBufferAttr_HipcAutoSelect | SfBufferAttr_Out,
+                },
+                .buffers = {
+                    { (dir & _NV_IOC_WRITE) ? arg : nullptr, (dir & _NV_IOC_WRITE) ? size : 0 },
+                    { (dir & _NV_IOC_READ) ? arg : nullptr, (dir & _NV_IOC_READ) ? size : 0 },
+                },
+            );
+            if (R_SUCCEEDED(rc)) rc = nvConvertError(error);
+            return rc;
+        }
+
+        inline void nvsClose(u32& fd) {
+            if (fd == ~0u) return;
+            u32 error = 0;
+            serviceDispatchInOut(&s_srv, 2, fd, error);
+            fd = ~0u;
+        }
+
+        // Our syncpoint's value (SYNCPT_READ); false if it can't be read
+        inline bool syncptRead(u32& out) {
+            struct { u32 id, value; } r = { s_syncpt, 0 };
+            if (R_FAILED(nvsIoctl(s_ctrl, _NV_IOWR(0, 0x14, r), &r))) return false;
+            out = r.value;
+            return true;
+        }
+
+        // No copy of ours left in the VIC (a pending one is checked, waited on for up to `waitMs`)
+        inline bool vicIdle(u32 waitMs) {
+            if (!s_pending) return true;
+            for (u32 i = 0; ; ++i) {
+                u32 v = 0;
+                if (s_ctrl != ~0u && syncptRead(v) && (s32)(v - s_pendFence) >= 0) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    GLASS_LOG("vic: the queued copy is done after %lu ms", (unsigned long)((ult::nowNs() - s_pendNs) / 1'000'000ULL));
+                #endif
+                    s_pending = false;
+                    return true;
+                }
+
+                if (i >= waitMs) return false;
+                svcSleepThread(1'000'000ULL);
+            }
+        }
+
+        inline void nvsDown() {
+            nvsClose(s_ctrl);
+            nvsClose(s_fd);
+            nvsClose(s_map);
+            serviceClose(&s_srv);
+            if (s_tm.src_addr) {
+                // nvservices gives the memory back once the session is gone (not waited on for ever)
+                MemoryInfo mi = {};
+                u32 pi = 0;
+                bool back = false;
+                for (u32 i = 0; i < 500 && !back; ++i) {
+                    back = R_SUCCEEDED(svcQueryMemory(&mi, &pi, (u64)s_tm.src_addr)) && (mi.perm & Perm_Rw) == Perm_Rw;
+                    if (!back) svcSleepThread(1'000'000ULL);
+                }
+
+                if (back) tmemClose(&s_tm);
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                else GLASS_LOG("vic: transfer memory not given back, left allocated");
+            #endif
+            }
+
+            s_tm = {};
+        }
+
+        inline Result nvsUp(const char* name, u32 size) {
+            Result rc = smGetService(&s_srv, name);
+            if (R_FAILED(rc)) return rc;
+            rc = tmemCreate(&s_tm, size, Perm_None);
+            if (R_SUCCEEDED(rc)) {
+                rc = serviceDispatchIn(&s_srv, 3, size, .in_num_handles = 2, .in_handles = { CUR_PROCESS_HANDLE, s_tm.handle });
+                tmemCloseHandle(&s_tm);
+            } else s_tm = {};
+
+            if (R_SUCCEEDED(rc)) rc = nvsOpen(&s_map, "/dev/nvmap");
+            if (R_SUCCEEDED(rc)) rc = nvsOpen(&s_fd, "/dev/nvhost-vic");
+            if (R_SUCCEEDED(rc)) {
+                struct { u32 fd; } d = { s_map };
+                rc = nvsIoctl(s_fd, _NV_IOW(0x48, 0x01, d), &d);              // SET_NVMAP_FD
+            }
+
+            if (R_SUCCEEDED(rc) && R_FAILED(nvsOpen(&s_ctrl, "/dev/nvhost-ctrl"))) s_ctrl = ~0u;
+
+            if (R_FAILED(rc)) nvsDown();
+            return rc;
+        }
+
+        // ── nvmap / channel requests in that session ─────────────────────────────
+        inline Result fromId(u32 id, u32& h) {
+            struct { u32 id, handle; } d = { id, 0 };
+            const Result rc = nvsIoctl(s_map, _NV_IOWR(0x01, 0x03, d), &d);
+            h = d.handle;
+            return rc;
+        }
+
+        inline Result param(u32 h, u32 which, u32& v) {
+            struct { u32 handle, param, result; } d = { h, which, 0 };
+            const Result rc = nvsIoctl(s_map, _NV_IOWR(0x01, 0x09, d), &d);
+            v = d.result;
+            return rc;
+        }
+
+        inline void freeHandle(u32 h) {
+            struct { u32 handle, pad; u64 refcount; u32 size, flags; } d = { h, 0, 0, 0, 0 };
+            nvsIoctl(s_map, _NV_IOWR(0x01, 0x05, d), &d);
+        }
+
+        // Address 0 is a valid one (a game's swapchain was pinned there): success is the result code.
+        struct CmdMap { u32 num, reserved; u8 compressed, pad[3]; u32 handle, iova; };
+        inline bool pin(u32 h, u32& iova) {
+            CmdMap d = { 1, 0, 0, {}, h, ~0u };
+            const bool ok = R_SUCCEEDED(nvsIoctl(s_fd, _NV_IOWR(0, 0x09, d), &d)) && d.iova != ~0u;   // MAP_CMD_BUFFER
+            iova = d.iova;
+            return ok;
+        }
+
+        inline void unpin(u32 h, u32 iova, bool pinned = true) {
+            if (pinned) {
+                CmdMap d = { 1, 0, 0, {}, h, iova };
+                nvsIoctl(s_fd, _NV_IOWR(0, 0x0a, d), &d);                      // UNMAP_CMD_BUFFER
+            }
+
+            freeHandle(h);
+        }
+
+        // An nvmap buffer over memory of ours (page aligned, CPU cached): its handle, 0 if refused.
+        inline u32 makeHandle(void* mem, u32 size) {
+            if (!mem) return 0;
+            struct { u32 size, handle; } c = { size, 0 };
+            if (R_FAILED(nvsIoctl(s_map, _NV_IOWR(0x01, 0x01, c), &c))) return 0;   // CREATE
+            struct { u32 handle, heapmask, flags, align; u8 kind, pad[7]; u64 addr; } a = {};
+            a.handle = c.handle;
+            a.flags = 1;
+            a.align = 0x1000;
+            a.addr = (u64)mem;
+            if (R_SUCCEEDED(nvsIoctl(s_map, _NV_IOWR(0x01, 0x04, a), &a))) return c.handle;   // ALLOC
+            freeHandle(c.handle);
+            return 0;
+        }
+
+        inline u32 newestId() {
+            const u32 h = makeHandle(s_marker, 0x1000);
+            if (!h) return 0;
+            struct { u32 id, handle; } g = { 0, h };
+            const bool ok = R_SUCCEEDED(nvsIoctl(s_map, _NV_IOWR(0x01, 0x0E, g), &g));     // GET_ID
+            freeHandle(h);
+            return ok ? g.id : 0;
+        }
+
+        // Memory controller register through exosphere (read only: mask 0)
+        inline bool readMc(u32 addr, u32& v) {
+            SecmonArgs a = {};
+            a.X[0] = 0xF0000002;
+            a.X[1] = addr;
+            svcCallSecureMonitor(&a);
+            v = (u32)a.X[1];
+            return a.X[0] == 0;
+        }
+
+        inline bool init() {
+            s_state = 0;
+            if (!dc::mapped()) return false;
+            u32 vicAs = 0, dcAs[2] = {};
+            const bool mcOk = readMc(0x70019284, vicAs) && readMc(0x70019240, dcAs[0]) && readMc(0x70019244, dcAs[1]);
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            GLASS_LOG("vic: memory controller %s: VIC 0x%08x, display A 0x%08x, B 0x%08x (bytes of A: %u %u %u %u)",
+                mcOk ? "read" : "NOT readable", vicAs, dcAs[0], dcAs[1], dcAs[0] & 0x7f, (dcAs[0] >> 8) & 0x7f,
+                (dcAs[0] >> 16) & 0x7f, (dcAs[0] >> 24) & 0x7f);
+        #endif
+            if (!mcOk) return false;
+            if ((vicAs & 0x800000ff) != (dcAs[0] & 0x800000ff) && (vicAs & 0x800000ff) != (dcAs[1] & 0x800000ff)) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("vic: VIC and display use different address spaces -> stop");
+            #endif
+                return false;
+            }
+
+            // Smallest transfer memory a VIC channel opens with, nvdrv:s first (the overlay's own kind)
+            static const char* const kNames[] = { "nvdrv:s", "nvdrv:t" };
+            static constexpr u32 kSizes[] = { 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x300000 };
+            bool up = false;
+            for (const char* name : kNames) {
+                for (u32 size : kSizes) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    const u64 t0 = ult::nowNs();
+                #endif
+                    const Result rc = nvsUp(name, size);
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    GLASS_LOG("vic: %s with %u KB transfer memory: %s rc=0x%x, %lu ms", name, size >> 10,
+                        R_SUCCEEDED(rc) ? "VIC channel open" : "failed", rc, (unsigned long)((ult::nowNs() - t0) / 1'000'000ULL));
+                #endif
+                    if (R_SUCCEEDED(rc)) {
+                        up = true;
+                        break;
+                    }
+                }
+
+                if (up) break;
+            }
+
+            if (!up) return false;
+            if (FILE* f = fopen(kIdsPath, "rb")) {
+                IdCache c = {};
+                const size_t got = fread(&c, 1, sizeof(c), f);
+                fclose(f);
+                if (got == sizeof(c) && c.tick <= armGetSystemTick()) {
+                    memcpy(s_hints, c.hints, sizeof(s_hints));
+                    if (c.pid && c.pid == live::applicationPid()) s_skipTop = c.top;   // (the same game process)
+                    s_skipLow = c.low;
+                    memcpy(s_skipAddr, c.addr, sizeof(s_skipAddr));
+                } else if (got >= sizeof(s_hints)) memcpy(s_hints, c.hints, sizeof(s_hints));   // (other layout: just the ids)
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("vic: id hints %u %u %u %u", s_hints[0], s_hints[1], s_hints[2], s_hints[3]);
+            #endif
+            }
+
+            s_marker = static_cast<u8*>(aligned_alloc(0x1000, 0x1000));
+            s_ceiling = s_next = s_passTop = newestId();
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            GLASS_LOG("vic: newest nvmap id %u", s_ceiling);
+        #endif
+
+            if (!s_ceiling) {
+                nvsDown();
+                return false;
+            }
+
+            if (s_skipTop > s_ceiling || s_skipLow >= s_skipTop) s_skipTop = 0;   // (not this boot's)
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            if (s_skipTop) GLASS_LOG("vic: ids %u..%u were tried by the last run, skipped", s_skipTop, s_skipLow + 1);
+        #endif
+
+            // Output size: 640x360 with the larger heap (not Status Monitor), else 320x180
+        #if !IS_STATUS_MONITOR_DIRECTIVE
+            if (ult::furtherExpandedMemory) {
+                s_outW = 640;
+                s_outH = 360;
+            }
+        #endif
+
+            // The channel's syncpoint (the copy's block is made on the first copy: ensureBlock)
+            struct { u32 param, value; } g = { 0, ~0u };
+            if (s_ctrl == ~0u || R_FAILED(nvsIoctl(s_fd, _NV_IOWR(0, 0x02, g), &g)) || g.value == ~0u) s_fails = 3;   // GET_SYNCPOINT
+            s_syncpt = g.value;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            GLASS_LOG("vic: channel %s, syncpoint %u", s_fails ? "NOT ready (no syncpoint to read)" : "ready", s_syncpt);
+        #endif
+            s_state = 1;
+            return true;
+        }
+
+        // ── The copy ─────────────────────────────────────────────────────────────
+        // A bit field of the VIC's job description (Tegra X1 VIC 4.0 config struct)
+        inline void put(u64* c, u32 bit, u32 width, u64 v) {
+            const u64 m = (1ull << width) - 1;
+            u64& w = c[bit >> 6];
+            w = (w & ~(m << (bit & 63))) | ((v & m) << (bit & 63));
+        }
+
+        // Averages of the VIC's output (2x2 or 4x4) into the 160x90 RGB picture, rounded as
+        // (sum + half) >> shift, for the groups of 8 cells [g0, g1) (the rest of `small` is left
+        // as it is). Each source row's part is read front to back (16 pixels at a time summed in pairs
+        // into per-column totals) with prefetch of the same columns whole rows ahead, at least 4 KB
+        // (more than a memory read takes while the game is running): the memory streams in rather than
+        // a miss per line. With 4x4, two neighbouring totals are added up for each output pixel.
+        inline void toSmall(const u8* out, u8* small, u32 g0, u32 g1) {
+            const bool four = s_outW == 640;
+            const u32 rows = four ? 4 : 2, perG = four ? 2 : 1;      // 16-pixel chunks per 8 cells
+            const u32 chunks = (g1 - g0) * perG, rowBytes = s_outW * 4;
+            const u32 ahead = (4096 + rowBytes - 1) / rowBytes * rowBytes;   // 2 rows of 640, 4 of 320
+            const int16x8_t shift = vdupq_n_s16(four ? -4 : -2);
+            alignas(16) u16 acc[40 * 24];                // per 16 pixels across: r g b pair totals (8 each)
+            for (u32 y = 0; y < 90; ++y) {
+                memset(acc, 0, chunks * 48);
+                for (u32 j = 0; j < rows; ++j) {
+                    const u8* p = out + (y * rows + j) * rowBytes + g0 * perG * 64;
+                    for (u16* a = acc, * const e = acc + chunks * 24; a < e; a += 24, p += 64) {
+                        __builtin_prefetch(p + ahead, 0, 0);
+                        const uint8x16x4_t t = vld4q_u8(p);
+                        vst1q_u16(a,      vpadalq_u8(vld1q_u16(a),      t.val[0]));
+                        vst1q_u16(a + 8,  vpadalq_u8(vld1q_u16(a + 8),  t.val[1]));
+                        vst1q_u16(a + 16, vpadalq_u8(vld1q_u16(a + 16), t.val[2]));
+                    }
+                }
+
+                const u16* a = acc;
+                auto avg = [&](u32 k) {
+                    uint16x8_t v = vld1q_u16(a + k);
+                    if (four) v = vpaddq_u16(v, vld1q_u16(a + 24 + k));
+                    return vmovn_u16(vrshlq_u16(v, shift));
+                };
+                u8* sp = small + (y * kSrcW + g0 * 8) * 3;
+                for (u32 g = g0; g < g1; ++g, sp += 24, a += four ? 48 : 24) {
+                    uint8x8x3_t px;
+                    px.val[0] = avg(0);
+                    px.val[1] = avg(8);
+                    px.val[2] = avg(16);
+                    vst3_u8(sp, px);
+                }
+            }
+        }
+
+        // The job description (Tegra X1 VIC 4.0 config struct, libdrm's vic40.h layout), {bit, width}.
+        // Fixed, {bit, width, value}: output s_outW x s_outH A8B8G8R8 (bytes R, G, B, A), pitch linear,
+        // constant alpha, slot 0 on, 2-tap scaler.
+        inline constexpr u16 kFixed[][3] = {
+            { 134, 10, 1023 },                           // background alpha
+            { 256, 7, 31 },                              // output A8B8G8R8
+            { 352, 14, 16383 }, { 366, 14, 16383 },      // (no chroma)
+            { 1152, 1, 1 }, { 1160, 1, 1 },              // slot 0 on, current field
+            // Scaler filter length Y / X, 2 taps (0: 1 tap, a point sample). At 1280 -> 640 an output pixel
+            // is the mean of a 2x2 block, so toSmall's 4x4 covers all 64 pixels of a cell, as a capture (320
+            // wide: 16 of 64)
+            { 1172, 2, 1 }, { 1174, 2, 1 },
+            { 1290, 10, 1023 },                          // soft clamp high
+            { 1312, 10, 1023 }, { 1322, 1, 1 },          // planar alpha, constant alpha
+            { 1683, 3, 2 },                              // cache width 64Bx4
+            { 1760, 14, 16383 }, { 1774, 14, 16383 },
+        };
+        // Output width - 1 (even entries) and height - 1 (odd): target rect, output surface, its row
+        // length, dest rect
+        inline constexpr u16 kOutDims[] = { 208, 240, 288, 302, 320, 334, 1552, 1584 };
+        // Set from the scene on each copy (grab): source rect (16.16), input format, pitch / block
+        // linear, block height, surface width / height - 1, row length - 1, rows - 1
+        inline constexpr u16 kScene[][2] = {
+            { 1408, 30 }, { 1440, 30 }, { 1472, 30 }, { 1504, 30 },
+            { 1664, 7 }, { 1675, 4 }, { 1679, 4 }, { 1696, 14 }, { 1710, 14 }, { 1728, 14 }, { 1742, 14 },
+        };
+
+        // Commands: VIC class, methods through the THI method offset / data pair (application id, config
+        // struct size, config / output / slot 0 addresses >> 8, execute), then a syncpoint increment when
+        // the operation is done. The addresses and the syncpoint are filled in (writeFixed, grab).
+        inline constexpr u32 kM = (1u << 28) | (0x10u << 16) | 2;
+        inline constexpr u32 kCmds[] = {
+            0x5Du << 6,                                  // SETCL VIC
+            kM, 0x200 >> 2, 1,
+            kM, 0x704 >> 2, (kCfgBytes / 16) << 16,
+            kM, 0x708 >> 2, 0,                           // [9] config
+            kM, 0x720 >> 2, 0,                           // [12] output
+            kM, 0x400 >> 2, 0,                           // [15] slot 0 input
+            kM, 0x300 >> 2, 1u << 8,                     // execute
+            (2u << 28) | 1, 1u << 8,                     // INCR_SYNCPT on op done, [20] | syncpoint
+        };
+        inline constexpr u32 kCmdWords = sizeof(kCmds) / 4, kSlotWord = 15;
+
+        // The block's fixed contents, written once: the job description's fixed fields (grab() writes the
+        // scene's) and the commands
+        inline void writeFixed() {
+            u64* const c = reinterpret_cast<u64*>(s_block + kCfgOff);
+            memset(c, 0, kCfgBytes);
+            for (const auto& f : kFixed)
+                put(c, f[0], f[1], f[2]);
+            for (u32 i = 0; i < 8; ++i)
+                put(c, kOutDims[i], 14, (i & 1 ? s_outH : s_outW) - 1);
+
+            u32* const cmd = reinterpret_cast<u32*>(s_block + kCmdOff);
+            memcpy(cmd, kCmds, sizeof(kCmds));
+            cmd[9] = (s_blockIova + kCfgOff) >> 8;
+            cmd[12] = (s_blockIova + kOutOff) >> 8;
+            cmd[20] |= s_syncpt;
+        }
+
+        // The copy's block (job description, commands, output), mapped in the channel. Made on the first
+        // copy, so a game read live (the VIC only searching) never holds it. If it can't be made, the VIC
+        // makes no more copies.
+        inline bool ensureBlock() {
+            if (s_blockPinned) return true;
+            s_blockBytes = (kOutOff + s_outW * s_outH * 4 + 0xFFF) & ~0xFFFu;
+            s_block = static_cast<u8*>(aligned_alloc(0x1000, s_blockBytes));
+            s_blockHandle = makeHandle(s_block, s_blockBytes);
+            s_blockPinned = s_blockHandle && pin(s_blockHandle, s_blockIova);
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            GLASS_LOG("vic: copy block %s (%u KB at 0x%x, output %ux%u)", s_blockPinned ? "ready" : "NOT ready",
+                s_blockBytes >> 10, s_blockIova, s_outW, s_outH);
+        #endif
+            if (s_blockPinned) {
+                writeFixed();
+                return true;
+            }
+
+            if (s_blockHandle) unpin(s_blockHandle, 0, false);
+            s_blockHandle = 0;
+            free(s_block);
+            s_block = nullptr;
+            s_fails = 3;
+            return false;
+        }
+
+        // The part of the output the VIC writes (target rect): the groups [g0, g1). The slot's source and
+        // destination rects stay the whole scene and the whole output, so every pixel written is scaled
+        // exactly as in a full copy. The columns outside keep what they held.
+        inline void setTarget(u32 g0, u32 g1) {
+            u64* const c = reinterpret_cast<u64*>(s_block + kCfgOff);
+            const u32 px = s_outW / kSrcW * 8;           // output pixels per group
+            put(c, 192, 14, g0 * px);                    // target rect left (OutputConfig, bit 192)
+            put(c, kOutDims[0], 14, g1 * px - 1);        // and right
+        }
+
+        // Drops the output's cache lines for the groups [g0, g1) before the CPU reads what the VIC wrote
+        // (one range for the whole output, one per row for a part)
+        inline void flushOut(const u8* out, u32 g0, u32 g1) {
+            const u32 rowBytes = s_outW * 4, px = s_outW / kSrcW * 8;
+            if (g0 == 0 && g1 == kGroups) {
+                armDCacheFlush(const_cast<u8*>(out), rowBytes * s_outH);
+                return;
+            }
+            for (u32 y = 0; y < s_outH; ++y)
+                armDCacheFlush(const_cast<u8*>(out + y * rowBytes + g0 * px * 4), (g1 - g0) * px * 4);
+        }
+
+        // Submits the job in the block and waits for it: 1 done, 0 failed (counted in s_fails), -1 still
+        // queued after ~20 ms (s_pending: not a failure, no new copy until it's done).
+        inline int submitWait(u32 before) {
+            // Submit (libnx's nvioctlChannel_Submit layout): counts, one command buffer {handle, offset,
+            // words}, no relocations (our addresses are already the VIC's), one syncpoint increment
+            // {id, count, wait base -1, next -1, previous -1}, and the fence threshold back.
+            u32 d[13] = { 1, 0, 1, 1, s_blockHandle, kCmdOff, kCmdWords, s_syncpt, 1, ~0u, ~0u, ~0u, 0 };
+            const Result rc = nvsIoctl(s_fd, _NV_IOWR(0, 0x01, d), d);
+            if (R_FAILED(rc)) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("vic: submit refused rc=0x%x", rc);
+            #endif
+                ++s_fails;
+                return 0;
+            }
+
+            // Done when the syncpoint reaches the fence (read every 100 us, up to ~20 ms; the fence word may
+            // come back 0, then one past the value before)
+            const u32 fence = d[12] ? d[12] : before + 1;
+            u32 now = before;
+            bool reached = false;
+            for (u32 i = 0; i < 200 && !reached; ++i) {
+                svcSleepThread(i ? 100'000ULL : 300'000ULL);
+                if (!syncptRead(now)) break;
+                reached = (s32)(now - fence) >= 0;
+            }
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            static bool s_told = false;
+            if (!s_told) GLASS_LOG("vic: syncpoint %u: %u before the copy, fence %u, %u after", s_syncpt, before, d[12], now);
+            s_told = true;
+        #endif
+            if (!reached) {
+                // Still queued (the VIC busy with other work): not a failure. No new copy until it's done, the
+                // last frame stays up meanwhile.
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("vic: copy still queued after 20 ms (the VIC is busy) -> waiting for it");
+            #endif
+                s_pending = true;
+                s_pendFence = fence;
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                s_pendNs = ult::nowNs();
+            #endif
+                return -1;
+            }
+            return 1;
+        }
+
+    #if USING_LIVE_LOGGING_DIRECTIVE
+        // Logging builds: every ~5 s a part copy is followed by a whole copy of the same buffer and the
+        // part's cells compared (equal unless the game redrew that buffer in between)
+        inline void checkPart(const u8* small, u32 g0, u32 g1) {
+            static u64 s_lastNs = 0;
+            const u64 now = ult::nowNs();
+            if ((g0 == 0 && g1 == kGroups) || now - s_lastNs < 5'000'000'000ULL) return;
+            s_lastNs = now;
+            alignas(16) static u8 s_whole[kSrcW * kSrcH * 3];
+            u32 before = 0;
+            if (!syncptRead(before)) return;
+            setTarget(0, kGroups);
+            armDCacheFlush(s_block, kOutOff);
+            const u32 fails = s_fails;
+            const int r = submitWait(before);
+            if (r == 0) s_fails = fails;                 // (a check doesn't count against the VIC)
+            if (r <= 0) return;
+            u8* const out = s_block + kOutOff;
+            flushOut(out, 0, kGroups);
+            toSmall(out, s_whole, 0, kGroups);
+            u32 diff = 0, largest = 0;
+            for (u32 y = 0; y < kSrcH; ++y)
+                for (u32 i = (y * kSrcW + g0 * 8) * 3, e = (y * kSrcW + g1 * 8) * 3; i < e; ++i) {
+                    const u32 d = small[i] > s_whole[i] ? small[i] - s_whole[i] : s_whole[i] - small[i];
+                    if (d) ++diff;
+                    if (d > largest) largest = d;
+                }
+            GLASS_LOG("vic: part copy check, cells %u..%u of 160: %u of %u values differ from a whole copy (largest %u)",
+                g0 * 8, g1 * 8 - 1, diff, (g1 - g0) * 8 * kSrcH * 3, largest);
+        }
+    #endif
+
+        // The scene, scaled by the VIC into `small` (160x90 RGB, like a capture): the columns the crops for
+        // keyA and keyB read (the place being drawn and the layer's place right now; keyCells, s_smallC0 /
+        // s_smallC1), or all of them (whole: the layer is being moved, so its next places are cut out of
+        // this copy as from a capture). False when it can't (no channel, the scene's buffer not found yet,
+        // an applet over it, a failed copy).
+        inline bool grab(u8* small, u32 keyA, u32 keyB, bool whole = false) {
+            if (s_state != 1 || s_fails >= 3 || !ult::glassWithCheats) return false;   // ("With Cheats" off: no VIC)
+            if (s_pending) {
+                u32 v = 0;
+                if (s_ctrl == ~0u || !syncptRead(v)) {   // can't tell when it's done: no more copies
+                    ++s_fails;
+                    return false;
+                }
+
+                if (!vicIdle(0)) return false;
+            }
+
+            dc::Scene sc = {};
+            const bool scene = dc::scene(sc);
+            const int k = scene ? inKept(sc.addr) : -1;
+            const u32 rows = sc.blk == 0xff ? (u32)sc.y1 + 1 : ((u32)sc.y1 + (8u << sc.blk)) & ~((8u << sc.blk) - 1);
+            const char* why = !scene ? "no scene window" : sc.covered ? "another large window is up" : !sc.own ? "our window not seen" :
+                              (sc.addr & 0xff) || sc.pitch < 256 || sc.x0 < 0 || sc.y0 < 0 || sc.x1 - sc.x0 < 63 || sc.y1 - sc.y0 < 35 ? "scene layout" :
+                              k < 0 ? "scene not in a found buffer" :
+                              (sc.addr - s_kept[k].iova) + (u64)sc.pitch * rows > s_kept[k].size ? "scene past its buffer" : nullptr;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            // No scene window for 150 ms: every window's registers, once per stretch (6 at most)
+            static u64 s_noSceneNs = 0;
+            static bool s_dumped = false;
+            static u32 s_dumps = 0;
+            if (scene) {
+                s_noSceneNs = 0;
+                s_dumped = false;
+            } else if (!s_noSceneNs) s_noSceneNs = ult::nowNs();
+            else if (!s_dumped && s_dumps < 6 && ult::nowNs() - s_noSceneNs >= 150'000'000ULL) {
+                s_dumped = true;
+                ++s_dumps;
+                GLASS_LOG("vic: no scene window for 150 ms:");
+                dc::dump();
+            }
+        #endif
+            if (why) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                static u32 s_skips = 0;
+                if (s_skips < 30) {
+                    ++s_skips;
+                    GLASS_LOG("vic: no copy: %s (scene 0x%lx)", why, scene ? (unsigned long)sc.addr : 0ul);
+                }
+            #endif
+                return false;
+            }
+
+            if (!ensureBlock()) return false;
+
+            // The scene's part of the job description (the rest is fixed: writeFixed): slot 0 reads its
+            // area, A8R8G8B8 (B, G, R, A) or A8B8G8R8 (R, G, B, A), pitch or block linear (16Bx2 GOBs)
+            const u32 v[] = {
+                (u32)sc.x0 << 16, (u32)sc.x1 << 16, (u32)sc.y0 << 16, (u32)sc.y1 << 16,
+                sc.fmt == 12 ? 32u : 31u, sc.blk == 0xff ? 0u : 1u, sc.blk == 0xff ? 0u : sc.blk,
+                (u32)sc.x1, (u32)sc.y1, sc.pitch / 4 - 1, rows - 1,
+            };
+            u64* const c = reinterpret_cast<u64*>(s_block + kCfgOff);
+            for (u32 i = 0; i < 11; ++i)
+                put(c, kScene[i][0], kScene[i][1], v[i]);
+            reinterpret_cast<u32*>(s_block + kCmdOff)[kSlotWord] = (u32)(sc.addr >> 8);   // slot 0 input
+
+            // Our syncpoint before the copy (others move it too: the copy is done when it reaches the
+            // submit's fence)
+            u32 before = 0;
+            if (!syncptRead(before)) {
+                ++s_fails;
+                return false;
+            }
+
+            // The cells the two crops read, one more on each side, in groups of 8
+            u32 g0 = 0, g1 = kGroups;
+            if (!whole) {
+                u32 a0, a1, b0, b1;
+                keyCells(keyA, a0, a1);
+                keyCells(keyB, b0, b1);
+                const u32 c0 = a0 < b0 ? a0 : b0, c1 = a1 > b1 ? a1 : b1;
+                g0 = (c0 ? c0 - 1 : 0) / 8;
+                g1 = ((c1 + 1 < kSrcW ? c1 + 1 : kSrcW) + 7) / 8;
+            }
+            setTarget(g0, g1);
+
+            armDCacheFlush(s_block, kOutOff);            // job description and commands out to memory
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            const u64 t0 = armGetSystemTick();
+        #endif
+            if (submitWait(before) <= 0) return false;
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            const u64 tVic = armGetSystemTick();
+        #endif
+            u8* const out = s_block + kOutOff;
+            flushOut(out, g0, g1);
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            const u64 tFlush = armGetSystemTick();
+        #endif
+            toSmall(out, small, g0, g1);
+            s_smallC0 = g0 * 8;
+            s_smallC1 = g1 * 8;
+            s_fails = 0;
+            s_lastCopyNs = ult::nowNs();
+            s_lastCopyAddr = sc.addr;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            static u32 s_n = 0;
+            static u64 s_sumUs = 0, s_startNs = 0, s_vicUs = 0, s_flushUs = 0, s_avgUs = 0;
+            const u64 tEnd = armGetSystemTick();
+            s_sumUs += armTicksToNs(tEnd - t0) / 1000ULL;
+            s_vicUs += armTicksToNs(tVic - t0) / 1000ULL;
+            s_flushUs += armTicksToNs(tFlush - tVic) / 1000ULL;
+            s_avgUs += armTicksToNs(tEnd - tFlush) / 1000ULL;
+            const u64 nowNs = ult::nowNs();
+            static bool s_first = true;
+            ++s_n;
+            if (s_first) GLASS_LOG("vic: first copy, %lu us (scene %ux%u at 0x%lx, pitch %u, blk %u, fmt %u)",
+                (unsigned long)s_sumUs, sc.x1 - sc.x0 + 1, sc.y1 - sc.y0 + 1, (unsigned long)sc.addr, sc.pitch, sc.blk, sc.fmt);
+            s_first = false;
+            if (!s_startNs) s_startNs = nowNs;
+            else if (nowNs - s_startNs >= 5'000'000'000ULL) {
+                GLASS_LOG("vic: %u copies in %lu ms, %lu us each (VIC %lu + cache %lu + average %lu)", s_n,
+                    (unsigned long)((nowNs - s_startNs) / 1'000'000ULL), (unsigned long)(s_sumUs / s_n),
+                    (unsigned long)(s_vicUs / s_n), (unsigned long)(s_flushUs / s_n), (unsigned long)(s_avgUs / s_n));
+                s_n = 0;
+                s_sumUs = 0;
+                s_vicUs = 0;
+                s_flushUs = 0;
+                s_avgUs = 0;
+                s_startNs = nowNs;
+            }
+            checkPart(small, g0, g1);
+        #endif
+            return true;
+        }
+
+        // The display shows a frame the VIC hasn't copied yet (a new buffer handed to it), or the last
+        // copy is 100 ms old (a game that redraws the same buffer)
+        inline bool newFrame(u64 now) {
+            dc::Scene sc;
+            return !dc::scene(sc) || sc.addr != s_lastCopyAddr || now - s_lastCopyNs >= 100'000'000ULL;
+        }
+
+        // A new frame to copy: as above, but only with a scene window (a moving layer copies it
+        // instead of cutting its new place out of the last copy)
+        inline bool frameWaiting(u64 now) {
+            dc::Scene sc;
+            return dc::scene(sc) && (sc.addr != s_lastCopyAddr || now - s_lastCopyNs >= 100'000'000ULL);
+        }
+
+        // The VIC can copy, and a search for the scene's buffer is still going (not a whole pass done)
+        inline bool mayFind() {
+            return s_state == 1 && s_fails < 3 && !s_passDone;
+        }
+
+        inline void step();
+
+        // Search steps right away (2 ms apart, at most ~24 ms): the remembered ids and the latest
+        // buffer's range come first, so a buffer found before is found again here. Spaced out, a scene
+        // read that misses for a moment (or our window not up yet) doesn't end it.
+        inline void findNow() {
+            if (s_state < 0) step();                     // (opens the channel)
+            for (u32 i = 0; i < 12 && mayFind() && !sceneReady(); ++i) {
+                if (i) svcSleepThread(2'000'000ULL);
+                s_stepNs = 0;
+                step();
+            }
+        }
+
+        // The scene is in a buffer found (and pinned) by the search: grab() can copy it.
+        inline bool sceneReady() {
+            dc::Scene sc;
+            return s_state == 1 && s_fails < 3 && dc::scene(sc) && !sc.covered && sc.own && inKept(sc.addr) >= 0;
+        }
+
+        // Is the scene in a kept buffer?
+        inline int inKept(u64 addr) {
+            for (u32 i = 0; i < 4; ++i)
+                if (s_kept[i].handle && addr >= s_kept[i].iova && addr - s_kept[i].iova < s_kept[i].size) return (int)i;
+            return -1;
+        }
+
+        // The id walk from the newest id down, again
+        inline void restartWalk() {
+            const u32 c = newestId();                    // new buffers are the newest ids
+            if (c > s_ceiling) s_ceiling = c;
+            s_next = s_passTop = s_ceiling;
+        }
+
+        // Hints, and the ids tried by a search still going (top 0: none), into the file
+        inline void saveCache(u32 top, u32 low) {
+            IdCache c = {};
+            memcpy(c.hints, s_hints, sizeof(s_hints));
+            c.tick = armGetSystemTick();
+            c.pid = live::applicationPid();
+            memcpy(c.addr, s_addrs, sizeof(c.addr));
+            c.top = top;
+            c.low = low;
+            if (FILE* f = fopen(kIdsPath, "wb")) {
+                fwrite(&c, 1, sizeof(c), f);
+                fclose(f);
+            }
+        }
+
+        // A search that hasn't found the scene: how far it got, for the next overlay process
+        inline void saveProgress() {
+            if (s_state != 1 || inKept(s_addrs[0]) >= 0 || !s_slotBytes) return;   // (no scene seen twice: nothing to keep)
+            if (s_skipTop && s_next > s_skipTop) {
+                saveCache(s_skipTop, s_skipLow);         // (not down to the earlier range yet: that one stays)
+                return;
+            }
+
+            if (s_passTop > s_next) saveCache(s_passTop, s_next);
+        }
+
+        // Slot size of the scene's buffers (s_slotBytes): the smallest gap between the distinct scene
+        // addresses seen (all gaps a multiple of it), 0 while unknown.
+        inline void noteAddr(u64 a) {
+            if (a == s_addrs[0]) return;
+            u32 j = 0;
+            while (j < 3 && s_addrs[j] != a) ++j;
+            for (; j; --j) s_addrs[j] = s_addrs[j - 1];
+            s_addrs[0] = a;
+            u64 g = 0;
+            for (u32 i = 0; i < 4; ++i)
+                for (u32 k = i + 1; k < 4; ++k) {
+                    if (!s_addrs[i] || !s_addrs[k]) continue;
+                    const u64 d = s_addrs[i] > s_addrs[k] ? s_addrs[i] - s_addrs[k] : s_addrs[k] - s_addrs[i];
+                    if (!g || d < g) g = d;
+                }
+
+            for (u32 i = 1; g && i < 4; ++i)
+                if (s_addrs[i] && (s_addrs[i] > a ? s_addrs[i] - a : a - s_addrs[i]) % g) g = 0;
+            if (g != s_slotBytes) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                if (g) GLASS_LOG("vic: scene slots 0x%lx bytes apart (addresses 0x%lx 0x%lx 0x%lx)", (unsigned long)g,
+                    (unsigned long)s_addrs[0], (unsigned long)s_addrs[1], (unsigned long)s_addrs[2]);
+            #endif
+                s_slotBytes = g;
+                s_passDone = false;
+                restartWalk();
+                for (Seen& v : s_seen) v = {};
+            }
+        }
+
+        // An id is a candidate when its size fits the scene's slots. It is pinned in our channel: the
+        // display and the VIC share the address space, so if that address holds the scene, it is the
+        // scene's buffer and stays pinned.
+        inline bool tryId(u32 id, u64 addr, u64 need) {
+            for (const Pin& k : s_kept)
+                if (k.handle && k.id == id) return false;
+
+            // Pinned before and not the scene: only again when the scene is now inside it (another slot
+            // of the same buffer, or of a swapchain made of one buffer per slot)
+            for (const Seen& v : s_seen)
+                if (v.id == id && !(addr >= v.iova && addr - v.iova < v.size)) return false;
+            u32 h = 0, size = 0, heap = 0;
+            if (R_FAILED(fromId(id, h))) return false;
+            ++s_tried;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            ++s_statOpened;
+        #endif
+            if (R_FAILED(param(h, NvMapParam_Size, size)) || R_FAILED(param(h, NvMapParam_Heap, heap)) || heap != kIovmmHeap) {
+                freeHandle(h);
+                return false;
+            }
+
+            // Size: known slots, a pool of 1..8 of them, or one slot's buffer (big enough for the scene, at
+            // most the gap between slots); not known yet, big enough for the scene and at most 64 MB
+            const u64 S = s_slotBytes;
+            const bool fits = S ? (size % S == 0 && size / S <= 8) || (size >= need && size <= S)
+                                : size >= need && size <= 0x4000000;
+            if (!fits) {
+                freeHandle(h);
+                return false;
+            }
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            ++s_statPinned;
+        #endif
+            u32 iova = 0;
+            const bool pinned = pin(h, iova);
+            if (pinned && addr >= iova && addr - iova < size) {
+                Pin& k = s_kept[s_keptNext++ & 3];
+                if (k.handle) unpin(k.handle, k.iova);
+                k = { h, id, size, iova };
+                s_lastMatch = id;
+                s_neighbor = 1;
+
+                // remember it first in the hints file
+                u32 j = 0;
+                while (j < 7 && s_hints[j] != id) ++j;
+                for (; j; --j) s_hints[j] = s_hints[j - 1];
+                s_hints[0] = id;
+                s_skipTop = 0;
+                saveCache(0, 0);
+                return true;
+            }
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            if (s_logs < 60) {
+                ++s_logs;
+                u32 base = 0, align = 0, kind = 0;
+                param(h, NvMapParam_Base, base);
+                param(h, NvMapParam_Alignment, align);
+                param(h, NvMapParam_Kind, kind);
+                GLASS_LOG("vic: candidate id %u: %u KB, base 0x%x, align 0x%x, kind %u, %s 0x%x (scene 0x%lx)",
+                    id, size >> 10, base, align, kind, pinned ? "pinned at" : "pin failed", iova, (unsigned long)addr);
+            }
+        #endif
+
+            // (a retried one keeps its entry, with the address it got this time)
+            Seen* e = nullptr;
+            for (Seen& v : s_seen)
+                if (v.id == id) {
+                    e = &v;
+                    break;
+                }
+            if (!e) e = &s_seen[s_seenNext++ & 63];
+            *e = { id, pinned ? iova : ~0u, size };
+            unpin(h, iova, pinned);
+            return false;
+        }
+
+        inline void releaseKept() {
+            for (Pin& k : s_kept)
+                if (k.handle) {
+                    unpin(k.handle, k.iova);
+                    k = {};
+                }
+        }
+
+        // Worker, every loop while the glass is wanted (at most every kStepNs).
+        inline void step() {
+            if (!s_wanted || s_pending) return;          // (no pins change while a copy is queued)
+            const u64 now = ult::nowNs();
+            if (now - s_stepNs < kStepNs) return;
+            s_stepNs = now;
+            if (s_state < 0 && !init()) return;
+            if (s_state != 1) return;
+            dc::Scene sc;
+            if (!dc::scene(sc)) return;
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            static u8 s_lastWin = 0xff;
+            if (sc.win != s_lastWin) {
+                s_lastWin = sc.win;
+                GLASS_LOG("vic: scene in window %c", 'A' + sc.win);
+            }
+        #endif
+
+            noteAddr(sc.addr);
+            if (s_skipTop && sc.addr != s_skipAddr[0] && sc.addr != s_skipAddr[1] && sc.addr != s_skipAddr[2] &&
+                sc.addr != s_skipAddr[3]) s_skipTop = 0;     // (not the saved scene)
+            const int k = inKept(sc.addr);
+            if (k >= 0) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                if (sc.addr != s_lastAddr && s_logs < 60) {
+                    ++s_logs;
+                    GLASS_LOG("vic: on screen: id %u + 0x%lx (%ux%u%s)", s_kept[k].id,
+                        (unsigned long)(sc.addr - s_kept[k].iova), sc.w, sc.h, sc.covered ? ", covered" : "");
+                }
+            #endif
+                s_lastAddr = sc.addr;
+                return;
+            }
+
+            if (sc.addr != s_lastAddr) {
+                s_lastAddr = sc.addr;
+                if (!s_searchNs) {
+                    s_searchNs = now;
+                    s_tried = 0;
+                    s_hintNext = 0;
+                }
+            }
+
+            if (s_passDone || sc.pitch < 256 || sc.y1 < 0) return;   // nothing new to look for
+            const u64 need = (u64)sc.pitch * (u64)(sc.y1 + 1);
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            const u64 t0 = armGetSystemTick();
+        #endif
+            u32 retry = 0;                               // a buffer pinned before whose range holds the scene now
+            for (const Seen& v : s_seen)
+                if (v.id && sc.addr >= v.iova && sc.addr - v.iova < v.size) {
+                    retry = v.id;
+                    break;
+                }
+
+            for (u32 n = 0; n < kIdsPerStep; ++n) {
+                u32 id;
+                if (retry) {
+                    id = retry;
+                    retry = 0;
+                } else if (s_hintNext < 8) {             // ids that held the scene before
+                    id = s_hints[s_hintNext++];
+                    if (!id) continue;
+                } else if (s_neighbor && s_neighbor <= 32) {   // swapchain buffers are made one after another
+                    const u32 d = (s_neighbor + 1) / 2;
+                    id = (s_neighbor & 1) ? s_lastMatch + d : (s_lastMatch > d ? s_lastMatch - d : 0);
+                    ++s_neighbor;
+                    if (!id) continue;
+                } else {
+                    if (s_skipTop && s_next <= s_skipTop && s_next > s_skipLow) s_next = s_skipLow;   // tried by the last run
+                    if (!s_next && s_skipTop) {
+                        // A resumed walk found nothing: once over every id before giving up
+                        s_skipTop = 0;
+                        restartWalk();
+                        continue;
+                    }
+
+                    if (!s_next) {
+                        GLASS_LOG("vic: all ids up to %u tried (%u opened), scene 0x%lx not in any of them -> stopped until it changes",
+                            s_ceiling, s_tried, (unsigned long)sc.addr);
+                        s_passDone = true;
+                        restartWalk();
+                        s_tried = 0;
+                        break;
+                    }
+
+                    id = s_next--;
+                }
+
+                if (tryId(id, sc.addr, need)) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    const int kk = inKept(sc.addr);
+                    GLASS_LOG("vic: FOUND scene 0x%lx in id %u (%u KB at 0x%x, offset 0x%lx) after %u ids, %lu ms",
+                        (unsigned long)sc.addr, id, kk >= 0 ? s_kept[kk].size >> 10 : 0, kk >= 0 ? s_kept[kk].iova : 0,
+                        kk >= 0 ? (unsigned long)(sc.addr - s_kept[kk].iova) : 0ul, s_tried,
+                        (unsigned long)((now - s_searchNs) / 1'000'000ULL));
+                #endif
+                    s_searchNs = 0;
+                    s_misses = 0;
+                    break;
+                }
+            }
+
+            if (++s_misses % 240 == 0) {
+                const u32 c = newestId();
+                if (c > s_ceiling) s_ceiling = c;
+            }
+
+        #if USING_LIVE_LOGGING_DIRECTIVE
+            s_statBusyNs += armTicksToNs(armGetSystemTick() - t0);
+            if (!s_statNs) s_statNs = now;
+            else if (now - s_statNs >= 5'000'000'000ULL) {
+                GLASS_LOG("vic: searching: %u ids opened, %u pinned in 5 s, %lu ms busy, next id %u", s_statOpened,
+                    s_statPinned, (unsigned long)(s_statBusyNs / 1'000'000ULL), s_next);
+                s_statNs = now;
+                s_statOpened = s_statPinned = 0;
+                s_statBusyNs = 0;
+            }
+        #endif
+        }
+
+        // Overlay hidden, or the game left the front: let go of the game's buffers.
+        inline void hidden() {
+            saveProgress();
+            if (s_state == 1 && vicIdle(100)) releaseKept();   // (a copy still in the VIC keeps reading them)
+            s_lastAddr = ~0ull;
+            s_lastCopyNs = 0;                            // (no "copied a moment ago" hold for what comes next)
+            s_passDone = false;                          // the next showing searches again, hints first
+            for (Seen& v : s_seen) v = {};
+        }
+
+        inline void exit() {
+            saveProgress();
+            if (!vicIdle(100)) {
+                // A copy still in the VIC: its buffers stay pinned and the block is never freed
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                GLASS_LOG("vic: a copy is still queued at exit -> its buffers are left as they are");
+            #endif
+                s_timedOut = true;
+            } else {
+                if (s_state == 1) releaseKept();
+                if (s_blockHandle) unpin(s_blockHandle, s_blockIova, s_blockPinned);
+            }
+
+            s_blockHandle = 0;
+            s_blockPinned = false;
+            nvsDown();
+            if (!s_timedOut) free(s_block);
+            s_block = nullptr;
+            free(s_marker);
+            s_marker = nullptr;
+            s_fails = 0;
+            s_pending = false;
+            s_state = -1;
+        }
+    } // namespace vic
 
     // n: the strip's bytes (stripBytes).
     inline u32 stripDiffTotal(const Strip& a, const Strip& b, u32 n) {
@@ -3158,10 +4742,13 @@ namespace ult::glass {
 
             if (!k) continue;
             p += k->len;
+
             while (*p == ' ' || *p == '\t') ++p;
             if (*p != '=') continue;
+
             ++p;
             while (*p == ' ' || *p == '\t' || *p == '\'' || *p == '"') ++p;
+
             if (k->dst && k->hi == 1) {
                 *k->dst = (*p == 't' || *p == 'T' || *p == '1');
             } else if (k->dst) {
@@ -3231,6 +4818,7 @@ namespace ult::glass {
         u64 sessionStartNs = 0, hiddenSinceNs = 0;
         u32 verifyPending = 0;                     // 2 -> 1 -> verify on the 2nd live strip
         bool firstLogged = false;
+        u64 lastMoveNs = 0;                        // the layer's place last changed (VIC copies whole for 1 s after)
         bool boosted = false;                      // raised priority for the first frame of a showing
         static constexpr s32 kBoostPrio = 0x2C;    // normal application priority
         bool verifyFirst = false;                  // LiveVerify must check before showing
@@ -3244,6 +4832,7 @@ namespace ult::glass {
         bool unsureCheck = false;
         u32 tornRun = 0;                           // torn strip reads in a row
         u64 tornSinceNs = 0;                       // when the first of them was read
+
         // Torn reads are skipped, the last glass frame staying up, for this long; past it one is
         // shown, so a game whose every read tears still gets a fresh picture.
         constexpr u64 kTornHoldNs = 150'000'000ULL;
@@ -3265,6 +4854,18 @@ namespace ult::glass {
             const int recent = live::recentFocus(500'000'000ULL);   // (just read: not again)
             return (recent >= 0 ? recent : live::appInFocus(apid)) == 0;
         };
+
+        // The VIC's search and its pins: only with "With Cheats" on, and only while the game is in front
+        // this showing (decided per showing, so not on its first loop). Never for HOME or an applet, whose
+        // buffers (a video's, say) can be freed while pinned, and not while vi is read live, where it kept
+        // nvservices busy. While a game is read live it runs at its gentle pace, so the game's buffer is
+        // known (and remembered) before the cheat engine takes the game.
+        bool vicGame = false;
+        auto wantVic = [&]() {
+            vic::s_wanted = vicGame && ult::glassWithCheats &&
+                            !(live::s_attached.load(std::memory_order_acquire) && live::s_ui && !live::s_viaCht &&
+                              (src == Source::Live || src == Source::LiveVerify));
+        };
         auto setGameInFront = [&](bool v) {
             gameInFront = v;
             if (v) live::s_uiHeld = false;
@@ -3277,6 +4878,10 @@ namespace ult::glass {
                 lastAttachTryNs = 0;
                 if (v) resumeFromUi = true;
             }
+
+            vicGame = v;
+            if (!v) vic::hidden();                     // let go of the game's buffers
+            wantVic();
         };
         u64 staticNs = live::kStaticCheckNs;       // still-strip verify delay: doubles while verifies
                                                    // keep confirming live (0.5 -> 4 s), resets otherwise
@@ -3286,6 +4891,7 @@ namespace ult::glass {
         u32 evtMatches = 0;                        // checks in a row that found the game on screen
         u64 lastFocusPollNs = 0;
         bool homeFade = false;                     // HOME window: frost shown, game strips held back
+
         // A check found the game not on screen (since the showing began or the last HOME press). A
         // game can keep drawing out of focus (some don't suspend at HOME), so its frames then don't
         // mean it is in front: a capture confirms it first (at most one a second).
@@ -3327,6 +4933,9 @@ namespace ult::glass {
                     (live::s_ui || now - hiddenSinceNs > live::kKeepAttachedNs))
                     live::detach("overlay hidden");
 
+                vic::hidden();
+                vicGame = false;
+
                 // Sleep until the overlay is shown (wakeForShow) instead of polling while hidden; the
                 // timeout keeps the detach above and render-loop starts working.
                 waitSingle(waiterForUEvent(&s_wake), 100'000'000ULL);
@@ -3334,6 +4943,9 @@ namespace ult::glass {
             }
 
             hiddenSinceNs = 0;
+            wantVic();
+            vic::step();                               // finds the scene's buffer for the VIC copy
+            
             {   // HOME pressed (also just before this showing opened): for ~2.5 s, check what's
                 // on screen every ~150 ms once the game stops drawing. The HOME animation can
                 // still show the game's last frame at the first check.
@@ -3347,7 +4959,9 @@ namespace ult::glass {
                         staticVerified = false;
                         lastEvtVerifyNs = 0;
                         evtMatches = 0;
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("HOME pressed -> checking the screen");
+                    #endif
                     }
                 }
 
@@ -3356,7 +4970,9 @@ namespace ult::glass {
                 if (screenEvtNs && live::s_ui) screenEvtNs = 0;
                 if (screenEvtNs && nowE - screenEvtNs > 2'500'000'000ULL) {
                     screenEvtNs = 0;
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("HOME check window ended");
+                #endif
                 }
                 if (screenEvtNs && src == Source::Live && staticVerified && nowE - lastEvtVerifyNs > 150'000'000ULL)
                     staticVerified = false;   // checked and still the game: check again
@@ -3399,8 +5015,9 @@ namespace ult::glass {
                     ++s_gen;
                     if (s_gen == 0) s_gen = 1;
                 }
-
+            #if USING_LIVE_LOGGING_DIRECTIVE
                 GLASS_LOG("HOME pressed -> glass fades to frost until HOME is captured");
+            #endif
             }
 
             // Normal priority during the HOME window and right after the game resumes, when the
@@ -3465,6 +5082,7 @@ namespace ult::glass {
                 noCaptureUntilNs = 0;
                 gameOffScreen = false;
                 live::s_uiRefused = false;
+
                 {   // First showing of this process: a HOME press just before it started wasn't
                     // seen here, but Ultrahand writes its time to HOME_EVENT.flag (sys-tune reads
                     // it too). Use it if it's recent.
@@ -3496,8 +5114,10 @@ namespace ult::glass {
                     const int recent = apid ? live::recentFocus(500'000'000ULL) : -1;
                     const int f = !apid ? 0 : recent >= 0 ? recent : live::appInFocus(apid);
                     setGameInFront(f != 0);
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("showing: game pid %lu, in focus %d%s -> %s (place %08x)", (unsigned long)apid, f,
                               recent >= 0 ? " (just read)" : "", gameInFront ? "read the game" : "HOME menu / applet in front", stripX);
+                #endif
                 }
 
                 if (live::s_attached.load(std::memory_order_acquire)) {
@@ -3514,6 +5134,7 @@ namespace ult::glass {
             // takes over from there. Polled every 50 ms in the first 1.5 s of a showing: right
             // after a HOME press back into the game the focus log can lag a few hundred ms, and
             // the HOME picture would stay up until it catches up.
+
         #if IS_STATUS_MONITOR_DIRECTIVE
             // A game starting while a monitoring mode shows. The menus never see this (HOME hides
             // them, and the worker lets go of vi at once when hidden: nothing of ours may hold the
@@ -3533,8 +5154,10 @@ namespace ult::glass {
                     } else if (apid != s_appPid) {
                         s_appPid = apid;
                         if (apid) {
+                        #if USING_LIVE_LOGGING_DIRECTIVE
                             GLASS_LOG("a game is starting (pid %lu) -> no debugger on vi or the game for %lu s",
                                       (unsigned long)apid, (unsigned long)(live::kLaunchHoldNs / 1'000'000'000ULL));
+                        #endif
                             live::s_launchHoldUntilNs = t0 + live::kLaunchHoldNs;
                             if (live::s_uiBlockedUntilNs < live::s_launchHoldUntilNs) live::s_uiBlockedUntilNs = live::s_launchHoldUntilNs;
                             if (live::s_attached.load(std::memory_order_acquire) || live::s_discover)
@@ -3561,7 +5184,9 @@ namespace ult::glass {
                 lastUiFocusNs = t0;
                 const u64 apid = live::applicationPid();
                 if (apid && live::appInFocus(apid) == 1) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("focus log: game in front again");
+                #endif
                     noCaptureUntilNs = t0 + 1'500'000'000ULL;
                     setGameInFront(true);
                 }
@@ -3582,12 +5207,20 @@ namespace ult::glass {
                 }
             }
 
-            // "With Cheats" switched while the overlay shows: attach again so it applies now.
-            if ((live::s_viaCht && !ult::glassWithCheats) || (live::s_heldNoGlass == 1 && ult::glassWithCheats)) {
-                live::s_heldNoGlass = 0;
-                if (live::s_viaCht) live::detach("With Cheats switched off");
-                lastAttachTryNs = 0;
-                attachSession = ~0u;
+            // "With Cheats" switched while the overlay shows: attach again so it applies now (also to a
+            // game the VIC reads, or one without glass because another debugger holds it).
+            {
+                static bool s_withCheats = ult::glassWithCheats;
+                if (s_withCheats != ult::glassWithCheats || (live::s_viaCht && !ult::glassWithCheats) ||
+                    (live::s_heldNoGlass == 1 && ult::glassWithCheats)) {
+                    s_withCheats = ult::glassWithCheats;
+                    live::s_heldNoGlass = 0;
+                    if (live::s_viaCht) live::detach("With Cheats switched off");
+                    if (!ult::glassWithCheats) vic::hidden();   // (lets go of the game's buffers)
+                    wantVic();
+                    lastAttachTryNs = 0;
+                    attachSession = ~0u;
+                }
             }
 
             // Reading through the cheat engine: once it lets go of the game (the cheat manager closed
@@ -3638,6 +5271,7 @@ namespace ult::glass {
             // HOME window on "out of focus". Only while the game has also stopped drawing (300 ms):
             // a game that draws is in front whatever the log says, so a normal in-game opening never
             // triggers this and makes no check captures.
+
         #if !IS_LAUNCHER_DIRECTIVE
             // HOME pressed while the overlay shows the game and stays up (game -> HOME): the HOME
             // window's check captures are refused for ~1.5 s during the animation, so the switch to vi
@@ -3659,7 +5293,9 @@ namespace ult::glass {
                     lastFocusPollNs = t0;
                     const u64 apid = live::s_pid;
                     if (apid && live::appInFocus(apid) == 0) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("HOME pressed: focus log says the game is out of focus -> reading the HOME menu");
+                    #endif
                         s_pressFromGame = false;
                         setGameInFront(false);
                         screenEvtNs = 0;
@@ -3674,7 +5310,9 @@ namespace ult::glass {
                 if (apid && live::appInFocus(apid) == 0) {
                     focusTriggered = true;   // once per showing
                     s_screenEvtNs.store(ult::nowNs(), std::memory_order_release);
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("focus log: game now out of focus -> checking the screen");
+                #endif
                 }
             }
 
@@ -3700,7 +5338,9 @@ namespace ult::glass {
                     lastUiFocusNs = t0;
                     const u64 apid = live::applicationPid();
                     if (apid && live::appInFocus(apid) == (held == 3 ? 1 : 0)) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG(held == 3 ? "focus log: game in front again" : "focus log caught up: HOME menu / applet in front");
+                    #endif
                         live::s_heldNoGlass = 0;
                         setGameInFront(held == 3);
                         lastAttachTryNs = 0;
@@ -3717,7 +5357,14 @@ namespace ult::glass {
             }
 
             bool got = false;
+            bool vicFrame = false;                     // this frame is the VIC's copy of the display
             u64 period = kMinPeriodNs;
+            if (live::s_viaCht && vic::sceneReady()) {   // reading through the cheat engine is slow: the VIC instead
+                live::detach("the VIC reads the screen now");
+                src = Source::Capture;
+                lastAttachTryNs = t0;
+            }
+
             if (live::s_attached.load(std::memory_order_acquire)) {
                 // Size still open: rescan and sample the moving area every 0.5 s instead of 2 s, so the
                 // motion data is ready for the next check within about a second.
@@ -3759,7 +5406,8 @@ namespace ult::glass {
                     verifyPending = 1;
                 }
 
-                bool fresh = live::takeNewestReady() || newFrame;
+                const bool flip = live::takeDcFlip();         // the display took a new frame
+                bool fresh = live::takeNewestReady() || newFrame || flip;
                 if (fresh) {
                     const u32 sl = live::pickSlot();
                     const u64 seq = live::s_changeSeq[sl];
@@ -3778,7 +5426,9 @@ namespace ult::glass {
                         (src == Source::Live || src == Source::LiveVerify)) {
                         screenEvtNs = 0;
                         homeFade = false;
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("HOME check window ended (game drawing: it is in front)");
+                    #endif
                     }
 
                     // Found off screen and drawing: shown again only once a capture confirms it (the
@@ -3788,7 +5438,9 @@ namespace ult::glass {
                             offScreenCheckNs = t0;
                             src = Source::LiveVerify;
                             verifyFirst = true;
+                        #if USING_LIVE_LOGGING_DIRECTIVE
                             GLASS_LOG("game drawing after it was off screen -> checking with a capture");
+                        #endif
                         }
                     } else if (src == Source::CaptureGameHidden) {
                         // No confirming capture: drawing again after being out of focus already says it is in
@@ -3799,7 +5451,9 @@ namespace ult::glass {
                         staticVerified = true;
                         resumeFromUi = false;
                         noCaptureUntilNs = 0;
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("game is drawing again -> live");
+                    #endif
 
                         // A resuming game is at its busiest for several seconds and an idle-priority worker
                         // only gets ~4 strips/s then: normal priority for 8 s after it comes back.
@@ -3809,7 +5463,9 @@ namespace ult::glass {
                         // Back in the game: no HOME checks, their captures would only stall the resume.
                         if (screenEvtNs) {
                             screenEvtNs = 0;
+                        #if USING_LIVE_LOGGING_DIRECTIVE
                             GLASS_LOG("HOME check window ended (game resumed)");
+                        #endif
                         }
                     }
                 } else if (src == Source::Live && !staticVerified &&
@@ -3822,8 +5478,10 @@ namespace ult::glass {
                         s_wideNs = t0;
                         if (live::frameChangedAnywhere()) {
                             live::s_lastChangeNs = t0;       // drawing: postpone the check
+                        #if USING_LIVE_LOGGING_DIRECTIVE
                             static u32 s_skipped = 0;
                             if ((++s_skipped & 63u) == 1u || screenEvtNs) GLASS_LOG("still behind the overlay, game drawing elsewhere: no capture (x%u)", s_skipped);
+                        #endif
                         }
                     }
                 }
@@ -3961,29 +5619,43 @@ namespace ult::glass {
                             motionVerify = false;
                             s_verify = s_work;
 
+                            // The display controller shows the slot just read with nothing large over it, and the
+                            // picture size is settled: that is the check, without a capture (no system stall).
+                            const bool dcOk = !screenEvtNs && !sizeOnly && live::dcOnScreen();
+                        #if USING_LIVE_LOGGING_DIRECTIVE
+                            if (dcOk) GLASS_LOG("verify: the display shows the slot read -> no capture needed");
+                        #endif
+
                             // First frame of a showing with the overlay still held fully transparent: the capture
                             // can't see it, so there is no need to wait for the exclusion.
-                            const bool heldV = s_holding.load(std::memory_order_acquire) && !hasFrame();
+                            const bool vicV = !dcOk && vic::grab(s_small, stripX, stripX);   // what the display shows, no screenshot
+                            const bool heldV = !dcOk && !vicV && s_holding.load(std::memory_order_acquire) && !hasFrame();
                             if (heldV) s_needExclude.store(true, std::memory_order_release);
-                            bool excluded = heldV || waitExcluded();
+                            bool excluded = dcOk || vicV || heldV || waitExcluded();
                         #if USING_LIVE_LOGGING_DIRECTIVE
                             const u64 tV0 = armGetSystemTick();
                         #endif
-                            bool capOk = excluded && captureScreen(jpeg);
+                            bool capOk = vicV || (!dcOk && excluded && captureScreen(jpeg));
+                        #if USING_LIVE_LOGGING_DIRECTIVE
                             if (screenEvtNs)
                                 GLASS_LOG("HOME check: %s, %lu ms", !excluded ? "layer not excluded in time" :
                                           (capOk ? "capture ok" : "capture refused"),
                                           (unsigned long)(armTicksToNs(armGetSystemTick() - tV0) / 1'000'000ULL));
+                        #endif
                             if (capOk && heldV && !s_holding.load(std::memory_order_acquire)) {
                                 // overlay appeared meanwhile: treat as not checked
                                 capOk = false;
                                 excluded = false;
                             }
 
-                            if (capOk) {
-                                smallOk = true;
-                                cropTo(s_small, stripX, s_work);           // s_work = what's really on screen
-                                u32 d = stripDiff(s_verify, s_work, stripBytes(stripX));
+                            if (capOk || dcOk) {
+                                u32 d = 0;
+                                if (capOk) {
+                                    smallOk = true;
+                                    cropTo(s_small, stripX, s_work);       // s_work = what's really on screen
+                                    d = stripDiff(s_verify, s_work, stripBytes(stripX));
+                                }
+
                                 verifyFirst = false;
 
                                 // Picture size inside a bigger swapchain (e.g. 1280x720 drawn into 1920x1152 slots with
@@ -4036,9 +5708,11 @@ namespace ult::glass {
                                     // keep a wrong size.
                                     const bool clearlyBetter = bestW != oldW && bestD * 2u < dOld && bestD <= 3u * live::kMatchMaxDiff;
                                     const u32 useW = (bestD <= live::kMatchMaxDiff || clearlyBetter) ? bestW : oldW;
+                                #if USING_LIVE_LOGGING_DIRECTIVE
                                     if (clearlyBetter && bestD > live::kMatchMaxDiff)
                                         GLASS_LOG("content size -> %ux%u (closest to the capture: diff %u vs %u at %ux%u; to be confirmed)",
                                                   useW, (useW * 9u) / 16u, bestD, d, oldW, oldH);
+                                #endif
                                     live::s_contentW = useW;
                                     live::s_contentH = useW == oldW ? oldH : (useW * 9u) / 16u;
                                     if (heldW != useW && !(live::captureFor(stripX, s_blurA) && (blurTo(stripX, s_verify), true)))
@@ -4058,16 +5732,21 @@ namespace ult::glass {
                                         live::s_exactContent = true;
                                         live::s_sizeByCapture = true;
                                         sizeCheckNs = 0;
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         if (useW != oldW || sizeGuess)
                                             GLASS_LOG("content size -> %ux%u (confirmed by a capture, diff %u; was %ux%u)",
                                                       live::s_contentW, live::s_contentH, bestD, oldW, oldH);
+                                    #endif
                                     } else {
                                         // Several sizes match (uniform picture) or none does (not the game on screen, or a frame
                                         // changing under the capture; the mismatch handling below runs): look again later.
                                         sizeCheckNs = t0 + sizeCheckGapNs;
                                         if (sizeCheckGapNs < 8'000'000'000ULL) sizeCheckGapNs *= 2;
+
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("content size: %u of the sizes match this capture -> check again in %lu ms",
                                                   matches, (unsigned long)((sizeCheckNs - t0) / 1'000'000ULL));
+                                    #endif
                                     }
                                 }
 
@@ -4075,24 +5754,42 @@ namespace ult::glass {
                                     // Size check of a drawing game where nothing matched (motion between capture and read):
                                     // no reason to leave the live picture for the slow capture service. Stay live; the size
                                     // check is already rescheduled.
+                                #if USING_LIVE_LOGGING_DIRECTIVE
                                     GLASS_LOG("size check: diff %u, inconclusive -> stay live", d);
+                                #endif
                                     s_needExclude.store(false, std::memory_order_release);
                                     s_work = s_verify;
                                 } else if (d > live::kMatchMaxDiff) {
                                     const bool drawing = t0 - live::s_lastChangeNs < 200'000'000ULL;
-                                    if (drawing && live::s_gpuOnly) {
+                                    if (live::s_ui && live::dcOnScreen()) {
+                                        // HOME / an applet with something moving (a video): the display shows one of the
+                                        // buffer's slots with nothing large over it, so it is on screen and the capture
+                                        // caught another frame. Stay live (checked again shortly).
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
+                                        GLASS_LOG("verify: diff %u, the display shows the buffer read (motion) -> stay live", d);
+                                    #endif
+                                        s_needExclude.store(false, std::memory_order_release);
+                                        src = Source::Live;
+                                        s_work = s_verify;
+                                    } else if (drawing && live::s_gpuOnly) {
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("verify: diff %u -> the GPU-only region is not the display, searching by content", d);
+                                    #endif
                                         live::s_rejectGpuOnlyPid = live::s_pid;
                                         live::detach("not the display");
                                         src = Source::Capture;
                                         lastAttachTryNs = 0;
                                     } else if (drawing && gameOffScreen) {
                                         // still not on screen (a game drawing behind HOME): the capture again
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("verify: diff %u -> the game draws off screen, using capture", d);
+                                    #endif
                                         src = Source::CaptureGameHidden;
                                     } else if (drawing) {
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         if (src != Source::LiveVerify || !mismatchNs)
                                             GLASS_LOG("verify: diff %u while the game draws -> capture service, retry in 2 s", d);
+                                    #endif
                                         src = Source::CaptureMismatch;
                                         mismatchNs = t0;
                                         if (live::s_found) ++live::s_mismatches;
@@ -4102,13 +5799,17 @@ namespace ult::glass {
                                         }
                                     } else if (live::s_ui) {
                                         // e.g. the Album or hbmenu (own buffers): capture service
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("verify: diff %u -> the HOME menu is not on screen, using capture", d);
+                                    #endif
                                         live::detach("not on screen");
                                         live::blockUi(t0);
                                         src = Source::Capture;
                                         lastAttachTryNs = 0;
                                     } else {
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         if (src != Source::CaptureGameHidden) GLASS_LOG("verify: diff %u -> game not on screen, using capture", d);
+                                    #endif
                                         src = Source::CaptureGameHidden;
                                         gameOffScreen = true;
                                         setGameInFront(false);
@@ -4125,21 +5826,27 @@ namespace ult::glass {
                                     }
                                     if (live::s_unsure) {
                                         live::s_unsure = false;
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("GPU-only region confirmed by a capture");
+                                    #endif
                                     }
 
                                     // HOME window: still the game 1.5 s after the press (the animation is over) and 3+
                                     // checks agree, so it really is in front. Stop checking, each capture is a small hitch.
                                     if (screenEvtNs && ++evtMatches >= 3 && t0 - screenEvtNs > 1'500'000'000ULL) {
                                         screenEvtNs = 0;
+                                    #if USING_LIVE_LOGGING_DIRECTIVE
                                         GLASS_LOG("game confirmed on screen after the HOME press -> stop checking");
+                                    #endif
                                     }
 
                                     s_needExclude.store(false, std::memory_order_release);   // back into screenshots
                                     if (staticVerifyRun && staticNs < 4'000'000'000ULL) staticNs *= 2;   // back off
+                                #if USING_LIVE_LOGGING_DIRECTIVE
                                     if (src == Source::LiveVerify || !firstLogged || verifyPending == 0)
                                         GLASS_LOG("verify: diff %u -> live (next still-check after %lu ms)", d,
                                                   (unsigned long)(staticNs / 1'000'000ULL));
+                                #endif
                                     src = Source::Live;
                                     s_work = s_verify;
                                 }
@@ -4161,8 +5868,10 @@ namespace ult::glass {
                                     // Capture blocked and the game is still: an applet is on top (Album, hbmenu as an
                                     // applet...) with the game suspended. Its last frame isn't what's on screen, so no glass
                                     // until the game draws again or captures work.
+                                #if USING_LIVE_LOGGING_DIRECTIVE
                                     if (src != Source::CaptureGameHidden || !s_unavailable.load(std::memory_order_acquire))
                                         GLASS_LOG("verify: capture blocked, game still -> applet on top, no glass");
+                                #endif
                                     if (live::s_ui) {
                                         live::detach("capture blocked");
                                         live::blockUi(t0);
@@ -4180,11 +5889,42 @@ namespace ult::glass {
                 }
             }
 
-            // The layer moved (Right-side Mode, held until this frame is out): crop the new place
-            // out of the last capture now instead of waiting for the next one. Not while the glass
-            // is unavailable (that capture no longer matches the screen).
-            const bool recrop = !got && smallOk && stripX != pubX && !s_unavailable.load(std::memory_order_acquire);
+            // The layer moved (Right-side Mode, held until this frame is out): crop the new place out
+            // of the last picture now instead of waiting for the next one. Not while the glass is
+            // unavailable (that picture no longer matches the screen). A VIC copy holds only the
+            // columns its crops read, so for a place outside them it copies again. For 1 s after a
+            // move it copies the whole width, and a new game frame is copied rather than the last
+            // one cut out again (the glass keeps the game's pace while the layer is dragged).
+            const bool moved = !got && smallOk && stripX != pubX && !s_unavailable.load(std::memory_order_acquire);
+            if (moved) lastMoveNs = t0;
+
+            const bool recrop = moved && smallCovers(stripX) &&
+                                !(vic::s_lastCopyNs && t0 - vic::s_lastCopyNs < 500'000'000ULL && vic::frameWaiting(t0));
+
             if (recrop) cropTo(s_small, stripX, s_work);
+            else if (!got && !moved && vic::s_lastCopyNs && t0 - vic::s_lastCopyNs < 500'000'000ULL && !vic::newFrame(t0)) {
+                // The display still shows the frame the VIC copied last: look again shortly for the
+                // next one (copies follow the game's own frames, as soon as each is handed over)
+                svcSleepThread(1'000'000ULL);
+                continue;
+            }
+            else if (!got && vic::grab(s_small, stripX, s_stripX.load(std::memory_order_acquire),
+                                       lastMoveNs && t0 - lastMoveNs < 1'000'000'000ULL)) {
+                // The VIC copied what the display shows: no screenshot, no layer out of the stacks
+                smallOk = true;
+                captureFails = 0;
+                s_needExclude.store(false, std::memory_order_release);
+                period = 1'000'000ULL;                 // (paced by newFrame above)
+                vicFrame = true;
+                cropTo(s_small, stripX, s_work);
+            }
+            else if (!got && vic::s_lastCopyNs && t0 - vic::s_lastCopyNs < 500'000'000ULL) {
+                // The VIC copied a moment ago and can't right now (a window flipping, a frame being
+                // latched): keep the last frame and try again shortly, instead of a capture that stalls
+                // the worker for a few hundred ms.
+                svcSleepThread(4'000'000ULL);
+                continue;
+            }
             else if (!got) {
                 if (t0 < noCaptureUntilNs) {   // game resuming
                     svcSleepThread(4'000'000ULL);
@@ -4210,6 +5950,10 @@ namespace ult::glass {
                     live::s_capOkNs = ult::nowNs();
                     smallOk = true;
                 }
+
+                // A game held by another debugger while the VIC looks for its buffer: a capture a second
+                // (each stalls the worker for a few hundred ms), the time between them to the search
+                if (live::s_vicWait && vic::mayFind() && !vic::sceneReady()) period = 1'000'000'000ULL;
             #if USING_LIVE_LOGGING_DIRECTIVE
                 if (capOk && ult::glassLog) {   // capture-service timing: one line per ~5 s
                     static u32 s_n = 0, s_static = 0;
@@ -4221,10 +5965,12 @@ namespace ult::glass {
                     if (staticCount >= kStaticFrames && gameInFront) ++s_static;
                     if (!s_startNs) s_startNs = t0;
                     else if (t0 - s_startNs >= 5'000'000'000ULL) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("capture: %lu captures/s, capture+decode %lu ms avg / %lu ms max, %u%% at the still-screen rate, core %d",
                                   (unsigned long)((u64)s_n * 1'000'000'000ULL / (t0 - s_startNs)),
                                   (unsigned long)(s_sumUs / s_n / 1000), (unsigned long)(s_maxUs / 1000),
                                   s_n ? s_static * 100 / s_n : 0, (int)svcGetCurrentProcessorNumber());
+                    #endif
                         s_n = s_static = 0;
                         s_sumUs = s_maxUs = 0;
                         s_startNs = t0;
@@ -4238,9 +5984,14 @@ namespace ult::glass {
                     // system refuses captures briefly during the HOME <-> game animation: retry every 50 ms
                     // then, without blanking the glass or backing off.
                     const bool early = screenEvtNs || t0 - sessionStartNs < 2'000'000'000ULL;
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     if (early) GLASS_LOG("capture refused (transition?) -> retry in 50 ms");
-                    if (++captureFails >= 2 && !early && !s_unavailable.exchange(true, std::memory_order_acq_rel))
+                #endif
+                    if (++captureFails >= 2 && !early && !s_unavailable.exchange(true, std::memory_order_acq_rel)) {
+                    #if USING_LIVE_LOGGING_DIRECTIVE
                         GLASS_LOG("captures refused -> no glass (normal background) until they work again");
+                    #endif
+                    }
 
                     // First refusal: retry soon (a one-off failure shouldn't blank the glass for long, and a
                     // real block is confirmed within ~0.2 s), then back off.
@@ -4299,36 +6050,42 @@ namespace ult::glass {
                 u32 pubKey = stripX;
                 if (smallOk && !(got && src == Source::Live)) {
                     const u32 nowKey = s_stripX.load(std::memory_order_acquire);
-                    if (nowKey != stripX) {
+                    if (nowKey != stripX && smallCovers(nowKey)) {   // (else the next pass copies for it)
                         cropTo(s_small, nowKey, s_work);
                         pubKey = nowKey;
                     }
                 }
                 s_cur = s_work;
                 s_curX = pubX = pubKey;
-                s_curLive.store(got && src == Source::Live, std::memory_order_release);
-                if (s_unavailable.exchange(false, std::memory_order_acq_rel)) GLASS_LOG("glass available again");
+                s_curLive.store((got && src == Source::Live) || vicFrame, std::memory_order_release);   // (shown at once, no fade)
+                if (s_unavailable.exchange(false, std::memory_order_acq_rel)) {
+                #if USING_LIVE_LOGGING_DIRECTIVE
+                    GLASS_LOG("glass available again");
+                #endif
+                }
+
                 s_curTick = armGetSystemTick();
                 const u64 nowNs = armTicksToNs(s_curTick);
-                if (s_gen != 0 && lastPublishNs && !recrop) {   // a re-crop isn't a new frame: keep the pace
+                if (s_gen != 0 && lastPublishNs && !moved) {    // a re-crop (or a copy for it) isn't a new frame: keep the pace
                     u64 interval = nowNs - lastPublishNs;
                     if (interval > 300'000'000ULL) interval = 300'000'000ULL;
                     const u64 ema = (s_periodNs.load(std::memory_order_relaxed) * 3 + interval) / 4;
                     s_periodNs.store(ema, std::memory_order_release);
                 }
 
-                if (!recrop) lastPublishNs = nowNs;
+                if (!moved) lastPublishNs = nowNs;
                 if (!firstLogged) {
                     firstLogged = true;
                     if (boosted && !screenEvtNs && ult::nowNs() >= resumeBoostUntilNs) {
                         svcSetThreadPriority(CUR_THREAD_HANDLE, 0x3F);
                         boosted = false;
                     }
-
+                #if USING_LIVE_LOGGING_DIRECTIVE
                     GLASS_LOG("first glass frame %lu ms after open (%s), made for place %08x (place now %08x)",
                               (unsigned long)((nowNs - sessionStartNs) / 1'000'000ULL),
-                              src == Source::Live ? "live" : "capture service", pubKey,
+                              vicFrame ? "VIC" : src == Source::Live ? "live" : "capture service", pubKey,
                               s_stripX.load(std::memory_order_acquire));
+                #endif
                 }
 
                 ++s_gen;
@@ -4336,10 +6093,10 @@ namespace ult::glass {
             }
 
             const u64 dt = ult::nowNs() - t0;
-            if (period == live::kLivePeriodNs) {
+            if (period == live::kLivePeriodNs || vicFrame) {
                 // Live: the game's own frame updates pace us. Only slow down when it hasn't produced a
                 // new frame for a while.
-                if (t0 - live::s_lastChangeNs > live::kLiveIdleAfterNs) period = live::kLiveIdleNs;
+                if (!vicFrame && t0 - live::s_lastChangeNs > live::kLiveIdleAfterNs) period = live::kLiveIdleNs;
             #if USING_LIVE_LOGGING_DIRECTIVE
                 if (!ult::glassLog) {}                 // glass log: real update rate every ~5 s
                 else if (++live::s_statTicks, live::s_statBusyNs += dt, !live::s_statStartNs) live::s_statStartNs = t0;
@@ -4382,12 +6139,16 @@ namespace ult::glass {
             // run back to back there (~7/s at stock clocks).
             else if (staticCount >= kStaticFrames && gameInFront) period = kStaticPeriodNs;
             if (dt < period) {
-                // sleep in slices so hide/exit/screen changes are picked up quickly
+                // sleep in slices so hide/exit/screen changes are picked up quickly (and the VIC's buffer
+                // being found while captures wait for it)
+                const bool vicPending = live::s_vicWait && !vic::sceneReady();
                 for (u64 left = period - dt; left > 0 && s_wantCapture.load(std::memory_order_acquire) &&
+                                                  !(vicPending && vic::sceneReady()) &&
                                                   !s_quit.load(std::memory_order_acquire) &&
                                                   !s_refresh.load(std::memory_order_acquire) &&   // re-read now (e.g. blur slider)
                                                   s_stripX.load(std::memory_order_acquire) == stripX;) {
                     const u64 slice = left < 8'000'000ULL ? left : 8'000'000ULL;
+                    vic::step();                       // (rate-limited inside)
                     svcSleepThread(slice);
                     left -= slice;
                 }
@@ -4396,6 +6157,7 @@ namespace ult::glass {
         }
 
         live::shutdown();
+        vic::exit();
         if (capsOk) capsscExit();
 
         // (jpeg buffer stays reserved)
@@ -4565,7 +6327,9 @@ namespace ult::glass {
         }
 
         if (!reserve()) {   // no memory: no glass
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("glass memory couldn't be reserved -> glass off for this process");
+        #endif
             s_failed.store(true, std::memory_order_release);
             return;
         }
@@ -4794,8 +6558,10 @@ namespace ult::glass {
             kind = 1;
         }
 
+    #if USING_LIVE_LOGGING_DIRECTIVE
         GLASS_LOG("glass on: game pid %lu held (%s) -> wallpaper stays", (unsigned long)apid,
                   kind == 1 ? "cheat engine, With Cheats off" : "another debugger");
+    #endif
         s_heldKind.store(kind, std::memory_order_release);
         return true;
     }
@@ -4813,7 +6579,9 @@ namespace ult::glass {
         const u64 apid = live::applicationPid();
         const s64 gameSt = apid ? live::processState(apid) : -1;
         if (!apid || gameSt == ProcessState_Running || gameSt == ProcessState_Created) {
+        #if USING_LIVE_LOGGING_DIRECTIVE
             GLASS_LOG("held check: game pid %lu state %ld -> glass", (unsigned long)apid, (long)gameSt);
+        #endif
             return true;
         }
 

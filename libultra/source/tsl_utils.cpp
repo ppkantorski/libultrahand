@@ -35,9 +35,414 @@ extern "C" { // assertion override
 
 namespace ult {
 
+    struct tm* localTime(time_t t, struct tm* out) {
+        return gmtime_r(&t, out);
+    }
+
+    namespace {
+        // The "C" locale's names (newlib's _C_time_locale)
+        constexpr const char* kWday[]    = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        constexpr const char* kWeekday[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+        constexpr const char* kMon[]     = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+        constexpr const char* kMonth[]   = { "January", "February", "March", "April", "May", "June", "July", "August",
+                                             "September", "October", "November", "December" };
+
+        constexpr bool isLeap(int y) {
+            return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        }
+
+        // A number the way newlib's strftime prints it with sniprintf: '-' or `pre` in front, at least
+        // `prec` digits (0 at precision 0 prints none, a negative one counts as 1), right-aligned in
+        // `width`. Like snprintf it writes at most n - 1 characters plus the terminator and returns the
+        // full length (-1 past INT_MAX).
+        int putNum(char* s, size_t n, unsigned long long m, bool neg, long prec, unsigned width = 0, char pre = 0) {
+            char dig[20];
+            int nd = 0;
+            if (prec < 0) prec = 1;
+            while (m) {
+                dig[nd++] = (char)('0' + m % 10);
+                m /= 10;
+            }
+
+            if (neg) pre = '-';
+            const unsigned long long body = (unsigned long long)(pre != 0) + (unsigned long long)(nd > prec ? nd : prec);
+            const unsigned long long total = body < width ? width : body;
+            if (total > 0x7fffffffull) return -1;
+            if (n) {
+                size_t k = 0;
+                for (unsigned long long i = body; i < total && k + 1 < n; ++i)
+                    s[k++] = ' ';
+                if (pre && k + 1 < n) s[k++] = pre;
+                for (long i = nd; i < prec && k + 1 < n; ++i)
+                    s[k++] = '0';
+                for (int i = nd - 1; i >= 0 && k + 1 < n; --i)
+                    s[k++] = dig[i];
+                s[k] = '\0';
+            }
+
+            return (int)total;
+        }
+
+        int putInt(char* s, size_t n, long long v, long prec, unsigned width = 0) {
+            return putNum(s, n, v < 0 ? 0ull - (unsigned long long)v : (unsigned long long)v, v < 0, prec, width);
+        }
+
+        // A finished string, the way snprintf would write it
+        int putStr(char* s, size_t n, const char* str, int len) {
+            if (n) {
+                const size_t k = (size_t)len < n - 1 ? (size_t)len : n - 1;
+                memcpy(s, str, k);
+                s[k] = '\0';
+            }
+
+            return len;
+        }
+
+        // Two-digit fields joined by `sep` (%D %R %T), as newlib's single snprintf writes them
+        int putFields(char* s, size_t n, const int* v, int count, char sep) {
+            char tmp[40];
+            int len = 0;
+            for (int i = 0; i < count; ++i) {
+                if (i) tmp[len++] = sep;
+                len += putInt(&tmp[len], sizeof(tmp) - len, v[i], 2);
+            }
+
+            return putStr(s, n, tmp, len);
+        }
+
+        // newlib's iso_year_adjust: -1, 0 or 1 to the year for the ISO week numbering (%g %G %V)
+        constexpr int pack(int yday, int wday, int leap) {
+            return (yday << 4) + (wday << 1) + leap;
+        }
+
+        int isoYearAdjust(const struct tm* t) {
+            const int leap = isLeap(t->tm_year + (1900 - (t->tm_year < 0 ? 0 : 2000)));
+            switch (pack(t->tm_yday, t->tm_wday, leap)) {
+                case pack(0, 5, 0):                          // Jan 1 is a Fri, Sat or Sun
+                case pack(0, 6, 0):
+                case pack(0, 0, 0):
+                case pack(0, 5, 1):
+                case pack(0, 6, 1):
+                case pack(0, 0, 1):
+                case pack(1, 6, 0):                          // Jan 2 is a Sat or Sun
+                case pack(1, 0, 0):
+                case pack(1, 6, 1):
+                case pack(1, 0, 1):
+                case pack(2, 0, 0):                          // Jan 3 is a Sun
+                case pack(2, 0, 1):
+                    return -1;                               // last week of the year before
+                case pack(362, 1, 0):                        // Dec 29 is a Mon
+                case pack(363, 1, 1):
+                case pack(363, 1, 0):                        // Dec 30 is a Mon or Tue
+                case pack(363, 2, 0):
+                case pack(364, 1, 1):
+                case pack(364, 2, 1):
+                case pack(364, 1, 0):                        // Dec 31 is a Mon, Tue or Wed
+                case pack(364, 2, 0):
+                case pack(364, 3, 0):
+                case pack(365, 1, 1):
+                case pack(365, 2, 1):
+                case pack(365, 3, 1):
+                    return 1;                                // first week of the next year
+            }
+
+            return 0;
+        }
+    }
+
+    size_t formatTime(char* s, size_t maxsize, const char* format, const struct tm* t) {
+        size_t count = 0;
+        int len = 0;
+        // The field just written still leaves room for the terminator (newlib's CHECK_LENGTH)
+        auto fits = [&]() -> bool {
+            if (len < 0) return false;
+            count += len;
+            return count < maxsize;
+        };
+        auto copy = [&](const char* str) -> bool {
+            for (; *str; ++str) {
+                if (count < maxsize - 1) s[count++] = *str;
+                else return false;
+            }
+
+            return true;
+        };
+        auto recurse = [&](const char* fmt) -> bool {
+            len = (int)formatTime(&s[count], maxsize - count, fmt, t);
+            if (len <= 0) return false;
+            count += len;
+            return true;
+        };
+
+        for (;;) {
+            while (*format && *format != '%') {
+                if (count < maxsize - 1) s[count++] = *format++;
+                else return 0;
+            }
+
+            if (*format == '\0') break;
+            ++format;
+            char pad = '\0';
+            unsigned long width = 0;
+
+            // POSIX-1.2008: '0' / '+' and a minimum width (used by %C %F %G %Y %v)
+            if (*format == '0' || *format == '+') pad = *format++;
+            if (*format >= '1' && *format <= '9') {
+                char* fp;
+                width = strtoul(format, &fp, 10);
+                format = fp;
+            }
+
+            if (*format == 'E' || *format == 'O') ++format;   // (no era or alternative digits in "C")
+
+            const int year100 = t->tm_year >= 0 ? t->tm_year % 100 : abs(t->tm_year + 1900) % 100;
+            switch (*format) {
+                case 'a':
+                    if (!copy(kWday[t->tm_wday])) return 0;
+                    break;
+                case 'A':
+                    if (!copy(kWeekday[t->tm_wday])) return 0;
+                    break;
+                case 'b':
+                case 'h':
+                    if (!copy(kMon[t->tm_mon])) return 0;
+                    break;
+                case 'B':
+                    if (!copy(kMonth[t->tm_mon])) return 0;
+                    break;
+                case 'c':
+                    if (!recurse("%a %b %e %H:%M:%S %Y")) return 0;
+                    break;
+                case 'r':
+                    if (!recurse("%I:%M:%S %p")) return 0;
+                    break;
+                case 'x':
+                    if (!recurse("%m/%d/%y")) return 0;
+                    break;
+                case 'X':
+                    if (!recurse("%H:%M:%S")) return 0;
+                    break;
+                case 'C': {
+                    const int neg = t->tm_year < -1900;
+                    const int century = t->tm_year >= 0 ? t->tm_year / 100 + 19 : abs(t->tm_year + 1900) / 100;
+                    const char pre = neg ? '-' : (pad == '+' && century >= 100) ? '+' : '\0';
+                    if (width < 2) width = 2;
+                    len = putNum(&s[count], maxsize - count, (unsigned)century, false, (long)(int)(width - neg), 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'd':
+                case 'e':
+                    len = putInt(&s[count], maxsize - count, t->tm_mday, *format == 'd' ? 2 : 1, *format == 'd' ? 0 : 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'D': {
+                    const int v[] = { t->tm_mon + 1, t->tm_mday, year100 };
+                    len = putFields(&s[count], maxsize - count, v, 3, '/');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'F': {
+                    // "%+4Y-%m-%d", flags and width can change that
+                    char fmt[32], *f = fmt;
+                    *f++ = '%';
+                    *f++ = pad ? pad : '+';
+                    if (!pad) width = 10;
+                    if (width < 6) width = 6;
+                    width -= 6;
+                    if (width) f += putNum(f, fmt + 32 - f, width, false, 1);
+                    strcpy(f, "Y-%m-%d");
+                    if (!recurse(fmt)) return 0;
+                    break;
+                }
+                case 'g': {
+                    int adjust = isoYearAdjust(t);
+                    if (adjust < 0 && t->tm_year <= -1900) adjust = 1;
+                    else if (adjust > 0 && t->tm_year < -1900) adjust = -1;
+                    len = putInt(&s[count], maxsize - count, ((year100 + adjust) % 100 + 100) % 100, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'G': {
+                    int sign = t->tm_year < -1900;
+                    int adjust = isoYearAdjust(t);
+                    int century = t->tm_year >= 0 ? t->tm_year / 100 + 19 : abs(t->tm_year + 1900) / 100;
+                    int year = year100;
+                    if (adjust < 0 && t->tm_year <= -1900) sign = adjust = 1;
+                    else if (adjust > 0 && sign) adjust = -1;
+                    year += adjust;
+                    if (year == -1) {
+                        year = 99;
+                        --century;
+                    } else if (year == 100) {
+                        year = 0;
+                        ++century;
+                    }
+                    const unsigned pYear = (unsigned)(century * 100 + year);
+                    char pre = sign ? '-' : '\0';
+                    if (!sign && pad == '+' && pYear >= 10000) {
+                        pre = '+';
+                        sign = 1;
+                    }
+                    if (width && sign) --width;
+                    len = putNum(&s[count], maxsize - count, pYear, false, (long)(int)width, 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'H':
+                case 'k':
+                    len = putInt(&s[count], maxsize - count, t->tm_hour, *format == 'k' ? 1 : 2, *format == 'k' ? 2 : 0);
+                    if (!fits()) return 0;
+                    break;
+                case 'l':
+                case 'I': {
+                    const int h12 = (t->tm_hour == 0 || t->tm_hour == 12) ? 12 : t->tm_hour % 12;
+                    len = putInt(&s[count], maxsize - count, h12, *format == 'I' ? 2 : 1, *format == 'I' ? 0 : 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'j':
+                    len = putInt(&s[count], maxsize - count, t->tm_yday + 1, 3);
+                    if (!fits()) return 0;
+                    break;
+                case 'm':
+                    len = putInt(&s[count], maxsize - count, t->tm_mon + 1, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'M':
+                    len = putInt(&s[count], maxsize - count, t->tm_min, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'n':
+                    if (count < maxsize - 1) s[count++] = '\n';
+                    else return 0;
+                    break;
+                case 'p':
+                case 'P':
+                    if (!copy(t->tm_hour < 12 ? (*format == 'P' ? "am" : "AM") : (*format == 'P' ? "pm" : "PM"))) return 0;
+                    break;
+                case 'q':
+                    len = putInt(&s[count], maxsize - count, t->tm_mon / 3 + 1, 1);
+                    if (!fits()) return 0;
+                    break;
+                case 'R': {
+                    const int v[] = { t->tm_hour, t->tm_min };
+                    len = putFields(&s[count], maxsize - count, v, 2, ':');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 's':
+                    // seconds since the epoch (the time-zone offset is 0 without TZ)
+                    len = putInt(&s[count], maxsize - count,
+                                 (((((long long)t->tm_year - 69) / 4 - (t->tm_year - 1) / 100 + (t->tm_year + 299) / 400 +
+                                    (t->tm_year - 70) * 365 + t->tm_yday) * 24 + t->tm_hour) * 60 + t->tm_min) * 60 + t->tm_sec, 1);
+                    if (!fits()) return 0;
+                    break;
+                case 'S':
+                    len = putInt(&s[count], maxsize - count, t->tm_sec, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 't':
+                    if (count < maxsize - 1) s[count++] = '\t';
+                    else return 0;
+                    break;
+                case 'T': {
+                    const int v[] = { t->tm_hour, t->tm_min, t->tm_sec };
+                    len = putFields(&s[count], maxsize - count, v, 3, ':');
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'u':
+                    if (count < maxsize - 1) s[count++] = t->tm_wday == 0 ? '7' : (char)('0' + t->tm_wday);
+                    else return 0;
+                    break;
+                case 'U':
+                    len = putInt(&s[count], maxsize - count, (t->tm_yday + 7 - t->tm_wday) / 7, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'V': {
+                    const int adjust = isoYearAdjust(t);
+                    const int wday = t->tm_wday ? t->tm_wday - 1 : 6;
+                    int week = (t->tm_yday + 10 - wday) / 7;
+                    if (adjust > 0) week = 1;
+                    else if (adjust < 0)
+                        week = 52 + (4 >= (wday - t->tm_yday - isLeap(t->tm_year + (1900 - 1 - (t->tm_year < 0 ? 0 : 2000)))));
+                    len = putInt(&s[count], maxsize - count, week, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'v': {
+                    // "%e-%b-%+4Y", flags and width can change the year
+                    char fmt[32], *f = fmt;
+                    strcpy(f, "%e-%b-%");
+                    f += strlen(f);
+                    *f++ = pad ? pad : '+';
+                    if (!pad) width = 10;
+                    if (width < 6) width = 6;
+                    width -= 6;
+                    if (width) f += putNum(f, fmt + 32 - f, width, false, 1);
+                    strcpy(f, "Y");
+                    if (!recurse(fmt)) return 0;
+                    break;
+                }
+                case 'w':
+                    if (count < maxsize - 1) s[count++] = (char)('0' + t->tm_wday);
+                    else return 0;
+                    break;
+                case 'W': {
+                    const int wday = t->tm_wday ? t->tm_wday - 1 : 6;
+                    len = putInt(&s[count], maxsize - count, (t->tm_yday + 7 - wday) / 7, 2);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'y':
+                    len = putInt(&s[count], maxsize - count, year100, 2);
+                    if (!fits()) return 0;
+                    break;
+                case 'Y': {
+                    int sign = t->tm_year < -1900;
+                    unsigned year = (unsigned)t->tm_year + 1900u;
+                    char pre = '\0';
+                    if (sign) {
+                        pre = '-';
+                        year = 0xffffffffu - year + 1;
+                    } else if (pad == '+' && year >= 10000) {
+                        pre = '+';
+                        sign = 1;
+                    }
+                    if (width && sign) --width;
+                    len = putNum(&s[count], maxsize - count, year, false, (long)(int)width, 0, pre);
+                    if (!fits()) return 0;
+                    break;
+                }
+                case 'z':
+                    if (t->tm_isdst >= 0) {                          // (UTC without TZ, newlib's "%+03ld%.2ld")
+                        len = putStr(&s[count], maxsize - count, "+0000", 5);
+                        if (!fits()) return 0;
+                    }
+                    break;
+                case 'Z':
+                    if (t->tm_isdst >= 0 && !copy("GMT")) return 0;     // (newlib's name without TZ)
+                    break;
+                case '%':
+                    if (count < maxsize - 1) s[count++] = '%';
+                    else return 0;
+                    break;
+                default:
+                    return 0;
+            }
+
+            if (*format) ++format;
+            else break;
+        }
+
+        if (maxsize) s[count] = '\0';
+        return count;
+    }
+
     void formatTimestamp(time_t t, char* buf, size_t bufSize) {
         struct tm tm;
-        localtime_r(&t, &tm);
+        localTime(t, &tm);
         int hour12 = tm.tm_hour % 12;
         if (hour12 == 0) hour12 = 12;
         std::snprintf(buf, bufSize, "%d:%02d %s",
@@ -236,7 +641,7 @@ namespace ult {
     bool usePageSwap = false;
     bool useSwitch2Style = true;
     bool useFrostedGlass = false;
-    bool glassWithCheats = false;
+    bool glassWithCheats = true;
     std::atomic<bool> glassFallback{false};
     u8 glassDarkness = 5;
     u8 glassBlurRadius = 1;
@@ -1526,8 +1931,11 @@ namespace ult {
     void reloadWallpaper() {
         auto lock = beginWallpaperChange();
         
-        // Clear the current wallpaper data (and give the memory back)
+        // Clear the current wallpaper data (and give the memory back). Freed for the glass: an
+        // animated wallpaper saves where it is first, so it carries on from there when it comes back
+        // (glass off, a held game's wallpaper) instead of from the last overlay's exit.
         const bool hadWallpaper = !wallpaperData.empty();
+        if (hadWallpaper && glassReplacesWallpaper()) anim::saveState();
         freeWallpaperData();
         // Freed for the glass (they share one block): keep the last frame up until the glass
         // draws (at most 500 ms) instead of drawing a frame with neither (see the overlay loop).

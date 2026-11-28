@@ -716,6 +716,7 @@ namespace ult::anim {
             closeAll();
             return false;
         }
+
         memcpy(&w, hdr + 4, 2);
         memcpy(&h, hdr + 6, 2);
         memcpy(&num, hdr + 8, 2);
@@ -723,10 +724,12 @@ namespace ult::anim {
         memcpy(&s_frames, hdr + 12, 4);
         memcpy(&s_maxRec, hdr + 16, 4);
         memcpy(&s_first, hdr + 20, 4);
+
         if (w != kW || h != kH || !num || !den || !s_frames || s_maxRec < kKeyBytes || s_maxRec > (1u << 20)) {
             closeAll();
             return false;
         }
+        
         s_periodNs = 1'000'000'000ULL * den / num;
 
         // Ring: about 0.5 s of frames at the clip's average size, so an SD read that stalls

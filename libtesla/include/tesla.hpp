@@ -2404,6 +2404,12 @@ namespace tsl {
             // Below this many visible pixels a rect is drawn on the calling thread.
             static constexpr s32 kThreadedMinPx = 448 * 256;
 
+            // With the glass over a game, large fills stay on this thread too: the helper threads
+            // would first have to win time on the game's cores (same rule as the full-colour compose).
+            bool fillOnThisThread() const {
+                return this->m_cgOn && !s_fcSpread && ult::glass::s_gameInFront.load(std::memory_order_acquire);
+            }
+
             // Helper threads for the multi-threaded drawing: made for each call and joined before it
             // returns, on 4 stacks reserved once (first use), so a draw allocates nothing. 8 KB each:
             // the deepest job (full-colour compose rows + glassRow4x) needs ~1.1 KB, and libnx keeps
@@ -2472,7 +2478,7 @@ namespace tsl {
                 // Small rects (list rows, highlights: ~440x70 px) are drawn on this thread: starting and
                 // joining 4 threads costs more than the drawing, and in a game those threads first have
                 // to win time on the game's cores. Same per-row function, same pixels.
-                if ((x_end - x_start) * visibleHeight < kThreadedMinPx) {
+                if ((x_end - x_start) * visibleHeight < kThreadedMinPx || fillOnThisThread()) {
                     processRectChunk(x_start, x_end, y_start, y_end, color);
                     return;
                 }
@@ -3006,7 +3012,7 @@ namespace tsl {
 
             inline void drawBorderedRoundedRect(const s32 x, const s32 y, const s32 width, const s32 height, const s32 thickness, const s32 radius, const Color& highlightColor, const Switch2Wheel* wheel = nullptr) {
             #if USING_LIVE_LOGGING_DIRECTIVE
-                struct BorderTimer { u32 i; u64 t = armGetSystemTick(); ~BorderTimer() { s_ft.bd[i] += armGetSystemTick() - t; ++s_ft.bn[i]; } } borderTimer_{0};
+                DrawTimer drawTimer_{0};
             #endif
                 // ── Coordinate convention ───────────────────────────────────────────
                 // (x, y, width, height) is the exact painted bounding box — the same
@@ -3566,6 +3572,18 @@ namespace tsl {
                 }
             }
             
+            // Starts loading the UI buffer lines of rows [y0, y1), columns [x0, x1). By the next frame
+            // the buffer is mostly out of the cache and the block-linear walk defeats the hardware
+            // prefetcher, so otherwise every line is a stall in turn. One 64-byte line holds 16
+            // pixels of a row pair. Only a hint: it changes no pixel and never faults.
+            [[gnu::noinline]] static void prefetchArea(const u16* fb16, s32 x0, s32 x1, s32 y0, s32 y1) noexcept {
+                for (s32 py = y0 & ~1; py < y1; py += 2) {
+                    const u32 rb = blockLinearYPart(static_cast<u32>(py), offsetWidthVar);
+                    for (s32 px = x0 & ~15; px < x1; px += 16)
+                        __builtin_prefetch(fb16 + blockLinearOffset(static_cast<u32>(px), rb), 1, 3);
+                }
+            }
+
             // --- Optimized rounded rectangle chunk processor ---
             static void processRoundedRectChunk(Renderer* self,
                                                 const s32 x, const s32 y,
@@ -3622,8 +3640,15 @@ namespace tsl {
                 const int cy2_top = 2 * (y + radius);
                 const int cy2_bot = 2 * (y_end - radius);
 
+                // first row pair now, then one pair ahead
+                const s32 pfEnd = std::min(endRow, clip_y_end);
+                prefetchArea(fb16, clip_x, clip_x_end, std::max(startRow, clip_y),
+                             std::min(std::max(startRow, clip_y) + 2, pfEnd));
+
                 for (s32 yc = startRow; yc < endRow; ++yc) {
                     if (yc < clip_y || yc >= clip_y_end) continue;
+                    if (!(yc & 1) && yc + 2 < pfEnd)
+                        prefetchArea(fb16, clip_x, clip_x_end, yc + 2, std::min(yc + 4, pfEnd));
 
                     const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
                     const bool is_top = (yc <= top_arc_end);
@@ -3679,6 +3704,9 @@ namespace tsl {
              * @param color Color
              */
             inline void drawRoundedRectMultiThreaded(const s32 x, const s32 y, const s32 w, const s32 h, const s32 radius, const Color& color) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                DrawTimer drawTimer_{3};
+            #endif
                 if (w <= 0 || h <= 0) return;
                 
                 // Calculate clipped bounds for early exit check
@@ -3694,7 +3722,7 @@ namespace tsl {
                 const s32 visibleHeight = clampedYEnd - clampedY;
 
                 // Small rounded rects: on this thread (see drawRectMultiThreaded).
-                if ((clampedXEnd - clampedX) * visibleHeight < kThreadedMinPx) {
+                if ((clampedXEnd - clampedX) * visibleHeight < kThreadedMinPx || fillOnThisThread()) {
                     processRoundedRectChunk(this, x, y, w, h, radius, color, clampedY, clampedYEnd);
                     return;
                 }
@@ -3711,6 +3739,9 @@ namespace tsl {
                     }
                 };
                 
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                ++s_ft.fillPar;
+            #endif
                 runParallel(ult::numThreads, [&](u32) { threadTask(); });
             }
             
@@ -3725,6 +3756,9 @@ namespace tsl {
              * @param color Color
              */
             inline void drawRoundedRectSingleThreaded(s32 x, s32 y, s32 w, s32 h, s32 radius, const Color& color) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                DrawTimer drawTimer_{3};
+            #endif
                 if (w <= 0 || h <= 0) return;
             
                 const s32 clampedY = std::max(0, y);
@@ -3746,6 +3780,9 @@ namespace tsl {
             
                                                 
             inline void drawUniformRoundedRect(const s32 x, const s32 y, const s32 w, const s32 h, const Color& color) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                DrawTimer drawTimer_{3};
+            #endif
                 const s32 radius = h >> 1;
                 // Clamp to framebuffer bounds
                 s32 clip_left   = std::max(0, x);
@@ -3776,7 +3813,10 @@ namespace tsl {
 
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
 
+                prefetchArea(fb16, clip_left, clip_right, clip_top, std::min(clip_top + 2, clip_bottom));   // then one pair ahead
                 for (s32 yc = clip_top; yc < clip_bottom; ++yc) {
+                    if (!(yc & 1) && yc + 2 < clip_bottom)
+                        prefetchArea(fb16, clip_left, clip_right, yc + 2, std::min(yc + 4, clip_bottom));
                     const u32 rowBase = blockLinearYPart(static_cast<u32>(yc), offsetWidthVar);
                     const bool in_corners = (yc < corner_y_top) || (yc > corner_y_bot);
 
@@ -3867,7 +3907,7 @@ namespace tsl {
                                                       const s32 T, const Color& color,
                                                       const Switch2Wheel* wheel = nullptr) {
             #if USING_LIVE_LOGGING_DIRECTIVE
-                struct BorderTimer { u32 i; u64 t = armGetSystemTick(); ~BorderTimer() { s_ft.bd[i] += armGetSystemTick() - t; ++s_ft.bn[i]; } } borderTimer_{1};
+                DrawTimer drawTimer_{1};
             #endif
                 const s32 R  = h >> 1;
                 const s32 Ri = R - T;
@@ -6204,6 +6244,9 @@ namespace tsl {
                                                   const u32 highlightStartChar = 0,
                                                   const u32 highlightEndChar = 0,
                                                   const bool useNotificationCache = false) {
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                DrawTimer drawTimer_{draw ? 4u : 5u};
+            #endif
                 
                 // Translation: read in place, the lock held for the call (no copy of the
                 // translated string per draw). Writers are rare (a language load).
@@ -6784,7 +6827,8 @@ namespace tsl {
                 // Draw clock
                 if (!ult::hideClock) {
                     if (currentTime != lastTimeUpdate || ult::languageWasChanged.load(std::memory_order_acquire)) {
-                        strftime(timeStr, sizeof(timeStr), ult::datetimeFormat.c_str(), localtime(&currentTime));
+                        struct tm tmNow;
+                        ult::formatTime(timeStr, sizeof(timeStr), ult::datetimeFormat.c_str(), ult::localTime(currentTime, &tmNow));
                         ult::localizeTimeStr(timeStr);
                         lastTimeUpdate = currentTime;
                     }
@@ -7108,6 +7152,9 @@ namespace tsl {
                                     const Color& color,
                                     bool skipAlphaLimit = false) {
                 if (!glyph->glyphBmp || color.a == 0) [[unlikely]] return;
+            #if USING_LIVE_LOGGING_DIRECTIVE
+                DrawTimer drawTimer_{2};
+            #endif
                 const s32 xPos = static_cast<s32>(x) + glyph->bounds[0];
                 const s32 yPos = static_cast<s32>(y) + glyph->bounds[1];
                 if (s_glyphOutline) [[unlikely]]
@@ -7153,48 +7200,69 @@ namespace tsl {
                 const s32 span = endX - startX;
                 const u32 limit = skipAlphaLimit ? color.a : static_cast<u32>(0xF * Renderer::s_opacity);
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                prefetchArea(fb16, xPos + startX, xPos + endX, yPos + startY, yPos + endY);
 
-                const uint8x8_t vLim = vdup_n_u8(static_cast<u8>(limit)), vLow = vdup_n_u8(0x0Fu);
-                const uint16x8_t vMask4 = vdupq_n_u16(0x000Fu), v15 = vdupq_n_u16(15u);
-                const uint16x8_t vR = vdupq_n_u16(color.r), vG = vdupq_n_u16(color.g), vB = vdupq_n_u16(color.b);
+                // Rows in pairs, 16 pixels in 8-bit lanes, as in renderCoverage. The sums fit a byte
+                // because letter <= ring in every byte (textBorder() builds them that way), and
+                // (x + ((x + 8) >> 4) + 8) >> 4 is round(x / 15) for x <= 225 (see fillRowSpanNEON).
+                // A line of the pair outside the glyph gets 0, which writes it back unchanged.
+                const uint8x16_t vLim = vdupq_n_u8(static_cast<u8>(limit)), vLow = vdupq_n_u8(0x0Fu), v15 = vdupq_n_u8(15u);
+                const uint8x16_t vR = vdupq_n_u8(color.r), vG = vdupq_n_u8(color.g), vB = vdupq_n_u8(color.b);
                 const uint16x8_t vSolid = vdupq_n_u16(static_cast<u16>(color.r | (color.g << 4) | (color.b << 8) | (limit << 12)));
                 const bool solidOk = limit == 15u;
-                auto div15v = [](uint16x8_t x) __attribute__((always_inline)) {   // round(x / 15), x <= 225 (see div15r)
-                    return vshrq_n_u16(vaddq_u16(vmulq_n_u16(x, 273u), vdupq_n_u16(2048u)), 12);
+                auto d15 = [](uint8x16_t x) __attribute__((always_inline)) { return vrshrq_n_u8(vrsraq_n_u8(x, x, 4), 4); };
+                auto blend16 = [&](u16* const dst, const uint8x16_t p) __attribute__((always_inline)) {
+                    if (vmaxvq_u8(p) == 0u) return;
+                    const uint8x16_t o = vminq_u8(vshrq_n_u8(p, 4), vLim), f = vminq_u8(vandq_u8(p, vLow), vLim);
+                    if (solidOk && vminvq_u8(f) == 15u) {
+                        vst1q_u16(dst, vSolid);
+                        vst1q_u16(dst + 8, vSolid);
+                        return;
+                    }
+                    const uint8x16_t inv = vsubq_u8(v15, o);
+                    const uint8x16x2_t s = vld2q_u8(reinterpret_cast<const u8*>(dst));   // [0] r | g << 4, [1] b | a << 4
+                    const uint8x16_t r = d15(vmlaq_u8(vmulq_u8(vandq_u8(s.val[0], vLow), inv), vR, f));
+                    const uint8x16_t g = d15(vmlaq_u8(vmulq_u8(vshrq_n_u8(s.val[0], 4), inv), vG, f));
+                    const uint8x16_t b = d15(vmlaq_u8(vmulq_u8(vandq_u8(s.val[1], vLow), inv), vB, f));
+                    const uint8x16_t a = d15(vmlaq_u8(vmulq_u8(vshrq_n_u8(s.val[1], 4), inv), v15, o));
+                    uint8x16x2_t out;
+                    out.val[0] = vsliq_n_u8(r, g, 4);
+                    out.val[1] = vsliq_n_u8(b, a, 4);
+                    vst2q_u8(reinterpret_cast<u8*>(dst), out);
                 };
-                auto blend8 = [&](u16* const dst, const uint8x8_t p8) __attribute__((always_inline)) {
-                    if (vget_lane_u64(vreinterpret_u64_u8(p8), 0) == 0u) return;
-                    const uint8x8_t o8 = vmin_u8(vshr_n_u8(p8, 4), vLim), f8 = vmin_u8(vand_u8(p8, vLow), vLim);
-                    if (solidOk && vminv_u8(f8) == 15u) { vst1q_u16(dst, vSolid); return; }
-                    const uint16x8_t o = vmovl_u8(o8), f = vmovl_u8(f8), inv = vsubq_u16(v15, o);
-                    const uint16x8_t src = vld1q_u16(dst);
-                    const uint16x8_t sr = vandq_u16(src, vMask4), sg = vandq_u16(vshrq_n_u16(src, 4), vMask4);
-                    const uint16x8_t sb = vandq_u16(vshrq_n_u16(src, 8), vMask4), sa = vshrq_n_u16(src, 12);
-                    const uint16x8_t r = div15v(vmlaq_u16(vmulq_u16(sr, inv), vR, f));   // each <= 15*15
-                    const uint16x8_t g = div15v(vmlaq_u16(vmulq_u16(sg, inv), vG, f));
-                    const uint16x8_t b = div15v(vmlaq_u16(vmulq_u16(sb, inv), vB, f));
-                    const uint16x8_t a = div15v(vmlaq_u16(vmulq_u16(sa, inv), v15, o));
-                    vst1q_u16(dst, vorrq_u16(vorrq_u16(r, vshlq_n_u16(g, 4)),
-                                             vorrq_u16(vshlq_n_u16(b, 8), vshlq_n_u16(a, 12))));
+                // ring | letter bytes of one aligned group, 0 outside the span. An edge group takes its
+                // n < 8 bytes with one 8-byte load and a mask (byte by byte at the very end of the bitmap).
+                const u8* const pkEnd = packed + static_cast<size_t>(bw) * bh;
+                auto group = [&](const u8* row, s32 i) __attribute__((always_inline)) -> uint8x8_t {
+                    if (!row) return vdup_n_u8(0u);
+                    if (i >= 0 && i + 8 <= span) return vld1_u8(row + i);
+                    const s32 lo = std::max(i, 0);
+                    const s32 n  = std::min(span, i + 8) - lo;                        // 1..7
+                    const u8* const p = row + lo;
+                    u64 c = 0;
+                    if (p + 8 <= pkEnd) {
+                        __builtin_memcpy(&c, p, 8);
+                        c &= (1ull << (8u * static_cast<u32>(n))) - 1u;
+                    } else {
+                        for (s32 k = 0; k < n; ++k) c |= static_cast<u64>(p[k]) << (8u * static_cast<u32>(k));
+                    }
+                    return vcreate_u8(c << (8u * static_cast<u32>(lo - i)));
                 };
 
                 const u32 baseX = static_cast<u32>(xPos + startX);
                 const u32 lane0 = baseX & 7u;
-                for (s32 by = startY; by < endY; ++by) {
-                    const u32 py = static_cast<u32>(yPos + by);
-                    const u32 rowBase = ((((py & 127u) >> 4u) + ((py >> 7u) * offsetWidthVar)) << 9u)
-                                      | ((py & 8u) << 5u) | ((py & 6u) << 4u) | ((py & 1u) << 3u);
-                    const u8* const row = packed + by * bw + startX;
+                const s32 pyEnd = yPos + endY;
+                for (s32 py = (yPos + startY) & ~1; py < pyEnd; py += 2) {
+                    const s32 by = py - yPos;                                         // upper line of the pair
+                    const u8* const r0 = by >= startY  ? packed + by * bw + startX       : nullptr;
+                    const u8* const r1 = by + 1 < endY ? packed + (by + 1) * bw + startX : nullptr;
+                    const u32 pu = static_cast<u32>(py);
+                    const u32 rowBase = ((((pu & 127u) >> 4u) + ((pu >> 7u) * offsetWidthVar)) << 9u)
+                                      | ((pu & 8u) << 5u) | ((pu & 6u) << 4u);
                     for (s32 i = -static_cast<s32>(lane0); i < span; i += 8) {           // aligned groups of 8
                         const u32 px = baseX + static_cast<u32>(i);
                         u16* const dst = fb16 + rowBase + (((px >> 5u) << 12u) | ((px & 16u) << 3u) | ((px & 8u) << 1u));
-                        if (i >= 0 && i + 8 <= span) { blend8(dst, vld1_u8(row + i)); continue; }
-                        u64 c = 0;                                                       // partial group
-                        for (s32 k = 0; k < 8; ++k) {
-                            const s32 j = i + k;
-                            if (j >= 0 && j < span) c |= static_cast<u64>(row[j]) << (8u * k);
-                        }
-                        blend8(dst, vcreate_u8(c));
+                        blend16(dst, vcombine_u8(group(r0, i), group(r1, i)));
                     }
                 }
             }
@@ -7223,6 +7291,7 @@ namespace tsl {
                 const s32 span = std::min(endX - startX, kMaxSpan);
                 const u32 limit = skipAlphaLimit ? color.a : static_cast<u32>(0xF * Renderer::s_opacity);
                 u16* const fb16 = reinterpret_cast<u16*>(this->m_currentFramebuffer);
+                prefetchArea(fb16, xPos + startX, xPos + startX + span, yPos + startY, yPos + endY);
 
                 const uint16x8_t vLim   = vdupq_n_u16(static_cast<u16>(limit * 17u));   // coverage * limit/15
                 const uint16x8_t v255   = vdupq_n_u16(255u);
@@ -7308,6 +7377,7 @@ namespace tsl {
                 constexpr s32 kMaxSpan = 128;
                 u32 colOff[kMaxSpan];
                 const s32  safeSpan   = std::min(spanW, kMaxSpan);
+                prefetchArea(fb16, xPos + startX, xPos + startX + safeSpan, yPos + startY, yPos + endY);
                 const u32  basePixelX = static_cast<u32>(xPos + startX);
                 for (s32 i = 0; i < safeSpan; ++i) {
                     const u32 px = basePixelX + static_cast<u32>(i);
@@ -7315,108 +7385,101 @@ namespace tsl {
                               | ((px & 8u)  <<  1u) |  (px & 7u);
                 }
 
-                const uint8x8_t  vLimitU8  = vdup_n_u8(alphaLimit);
-                const uint8x8_t  vZeroU8   = vdup_n_u8(0u);
-                const uint8x8_t  vFullU8   = vdup_n_u8(0xFu);
-                const uint16x8_t vColorFull = vdupq_n_u16(color.rgba);   // 8 × full colour
-                const uint16x8_t vMask4    = vdupq_n_u16(0x000Fu);       // low-nibble mask
-                const uint16x8_t v15       = vdupq_n_u16(15u);
-                const uint16x8_t vDstR     = vdupq_n_u16(color.r);       // constant glyph R
-                const uint16x8_t vDstG     = vdupq_n_u16(color.g);       // constant glyph G
-                const uint16x8_t vDstB     = vdupq_n_u16(color.b);       // constant glyph B
-
                 const s32 prologueLen = static_cast<s32>((8u - (basePixelX & 7u)) & 7u);
+                const s32 lead  = std::min(prologueLen, safeSpan);
+                const u32 lane0 = basePixelX & 7u;                         // = 8 - prologueLen
 
-                const uint8_t* bmpRow = bmp + startY * glyphWidth + startX;
+                // Rows go in pairs: in the block-linear layout row 2k + 1 of an 8-pixel group follows
+                // row 2k, so a pair is 16 contiguous pixels. Every value of the blend fits a byte
+                // (<= 15 * 15), so they are blended in 8-bit lanes (lo bytes r | g << 4, hi bytes
+                // b | a << 4): the same sums and >> 4, half the instructions. A line of the pair
+                // outside the glyph gets coverage 0 and stays as it was.
+                const uint8x16_t vLim  = vdupq_n_u8(alphaLimit);
+                const uint8x16_t vFull = vdupq_n_u8(0xFu);
+                const uint8x16_t vM4   = vdupq_n_u8(0x0Fu);
+                const uint8x16_t vR    = vdupq_n_u8(color.r);
+                const uint8x16_t vG    = vdupq_n_u8(color.g);
+                const uint8x16_t vB    = vdupq_n_u8(color.b);
+                const uint8x16_t vLo   = vdupq_n_u8(static_cast<u8>(color.rgba));        // r | g << 4
+                const uint8x16_t vHi   = vdupq_n_u8(static_cast<u8>(color.rgba >> 8));   // b | a << 4
+                const uint16x8_t vColorFull = vdupq_n_u16(color.rgba);
 
-                for (s32 bmpY = startY; bmpY < endY; ++bmpY, bmpRow += glyphWidth) {
+                auto blend16 = [&](u16* const dst, const uint8x16_t cov) __attribute__((always_inline)) {
+                    const uint8x16_t a = vminq_u8(vshrq_n_u8(cov, 4), vLim);      // 4-bit alphas, clamped
+                    if (vmaxvq_u8(a) == 0u) return;                                // all 16 transparent
+                    const uint8x16_t full = vceqq_u8(a, vFull);
+                    if (vminvq_u8(full) == 0xFFu) {                                // all 16 opaque, no read
+                        vst1q_u16(dst, vColorFull);
+                        vst1q_u16(dst + 8, vColorFull);
+                        return;
+                    }
+                    const uint8x16x2_t s = vld2q_u8(reinterpret_cast<const u8*>(dst));
+                    const uint8x16_t inv = vsubq_u8(vFull, a);                     // 15 - alpha
+                    // out_ch = (src_ch * (15 - a) + glyph_ch * a) >> 4,  out_a = a + (src_a * (15 - a)) >> 4
+                    const uint8x16_t r = vshrq_n_u8(vmlaq_u8(vmulq_u8(vandq_u8(s.val[0], vM4), inv), vR, a), 4);
+                    const uint8x16_t g = vshrq_n_u8(vmlaq_u8(vmulq_u8(vshrq_n_u8(s.val[0], 4), inv), vG, a), 4);
+                    const uint8x16_t b = vshrq_n_u8(vmlaq_u8(vmulq_u8(vandq_u8(s.val[1], vM4), inv), vB, a), 4);
+                    const uint8x16_t o = vaddq_u8(a, vshrq_n_u8(vmulq_u8(vshrq_n_u8(s.val[1], 4), inv), 4));
+                    // a == 0xF -> exactly the glyph colour; a == 0 -> exactly the old pixel
+                    const uint8x16_t zero = vceqzq_u8(a);
+                    uint8x16x2_t out;
+                    out.val[0] = vbslq_u8(zero, s.val[0], vbslq_u8(full, vLo, vsliq_n_u8(r, g, 4)));
+                    out.val[1] = vbslq_u8(zero, s.val[1], vbslq_u8(full, vHi, vsliq_n_u8(b, o, 4)));
+                    vst2q_u8(reinterpret_cast<u8*>(dst), out);
+                };
+                // Coverage of an edge group: the END of a group (lead pixels from lane0 on) or its START.
+                // Its n < 8 bytes come with one 8-byte load and a mask (byte by byte at the very end
+                // of the bitmap).
+                const u8* const bmpEnd = bmp + static_cast<size_t>(glyphWidth) * glyphHeight;
+                auto loadCov = [bmpEnd](const u8* p, s32 n) __attribute__((always_inline)) -> u64 {
+                    u64 v = 0;
+                    if (p + 8 <= bmpEnd) {
+                        __builtin_memcpy(&v, p, 8);
+                        return v & ((1ull << (8u * static_cast<u32>(n))) - 1u);
+                    }
+                    for (s32 k = 0; k < n; ++k) v |= static_cast<u64>(p[k]) << (8u * static_cast<u32>(k));
+                    return v;
+                };
+                auto leadCov = [&](const u8* row) __attribute__((always_inline)) {
+                    return vcreate_u8(loadCov(row, lead) << (8u * lane0));
+                };
+                auto tailCov = [&](const u8* row, s32 i) __attribute__((always_inline)) {
+                    return vcreate_u8(loadCov(row + i, safeSpan - i));
+                };
+                const uint8x8_t vNone = vdup_n_u8(0u);
 
-                    // rowBase(y) — computed once per scanline, never per pixel.
-                    const u32 py = static_cast<u32>(yPos + bmpY);
-                    const u32 rowBase =
-                        ((((py & 127u) >> 4u) + ((py >> 7u) * offsetWidthVar)) << 9u)
-                        | ((py & 8u) << 5u) | ((py & 6u) << 4u) | ((py & 1u) << 3u);
+                const s32 pyEnd = yPos + endY;
+                for (s32 py = (yPos + startY) & ~1; py < pyEnd; py += 2) {
+                    // upper / lower line of the pair in the bitmap (nullptr: outside the glyph)
+                    const s32 by = py - yPos;
+                    const u8* const r0 = by >= startY   ? bmp + by * glyphWidth + startX       : nullptr;
+                    const u8* const r1 = by + 1 < endY  ? bmp + (by + 1) * glyphWidth + startX : nullptr;
+
+                    // rowBase(y) of the upper (even) line — once per pair, never per pixel.
+                    const u32 pu = static_cast<u32>(py);
+                    const u32 rowBase = ((((pu & 127u) >> 4u) + ((pu >> 7u) * offsetWidthVar)) << 9u)
+                                      | ((pu & 8u) << 5u) | ((pu & 6u) << 4u);
 
                     s32 i = 0;
 
-                    // One aligned group of 8 framebuffer pixels (contiguous in the block-
-                    // linear layout) blended with 8 coverage bytes. Coverage 0 keeps the
-                    // pixel exactly, so partial groups pass 0 for the lanes outside the glyph.
-                    auto blend8 = [&](u16* const dst, const uint8x8_t bmp8) __attribute__((always_inline)) {
-                        uint8x8_t alpha8 = vshr_n_u8(bmp8, 4);            // 4-bit alphas (0..15)
-                        alpha8            = vmin_u8(alpha8, vLimitU8);    // clamp to alphaLimit
-
-                        // Fast path A: all 8 transparent.
-                        if (vget_lane_u64(vreinterpret_u64_u8(alpha8), 0) == 0u) return;
-
-                        // Fast path B: all 8 fully opaque, no framebuffer read.
-                        const uint8x8_t eqFull = vceq_u8(alpha8, vFullU8);
-                        if (vget_lane_u64(vreinterpret_u64_u8(eqFull), 0) == 0xFFFFFFFFFFFFFFFFull) {
-                            vst1q_u16(dst, vColorFull);
-                            return;
-                        }
-
-                        // Mixed path: partial alpha, full NEON blend.
-                        const uint16x8_t src16 = vld1q_u16(dst);
-                        const uint16x8_t alpha16 = vmovl_u8(alpha8);
-                        const uint16x8_t inva16  = vsubq_u16(v15, alpha16); // 15 - alpha
-
-                        const uint16x8_t src_r = vandq_u16(src16, vMask4);
-                        const uint16x8_t src_g = vandq_u16(vshrq_n_u16(src16,  4), vMask4);
-                        const uint16x8_t src_b = vandq_u16(vshrq_n_u16(src16,  8), vMask4);
-                        const uint16x8_t src_a =           vshrq_n_u16(src16, 12);
-
-                        // out_ch = (src_ch*(15-a) + dst_ch*a) >> 4
-                        const uint16x8_t r_out = vshrq_n_u16(
-                            vmlaq_u16(vmulq_u16(src_r, inva16), vDstR, alpha16), 4);
-                        const uint16x8_t g_out = vshrq_n_u16(
-                            vmlaq_u16(vmulq_u16(src_g, inva16), vDstG, alpha16), 4);
-                        const uint16x8_t b_out = vshrq_n_u16(
-                            vmlaq_u16(vmulq_u16(src_b, inva16), vDstB, alpha16), 4);
-                        // out_a = a + (src_a*(15-a)) >> 4
-                        const uint16x8_t a_out = vaddq_u16(alpha16,
-                            vshrq_n_u16(vmulq_u16(src_a, inva16), 4));
-
-                        uint16x8_t blended = vorrq_u16(r_out,
-                            vorrq_u16(vshlq_n_u16(g_out,  4),
-                            vorrq_u16(vshlq_n_u16(b_out,  8),
-                                      vshlq_n_u16(a_out, 12))));
-
-                        // a==0xF -> exactly the glyph colour; a==0 -> exactly the old pixel.
-                        const uint16x8_t fullMask16 =
-                            vreinterpretq_u16_s16(vmovl_s8(vreinterpret_s8_u8(eqFull)));
-                        blended = vbslq_u16(fullMask16, vColorFull, blended);
-                        const uint16x8_t zeroMask16 =
-                            vreinterpretq_u16_s16(vmovl_s8(vreinterpret_s8_u8(vceq_u8(alpha8, vZeroU8))));
-                        blended = vbslq_u16(zeroMask16, src16, blended);
-
-                        vst1q_u16(dst, blended);
-                    };
-
-                    // Prologue: the pixels before the first 8-aligned x. They are the END of
-                    // an aligned group -> blend that whole group with coverage 0 in the lanes
-                    // left of the glyph (coverage 0 leaves a pixel exactly as it was).
-                    const s32 lead = std::min(prologueLen, safeSpan);
+                    // Prologue: the pixels before the first 8-aligned x, the END of an aligned group.
                     if (lead > 0) {
-                        const u32 lane0 = basePixelX & 7u;                 // = 8 - prologueLen
-                        u64 cov = 0;
-                        for (s32 k = 0; k < lead; ++k) cov |= static_cast<u64>(bmpRow[k]) << (8u * (lane0 + static_cast<u32>(k)));
-                        blend8(fb16 + rowBase + colOff[0] - lane0, vcreate_u8(cov));
+                        blend16(fb16 + rowBase + colOff[0] - lane0,
+                                vcombine_u8(r0 ? leadCov(r0) : vNone, r1 ? leadCov(r1) : vNone));
                         i = lead;
                     }
 
                     // Main loop: whole aligned groups.
                     while (i + 8 <= safeSpan) {
-                        blend8(fb16 + rowBase + colOff[i], vld1_u8(bmpRow + i));
+                        blend16(fb16 + rowBase + colOff[i],
+                                vcombine_u8(r0 ? vld1_u8(r0 + i) : vNone, r1 ? vld1_u8(r1 + i) : vNone));
                         i += 8;
                     }
 
                     // Epilogue: the START of an aligned group, coverage 0 right of the glyph.
-                    if (i < safeSpan) {
-                        u64 cov = 0;
-                        for (s32 k = 0; i + k < safeSpan; ++k) cov |= static_cast<u64>(bmpRow[i + k]) << (8u * static_cast<u32>(k));
-                        blend8(fb16 + rowBase + colOff[i], vcreate_u8(cov));
-                    }
+                    if (i < safeSpan)
+                        blend16(fb16 + rowBase + colOff[i],
+                                vcombine_u8(r0 ? tailCov(r0, i) : vNone, r1 ? tailCov(r1, i) : vNone));
                 }
             }
 
@@ -7901,7 +7964,9 @@ namespace tsl {
         #if USING_LIVE_LOGGING_DIRECTIVE
             // Frame-time breakdown (full colour): where the 16.7 ms go.
             struct FrameTimes { u64 frameStart, runStart, glassPrep;
-                                u64 bd[2]; u32 bn[2];                // animated borders: selection, widget (ticks, calls)
+                                u64 bd[6]; u32 bn[6];                // selection border, widget border, glyphs, rounded fills,
+                                                                     // drawString drawing, drawString measuring (ticks, calls)
+                                u32 fillPar;                         // rounded fills split over the helper threads
                                 u64 sum[9]; u32 n, over; u64 t0;
                                 u64 lastPresent, maxGap; u32 late;   // present-to-present gaps (stutter check)
                                 u32 held;                            // frames left on screen on purpose (nothing changed)
@@ -7916,6 +7981,11 @@ namespace tsl {
                 return v;
             }
             static inline FrameTimes s_ft;                 // zero-initialised
+            struct DrawTimer {                         // adds the time of its scope to s_ft.bd[i]
+                u32 i;
+                u64 t = armGetSystemTick();
+                ~DrawTimer() { s_ft.bd[i] += armGetSystemTick() - t; ++s_ft.bn[i]; }
+            };
             struct GlassPrepTimer {                    // adds the time spent in drawGlassBackdrop
                 u64 t = armGetSystemTick();
                 ~GlassPrepTimer() { s_ft.glassPrep += armGetSystemTick() - t; }
@@ -8122,6 +8192,14 @@ namespace tsl {
                                     ult::glass::live::log("borders (us per frame, calls): selection %lu (%u) + widget %lu (%u)",
                                                           (unsigned long)(armTicksToNs(s_ft.bd[0] / s_ft.n) / 1000ULL), s_ft.bn[0],
                                                           (unsigned long)(armTicksToNs(s_ft.bd[1] / s_ft.n) / 1000ULL), s_ft.bn[1]);
+                                if (s_ft.bn[2] | s_ft.bn[3])
+                                    ult::glass::live::log("drawing (us per frame, calls): glyphs %lu (%u) + rounded fills %lu (%u, %u on helper threads)",
+                                                          (unsigned long)(armTicksToNs(s_ft.bd[2] / s_ft.n) / 1000ULL), s_ft.bn[2],
+                                                          (unsigned long)(armTicksToNs(s_ft.bd[3] / s_ft.n) / 1000ULL), s_ft.bn[3], s_ft.fillPar);
+                                if (s_ft.bn[4] | s_ft.bn[5])
+                                    ult::glass::live::log("text (us per frame, calls): drawString %lu (%u, glyphs above included) + measuring %lu (%u)",
+                                                          (unsigned long)(armTicksToNs(s_ft.bd[4] / s_ft.n) / 1000ULL), s_ft.bn[4],
+                                                          (unsigned long)(armTicksToNs(s_ft.bd[5] / s_ft.n) / 1000ULL), s_ft.bn[5]);
                                 if (s_ft.ageN)
                                     ult::glass::live::log("latency: strip published -> overlay frame queued %lu us avg (%u new strips; shown at the next refresh after that)",
                                                           (unsigned long)(armTicksToNs(s_ft.ageSum / s_ft.ageN) / 1000ULL), s_ft.ageN);
@@ -10045,6 +10123,12 @@ namespace tsl {
             s_jumpOffsetHintKey = std::hash<std::string>{}(text);
             s_jumpIndexHint = text.empty() ? SIZE_MAX : index;
         }
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        // Where the page being built was scrolled when it was last left (Overlay sets it during a
+        // page swap); its jumpToItem uses it when no hint above is given.
+        inline float  s_backOffset = -1.0f;
+        inline size_t s_backIndex = SIZE_MAX;
+    #endif
 
         class List : public Element {
         
@@ -10773,6 +10857,12 @@ namespace tsl {
                 const bool hinted = !text.empty() && std::hash<std::string>{}(text) == s_jumpOffsetHintKey;
                 m_jumpOffset = (hinted && s_jumpOffsetHint >= 0.0f) ? s_jumpOffsetHint : -1.0f;
                 m_jumpIndex = hinted ? s_jumpIndexHint : SIZE_MAX;
+            #if IS_STATUS_MONITOR_DIRECTIVE
+                if (m_jumpOffset < 0.0f && !text.empty() && s_backOffset >= 0.0f) {
+                    m_jumpOffset = s_backOffset;
+                    m_jumpIndex = s_backIndex;
+                }
+            #endif
                 s_jumpOffsetHint = -1.0f;
                 s_jumpIndexHint = SIZE_MAX;
 
@@ -16603,6 +16693,9 @@ namespace tsl {
         elm::Element *m_bottomElement = nullptr;
 
         bool m_initialFocusSet = false;
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        const void* m_pageTag = nullptr;   // one per Gui type (scroll memory)
+    #endif
         
         friend class Overlay;
         friend class gfx::Renderer;
@@ -16862,13 +16955,55 @@ namespace tsl {
          */
         template<typename T, typename ... Args>
         constexpr inline std::unique_ptr<T> initially(Args&&... args) {
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            auto gui = std::make_unique<T>(args...);
+            gui->m_pageTag = &s_pageTagOf<T>;
+            return gui;
+        #else
             return std::make_unique<T>(args...);
+        #endif
         }
         
     private:
         using GuiPtr = std::unique_ptr<tsl::Gui>;
         std::stack<GuiPtr, std::list<GuiPtr>> m_guiStack;
         static inline Overlay *s_overlayInstance = nullptr;
+
+    #if IS_STATUS_MONITOR_DIRECTIVE
+        // Scroll memory while the overlay runs: where each page type was scrolled when it was last
+        // left, given back to it when it is built again by a swap (back from a submenu, a rebuild).
+        // The list only uses it if the item it jumps to is fully on screen there.
+        struct PageScroll { const void* tag; float offset; size_t index; };
+        static inline PageScroll s_pageScroll[16] = {};
+        static inline u32 s_pageScrollNext = 0;
+
+        template<typename G>
+        static inline char s_pageTagOf = 0;   // its address tells the Gui types apart
+
+        [[gnu::noinline]] static PageScroll* findPage(const void* tag) {
+            #pragma GCC unroll 1
+            for (u32 i = 0; i < 16; ++i) {
+                if (s_pageScroll[i].tag == tag) return &s_pageScroll[i];
+            }
+            return nullptr;
+        }
+
+        // The page on top is the one being left; it drew last, so the last list offset is its own.
+        [[gnu::noinline]] void leavePage() {
+            if (this->m_guiStack.empty() || !this->m_guiStack.top() || !this->m_guiStack.top()->m_pageTag)
+                return;
+            const void* tag = this->m_guiStack.top()->m_pageTag;
+            PageScroll* e = findPage(tag);
+            if (!e) e = &s_pageScroll[s_pageScrollNext++ & 15u];
+            *e = { tag, elm::s_lastListOffset, elm::s_lastListFocusIndex };
+        }
+
+        [[gnu::noinline]] static void enterPage(const tsl::Gui& gui) {
+            const PageScroll* e = gui.m_pageTag ? findPage(gui.m_pageTag) : nullptr;
+            elm::s_backOffset = e ? e->offset : -1.0f;
+            elm::s_backIndex = e ? e->index : SIZE_MAX;
+        }
+    #endif
         
         bool m_fadeInAnimationPlaying = false, m_fadeOutAnimationPlaying = false;
         u8 m_animationCounter = 0;
@@ -17090,6 +17225,7 @@ namespace tsl {
                 static u8  s_fbStep = 0;                                       // ... next of the 4 (4 = none)
                 static u32 s_fbSession = ~0u;
                 static bool s_fbGlassOff = false;                              // glass switched off while in it
+                static bool s_fbCheats = false;                                // "With Cheats" as of the last look
                 if (ult::useFrostedGlass && !ult::limitedMemory) {
                     if (!ult::glassFallback.load(std::memory_order_acquire)) {
                         if (ult::glass::heldByOther()) {
@@ -17097,6 +17233,7 @@ namespace tsl {
                             s_fbHoldNs = (s_fbExitNs && loopNowNs - s_fbExitNs < 3'000'000'000ULL) ? 1'500'000'000ULL : 0;
                             s_fbEnterNs = loopNowNs;
                             s_fbSession = ult::glass::s_session.load(std::memory_order_acquire);
+                            s_fbCheats = ult::glassWithCheats;
                             ult::glassFallback.store(true, std::memory_order_release);
                         #if USING_LIVE_LOGGING_DIRECTIVE
                             if (ult::glassLog) ult::glass::live::log("held process: glass released, wallpaper in its place");
@@ -17133,6 +17270,15 @@ namespace tsl {
                         if (sess != s_fbSession || home != s_fbHomeSeen) {
                             s_fbSession = sess;
                             s_fbHomeSeen = home;
+                            s_fbEventNs = loopNowNs;
+                            s_fbStep = 0;
+                        }
+
+                        // "With Cheats" switched: look again right away (a game the cheat engine holds is
+                        // read through it once it's on), without the hold against flipping back and forth
+                        if (ult::glassWithCheats != s_fbCheats) {
+                            s_fbCheats = ult::glassWithCheats;
+                            s_fbHoldNs = 0;
                             s_fbEventNs = loopNowNs;
                             s_fbStep = 0;
                         }
@@ -17992,6 +18138,9 @@ namespace tsl {
             isNavigatingBackwards.store(false, std::memory_order_release);
 
             // cache frame for forward rendering using external list method (to be implemented)
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            leavePage();
+        #endif
 
             // Create the top element of the new Gui
             gui->m_topElement = gui->createUI();
@@ -18015,7 +18164,13 @@ namespace tsl {
         // Template version without clearGlyphCache (for backward compatibility)
         template<typename G, typename ...Args>
         std::unique_ptr<tsl::Gui>& changeTo(Args&&... args) {
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            std::unique_ptr<tsl::Gui> gui = std::make_unique<G>(std::forward<Args>(args)...);
+            gui->m_pageTag = &s_pageTagOf<G>;
+            return this->changeTo(std::move(gui), false);
+        #else
             return this->changeTo(std::make_unique<G>(std::forward<Args>(args)...), false);
+        #endif
         }
         
 
@@ -18028,6 +18183,9 @@ namespace tsl {
         std::unique_ptr<tsl::Gui>& swapTo(std::unique_ptr<tsl::Gui>&& gui, u32 count = 1) {
 
             isNavigatingBackwards.store(true, std::memory_order_release);
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            leavePage();
+        #endif
             
             // Clamp count to available stack size to prevent underflow
             const u32 actualCount = std::min(count, static_cast<u32>(this->m_guiStack.size()));
@@ -18049,9 +18207,15 @@ namespace tsl {
                 this->m_guiStack.top()->m_focusedElement->resetClickAnimation();
             
             isNavigatingBackwards.store(false, std::memory_order_release);
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            enterPage(*gui);
+        #endif
 
             // Create the top element of the new Gui
             gui->m_topElement = gui->createUI();
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            elm::s_backOffset = -1.0f;
+        #endif
 
             
             // Push the new Gui onto the stack
@@ -18071,12 +18235,24 @@ namespace tsl {
         // Template version without clearGlyphCache (for backward compatibility)
         template<typename G, typename ...Args>
         std::unique_ptr<tsl::Gui>& swapTo(SwapDepth depth, Args&&... args) {
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            std::unique_ptr<tsl::Gui> gui = std::make_unique<G>(std::forward<Args>(args)...);
+            gui->m_pageTag = &s_pageTagOf<G>;
+            return this->swapTo(std::move(gui), depth.value);
+        #else
             return this->swapTo(std::make_unique<G>(std::forward<Args>(args)...), depth.value);
+        #endif
         }
         
         template<typename G, typename ...Args>
         std::unique_ptr<tsl::Gui>& swapTo(Args&&... args) {
+        #if IS_STATUS_MONITOR_DIRECTIVE
+            std::unique_ptr<tsl::Gui> gui = std::make_unique<G>(std::forward<Args>(args)...);
+            gui->m_pageTag = &s_pageTagOf<G>;
+            return this->swapTo(std::move(gui), 1);
+        #else
             return this->swapTo(std::make_unique<G>(std::forward<Args>(args)...), 1);
+        #endif
         }
         
         /**

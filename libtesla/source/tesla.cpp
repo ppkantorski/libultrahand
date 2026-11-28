@@ -970,7 +970,7 @@ namespace impl {
         ult::useUniformLogo         = getBool("uniform_logo",            false);
         ult::useSwitch2Style        = getBool("switch_2_style",          false);
         ult::useFrostedGlass        = getBool("frosted_glass",           false);
-        ult::glassWithCheats        = getBool("glass_with_cheats",       false);
+        ult::glassWithCheats        = getBool("glass_with_cheats",       true);
         ult::useGlassLayer          = getBool("full_color_glass",        true);
         ult::glassDarkness          = static_cast<u8>(std::max(0, std::min(ult::stoi(getStr("glass_darkness", "5")), 12)));
         ult::glassBlurRadius        = static_cast<u8>(std::max(1, std::min(ult::stoi(getStr("glass_blur_radius", "1")), 7)));
